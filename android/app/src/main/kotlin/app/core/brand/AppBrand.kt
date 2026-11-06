@@ -11,7 +11,7 @@ import app.core.store.Store
  * Nothing in `src/main` names a brand; every sentence that names the product
  * uses `{appName}` (see [app.core.i18n.brandText]).
  *
- * The name here is the build's default. When the server's `GET /config`
+ * The name here is the build's default. When the server's `GET /v1/config`
  * carries a display name, that one wins at run time.
  */
 object AppBrand {

@@ -1,0 +1,42 @@
+{
+  "store": "play",
+  "billingRef": "k7wq2m4zx5p3a",
+  "subscriptions": [
+    {
+      "productId": "sub.plus",
+      "basePlanId": "m1",
+      "plan": "plus",
+      "period": "P1M",
+      "badge": "popular",
+      "sort": 1
+    },
+    {
+      "productId": "sub.premium",
+      "basePlanId": "w1",
+      "plan": "premium",
+      "period": "P1W",
+      "sort": 2
+    },
+    {
+      "productId": "sub.gold",
+      "basePlanId": "m1",
+      "plan": "gold",
+      "period": "P2M",
+      "sort": 3
+    }
+  ],
+  "consumables": [
+    {
+      "productId": "superlike.5",
+      "item": "superlike",
+      "quantity": 5,
+      "sort": 1
+    },
+    {
+      "productId": "rose.1",
+      "item": "rose",
+      "quantity": 1,
+      "sort": 9
+    }
+  ]
+}

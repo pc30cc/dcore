@@ -1,4 +1,4 @@
-import type { PageSlug } from '../lib/i18n';
+import type { DocumentSlug } from '../lib/i18n';
 import type { SitePage } from './types';
 
 /**
@@ -22,7 +22,7 @@ const privacy: SitePage = {
           heading: 'What we collect',
           body: ['Only what the service needs:'],
           list: [
-            'Account data: your phone number, or the e-mail address of the Apple or Google account you sign in with.',
+            'Account data: your phone number, or the Google account you sign in with.',
             'Profile data you choose to share: name, birth date, gender, photos, prompts and profile fields.',
             'Approximate location, to show people near you. Your exact position never leaves our servers: other members see a rounded distance and your city.',
             'Your activity: likes, matches, messages, reports and blocks.',
@@ -45,13 +45,13 @@ const privacy: SitePage = {
         {
           heading: 'How long we keep it',
           body: [
-            'While your account exists. When you delete it, we delete your profile, photos and messages. Records the law makes us keep (purchases) and records of safety actions (such as a ban for abuse) are kept for the period the law requires. The exact periods will be listed here before launch.',
+            'While your account exists. When you delete it, it is hidden from everyone at once, and {graceDays} days later we delete your profile, photos, matches and messages; likes you gave disappear within two more weeks. Purchase records (tax and refund rules) and safety records (reports, moderation decisions and bans, which are kept in a form that does not show your number) are kept for the period the law requires. The exact periods will be listed here before launch.',
           ],
         },
         {
           heading: 'Your choices and rights',
           body: [
-            'In the app you can edit your profile, hide your distance or age, pause your account, download your data and delete your account. You can also write to {supportEmail} to access, correct or delete your data.',
+            'In the app you can edit your profile, hide your distance or age, pause your account, download your data and delete your account. Without the app, you can delete your account at {deleteAccountPath}. You can also write to {supportEmail} to access, correct or delete your data.',
           ],
         },
         { heading: 'Adults only', body: ['{appName} is only for people aged 18 and over.'] },
@@ -69,7 +69,7 @@ const privacy: SitePage = {
           heading: 'چه اطلاعاتی جمع می‌کنیم',
           body: ['فقط آنچه سرویس به آن نیاز دارد:'],
           list: [
-            'اطلاعات حساب: شماره تلفن، یا ایمیل حساب Apple یا Google که با آن وارد می‌شوید.',
+            'اطلاعات حساب: شماره تلفن، یا حساب Google که با آن وارد می‌شوید.',
             'اطلاعات پروفایل که خودتان به اشتراک می‌گذارید: نام، تاریخ تولد، جنسیت، عکس‌ها، پاسخ پرسش‌ها و فیلدهای پروفایل.',
             'موقعیت تقریبی، برای نشان دادن افراد نزدیک. موقعیت دقیق شما هرگز از سرورهای ما بیرون نمی‌رود: دیگران فقط فاصله‌ی گردشده و شهر شما را می‌بینند.',
             'فعالیت شما: لایک‌ها، مچ‌ها، پیام‌ها، گزارش‌ها و مسدودسازی‌ها.',
@@ -92,13 +92,13 @@ const privacy: SitePage = {
         {
           heading: 'تا کی نگه‌اش می‌داریم',
           body: [
-            'تا وقتی حساب شما وجود دارد. وقتی آن را حذف کنید، پروفایل، عکس‌ها و پیام‌هایتان را حذف می‌کنیم. سوابقی که قانون نگه‌داری‌شان را الزامی می‌کند (خریدها) و سوابق اقدامات ایمنی (مثلاً محرومیت به دلیل آزار) به مدتی که قانون تعیین می‌کند نگه داشته می‌شوند. مدت‌های دقیق پیش از راه‌اندازی این‌جا اعلام می‌شود.',
+            'تا وقتی حساب شما وجود دارد. وقتی آن را حذف کنید، بلافاصله از دید همه پنهان می‌شود و {graceDays} روز بعد پروفایل، عکس‌ها، مچ‌ها و پیام‌هایتان را حذف می‌کنیم؛ لایک‌هایی که داده‌اید تا دو هفته‌ی بعد از آن پاک می‌شوند. سوابق خرید (طبق قوانین مالیات و بازپرداخت) و سوابق ایمنی (گزارش‌ها، تصمیم‌های نظارتی و محرومیت‌ها، به شکلی که شماره‌ی شما در آن دیده نمی‌شود) به مدتی که قانون تعیین می‌کند نگه داشته می‌شوند. مدت‌های دقیق پیش از راه‌اندازی این‌جا اعلام می‌شود.',
           ],
         },
         {
           heading: 'اختیارات و حقوق شما',
           body: [
-            'در اپ می‌توانید پروفایل خود را ویرایش کنید، فاصله یا سن خود را پنهان کنید، حساب را موقتاً متوقف کنید، داده‌هایتان را دریافت کنید و حساب را حذف کنید. برای دسترسی، اصلاح یا حذف داده‌ها می‌توانید به {supportEmail} هم بنویسید.',
+            'در اپ می‌توانید پروفایل خود را ویرایش کنید، فاصله یا سن خود را پنهان کنید، حساب را موقتاً متوقف کنید، داده‌هایتان را دریافت کنید و حساب را حذف کنید. بدون اپ هم می‌توانید حسابتان را در {deleteAccountPath} حذف کنید. برای دسترسی، اصلاح یا حذف داده‌ها می‌توانید به {supportEmail} هم بنویسید.',
           ],
         },
         { heading: 'فقط بزرگسالان', body: ['{appName} فقط برای افراد ۱۸ سال به بالاست.'] },
@@ -116,7 +116,7 @@ const privacy: SitePage = {
           heading: 'Neleri topluyoruz',
           body: ['Yalnızca hizmetin ihtiyaç duyduklarını:'],
           list: [
-            'Hesap bilgileri: telefon numaran ya da giriş yaptığın Apple veya Google hesabının e-posta adresi.',
+            'Hesap bilgileri: telefon numaran ya da giriş yaptığın Google hesabı.',
             'Paylaşmayı seçtiğin profil bilgileri: ad, doğum tarihi, cinsiyet, fotoğraflar, sorulara yanıtlar ve profil alanları.',
             'Yakınındaki insanları göstermek için yaklaşık konum. Tam konumun sunucularımızdan asla çıkmaz: diğer üyeler yuvarlanmış bir mesafe ve şehrini görür.',
             'Etkinliğin: beğeniler, eşleşmeler, mesajlar, şikâyetler ve engellemeler.',
@@ -139,13 +139,13 @@ const privacy: SitePage = {
         {
           heading: 'Ne kadar süre saklıyoruz',
           body: [
-            'Hesabın var olduğu sürece. Hesabını sildiğinde profilini, fotoğraflarını ve mesajlarını sileriz. Yasanın saklamamızı zorunlu kıldığı kayıtlar (satın almalar) ve güvenlik işlemlerinin kayıtları (örneğin taciz nedeniyle verilen bir yasak) yasanın öngördüğü süre boyunca saklanır. Kesin süreler yayından önce burada listelenecek.',
+            'Hesabın var olduğu sürece. Hesabını sildiğinde hesabın hemen herkesten gizlenir; {graceDays} gün sonra profilini, fotoğraflarını, eşleşmelerini ve mesajlarını sileriz, verdiğin beğeniler de bundan sonraki iki hafta içinde kaybolur. Satın alma kayıtları (vergi ve iade kuralları) ve güvenlik kayıtları (şikâyetler, denetim kararları ve numaranı göstermeyen bir biçimde saklanan yasaklar) yasanın öngördüğü süre boyunca saklanır. Kesin süreler yayından önce burada listelenecek.',
           ],
         },
         {
           heading: 'Seçeneklerin ve hakların',
           body: [
-            'Uygulamada profilini düzenleyebilir, mesafeni veya yaşını gizleyebilir, hesabını duraklatabilir, verilerini indirebilir ve hesabını silebilirsin. Verilerine erişmek, düzeltmek veya silmek için {supportEmail} adresine de yazabilirsin.',
+            'Uygulamada profilini düzenleyebilir, mesafeni veya yaşını gizleyebilir, hesabını duraklatabilir, verilerini indirebilir ve hesabını silebilirsin. Uygulama olmadan da hesabını {deleteAccountPath} adresinde silebilirsin. Verilerine erişmek, düzeltmek veya silmek için {supportEmail} adresine de yazabilirsin.',
           ],
         },
         { heading: 'Yalnızca yetişkinler', body: ['{appName} yalnızca 18 yaş ve üzerindeki kişiler içindir.'] },
@@ -385,8 +385,8 @@ const childSafety: SitePage = {
   draft: true,
   content: {
     en: {
-      title: 'Child Safety Standards',
-      description: '{appName} has zero tolerance for child sexual abuse and exploitation (CSAE).',
+      title: '{appName} Child Safety Standards',
+      description: '{appName} has zero tolerance for child sexual abuse and exploitation (CSAE). This page sets out the standards {appName} follows.',
       sections: [
         {
           heading: 'Adults only',
@@ -401,26 +401,44 @@ const childSafety: SitePage = {
           ],
         },
         {
-          heading: 'Prevention and reporting',
+          heading: 'Prevention',
           body: [
-            'Photos are checked before other members can see them. Anyone can report a profile or a message from inside the app, and reports about child safety are handled before all others.',
+            'Photos are checked before other members can see them, and profile texts and messages are screened for known abuse. Accounts that appear to belong to a minor are removed.',
+          ],
+        },
+        {
+          heading: 'Reporting inside the app',
+          body: ['Anyone can report a profile or a message from inside {appName}:'],
+          list: [
+            'Open the profile or the conversation.',
+            'Choose Report.',
+            'Pick the reason about a minor or child safety, and add what you saw.',
+          ],
+          ordered: true,
+        },
+        {
+          heading: 'How we handle reports',
+          body: [
+            'Reports about child safety are reviewed before all others. We remove the content, ban the account and keep the evidence the law requires.',
           ],
         },
         {
           heading: 'Working with the authorities',
           body: [
-            'We report child sexual abuse material and child exploitation to the competent authorities, such as the National Center for Missing & Exploited Children (NCMEC) or the national authority where the law requires it, and we preserve the evidence the law requires.',
+            'We report child sexual abuse material and child exploitation to the competent authorities, such as the National Center for Missing & Exploited Children (NCMEC) or the national authority where the law requires it, and we comply with the child safety laws that apply to {appName}.',
           ],
         },
         {
           heading: 'Child safety contact',
-          body: ['Write to {supportEmail}. If a child is in immediate danger, call your local emergency number first.'],
+          body: [
+            'Our child safety contact can be reached at {supportEmail}. If a child is in immediate danger, call your local emergency number first.',
+          ],
         },
       ],
     },
     fa: {
-      title: 'استانداردهای ایمنی کودکان',
-      description: '{appName} در برابر سوءاستفاده و بهره‌کشی جنسی از کودکان (CSAE) هیچ تحملی ندارد.',
+      title: 'استانداردهای ایمنی کودکان {appName}',
+      description: '{appName} در برابر سوءاستفاده و بهره‌کشی جنسی از کودکان (CSAE) هیچ تحملی ندارد. این صفحه استانداردهایی را که {appName} رعایت می‌کند شرح می‌دهد.',
       sections: [
         {
           heading: 'فقط بزرگسالان',
@@ -433,26 +451,38 @@ const childSafety: SitePage = {
           ],
         },
         {
-          heading: 'پیشگیری و گزارش',
+          heading: 'پیشگیری',
           body: [
-            'عکس‌ها پیش از آن‌که دیگر کاربران ببینندشان بررسی می‌شوند. هر کسی می‌تواند از داخل اپ یک پروفایل یا پیام را گزارش کند و گزارش‌های مربوط به ایمنی کودکان پیش از همه رسیدگی می‌شوند.',
+            'عکس‌ها پیش از آن‌که دیگر کاربران ببینندشان بررسی می‌شوند و متن پروفایل‌ها و پیام‌ها از نظر نمونه‌های شناخته‌شده‌ی سوءاستفاده بررسی می‌شود. حساب‌هایی که به نظر برسد متعلق به افراد زیر سن قانونی‌اند حذف می‌شوند.',
+          ],
+        },
+        {
+          heading: 'گزارش از داخل اپ',
+          body: ['هر کسی می‌تواند از داخل {appName} یک پروفایل یا پیام را گزارش کند:'],
+          list: ['پروفایل یا گفتگو را باز کنید.', 'گزینه‌ی گزارش را بزنید.', 'دلیل مربوط به کودک یا ایمنی کودکان را انتخاب کنید و آنچه دیده‌اید را بنویسید.'],
+          ordered: true,
+        },
+        {
+          heading: 'رسیدگی به گزارش‌ها',
+          body: [
+            'گزارش‌های مربوط به ایمنی کودکان پیش از همه‌ی گزارش‌های دیگر بررسی می‌شوند. محتوا را حذف می‌کنیم، حساب را محروم می‌کنیم و شواهد را طبق الزام قانون نگه می‌داریم.',
           ],
         },
         {
           heading: 'همکاری با مراجع قانونی',
           body: [
-            'محتوای سوءاستفاده‌ی جنسی از کودکان و بهره‌کشی از کودکان را به مراجع صلاحیت‌دار، مانند National Center for Missing & Exploited Children (NCMEC) یا مرجع ملی هر جا که قانون الزام کند، گزارش می‌دهیم و شواهد را طبق الزام قانون نگه می‌داریم.',
+            'محتوای سوءاستفاده‌ی جنسی از کودکان و بهره‌کشی از کودکان را به مراجع صلاحیت‌دار، مانند National Center for Missing & Exploited Children (NCMEC) یا مرجع ملی هر جا که قانون الزام کند، گزارش می‌دهیم و از قوانین ایمنی کودکان که بر {appName} حاکم است پیروی می‌کنیم.',
           ],
         },
         {
           heading: 'تماس درباره‌ی ایمنی کودکان',
-          body: ['به {supportEmail} بنویسید. اگر کودکی در خطر فوری است، اول با شماره‌ی اضطراری محلی تماس بگیرید.'],
+          body: ['مسئول ایمنی کودکان ما از راه {supportEmail} در دسترس است. اگر کودکی در خطر فوری است، اول با شماره‌ی اضطراری محلی تماس بگیرید.'],
         },
       ],
     },
     tr: {
-      title: 'Çocuk Güvenliği Standartları',
-      description: '{appName}, çocukların cinsel istismarına ve sömürüsüne (CSAE) karşı sıfır tolerans uygular.',
+      title: '{appName} Çocuk Güvenliği Standartları',
+      description: '{appName}, çocukların cinsel istismarına ve sömürüsüne (CSAE) karşı sıfır tolerans uygular. Bu sayfa {appName} uygulamasının uyduğu standartları anlatır.',
       sections: [
         {
           heading: 'Yalnızca yetişkinler',
@@ -465,119 +495,32 @@ const childSafety: SitePage = {
           ],
         },
         {
-          heading: 'Önleme ve bildirme',
+          heading: 'Önleme',
           body: [
-            'Fotoğraflar diğer üyeler görmeden önce kontrol edilir. Herkes uygulamanın içinden bir profili veya mesajı bildirebilir; çocuk güvenliğiyle ilgili bildirimler herkesten önce ele alınır.',
+            'Fotoğraflar diğer üyeler görmeden önce kontrol edilir; profil metinleri ve mesajlar bilinen istismar örneklerine karşı taranır. Reşit olmayan birine ait görünen hesaplar kaldırılır.',
+          ],
+        },
+        {
+          heading: 'Uygulama içinden bildirme',
+          body: ['Herkes {appName} içinden bir profili veya mesajı bildirebilir:'],
+          list: ['Profili veya sohbeti aç.', 'Bildir’i seç.', 'Reşit olmayan biri veya çocuk güvenliğiyle ilgili nedeni seç ve gördüğünü ekle.'],
+          ordered: true,
+        },
+        {
+          heading: 'Bildirimleri nasıl ele alıyoruz',
+          body: [
+            'Çocuk güvenliğiyle ilgili bildirimler herkesten önce incelenir. İçeriği kaldırır, hesabı yasaklar ve yasanın gerektirdiği delilleri saklarız.',
           ],
         },
         {
           heading: 'Resmî makamlarla iş birliği',
           body: [
-            'Çocuk cinsel istismarı materyalini ve çocuk sömürüsünü, National Center for Missing & Exploited Children (NCMEC) gibi yetkili makamlara veya yasanın gerektirdiği yerde ulusal makama bildiririz ve yasanın gerektirdiği delilleri saklarız.',
+            'Çocuk cinsel istismarı materyalini ve çocuk sömürüsünü, National Center for Missing & Exploited Children (NCMEC) gibi yetkili makamlara veya yasanın gerektirdiği yerde ulusal makama bildiririz ve {appName} için geçerli çocuk güvenliği yasalarına uyarız.',
           ],
         },
         {
           heading: 'Çocuk güvenliği iletişimi',
-          body: ['{supportEmail} adresine yaz. Bir çocuk acil tehlikedeyse önce yerel acil durum numarasını ara.'],
-        },
-      ],
-    },
-  },
-};
-
-const deleteAccount: SitePage = {
-  draft: true,
-  content: {
-    en: {
-      title: 'Delete your account',
-      description: 'How to delete your {appName} account, with or without the app, and what happens to your data.',
-      sections: [
-        {
-          heading: 'In the app (fastest)',
-          body: ['Your profile disappears from {appName} as soon as you confirm.'],
-          list: ['Open {appName}.', 'Go to Settings, then Account, then Delete account.', 'Confirm.'],
-          ordered: true,
-        },
-        {
-          heading: 'Without the app',
-          body: [
-            'E-mail {supportEmail} with the subject “Delete my account”, from the e-mail address of your account, or tell us the phone number you signed up with. We confirm with you before deleting, so nobody can delete your account but you.',
-          ],
-        },
-        { heading: 'What is deleted', body: ['Your profile, photos, prompts, likes, matches and messages.'] },
-        {
-          heading: 'What is kept, and for how long',
-          body: [
-            'Purchase records that tax law requires, and records of safety actions (for example a ban for abuse) so that a banned person cannot simply come back. They are kept only as long as the law requires; the exact periods will be listed here before launch.',
-          ],
-        },
-        {
-          heading: 'Subscriptions',
-          body: [
-            'Deleting your account does not cancel a subscription. Cancel it first in the settings of the store you bought it from (Google Play, Cafe Bazaar or the App Store).',
-          ],
-        },
-      ],
-    },
-    fa: {
-      title: 'حذف حساب کاربری',
-      description: 'چگونه حساب {appName} خود را، با اپ یا بدون آن، حذف کنید و چه بر سر داده‌هایتان می‌آید.',
-      sections: [
-        {
-          heading: 'در اپ (سریع‌ترین راه)',
-          body: ['پروفایل شما بلافاصله پس از تأیید از {appName} ناپدید می‌شود.'],
-          list: ['{appName} را باز کنید.', 'به تنظیمات، سپس حساب، سپس حذف حساب بروید.', 'تأیید کنید.'],
-          ordered: true,
-        },
-        {
-          heading: 'بدون اپ',
-          body: [
-            'از ایمیل حساب خود به {supportEmail} با موضوع «حذف حساب کاربری من» ایمیل بزنید، یا شماره‌ای را که با آن ثبت‌نام کرده‌اید بنویسید. پیش از حذف با شما تأیید می‌کنیم تا هیچ‌کس جز خودتان نتواند حسابتان را حذف کند.',
-          ],
-        },
-        { heading: 'چه چیزی حذف می‌شود', body: ['پروفایل، عکس‌ها، پاسخ پرسش‌ها، لایک‌ها، مچ‌ها و پیام‌های شما.'] },
-        {
-          heading: 'چه چیزی و تا کی نگه داشته می‌شود',
-          body: [
-            'سوابق خرید که قانون مالیات الزامی می‌کند، و سوابق اقدامات ایمنی (مثلاً محرومیت به دلیل آزار) تا فرد محروم‌شده به‌سادگی برنگردد. این‌ها فقط به مدتی که قانون الزام می‌کند نگه داشته می‌شوند؛ مدت‌های دقیق پیش از راه‌اندازی این‌جا اعلام می‌شود.',
-          ],
-        },
-        {
-          heading: 'اشتراک‌ها',
-          body: [
-            'حذف حساب، اشتراک را لغو نمی‌کند. اول آن را در تنظیمات فروشگاهی که از آن خریده‌اید (Google Play، کافه‌بازار یا App Store) لغو کنید.',
-          ],
-        },
-      ],
-    },
-    tr: {
-      title: 'Hesabını sil',
-      description: '{appName} hesabını uygulamayla veya uygulama olmadan nasıl sileceğin ve verilerine ne olacağı.',
-      sections: [
-        {
-          heading: 'Uygulamada (en hızlısı)',
-          body: ['Onayladığın anda profilin {appName} uygulamasından kaybolur.'],
-          list: ['{appName} uygulamasını aç.', 'Ayarlar, ardından Hesap, ardından Hesabı sil bölümüne git.', 'Onayla.'],
-          ordered: true,
-        },
-        {
-          heading: 'Uygulama olmadan',
-          body: [
-            'Hesabının e-posta adresinden {supportEmail} adresine “Hesabımı sil” konulu bir e-posta gönder ya da kayıt olduğun telefon numarasını bize bildir. Hesabını senden başka kimsenin silememesi için silmeden önce seninle teyit ederiz.',
-          ],
-        },
-        { heading: 'Neler silinir', body: ['Profilin, fotoğrafların, yanıtların, beğenilerin, eşleşmelerin ve mesajların.'] },
-        {
-          heading: 'Neler, ne kadar süre saklanır',
-          body: [
-            'Vergi mevzuatının gerektirdiği satın alma kayıtları ve yasaklanan birinin kolayca geri dönememesi için güvenlik işlemlerinin kayıtları (örneğin taciz nedeniyle verilen bir yasak). Bunlar yalnızca yasanın gerektirdiği süre boyunca saklanır; kesin süreler yayından önce burada listelenecek.',
-          ],
-        },
-        {
-          heading: 'Abonelikler',
-          body: [
-            'Hesabını silmek aboneliği iptal etmez. Önce satın aldığın mağazanın ayarlarından (Google Play, Cafe Bazaar veya App Store) iptal et.',
-          ],
+          body: ['Çocuk güvenliği sorumlumuza {supportEmail} adresinden ulaşabilirsin. Bir çocuk acil tehlikedeyse önce yerel acil durum numarasını ara.'],
         },
       ],
     },
@@ -589,72 +532,179 @@ const support: SitePage = {
   content: {
     en: {
       title: 'Support',
-      description: 'How to reach the {appName} team.',
+      description: 'How to reach the {appName} team, report someone, appeal a decision and get answers to common questions.',
       sections: [
-        { heading: 'Write to us', body: ['E-mail {supportEmail}. You can write in Persian, English or Turkish.'] },
+        { heading: 'Write to us', body: ['E-mail {supportEmail}. You can write in Persian, English or Turkish. In the app, Settings also has a Support section where you can write to us and see our answers.'] },
         {
-          heading: 'A safety problem',
+          heading: 'Report someone',
           body: [
-            'Use Report on the person’s profile or in your conversation; reports reach our moderation team directly. If someone is in danger, call your local emergency number first.',
+            'Open the person’s profile or your conversation with them and choose Report. Pick a reason and add what happened; you can block them at the same time. Reports go straight to our moderation team, and we tell you when we have acted. If someone is in danger, call your local emergency number first.',
+          ],
+        },
+        {
+          heading: 'If we restricted your account',
+          body: [
+            'When we warn, suspend or ban an account, the app always shows the reason. If you think we got it wrong, appeal from the app:',
+          ],
+          list: [
+            'Open {appName}. The notice about your account opens by itself.',
+            'Choose Appeal and tell us what we should know.',
+            'A person on our team reviews it. The answer appears in the app, and a lifted restriction takes effect at once.',
+          ],
+          ordered: true,
+        },
+        {
+          heading: 'Common questions',
+          body: [],
+          faq: [
+            {
+              question: 'I did not get the sign-in code.',
+              answer:
+                'Check that the number, with its country code, is right. Text messages can take a minute; you can ask for a new code after 60 seconds. If it still does not arrive, write to {supportEmail} with the number’s country.',
+            },
+            {
+              question: 'How do I cancel a subscription?',
+              answer:
+                'In the store you bought it from: Google Play (Payments and subscriptions) or the Cafe Bazaar app. Uninstalling the app or deleting your account does not cancel it.',
+            },
+            {
+              question: 'A purchase does not show up in the app.',
+              answer:
+                'Open the subscription screen in the app and choose Restore purchases. If it is still missing, write to us with the store’s receipt.',
+            },
+            {
+              question: 'Can I pause my account instead of deleting it?',
+              answer: 'Yes. Pausing hides your profile from new people; your matches and conversations stay. Turn it off whenever you like.',
+            },
+            {
+              question: 'How do I delete my account?',
+              answer: 'In the app, or without it at {deleteAccountPath}.',
+            },
           ],
         },
         {
           heading: 'Purchases and refunds',
           body: [
-            'Purchases are made through your app store, and refunds follow its rules. If a purchase does not show up in the app, use Restore purchases in the app’s subscription settings, or write to us with the store’s receipt.',
+            'Purchases are made through your app store, and refunds follow its rules. Paid features are tied to the store you bought them in.',
           ],
         },
-        { heading: 'Deleting your account', body: ['See how to delete your account, with or without the app: {deleteAccountPath}'] },
       ],
     },
     fa: {
       title: 'پشتیبانی',
-      description: 'راه‌های تماس با تیم {appName}.',
+      description: 'راه‌های تماس با تیم {appName}، گزارش یک کاربر، اعتراض به یک تصمیم و پاسخ پرسش‌های رایج.',
       sections: [
-        { heading: 'به ما بنویسید', body: ['به {supportEmail} ایمیل بزنید. می‌توانید به فارسی، انگلیسی یا ترکی بنویسید.'] },
+        { heading: 'به ما بنویسید', body: ['به {supportEmail} ایمیل بزنید. می‌توانید به فارسی، انگلیسی یا ترکی بنویسید. در اپ هم بخش پشتیبانی در تنظیمات هست که می‌توانید از آن‌جا به ما بنویسید و پاسخ‌ها را ببینید.'] },
         {
-          heading: 'مشکل ایمنی',
+          heading: 'گزارش یک کاربر',
           body: [
-            'از گزینه‌ی گزارش در پروفایل آن فرد یا در گفتگو استفاده کنید؛ گزارش مستقیم به تیم نظارت ما می‌رسد. اگر کسی در خطر است، اول با شماره‌ی اضطراری محلی تماس بگیرید.',
+            'پروفایل آن فرد یا گفتگو با او را باز کنید و گزینه‌ی گزارش را بزنید. دلیلی انتخاب کنید و آنچه پیش آمده را بنویسید؛ هم‌زمان می‌توانید او را مسدود هم کنید. گزارش مستقیم به تیم نظارت ما می‌رسد و وقتی اقدام کردیم به شما خبر می‌دهیم. اگر کسی در خطر است، اول با شماره‌ی اضطراری محلی تماس بگیرید.',
+          ],
+        },
+        {
+          heading: 'اگر حساب شما محدود شده است',
+          body: ['وقتی به حسابی هشدار می‌دهیم، آن را تعلیق یا محروم می‌کنیم، اپ همیشه دلیلش را نشان می‌دهد. اگر فکر می‌کنید اشتباه کرده‌ایم، از داخل اپ اعتراض کنید:'],
+          list: [
+            '{appName} را باز کنید. پیام مربوط به حسابتان خودش باز می‌شود.',
+            'گزینه‌ی اعتراض را بزنید و آنچه باید بدانیم را بنویسید.',
+            'یکی از اعضای تیم ما آن را بررسی می‌کند. پاسخ در اپ نشان داده می‌شود و اگر محدودیت برداشته شود، همان لحظه اعمال می‌شود.',
+          ],
+          ordered: true,
+        },
+        {
+          heading: 'پرسش‌های رایج',
+          body: [],
+          faq: [
+            {
+              question: 'کد ورود به دستم نرسید.',
+              answer:
+                'مطمئن شوید شماره، همراه با کد کشور، درست است. پیامک ممکن است یک دقیقه طول بکشد؛ پس از ۶۰ ثانیه می‌توانید کد تازه بخواهید. اگر باز هم نرسید، با ذکر کشور آن شماره به {supportEmail} بنویسید.',
+            },
+            {
+              question: 'اشتراک را چطور لغو کنم؟',
+              answer: 'در فروشگاهی که از آن خریده‌اید: گوگل پلی (بخش پرداخت‌ها و اشتراک‌ها) یا اپ کافه‌بازار. حذف اپ از گوشی یا حذف حساب، اشتراک را لغو نمی‌کند.',
+            },
+            {
+              question: 'خریدم در اپ دیده نمی‌شود.',
+              answer: 'صفحه‌ی اشتراک را در اپ باز کنید و «بازیابی خرید» را بزنید. اگر باز هم نبود، با رسید فروشگاه به ما بنویسید.',
+            },
+            {
+              question: 'می‌توانم به‌جای حذف، حسابم را موقتاً متوقف کنم؟',
+              answer: 'بله. با توقف موقت، پروفایل شما به افراد تازه نشان داده نمی‌شود و مچ‌ها و گفتگوهایتان می‌مانند. هر وقت خواستید آن را خاموش کنید.',
+            },
+            {
+              question: 'حسابم را چطور حذف کنم؟',
+              answer: 'در اپ، یا بدون اپ در {deleteAccountPath}.',
+            },
           ],
         },
         {
           heading: 'خرید و بازپرداخت',
-          body: [
-            'خریدها از طریق فروشگاه اپ شما انجام می‌شوند و بازپرداخت طبق قوانین آن است. اگر خریدی در اپ دیده نمی‌شود، در تنظیمات اشتراک اپ «بازیابی خرید» را بزنید یا با رسید فروشگاه به ما بنویسید.',
-          ],
+          body: ['خریدها از طریق فروشگاه اپ شما انجام می‌شوند و بازپرداخت طبق قوانین آن است. امکانات پولی به فروشگاهی که از آن خریده‌اید وابسته‌اند.'],
         },
-        { heading: 'حذف حساب', body: ['روش حذف حساب، با اپ یا بدون آن: {deleteAccountPath}'] },
       ],
     },
     tr: {
       title: 'Destek',
-      description: '{appName} ekibine nasıl ulaşılır.',
+      description: '{appName} ekibine nasıl ulaşılır, biri nasıl bildirilir, bir karara nasıl itiraz edilir ve sık sorulan sorular.',
       sections: [
-        { heading: 'Bize yaz', body: ['{supportEmail} adresine e-posta gönder. Farsça, İngilizce veya Türkçe yazabilirsin.'] },
+        { heading: 'Bize yaz', body: ['{supportEmail} adresine e-posta gönder. Farsça, İngilizce veya Türkçe yazabilirsin. Uygulamada Ayarlar’daki Destek bölümünden de bize yazabilir ve yanıtlarımızı görebilirsin.'] },
         {
-          heading: 'Bir güvenlik sorunu',
+          heading: 'Birini bildir',
           body: [
-            'Kişinin profilinde veya sohbetinizde Bildir’i kullan; bildirimler doğrudan denetim ekibimize ulaşır. Biri tehlikedeyse önce yerel acil durum numarasını ara.',
+            'Kişinin profilini veya onunla sohbetini aç ve Bildir’i seç. Bir neden seç ve ne olduğunu ekle; aynı anda engelleyebilirsin de. Bildirimler doğrudan denetim ekibimize ulaşır ve işlem yaptığımızda sana haber veririz. Biri tehlikedeyse önce yerel acil durum numarasını ara.',
+          ],
+        },
+        {
+          heading: 'Hesabın kısıtlandıysa',
+          body: ['Bir hesabı uyardığımızda, askıya aldığımızda veya yasakladığımızda uygulama nedenini her zaman gösterir. Yanıldığımızı düşünüyorsan uygulamadan itiraz et:'],
+          list: [
+            '{appName} uygulamasını aç. Hesabınla ilgili bildirim kendiliğinden açılır.',
+            'İtiraz et’i seç ve bilmemiz gerekenleri yaz.',
+            'Ekibimizden biri inceler. Yanıt uygulamada görünür; kaldırılan bir kısıtlama hemen geçerli olur.',
+          ],
+          ordered: true,
+        },
+        {
+          heading: 'Sık sorulan sorular',
+          body: [],
+          faq: [
+            {
+              question: 'Giriş kodu gelmedi.',
+              answer:
+                'Numaranın ülke koduyla birlikte doğru olduğundan emin ol. SMS bir dakika kadar sürebilir; 60 saniye sonra yeni kod isteyebilirsin. Yine gelmezse numaranın ülkesini belirterek {supportEmail} adresine yaz.',
+            },
+            {
+              question: 'Aboneliğimi nasıl iptal ederim?',
+              answer: 'Satın aldığın mağazadan: Google Play (Ödemeler ve abonelikler) veya Cafe Bazaar uygulaması. Uygulamayı kaldırmak veya hesabını silmek aboneliği iptal etmez.',
+            },
+            {
+              question: 'Bir satın alma uygulamada görünmüyor.',
+              answer: 'Uygulamada abonelik ekranını aç ve Satın alımları geri yükle’yi seç. Hâlâ görünmüyorsa mağaza makbuzuyla bize yaz.',
+            },
+            {
+              question: 'Hesabımı silmek yerine duraklatabilir miyim?',
+              answer: 'Evet. Duraklatınca profilin yeni kişilere gösterilmez; eşleşmelerin ve sohbetlerin kalır. İstediğin zaman kapatabilirsin.',
+            },
+            {
+              question: 'Hesabımı nasıl silerim?',
+              answer: 'Uygulamada ya da uygulama olmadan {deleteAccountPath} adresinde.',
+            },
           ],
         },
         {
           heading: 'Satın almalar ve iadeler',
-          body: [
-            'Satın almalar uygulama mağazan üzerinden yapılır ve iadeler onun kurallarına tabidir. Bir satın alma uygulamada görünmüyorsa uygulamanın abonelik ayarlarındaki Satın alımları geri yükle seçeneğini kullan ya da mağaza makbuzuyla bize yaz.',
-          ],
+          body: ['Satın almalar uygulama mağazan üzerinden yapılır ve iadeler onun kurallarına tabidir. Ücretli özellikler satın aldığın mağazaya bağlıdır.'],
         },
-        { heading: 'Hesabını silmek', body: ['Hesabını uygulamayla veya uygulama olmadan nasıl sileceğin: {deleteAccountPath}'] },
       ],
     },
   },
 };
 
-export const sitePages: Readonly<Record<PageSlug, SitePage>> = {
+export const sitePages: Readonly<Record<DocumentSlug, SitePage>> = {
   privacy,
   terms,
   'community-guidelines': communityGuidelines,
   'child-safety': childSafety,
-  'delete-account': deleteAccount,
   support,
 };

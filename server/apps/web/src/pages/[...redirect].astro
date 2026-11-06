@@ -4,8 +4,8 @@ import Redirect from '../components/Redirect.astro';
 import { unlocalizedRedirects } from '../lib/routes';
 
 export const getStaticPaths = (() =>
-  unlocalizedRedirects().map(({ path, slug }) => ({ params: { redirect: path }, props: { slug } }))) satisfies GetStaticPaths;
+  unlocalizedRedirects().map(({ path, id }) => ({ params: { redirect: path }, props: { id } }))) satisfies GetStaticPaths;
 
-const { slug } = Astro.props;
+const { id } = Astro.props;
 ---
-<Redirect slug={slug} />
+<Redirect page={id} />

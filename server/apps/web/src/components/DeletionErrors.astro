@@ -1,0 +1,26 @@
+---
+import { accountDeletionErrorId, type AccountDeletionFormError, type Locale } from '@app/shared';
+import RichText from './RichText.astro';
+import { deletion } from '../content/deletion';
+
+interface Props {
+  locale: Locale;
+  /** The errors this page's form can come back with. */
+  codes: readonly AccountDeletionFormError[];
+}
+
+/**
+ * The API sends a failed form post back to the page with the error in the
+ * URL fragment (`#e-otp_invalid`). Each message is hidden until it is the
+ * fragment's target, so the right one shows without any script.
+ */
+const { locale, codes } = Astro.props;
+const strings = deletion[locale];
+---
+<div class="errors">
+  {codes.map((code) => (
+    <p class="error" id={accountDeletionErrorId(code)} tabindex="-1">
+      <strong>{strings.errorTitle}:</strong> <RichText locale={locale} text={strings.errors[code]} />
+    </p>
+  ))}
+</div>

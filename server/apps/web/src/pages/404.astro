@@ -4,6 +4,7 @@ import { ui } from '../content/ui';
 import { brand } from '../lib/brand';
 import { pagePath } from '../lib/i18n';
 
+// Any mistyped link lands here, from the apps too: it links only to app-facing pages.
 const locale = brand.defaultLocale;
 const strings = ui[locale];
 ---
@@ -11,6 +12,6 @@ const strings = ui[locale];
   <section class="hero">
     <h1>{strings.notFoundTitle}</h1>
     <p class="lead">{strings.notFoundBody}</p>
-    <p><a class="button" href={pagePath(locale)}>{strings.homeLink}</a></p>
+    <p><a class="button" href={pagePath(locale, 'support')}>{strings.notFoundLink}</a></p>
   </section>
 </Base>

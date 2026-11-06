@@ -1,0 +1,20 @@
+{
+  "call": {
+    "id": "1287390234923499001",
+    "conversationId": "1287390234923400001",
+    "kind": "video",
+    "role": "callee",
+    "state": "connecting",
+    "placedAt": "2026-11-06T09:20:00.000Z",
+    "ringExpiresAt": "2026-11-06T09:20:45.000Z",
+    "answeredAt": "2026-11-06T09:20:05.000Z"
+  },
+  "token": {
+    "token": "eyJ.lk.token",
+    "expiresAt": "2026-11-06T09:30:05.000Z",
+    "wsUrl": "wss://rtc.example.com",
+    "turn": null,
+    "icePolicy": "all",
+    "warnings": []
+  }
+}

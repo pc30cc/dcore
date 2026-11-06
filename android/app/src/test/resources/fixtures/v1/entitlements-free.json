@@ -1,0 +1,12 @@
+{
+  "plan": "free",
+  "features": {},
+  "quotas": {
+    "likes": {
+      "limit": 50,
+      "used": 3,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    }
+  },
+  "wallet": {}
+}

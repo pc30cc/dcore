@@ -2,7 +2,7 @@ package app.core.store
 
 import android.content.Context
 import androidx.activity.ComponentActivity
-import app.core.diag.Diag
+import app.core.common.Diag
 import ir.cafebazaar.poolakey.Connection
 import ir.cafebazaar.poolakey.Payment
 import ir.cafebazaar.poolakey.config.PaymentConfiguration

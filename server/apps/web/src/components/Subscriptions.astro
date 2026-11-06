@@ -1,0 +1,30 @@
+---
+import type { Locale } from '@app/shared';
+import { deletion } from '../content/deletion';
+import { brand } from '../lib/brand';
+import { subscriptionCentres } from '../lib/stores';
+
+interface Props {
+  locale: Locale;
+}
+
+/** Deleting an account does not cancel a store subscription: where to cancel it, for each store. */
+const { locale } = Astro.props;
+const strings = deletion[locale];
+const centres = subscriptionCentres(brand, locale);
+---
+<section class="panel" aria-labelledby="subscriptions-title">
+  <h2 id="subscriptions-title">{strings.subscriptionsTitle}</h2>
+  <p>{strings.subscriptionsBody}</p>
+  <ul>
+    {centres.map((centre) => (
+      <li>
+        {centre.url ? (
+          <a href={centre.url} rel="noopener" data-subscriptions={centre.id}>{strings.subscriptionsLink[centre.id]}</a>
+        ) : (
+          strings.subscriptionsInApp[centre.id]
+        )}
+      </li>
+    ))}
+  </ul>
+</section>

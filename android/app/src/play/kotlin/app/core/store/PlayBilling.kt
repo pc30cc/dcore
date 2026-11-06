@@ -2,7 +2,7 @@ package app.core.store
 
 import android.content.Context
 import androidx.activity.ComponentActivity
-import app.core.diag.Diag
+import app.core.common.Diag
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClient.BillingResponseCode
 import com.android.billingclient.api.BillingClientStateListener

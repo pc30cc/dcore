@@ -1,0 +1,73 @@
+{
+  "items": [
+    {
+      "id": "1287390234923417601",
+      "conversationId": "1287390234923400001",
+      "senderId": "aaaaaaaaaaaaa",
+      "kind": "text",
+      "body": "Hi!",
+      "at": "2026-11-06T09:14:03.120Z",
+      "clientId": "7d1c5b8e-3f2a-4c55-9a51-6e2f9d3c1b20"
+    },
+    {
+      "id": "1287390234923417602",
+      "conversationId": "1287390234923400001",
+      "senderId": "bnegar2kq7xm4",
+      "kind": "reaction",
+      "body": "❤️",
+      "at": "2026-11-06T09:14:03.120Z",
+      "refId": "1287390234923417601"
+    },
+    {
+      "id": "1287390234923417603",
+      "conversationId": "1287390234923400001",
+      "senderId": "bnegar2kq7xm4",
+      "kind": "call",
+      "at": "2026-11-06T09:14:03.120Z",
+      "call": {
+        "callId": "1287390234923499001",
+        "kind": "audio",
+        "outcome": "completed",
+        "placedAt": "2026-11-06T09:00:00.000Z",
+        "durationSeconds": 754,
+        "caller": "bnegar2kq7xm4"
+      }
+    },
+    {
+      "id": "1287390234923417604",
+      "conversationId": "1287390234923400001",
+      "senderId": "bnegar2kq7xm4",
+      "kind": "image",
+      "at": "2026-11-06T09:14:03.120Z",
+      "media": {
+        "url": "https://media.example.com/m/4.webp",
+        "mime": "image/webp",
+        "w": 800,
+        "h": 600,
+        "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+      }
+    },
+    {
+      "id": "1287390234923417605",
+      "conversationId": "1287390234923400001",
+      "senderId": "bnegar2kq7xm4",
+      "kind": "sticker",
+      "body": "🦊",
+      "at": "2026-11-06T09:14:03.120Z"
+    },
+    {
+      "id": "1287390234923417606",
+      "conversationId": "1287390234923400001",
+      "senderId": "aaaaaaaaaaaaa",
+      "kind": "unsend",
+      "at": "2026-11-06T09:14:03.120Z",
+      "refId": "1287390234923417601"
+    }
+  ],
+  "hasMore": true,
+  "readCursors": {
+    "me": "1287390234923417605",
+    "peer": "1287390234923417601"
+  },
+  "peerDeliveredId": "1287390234923417606"
+}

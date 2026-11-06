@@ -1,0 +1,16 @@
+{
+  "token": "eyJ.lk.token",
+  "expiresAt": "2026-11-06T09:30:05.000Z",
+  "wsUrl": "wss://rtc.example.com",
+  "turn": {
+    "urls": [
+      "turn:relay.example.com:3478?transport=udp"
+    ],
+    "username": "1762444205:r0123456789abcdef",
+    "credential": "c3VwZXI="
+  },
+  "icePolicy": "relay",
+  "warnings": [
+    "relay_far"
+  ]
+}

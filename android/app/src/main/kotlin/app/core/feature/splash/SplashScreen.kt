@@ -30,7 +30,7 @@ import app.core.LocalAppGraph
 import app.core.R
 import app.core.i18n.LocalAppName
 import app.core.i18n.brandString
-import app.core.storage.SessionStore
+import app.core.net.ServerApi
 import app.core.ui.components.BrandMark
 import app.core.ui.theme.Space
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,15 +38,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Decides where a launch goes: signed in or not. Reads only the encrypted session on the phone. */
-class SplashViewModel(private val session: SessionStore) : ViewModel() {
+/** Decides where a launch goes: signed in or not. Reads only the session on the phone, never the network. */
+class SplashViewModel(private val api: ServerApi) : ViewModel() {
     private val _signedIn = MutableStateFlow<Boolean?>(null)
 
     /** Null while reading. */
     val signedIn: StateFlow<Boolean?> = _signedIn.asStateFlow()
 
     init {
-        viewModelScope.launch { _signedIn.value = session.hasSession() }
+        viewModelScope.launch { _signedIn.value = api.hasSession() }
     }
 }
 
@@ -56,12 +56,12 @@ class SplashViewModel(private val session: SessionStore) : ViewModel() {
  * milliseconds), so the hand-over from the system splash is seamless.
  *
  * Signed in goes to the main tabs. Whether a signed-in account still has
- * onboarding steps left is the server's to say (`GET /me`, not built yet).
+ * onboarding steps left is the server's to say (`GET /v1/me`).
  */
 @Composable
 fun SplashRoute(onResolved: (signedIn: Boolean) -> Unit) {
     val graph = LocalAppGraph.current
-    val model: SplashViewModel = viewModel(factory = viewModelFactory { initializer { SplashViewModel(graph.session) } })
+    val model: SplashViewModel = viewModel(factory = viewModelFactory { initializer { SplashViewModel(graph.api) } })
     val signedIn by model.signedIn.collectAsStateWithLifecycle()
     val resolved by rememberUpdatedState(onResolved)
     LaunchedEffect(signedIn) {

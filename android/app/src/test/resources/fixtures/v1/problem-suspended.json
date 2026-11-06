@@ -1,0 +1,10 @@
+{
+  "type": "urn:problem-type:account-suspended",
+  "title": "Account suspended",
+  "status": 403,
+  "code": "account_suspended",
+  "reasonText": "Repeated reports of harassment.",
+  "actionId": "1287390234923455001",
+  "until": "2026-11-08T10:00:00.000Z",
+  "appealable": true
+}

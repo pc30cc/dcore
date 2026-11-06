@@ -21,13 +21,12 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import app.core.BuildConfig
-import app.core.brand.AppBrand
 import app.core.feature.auth.AuthRoute
 import app.core.feature.main.MainRoute
 import app.core.feature.onboarding.OnboardingRoute
 import app.core.feature.splash.SplashRoute
 import app.core.feature.splash.UpdateRequiredScreen
-import app.core.net.ClientConfig
+import app.core.model.Config
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
 import kotlinx.serialization.Serializable
@@ -52,13 +51,14 @@ import kotlinx.serialization.Serializable
  * own state inside [MainRoute]; when detail screens arrive, each tab gets its
  * own stack.
  *
- * A build below the server's minimum for its store (`GET /config`) sees only
+ * A build below the server's minimum for its store (`GET /v1/config`) sees only
  * [UpdateRequiredScreen].
  */
 @Composable
-fun AppNavHost(config: ClientConfig?) {
-    val minimum = config?.minVersionCode?.get(AppBrand.store.id)
-    if (minimum != null && BuildConfig.VERSION_CODE < minimum) {
+fun AppNavHost(config: Config?) {
+    // The config is asked for this build's store, so its minimum is this store's.
+    val minimum = config?.minVersion?.required ?: 0
+    if (BuildConfig.VERSION_CODE < minimum) {
         UpdateRequiredScreen()
         return
     }

@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "1287390234923488001",
+      "category": "billing",
+      "subject": "Plan",
+      "status": "answered",
+      "createdAt": "2026-11-03T09:00:00.000Z",
+      "updatedAt": "2026-11-03T11:00:00.000Z",
+      "unread": 1
+    }
+  ],
+  "nextCursor": null
+}

@@ -1,0 +1,9 @@
+{
+  "type": "urn:problem-type:quota-exceeded",
+  "title": "Quota exceeded",
+  "status": 429,
+  "code": "quota_exceeded",
+  "feature": "dm",
+  "resetsAt": "2026-11-07T00:00:00.000Z",
+  "canBuy": true
+}

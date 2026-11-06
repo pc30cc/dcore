@@ -10,7 +10,7 @@ import androidx.activity.result.IntentSenderRequest
  * Only Google Play has an in-app update API. For Cafe Bazaar the check says
  * [UpdateCheck.Unsupported] and an update means opening the app's page in
  * Bazaar. Either way, a build too old to use is decided by the server
- * (`GET /config`'s minimum version per store), not by the store.
+ * (`GET /v1/config`'s minimum version per store), not by the store.
  */
 interface AppUpdates {
     suspend fun check(): UpdateCheck

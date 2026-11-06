@@ -1,0 +1,126 @@
+@file:UseSerializers(InstantSerializer::class)
+
+package app.core.model
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.UseSerializers
+import kotlinx.serialization.json.JsonObject
+import java.time.Instant
+
+// Realtime token, deletion and restore, support, data export and events.
+
+/** `POST /v1/realtime/token`: a connection token for the one personal channel. */
+@Serializable
+data class RealtimeToken(
+    val wsUrl: String,
+    val token: String,
+    val expiresAt: Instant,
+    /** `u:#<publicUid>`. */
+    val channel: String,
+)
+
+@Serializable
+data class StoreSubscriptionNotice(
+    val store: StoreName = StoreName.Unknown,
+    val active: Boolean = true,
+    val manageUrl: String? = null,
+)
+
+/** Before deleting: a live store subscription that deleting does not cancel. */
+@Serializable
+data class DeletionPreflight(val subscription: StoreSubscriptionNotice? = null)
+
+@Serializable
+data class DeletionRequest(val reason: String? = null)
+
+@Serializable
+data class DeletionScheduled(val purgeAt: Instant)
+
+@Serializable
+data class RestoredAccount(val user: AuthUser)
+
+@Serializable
+data class PublicDeletionStart(
+    val phone: String,
+    val locale: String,
+)
+
+/** The same whether or not an account exists for the number. */
+@Serializable
+data class PublicDeletionChallenge(
+    val requestToken: String,
+    val codeLength: Int = 6,
+)
+
+@Serializable
+data class PublicDeletionConfirm(
+    val requestToken: String,
+    val code: String,
+)
+
+@Serializable
+data class PublicDeletionGoogle(val idToken: String)
+
+@Serializable
+data class SupportTicket(
+    val id: Id,
+    val category: String = "",
+    val subject: String? = null,
+    val status: TicketStatus = TicketStatus.Unknown,
+    val createdAt: Instant,
+    val updatedAt: Instant? = null,
+    val unread: Int = 0,
+)
+
+@Serializable
+data class SupportTickets(
+    val items: List<SupportTicket> = emptyList(),
+    val nextCursor: String? = null,
+)
+
+@Serializable
+data class SupportTicketCreate(
+    val category: String,
+    val body: String,
+    val subject: String? = null,
+)
+
+@Serializable
+data class SupportTicketBody(val ticket: SupportTicket)
+
+@Serializable
+data class SupportMessage(
+    val id: Id,
+    val author: TicketAuthor = TicketAuthor.Unknown,
+    val body: String,
+    val at: Instant,
+)
+
+@Serializable
+data class SupportMessages(
+    val items: List<SupportMessage> = emptyList(),
+    val nextCursor: String? = null,
+)
+
+@Serializable
+data class SupportMessageCreate(val body: String)
+
+@Serializable
+data class SupportMessageBody(val message: SupportMessage)
+
+@Serializable
+data class ExportStarted(val exportId: Id)
+
+/** One first-party analytics event; names come from the server's whitelist. */
+@Serializable
+data class AppEvent(
+    val name: String,
+    val at: Instant,
+    val props: JsonObject? = null,
+)
+
+@Serializable
+data class EventsRequest(
+    /** At most 100. */
+    val events: List<AppEvent>,
+)

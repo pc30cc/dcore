@@ -2,6 +2,11 @@ import type { Locale } from '@app/shared';
 
 export type Localized<T> = Readonly<Record<Locale, T>>;
 
+export interface Question {
+  question: string;
+  answer: string;
+}
+
 export interface ContentSection {
   heading: string;
   /** Paragraphs. `{appName}`, `{supportEmail}` and the other brand values are filled at build time. */
@@ -9,6 +14,8 @@ export interface ContentSection {
   /** An optional list after the paragraphs; `ordered` for steps. */
   list?: readonly string[];
   ordered?: boolean;
+  /** Questions and answers, shown as disclosures (they open without JavaScript). */
+  faq?: readonly Question[];
 }
 
 export interface PageContent {

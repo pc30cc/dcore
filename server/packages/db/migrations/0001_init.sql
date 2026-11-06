@@ -90,12 +90,30 @@ CREATE FUNCTION h3_parent(p_cell bigint, p_res integer) RETURNS bigint
 -- partition holds exactly the rows minted in its period. Retention is a
 -- DROP of whole partitions: no DELETE, no bloat, no vacuum debt.
 --
--- partitions_maintain() (run once a day by the worker) creates the current
--- period and `premake` periods ahead, and drops partitions whose upper bound
--- is older than `retention`. A partition named <parent>_pYYYYMMDD starts on
--- that UTC date. There is no DEFAULT partition on purpose: a row outside
--- every partition fails loudly instead of landing in a table that would have
--- to be scanned before every future partition could be attached.
+-- Partitions live in the schema `part`, on which no application role has
+-- USAGE. PostgreSQL checks privileges only on the table a statement names,
+-- so every read and write goes through the parent in `public` and the
+-- parent's grants (including its column grants) are the only ones that
+-- apply; naming a partition directly fails with "permission denied for
+-- schema part". Default privileges in `public` never reach a partition.
+--
+-- A partition named <parent>_pYYYYMMDD starts on that UTC date. There is no
+-- DEFAULT partition on purpose: a row outside every partition fails loudly
+-- instead of landing in a table that would have to be scanned before every
+-- future partition could be attached.
+--
+-- Locks: partitions are created ahead as standalone tables and then
+-- ATTACHed, which takes SHARE UPDATE EXCLUSIVE on the parent and never waits
+-- for or blocks reads and writes. Dropping one needs ACCESS EXCLUSIVE on the
+-- parent; partition_drop_expired() (0009) drops one partition per call with
+-- a 200 ms lock_timeout, so a reader that holds the parent delays the drop,
+-- never the traffic behind it for longer than that.
+
+CREATE SCHEMA part;
+REVOKE ALL ON SCHEMA part FROM PUBLIC;
+
+COMMENT ON SCHEMA part IS
+  'Partitions of the tables registered in partitioned_tables. No application role has USAGE: access goes through the parent tables in public.';
 
 CREATE TABLE partitioned_tables (
   parent      text     PRIMARY KEY CHECK (parent ~ '^[a-z][a-z0-9_]*$'),
@@ -106,7 +124,7 @@ CREATE TABLE partitioned_tables (
 );
 
 COMMENT ON TABLE partitioned_tables IS
-  'Registry for partitions_maintain(): period, how many periods to create ahead, retention (NULL keeps every partition) and the storage parameters each new partition gets (partitioned parents cannot carry them).';
+  'Registry for partitions_maintain() and partition_drop_expired(): period, how many periods to create ahead, retention (NULL keeps every partition) and the storage parameters each new partition gets (partitioned parents cannot carry them).';
 
 CREATE FUNCTION partition_period_start(p_period text, p_ts timestamptz) RETURNS timestamptz
   LANGUAGE sql STABLE PARALLEL SAFE STRICT
@@ -116,8 +134,10 @@ CREATE FUNCTION partition_period_length(p_period text) RETURNS interval
   LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
   RETURN CASE p_period WHEN 'week' THEN interval '1 week' WHEN 'month' THEN interval '1 month' END;
 
--- Creates the partition of p_parent that holds p_ts, if it does not exist.
--- Returns the partition's name.
+-- Creates the partition of p_parent that holds p_ts, if it does not exist,
+-- and returns its name. The table is created with the parent's columns,
+-- defaults and CHECK constraints, then attached (indexes are created on the
+-- empty table by the ATTACH).
 CREATE FUNCTION partition_create(p_parent text, p_ts timestamptz) RETURNS text
   LANGUAGE plpgsql
   SET search_path = public, pg_temp
@@ -134,14 +154,16 @@ BEGIN
   -- Add the length in UTC so a month is a calendar month whatever the session's TimeZone.
   v_to := ((v_from AT TIME ZONE 'UTC') + partition_period_length(v_reg.period)) AT TIME ZONE 'UTC';
   v_name := format('%s_p%s', p_parent, to_char(v_from AT TIME ZONE 'UTC', 'YYYYMMDD'));
-  IF to_regclass(format('public.%I', v_name)) IS NOT NULL THEN
+  IF to_regclass(format('part.%I', v_name)) IS NOT NULL THEN
     RETURN v_name;
   END IF;
   IF cardinality(v_reg.reloptions) > 0 THEN
     v_with := format(' WITH (%s)', array_to_string(v_reg.reloptions, ', '));
   END IF;
-  EXECUTE format('CREATE TABLE public.%I PARTITION OF public.%I FOR VALUES FROM (%s) TO (%s)%s',
-                 v_name, p_parent, id_floor(v_from), id_floor(v_to), v_with);
+  EXECUTE format('CREATE TABLE part.%I (LIKE public.%I INCLUDING DEFAULTS INCLUDING CONSTRAINTS)%s',
+                 v_name, p_parent, v_with);
+  EXECUTE format('ALTER TABLE public.%I ATTACH PARTITION part.%I FOR VALUES FROM (%s) TO (%s)',
+                 p_parent, v_name, id_floor(v_from), id_floor(v_to));
   RETURN v_name;
 END;
 $$;
@@ -152,61 +174,39 @@ CREATE FUNCTION partition_upper_id(p_partition regclass) RETURNS bigint
   RETURN (regexp_match(pg_get_expr((SELECT relpartbound FROM pg_class WHERE oid = p_partition), p_partition),
                        'TO \(''?(-?[0-9]+)''?\)'))[1]::bigint;
 
--- Creates the periods ahead and drops expired partitions of every registered
--- table. Idempotent; safe to run at any time. Creating or dropping a
--- partition takes a brief ACCESS EXCLUSIVE lock on the parent; each waits at
--- most 2 s (the function's own lock_timeout) and is retried by the next run
--- if it times out, so maintenance never queues application traffic behind it.
--- SECURITY DEFINER: the worker role may call it without owning the tables.
-CREATE FUNCTION partitions_maintain() RETURNS TABLE (action text, partition_name text)
+-- Creates the current period and `premake` periods ahead for one registered
+-- table. Idempotent and safe at any time. The worker calls it once per
+-- parent, each call its own statement (autocommit), so the locks of one
+-- parent are released before the next one is touched. ATTACH does not
+-- conflict with reads or writes; the 200 ms lock_timeout only bounds a wait
+-- behind DDL or a VACUUM of the parent, after which the period is reported
+-- `ensure_deferred` and made by a later run (periods are made `premake`
+-- ahead, so a deferred run loses nothing).
+-- SECURITY DEFINER: the maintenance role may call it without owning the tables.
+CREATE FUNCTION partitions_maintain(p_parent text) RETURNS TABLE (action text, partition_name text)
   LANGUAGE plpgsql
   SECURITY DEFINER
   SET search_path = public, pg_temp
-  SET lock_timeout = '2s'
+  SET lock_timeout = '200ms'
 AS $$
 DECLARE
-  v_reg   partitioned_tables;
-  v_i     integer;
-  v_child record;
-  v_cut   bigint;
+  v_reg partitioned_tables;
+  v_i   integer;
 BEGIN
-  FOR v_reg IN SELECT * FROM partitioned_tables ORDER BY parent LOOP
-    FOR v_i IN 0 .. v_reg.premake LOOP
-      BEGIN
-        action := 'ensure';
-        partition_name := partition_create(v_reg.parent,
-                            ((now() AT TIME ZONE 'UTC') + v_i * partition_period_length(v_reg.period)) AT TIME ZONE 'UTC');
-      EXCEPTION WHEN lock_not_available THEN
-        -- Periods are made `premake` ahead, so a run that cannot get the lock loses nothing.
-        action := 'ensure_deferred';
-        partition_name := v_reg.parent;
-      END;
-      RETURN NEXT;
-    END LOOP;
-
-    CONTINUE WHEN v_reg.retention IS NULL;
-    v_cut := id_floor(now() - v_reg.retention);
-    FOR v_child IN
-      SELECT c.oid::regclass AS rel, c.relname
-        FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
-       WHERE i.inhparent = format('public.%I', v_reg.parent)::regclass
-       ORDER BY c.relname
-    LOOP
-      CONTINUE WHEN partition_upper_id(v_child.rel) > v_cut;
-      BEGIN
-        EXECUTE format('DROP TABLE %s', v_child.rel);
-        action := 'dropped';
-        partition_name := v_child.relname;
-        RETURN NEXT;
-      EXCEPTION WHEN lock_not_available THEN
-        action := 'drop_deferred';
-        partition_name := v_child.relname;
-        RETURN NEXT;
-      END;
-    END LOOP;
+  SELECT * INTO STRICT v_reg FROM partitioned_tables WHERE parent = p_parent;
+  FOR v_i IN 0 .. v_reg.premake LOOP
+    BEGIN
+      action := 'ensure';
+      partition_name := partition_create(v_reg.parent,
+                          ((now() AT TIME ZONE 'UTC') + v_i * partition_period_length(v_reg.period)) AT TIME ZONE 'UTC');
+    EXCEPTION WHEN lock_not_available THEN
+      action := 'ensure_deferred';
+      partition_name := v_reg.parent;
+    END;
+    RETURN NEXT;
   END LOOP;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION partitions_maintain() FROM PUBLIC;
+REVOKE ALL ON FUNCTION partitions_maintain(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION partition_create(text, timestamptz) FROM PUBLIC;

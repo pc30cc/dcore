@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "1287390234923488101",
+      "author": "user",
+      "body": "Hello",
+      "at": "2026-11-03T09:00:00.000Z"
+    },
+    {
+      "id": "1287390234923488102",
+      "author": "staff",
+      "body": "Hi, how can we help?",
+      "at": "2026-11-03T11:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}

@@ -1,0 +1,25 @@
+---
+import type { GetStaticPaths } from 'astro';
+import type { Locale } from '@app/shared';
+import Base from '../../../layouts/Base.astro';
+import RichText from '../../../components/RichText.astro';
+import Subscriptions from '../../../components/Subscriptions.astro';
+import { deletion } from '../../../content/deletion';
+import { brand } from '../../../lib/brand';
+import { fill } from '../../../lib/i18n';
+
+export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
+
+/** After a confirmed request. A static page shows the purge rule; the exact date is the request's plus the grace period. */
+const locale = Astro.params.locale as Locale;
+const strings = deletion[locale];
+---
+<Base locale={locale} page="delete-account/done" title={strings.doneTitle} description={strings.doneDescription} noindex>
+  <article class="document">
+    <h1>{fill(locale, strings.doneTitle)}</h1>
+    <p class="lead">{fill(locale, strings.doneDescription)}</p>
+    {strings.doneBody.map((text) => <p><RichText locale={locale} text={text} /></p>)}
+    <Subscriptions locale={locale} />
+    <p><RichText locale={locale} text={strings.doneSupport} /></p>
+  </article>
+</Base>

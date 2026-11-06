@@ -4,6 +4,6 @@
     "customConditions": ["@app/source"],
     "types": ["node"]
   },
-  "include": [".astro/types.d.ts", "src", "test", "astro.config.mjs", "vitest.config.ts"],
+  "include": [".astro/types.d.ts", "src", "src/pages/.well-known/*.ts", "test", "astro.config.mjs", "vitest.config.ts"],
   "exclude": ["dist"]
 }

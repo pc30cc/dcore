@@ -1,0 +1,41 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { accountDeletionPagePath, accountDeletionRoutes, type Locale } from '@app/shared';
+import Base from '../../../layouts/Base.astro';
+import DeletionErrors from '../../../components/DeletionErrors.astro';
+import { deletion } from '../../../content/deletion';
+import { brand } from '../../../lib/brand';
+import { fill } from '../../../lib/i18n';
+import { settings } from '../../../lib/settings';
+
+export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
+
+/**
+ * The code form. A static page cannot read the request token from its own
+ * URL without a script, so the form asks for the phone number again; the API
+ * finds the pending request by it.
+ */
+const locale = Astro.params.locale as Locale;
+const strings = deletion[locale];
+const confirmAction = `${settings.apiOrigin}${accountDeletionRoutes.confirm}`;
+---
+<Base locale={locale} page="delete-account/verify" title={strings.verifyTitle} description={strings.verifyDescription} formAction={[settings.apiOrigin]} noindex>
+  <article class="document">
+    <h1>{fill(locale, strings.verifyTitle)}</h1>
+    <p class="lead">{fill(locale, strings.verifyDescription)}</p>
+    <DeletionErrors locale={locale} codes={['otp_invalid', 'otp_expired', 'otp_locked', 'rate_limited', 'maintenance', 'error']} />
+    <section class="panel">
+      <form class="form" id="confirm-form" method="post" action={confirmAction}>
+        <input type="hidden" name="locale" value={locale} />
+        <label for="phone">{strings.phoneLabel}</label>
+        <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32" dir="ltr" aria-describedby="phone-hint" />
+        <p class="hint" id="phone-hint">{strings.phoneHint}</p>
+        <label for="code">{strings.codeLabel}</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required minlength="4" maxlength="12" dir="ltr" aria-describedby="code-hint" />
+        <p class="hint" id="code-hint">{strings.codeHint}</p>
+        <button class="button danger" type="submit">{strings.confirmButton}</button>
+      </form>
+    </section>
+    <p class="muted">{strings.noCodeBody} <a href={accountDeletionPagePath(locale, 'request')}>{strings.startAgain}</a></p>
+  </article>
+</Base>

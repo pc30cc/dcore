@@ -1,0 +1,39 @@
+{
+  "conversation": {
+    "id": "1287390234923400001",
+    "peer": {
+      "id": "bnegar2kq7xm4",
+      "name": "Negar",
+      "photo": {
+        "id": "1287390234923410001",
+        "w": 1080,
+        "h": 1350,
+        "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+        "url": "https://media.example.com/p/1287390234923410001/1/640.webp"
+      },
+      "verified": true,
+      "online": true,
+      "activeRecently": true
+    },
+    "state": "active",
+    "source": "like",
+    "createdAt": "2026-11-05T21:00:00.000Z",
+    "lastMessage": {
+      "id": "1287390234923417603",
+      "conversationId": "1287390234923400001",
+      "senderId": "bnegar2kq7xm4",
+      "kind": "text",
+      "body": "Hi!",
+      "at": "2026-11-06T09:14:03.120Z"
+    },
+    "unread": 2,
+    "myReadId": "1287390234923417601",
+    "peerReadId": "1287390234923417602",
+    "peerDeliveredId": "1287390234923417602",
+    "callsAllowed": {
+      "me": true,
+      "peer": false
+    },
+    "muted": false
+  }
+}

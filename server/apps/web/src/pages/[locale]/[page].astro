@@ -2,23 +2,22 @@
 import type { GetStaticPaths } from 'astro';
 import type { Locale } from '@app/shared';
 import Base from '../../layouts/Base.astro';
-import RichText from '../../components/RichText.astro';
+import Sections from '../../components/Sections.astro';
 import { sitePages } from '../../content/pages';
 import { ui } from '../../content/ui';
 import { brand } from '../../lib/brand';
-import { fill, pageSlugs, type PageSlug } from '../../lib/i18n';
+import { documentSlugs, fill, type DocumentSlug } from '../../lib/i18n';
 
 export const getStaticPaths = (() =>
-  brand.locales.flatMap((locale) => pageSlugs.map((page) => ({ params: { locale, page } })))) satisfies GetStaticPaths;
+  brand.locales.flatMap((locale) => documentSlugs.map((page) => ({ params: { locale, page } })))) satisfies GetStaticPaths;
 
 const locale = Astro.params.locale as Locale;
-const slug = Astro.params.page as PageSlug;
+const slug = Astro.params.page as DocumentSlug;
 const page = sitePages[slug];
 const content = page.content[locale];
 const strings = ui[locale];
-const mailto = `mailto:${brand.legal.supportEmail}?subject=${encodeURIComponent(strings.deleteMailSubject)}`;
 ---
-<Base locale={locale} title={content.title} description={content.description} slug={slug}>
+<Base locale={locale} page={slug} title={content.title} description={content.description}>
   <article class="document">
     <h1>{fill(locale, content.title)}</h1>
     <p class="lead">{fill(locale, content.description)}</p>
@@ -28,19 +27,6 @@ const mailto = `mailto:${brand.legal.supportEmail}?subject=${encodeURIComponent(
         <p>{fill(locale, strings.draftBody)}</p>
       </aside>
     )}
-    {content.sections.map((section) => (
-      <section>
-        <h2>{fill(locale, section.heading)}</h2>
-        {section.body.map((text) => <p><RichText locale={locale} text={text} /></p>)}
-        {section.list && (section.ordered ? (
-          <ol>{section.list.map((item) => <li><RichText locale={locale} text={item} /></li>)}</ol>
-        ) : (
-          <ul>{section.list.map((item) => <li><RichText locale={locale} text={item} /></li>)}</ul>
-        ))}
-      </section>
-    ))}
-    {slug === 'delete-account' && (
-      <p><a class="button" href={mailto}>{strings.deleteMailButton}</a></p>
-    )}
+    <Sections locale={locale} sections={content.sections} />
   </article>
 </Base>

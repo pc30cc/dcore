@@ -11,17 +11,24 @@
 # companions. Dropping or renaming those turns a response into a crash, or
 # worse, into a model of defaults.
 -keepattributes *Annotation*, InnerClasses, Signature, RuntimeVisible*Annotations
--keepclassmembers,allowobfuscation class app.core.net.** {
+-keepclassmembers,allowobfuscation class app.core.model.**, app.core.net.**, app.core.storage.** {
     *** Companion;
     kotlinx.serialization.KSerializer serializer(...);
 }
--if @kotlinx.serialization.Serializable class app.core.net.**
--keepclassmembers class app.core.net.<1>$Companion {
+-if @kotlinx.serialization.Serializable class app.core.model.**
+-keepclassmembers class app.core.model.<1>$Companion {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keepclasseswithmembers class app.core.net.** {
+-if @kotlinx.serialization.Serializable class app.core.storage.**
+-keepclassmembers class app.core.storage.<1>$Companion {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclasseswithmembers class app.core.model.**, app.core.net.** {
     public static ** INSTANCE;
 }
+# The wire enums decode through serializer objects named in their
+# @Serializable(with = ...) annotations.
+-keep class app.core.model.**$Serializer { *; }
 
 # Navigation 3 keys are saved and restored through their serializers when the
 # process is killed in the background (rememberNavBackStack).

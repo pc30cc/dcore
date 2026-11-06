@@ -5,13 +5,19 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.core.brand.AppBrand
-import app.core.data.AppDatabase
-import app.core.diag.Diag
+import app.core.cache.CacheDatabaseHolder
+import app.core.common.Clock
+import app.core.common.Diag
 import app.core.i18n.AppLocales
+import app.core.net.AndroidDeviceIdentity
 import app.core.net.ApiClient
+import app.core.net.Backend
 import app.core.net.ConfigRepository
+import app.core.net.HttpServerApi
 import app.core.net.ResponseCache
 import app.core.net.RoomResponseCache
+import app.core.net.ServerApi
+import app.core.storage.Preferences
 import app.core.storage.SecureStore
 import app.core.storage.SessionStore
 import app.core.store.StoreModule
@@ -34,6 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 class AppGraph(private val app: Application) {
 
     val diag: Diag = Diag.Android
+    val clock: Clock = Clock.System
 
     /** A failure nobody caught in one background job is logged and ends that job, never the process. */
     val appScope = CoroutineScope(
@@ -42,26 +49,47 @@ class AppGraph(private val app: Application) {
     )
 
     val secureStore = SecureStore(app, diag)
-    val session = SessionStore(secureStore)
+    val session = SessionStore(secureStore, clock, diag)
+    val preferences = Preferences(secureStore)
 
-    private val database: AppDatabase by lazy { AppDatabase.build(app) }
+    /** The cache database, opened on first use, rebuilt if damaged. */
+    val cacheDatabase = CacheDatabaseHolder(app, diag = diag)
 
-    val responseCache: ResponseCache = RoomResponseCache { database.cachedResponses() }
+    val responseCache: ResponseCache = RoomResponseCache(cacheDatabase, diag)
 
-    val api: ApiClient by lazy {
+    private fun language(): String = AppLocales.current(app).tag
+
+    private val http: ApiClient by lazy {
         ApiClient(
             baseUrl = AppBrand.apiBaseUrl,
             tokens = session,
             cache = responseCache,
             engine = OkHttp.create(),
-            clientDescriptor = "android; store=${AppBrand.store.id}; version=${BuildConfig.VERSION_NAME}; build=${BuildConfig.VERSION_CODE}",
-            language = { AppLocales.current(app).tag },
+            clientHeader = ApiClient.clientHeader(AppBrand.store.id, BuildConfig.VERSION_CODE),
+            language = ::language,
             diag = diag,
             debugLog = if (BuildConfig.DEBUG) { message -> Log.d("App.Http", message) } else null,
+            clock = clock,
         )
     }
 
-    val config: ConfigRepository by lazy { ConfigRepository(api, appScope, diag) }
+    /**
+     * The server, or in a debug build started with the sample switch, the
+     * in-memory sample backend ([Backend] decides; release builds cannot).
+     */
+    val api: ServerApi by lazy {
+        Backend.create(app, clock) {
+            HttpServerApi(
+                client = http,
+                session = session,
+                device = AndroidDeviceIdentity(app, preferences),
+                store = AppBrand.store.id,
+                clock = clock,
+            )
+        }
+    }
+
+    val config: ConfigRepository by lazy { ConfigRepository(api, appScope, diag, ::language) }
 
     /** The store this build was made for: Cafe Bazaar or Google Play, from the flavor's `StoreModule`. */
     val store: StoreServices by lazy { StoreModule.create(app, diag) }

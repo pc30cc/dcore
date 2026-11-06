@@ -1,0 +1,6 @@
+{
+  "wsUrl": "wss://rt.example.com/connection/websocket",
+  "token": "eyJ.rt.token",
+  "expiresAt": "2026-11-06T10:14:03.120Z",
+  "channel": "u:#aaaaaaaaaaaaa"
+}

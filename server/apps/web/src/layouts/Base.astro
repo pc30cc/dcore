@@ -3,22 +3,33 @@ import type { Locale } from '@app/shared';
 import LanguageSwitcher from '../components/LanguageSwitcher.astro';
 import { ui } from '../content/ui';
 import { brand, siteOrigin } from '../lib/brand';
-import { dir, fill, pagePath, pageSlugs, type PageSlug } from '../lib/i18n';
+import { contentSecurityPolicy } from '../lib/csp';
+import { dir, fill, footerPageIds, isAppFacing, pagePath, type PageId } from '../lib/i18n';
 import '../styles/global.css';
 
 interface Props {
   locale: Locale;
+  /** The page; none for the 404 page. */
+  page?: PageId | undefined;
   title: string;
   description: string;
-  slug?: PageSlug | undefined;
-  /** For pages that must not be indexed (404). */
+  /** For pages that must not be indexed (404, the steps of the deletion flow). */
   noindex?: boolean | undefined;
+  /** The exact text of each inline script the page has (for the Content-Security-Policy). */
+  inlineScripts?: readonly string[] | undefined;
+  /** Where the page's forms post. */
+  formAction?: readonly string[] | undefined;
+  /** The page loads Google Identity Services. */
+  google?: boolean | undefined;
 }
 
-const { locale, title, description, slug, noindex = false } = Astro.props;
+const { locale, page, title, description, noindex = false, inlineScripts, formAction, google } = Astro.props;
 const strings = ui[locale];
-const pageTitle = slug ? `${fill(locale, title)} · ${brand.appName}` : brand.appName;
-const canonical = `${siteOrigin}${pagePath(locale, slug)}`;
+// The pages the apps open (and the 404) never link the landing or the download page.
+const appFacing = page === undefined || isAppFacing(page);
+const pageTitle = page === '' ? brand.appName : `${fill(locale, title)} · ${brand.appName}`;
+const canonical = `${siteOrigin}${pagePath(locale, page)}`;
+const csp = contentSecurityPolicy({ inlineScripts, formAction, google });
 const brandStyle = [
   `--brand-light:${brand.colors.brand.light}`,
   `--brand-dark:${brand.colors.brand.dark}`,
@@ -27,11 +38,13 @@ const brandStyle = [
   `--font-latin:${JSON.stringify(brand.fonts.latin)}`,
   `--font-persian:${JSON.stringify(brand.fonts.persian)}`,
 ].join(';');
+const footerPages = appFacing ? footerPageIds : (['download', ...footerPageIds] as const);
 ---
 <!doctype html>
 <html lang={locale} dir={dir(locale)} style={brandStyle}>
   <head>
     <meta charset="utf-8" />
+    {import.meta.env.MODE !== 'development' && <meta http-equiv="Content-Security-Policy" content={csp} />}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content={brand.colors.brand.light} />
@@ -44,23 +57,38 @@ const brandStyle = [
     ) : (
       <>
         <link rel="canonical" href={canonical} />
-        {brand.locales.map((code) => <link rel="alternate" hreflang={code} href={`${siteOrigin}${pagePath(code, slug)}`} />)}
-        <link rel="alternate" hreflang="x-default" href={`${siteOrigin}${pagePath(brand.defaultLocale, slug)}`} />
+        {brand.locales.map((code) => <link rel="alternate" hreflang={code} href={`${siteOrigin}${pagePath(code, page)}`} />)}
+        <link rel="alternate" hreflang="x-default" href={`${siteOrigin}${pagePath(brand.defaultLocale, page)}`} />
       </>
     )}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={brand.appName} />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={fill(locale, description)} />
-    <meta property="og:url" content={canonical} />
+    {page !== undefined && <meta property="og:url" content={canonical} />}
     <meta property="og:locale" content={locale} />
   </head>
   <body>
     <a class="skip" href="#main">{strings.skipToContent}</a>
     <header class="site-header">
       <div class="container header-row">
-        <a class="wordmark" href={pagePath(locale)}>{brand.appName}</a>
-        <LanguageSwitcher locale={locale} slug={slug} />
+        {appFacing ? (
+          <span class="wordmark">{brand.appName}</span>
+        ) : (
+          <a class="wordmark" href={pagePath(locale)}>{brand.appName}</a>
+        )}
+        {!appFacing && (
+          <nav class="main-nav" aria-label={strings.mainNavLabel}>
+            <ul>
+              <li>
+                <a href={pagePath(locale, 'download')} aria-current={page === 'download' ? 'page' : undefined}>
+                  {strings.pageNames.download}
+                </a>
+              </li>
+            </ul>
+          </nav>
+        )}
+        <LanguageSwitcher locale={locale} page={page} />
       </div>
     </header>
     <main id="main" class="container">
@@ -71,8 +99,8 @@ const brandStyle = [
         <nav aria-label={strings.footerPolicies}>
           <h2>{strings.footerPolicies}</h2>
           <ul>
-            {pageSlugs.map((page) => (
-              <li><a href={pagePath(locale, page)} aria-current={page === slug ? 'page' : undefined}>{strings.pageNames[page]}</a></li>
+            {footerPages.map((id) => (
+              <li><a href={pagePath(locale, id)} aria-current={id === page ? 'page' : undefined}>{strings.pageNames[id]}</a></li>
             ))}
           </ul>
         </nav>

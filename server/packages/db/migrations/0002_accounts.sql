@@ -1,5 +1,5 @@
--- 0002 - Accounts: users, sign-in identities, sessions, devices, and the
--- admin panel's own accounts and roles.
+-- 0002 - Accounts: users, consent records, sign-in identities, sessions,
+-- devices, and the admin panel's own accounts and roles.
 --
 -- Codes are smallint with CHECK constraints; their meaning is in the table
 -- comments and in packages/shared (one constant table per code). Column
@@ -18,24 +18,50 @@ CREATE TABLE users (
   status           smallint    NOT NULL DEFAULT 1 CHECK (status BETWEEN 1 AND 8),
   gender           smallint    CHECK (gender BETWEEN 1 AND 3),
   onboarding_step  smallint    NOT NULL DEFAULT 0 CHECK (onboarding_step BETWEEN 0 AND 50),
-  deleted_via      smallint    CHECK (deleted_via BETWEEN 1 AND 3),
+  deleted_via      smallint    CHECK (deleted_via BETWEEN 1 AND 4),
+  flags            smallint    NOT NULL DEFAULT 0 CHECK (flags BETWEEN 0 AND 255),
   is_verified      boolean     NOT NULL DEFAULT false,
   is_shadowbanned  boolean     NOT NULL DEFAULT false,
   country          char(2)     CHECK (country ~ '^[A-Z]{2}$'),
   locale           text        NOT NULL DEFAULT 'en' CHECK (locale ~ '^[a-z]{2}(-[A-Z]{2})?$'),
   CONSTRAINT users_birth_date_sane CHECK (birth_date IS NULL OR birth_date >= DATE '1900-01-01'),
+  -- 18 or older at sign-up. The id carries the sign-up time, so the rule is
+  -- a plain row CHECK (the API applies the same rule against today's date).
+  CONSTRAINT users_adult CHECK (birth_date IS NULL
+                                OR birth_date <= ((id_time(id) AT TIME ZONE 'UTC') - interval '18 years')::date),
   CONSTRAINT users_profile_after_onboarding CHECK (status IN (1, 7, 8) OR (birth_date IS NOT NULL AND gender IS NOT NULL)),
   CONSTRAINT users_deleted CHECK ((status IN (7, 8)) = (deleted_at IS NOT NULL)),
   CONSTRAINT users_tombstone CHECK (status <> 8 OR (birth_date IS NULL AND gender IS NULL AND country IS NULL))
 ) WITH (fillfactor = 90, autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.05);
 
 COMMENT ON TABLE users IS
-  'Accounts. id = application id (creation time inside). status: 1 onboarding, 2 pending_review, 3 active, 4 snoozed, 5 suspended, 6 banned, 7 deleted (grace), 8 purged (tombstone). gender: 1 woman, 2 man, 3 non-binary. deleted_via: 1 app, 2 web page, 3 admin. last_active_on is written at most once a day per user, by the worker, from Valkey.';
+  'Accounts. id = application id (creation time inside). status: 1 onboarding, 2 pending_review, 3 active, 4 snoozed, 5 suspended, 6 banned, 7 deleted (grace), 8 purged (tombstone; an under-age sign-up goes straight to 8). gender: 1 woman, 2 man, 3 non-binary. deleted_via: 1 app, 2 web page, 3 admin, 4 under-age refusal. flags: 1 test account (store review, QA): sees and is seen only by other test accounts, left out of stats, campaigns and quotas. last_active_on is written at most once a day per user, by the worker, from Valkey.';
 COMMENT ON COLUMN users.birth_date IS
-  'Set once in onboarding; the 18+ check is the API''s (a CHECK cannot read the current date). Changed only by support.';
+  'Set once in onboarding; checked 18+ against the sign-up time (users_adult) and against today by the API. Changed only by support.';
 
 -- Purge sweep: accounts in their deletion grace (status 7). Tiny by construction.
 CREATE INDEX users_deleted_idx ON users (deleted_at) WHERE status = 7;
+
+-- ─── user_consents ────────────────────────────────────────────────────────
+-- Which version of each legal text or consent a person accepted, when, and
+-- in which store build. The versions currently required are app_config
+-- `legal.versions`; the API compares them with the cached own-account view,
+-- so the request path reads nothing here. Onboarding writes the rows in the
+-- same transaction as the basics. A withdrawal sets withdrawn_at (the row
+-- stays as proof); withdrawing kind 4 deletes the sensitive field values.
+CREATE TABLE user_consents (
+  user_id       bigint      NOT NULL REFERENCES users (id),
+  accepted_at   timestamptz NOT NULL DEFAULT now(),
+  withdrawn_at  timestamptz,
+  kind          smallint    NOT NULL CHECK (kind BETWEEN 1 AND 10),
+  version       smallint    NOT NULL CHECK (version > 0),
+  store         smallint    CHECK (store BETWEEN 1 AND 3),
+  PRIMARY KEY (user_id, kind, version),
+  CONSTRAINT user_consents_withdrawn CHECK (withdrawn_at IS NULL OR withdrawn_at >= accepted_at)
+);
+
+COMMENT ON TABLE user_consents IS
+  'kind: 1 terms of service, 2 privacy policy, 3 community guidelines, 4 sensitive profile fields (special categories), 5 matching on gender preference, 6 marketing push, 7 selfie biometrics (face verification). version: the text version accepted. store: the build it was accepted in (as devices.store).';
 
 -- ─── auth_identities ──────────────────────────────────────────────────────
 -- How an account signs in. The subject (E.164 phone number, Google `sub`) is
@@ -80,7 +106,7 @@ CREATE TABLE devices (
 ) WITH (fillfactor = 90);
 
 COMMENT ON TABLE devices IS
-  'platform: 1 android, 2 ios (reserved). store: 1 google_play, 2 cafe_bazaar, 3 app_store (reserved). integrity: 0 unknown/unsupported (Bazaar), 1 basic, 2 device, 3 strong, 4 failed (Play Integrity verdict). push_token_hash = SHA-256 of the FCM token: a token seen under another account moves to the new one.';
+  'platform: 1 android, 2 ios (reserved). store: 1 google_play, 2 cafe_bazaar, 3 app_store (reserved). integrity: 0 unknown/unsupported (Bazaar), 1 basic, 2 device, 3 strong, 4 failed (Play Integrity verdict). push_token_hash = SHA-256 of the FCM token: a token seen under another account moves to the new one. fingerprint_hash: keyed hash of the device key; on Android 8+ ANDROID_ID depends on the signing key, so the same phone has a different device key in each store build.';
 
 CREATE INDEX devices_user_idx ON devices (user_id);
 CREATE UNIQUE INDEX devices_push_token_key ON devices (push_token_hash) WHERE push_token_hash IS NOT NULL;
@@ -110,7 +136,7 @@ CREATE TABLE sessions (
 ) WITH (fillfactor = 70, autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05);
 
 COMMENT ON TABLE sessions IS
-  'Refresh sessions. revoke_reason: 1 logout, 2 logout_all, 3 reuse_detected, 4 admin, 5 ban, 6 account_deleted, 7 idle_expired. Creation time = id_time(id). Revoked or expired rows are deleted after 30 days by a weekly job.';
+  'Refresh sessions. store: the build the session signed in from (in the play build confirmed by the Play Integrity verdict at sign-in). revoke_reason: 1 logout, 2 logout_all, 3 reuse_detected, 4 admin, 5 ban, 6 account_deleted, 7 idle_expired. Creation time = id_time(id). Revoked or expired rows are deleted after 30 days by a weekly job.';
 
 -- "Sign out everywhere", bans, the admin's session list.
 CREATE INDEX sessions_user_idx ON sessions (user_id);

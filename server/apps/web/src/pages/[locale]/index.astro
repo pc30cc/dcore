@@ -2,34 +2,69 @@
 import type { GetStaticPaths } from 'astro';
 import type { Locale } from '@app/shared';
 import Base from '../../layouts/Base.astro';
-import RichText from '../../components/RichText.astro';
+import StoreButtons from '../../components/StoreButtons.astro';
 import { ui } from '../../content/ui';
-import { brand, brandCopy } from '../../lib/brand';
-import { fill, pagePath, pageSlugs } from '../../lib/i18n';
+import { brand, brandConfig, brandCopy } from '../../lib/brand';
+import { fill, footerPageIds, pagePath } from '../../lib/i18n';
+import { screenshots } from '../../lib/media';
 
 export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
 
 const locale = Astro.params.locale as Locale;
 const strings = ui[locale];
-// The pitch and the meta description are the brand's, never written in code.
+// What the app is and offers is the brand's copy, never written in code.
 const tagline = brandCopy(brand.tagline, locale);
-const description = brandCopy(brand.description, locale) || tagline;
+const description = brandCopy(brand.description, locale);
+const highlights = (brandConfig.site?.highlights ?? [])
+  .map((item) => ({ title: brandCopy(item.title, locale), body: brandCopy(item.body, locale) }))
+  .filter((item) => item.title !== '');
+const shots = screenshots(locale);
 ---
-<Base locale={locale} title={strings.homeTitle} description={description}>
+<Base locale={locale} page="" title={brand.appName} description={description || tagline}>
   <section class="hero">
-    <h1>{fill(locale, strings.homeTitle)}</h1>
+    <h1>{brand.appName}</h1>
     {tagline && <p class="lead">{fill(locale, tagline)}</p>}
-    {strings.homeBody.map((text) => <p><RichText locale={locale} text={text} /></p>)}
+    {description && <p>{fill(locale, description)}</p>}
   </section>
-  <section class="panel">
-    <h2>{strings.homeStoresTitle}</h2>
-    <p class="muted">{strings.homeStoresBody}</p>
+  <section class="panel" aria-labelledby="stores-title">
+    <h2 id="stores-title">{strings.homeStoresTitle}</h2>
+    <StoreButtons locale={locale} soon={strings.homeStoresSoon} />
+    <p><a href={pagePath(locale, 'download')}>{strings.homeDownloadLink}</a></p>
   </section>
-  <section>
-    <h2>{strings.homePoliciesTitle}</h2>
+  {highlights.length > 0 && (
+    <section aria-labelledby="highlights-title">
+      <h2 id="highlights-title">{strings.homeHighlightsTitle}</h2>
+      <ul class="highlights">
+        {highlights.map((item) => (
+          <li>
+            <h3>{fill(locale, item.title)}</h3>
+            {item.body && <p>{fill(locale, item.body)}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+  {shots.length > 0 && (
+    <section aria-labelledby="screenshots-title">
+      <h2 id="screenshots-title">{strings.homeScreenshotsTitle}</h2>
+      <ul class="screenshots">
+        {shots.map((shot) => (
+          <li><img src={shot.src} alt={fill(locale, shot.alt)} width={shot.width} height={shot.height} loading="lazy" decoding="async" /></li>
+        ))}
+      </ul>
+    </section>
+  )}
+  <section aria-labelledby="safety-title">
+    <h2 id="safety-title">{strings.homeSafetyTitle}</h2>
+    <ul class="checks">
+      {strings.homeSafety.map((item) => <li>{fill(locale, item)}</li>)}
+    </ul>
+  </section>
+  <section aria-labelledby="policies-title">
+    <h2 id="policies-title">{strings.homePoliciesTitle}</h2>
     <ul class="cards">
-      {pageSlugs.map((slug) => (
-        <li><a class="card" href={pagePath(locale, slug)}>{strings.pageNames[slug]}</a></li>
+      {footerPageIds.map((id) => (
+        <li><a class="card" href={pagePath(locale, id)}>{strings.pageNames[id]}</a></li>
       ))}
     </ul>
   </section>

@@ -1,7 +1,11 @@
 package app.core.net
 
-import app.core.data.CachedResponseDao
-import app.core.data.CachedResponseEntity
+import app.core.cache.CacheDatabaseHolder
+import app.core.cache.CachedResponseDao
+import app.core.cache.CachedResponseEntity
+import app.core.cache.isCacheCorruption
+import app.core.common.Diag
+import kotlinx.coroutines.CancellationException
 
 /** A stored answer to a GET and its validator. */
 data class CachedResponse(val etag: String?, val body: String, val storedAtMillis: Long)
@@ -19,20 +23,52 @@ interface ResponseCache {
     suspend fun clear()
 }
 
-/** The Room-backed cache the app uses. [dao] is a provider so the database opens on first use, not at launch. */
-class RoomResponseCache(private val dao: () -> CachedResponseDao) : ResponseCache {
-    override suspend fun read(key: String): CachedResponse? =
-        dao().get(key)?.let { CachedResponse(it.etag, it.body, it.storedAtMillis) }
+/**
+ * The Room-backed cache the app uses, opened on first use through the
+ * [CacheDatabaseHolder].
+ *
+ * A damaged file found mid-session resets the database and reads as a miss:
+ * a cache that fails costs one full answer from the server, never the
+ * request. Any other database failure is logged and treated the same way.
+ */
+class RoomResponseCache(
+    private val holder: CacheDatabaseHolder,
+    private val diag: Diag = Diag.Android,
+) : ResponseCache {
 
-    override suspend fun write(key: String, response: CachedResponse) {
-        dao().upsert(CachedResponseEntity(key, response.etag, response.body, response.storedAtMillis))
+    private suspend fun <T> guarded(what: String, fallback: T, block: suspend (CachedResponseDao) -> T): T =
+        try {
+            block(holder.get().cachedResponses())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (e.isCacheCorruption()) {
+                holder.reset("corruption during $what")
+            } else {
+                diag.warn(AREA, "cache $what failed: ${e.javaClass.simpleName}")
+            }
+            fallback
+        }
+
+    override suspend fun read(key: String): CachedResponse? = guarded("read", null) { dao ->
+        dao.get(key)?.let { CachedResponse(it.etag, it.body, it.storedAtMillis) }
     }
 
-    override suspend fun touch(key: String, storedAtMillis: Long) = dao().touch(key, storedAtMillis)
+    override suspend fun write(key: String, response: CachedResponse) = guarded("write", Unit) { dao ->
+        dao.upsert(CachedResponseEntity(key, response.etag, response.body, response.storedAtMillis))
+    }
 
-    override suspend fun remove(key: String) = dao().delete(key)
+    override suspend fun touch(key: String, storedAtMillis: Long) = guarded("touch", Unit) { dao ->
+        dao.touch(key, storedAtMillis)
+    }
 
-    override suspend fun clear() = dao().clear()
+    override suspend fun remove(key: String) = guarded("remove", Unit) { dao -> dao.delete(key) }
+
+    override suspend fun clear() = guarded("clear", Unit) { dao -> dao.clear() }
+
+    private companion object {
+        const val AREA = "Cache"
+    }
 }
 
 /** In memory: tests, and a launch whose database cannot be opened. */

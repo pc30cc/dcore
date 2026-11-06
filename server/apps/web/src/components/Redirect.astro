@@ -1,11 +1,11 @@
 ---
-import type { PageSlug } from '../lib/i18n';
 import { brand, siteOrigin } from '../lib/brand';
-import { pagePath } from '../lib/i18n';
+import { contentSecurityPolicy } from '../lib/csp';
+import { pagePath, type PageId } from '../lib/i18n';
 import { ui } from '../content/ui';
 
 interface Props {
-  slug?: PageSlug | undefined;
+  page?: PageId | undefined;
 }
 
 /**
@@ -13,16 +13,18 @@ interface Props {
  * their browser prefers among the brand's, or the brand's default. Without
  * JavaScript the meta refresh goes to the default; the links stay visible.
  */
-const { slug } = Astro.props;
-const target = pagePath(brand.defaultLocale, slug);
-const targets = Object.fromEntries(brand.locales.map((locale) => [locale, pagePath(locale, slug)]));
+const { page } = Astro.props;
+const target = pagePath(brand.defaultLocale, page);
+const targets = Object.fromEntries(brand.locales.map((locale) => [locale, pagePath(locale, page)]));
 const names = { en: 'English', fa: 'فارسی', tr: 'Türkçe' } as const;
 const script = `(function(){var t=${JSON.stringify(targets)};var l=(navigator.languages||[navigator.language||'']);for(var i=0;i<l.length;i++){var c=String(l[i]).slice(0,2).toLowerCase();if(t[c]){location.replace(t[c]);return;}}location.replace(${JSON.stringify(target)});})();`;
+const csp = contentSecurityPolicy({ inlineScripts: [script] });
 ---
 <!doctype html>
 <html lang={brand.defaultLocale}>
   <head>
     <meta charset="utf-8" />
+    {import.meta.env.MODE !== 'development' && <meta http-equiv="Content-Security-Policy" content={csp} />}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <title>{brand.appName}</title>

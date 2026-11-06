@@ -16,7 +16,7 @@ const val APP_NAME_PLACEHOLDER: String = "{appName}"
  *
  * The strings never carry a brand name: they say `{appName}` and the name is
  * put in here, so the same translations serve every brand and a rename is a
- * build (or, once `GET /config` carries it, not even that).
+ * build (or, once `GET /v1/config` carries it, not even that).
  */
 fun brandText(text: String, appName: String = AppBrand.appName): String =
     text.replace(APP_NAME_PLACEHOLDER, appName)

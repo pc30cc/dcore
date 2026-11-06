@@ -1,0 +1,34 @@
+---
+import type { Locale } from '@app/shared';
+import RichText from './RichText.astro';
+import type { ContentSection } from '../content/types';
+import { fill } from '../lib/i18n';
+
+interface Props {
+  locale: Locale;
+  sections: readonly ContentSection[];
+}
+
+const { locale, sections } = Astro.props;
+---
+{sections.map((section) => (
+  <section>
+    <h2>{fill(locale, section.heading)}</h2>
+    {section.body.map((text) => <p><RichText locale={locale} text={text} /></p>)}
+    {section.list && (section.ordered ? (
+      <ol>{section.list.map((item) => <li><RichText locale={locale} text={item} /></li>)}</ol>
+    ) : (
+      <ul>{section.list.map((item) => <li><RichText locale={locale} text={item} /></li>)}</ul>
+    ))}
+    {section.faq && (
+      <div class="faq">
+        {section.faq.map((item) => (
+          <details>
+            <summary>{fill(locale, item.question)}</summary>
+            <p><RichText locale={locale} text={item.answer} /></p>
+          </details>
+        ))}
+      </div>
+    )}
+  </section>
+))}

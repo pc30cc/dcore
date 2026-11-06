@@ -1,0 +1,29 @@
+---
+import type { Locale } from '@app/shared';
+import { ui } from '../content/ui';
+import { brand } from '../lib/brand';
+import { fill } from '../lib/i18n';
+import { liveStores } from '../lib/stores';
+
+interface Props {
+  locale: Locale;
+  /** The text when the app is in no store yet. */
+  soon: string;
+}
+
+/** The stores the app is published in (brand.json `stores.*.live`). Only the landing and download pages use it. */
+const { locale, soon } = Astro.props;
+const stores = liveStores(brand, locale);
+const strings = ui[locale];
+---
+{stores.length > 0 ? (
+  <ul class="stores">
+    {stores.map((store) => (
+      <li>
+        <a class="button store" href={store.listingUrl} data-store={store.id} rel="noopener">{strings.stores[store.id].button}</a>
+      </li>
+    ))}
+  </ul>
+) : (
+  <p class="muted">{fill(locale, soon)}</p>
+)}

@@ -8,11 +8,12 @@ interface Props {
   text: string;
 }
 
+/** A content text with its brand values filled in, the support address and site paths linked. */
 const { locale, text } = Astro.props;
 const values = brandValues(locale);
 const parts = segments(fill(locale, text), {
   emails: [values['supportEmail'] ?? ''],
-  paths: [values['deleteAccountPath'] ?? ''],
+  paths: [values['deleteAccountPath'] ?? '', values['supportPath'] ?? ''],
 });
 ---
 {parts.map((part) =>

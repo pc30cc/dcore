@@ -6,8 +6,8 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.core.net.toUri
-import app.core.diag.Diag
-import app.core.diag.runCatchingUnlessCancelled
+import app.core.common.Diag
+import app.core.common.runCatchingUnlessCancelled
 import com.google.android.gms.tasks.Task
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory

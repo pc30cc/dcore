@@ -18,19 +18,64 @@
     },
     "versionCode": 1,
     "versionName": "0.1.0",
-    "appLinkHosts": ["link.example.com"]
+    "appLinkHosts": ["link.example.com"],
+    "signingCertSha256": { "bazaar": [], "play": [] },
+    "googleWebClientId": "",
+    "firebase": {
+      "bazaar": { "projectId": "", "projectNumber": "", "appId": "", "apiKey": "" },
+      "play": { "projectId": "", "projectNumber": "", "appId": "", "apiKey": "" }
+    }
   },
   "domains": {
     "api": "api.example.com",
     "links": "link.example.com",
-    "legal": "example.com"
+    "legal": "example.com",
+    "realtime": "rt.example.com",
+    "rtc": "rtc.example.com",
+    "cdn": "cdn.example.com",
+    "admin": "admin.example.com"
+  },
+  "stores": {
+    "play": { "listingUrl": "https://play.google.com/store/apps/details?id=com.example.app", "live": false },
+    "bazaar": { "listingUrl": "https://cafebazaar.ir/app/com.example.app", "live": false }
   },
   "legal": {
     "privacyUrl": "https://example.com/privacy",
     "termsUrl": "https://example.com/terms",
     "guidelinesUrl": "https://example.com/guidelines",
     "deleteAccountUrl": "https://example.com/delete-account",
+    "childSafetyUrl": "https://example.com/child-safety",
+    "supportUrl": "https://example.com/support",
     "supportEmail": "support@example.com"
+  },
+  "site": {
+    "highlights": [
+      {
+        "title": { "en": "First highlight", "fa": "نکته‌ی اول", "tr": "Birinci öne çıkan" },
+        "body": {
+          "en": "A sentence about what {appName} offers.",
+          "fa": "یک جمله درباره‌ی آنچه {appName} ارائه می‌دهد.",
+          "tr": "{appName} uygulamasının sunduğu bir şey hakkında bir cümle."
+        }
+      },
+      {
+        "title": { "en": "Second highlight", "fa": "نکته‌ی دوم", "tr": "İkinci öne çıkan" },
+        "body": {
+          "en": "Another sentence about {appName}.",
+          "fa": "جمله‌ای دیگر درباره‌ی {appName}.",
+          "tr": "{appName} hakkında başka bir cümle."
+        }
+      },
+      {
+        "title": { "en": "Third highlight", "fa": "نکته‌ی سوم", "tr": "Üçüncü öne çıkan" },
+        "body": {
+          "en": "One more sentence about {appName}.",
+          "fa": "یک جمله‌ی دیگر درباره‌ی {appName}.",
+          "tr": "{appName} hakkında bir cümle daha."
+        }
+      }
+    ],
+    "screenshots": []
   },
   "assets": {
     "icon": "icon.png",

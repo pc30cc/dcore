@@ -2,7 +2,7 @@ package app.core.store
 
 import android.content.Context
 import app.core.BuildConfig
-import app.core.diag.Diag
+import app.core.common.Diag
 
 /**
  * The Cafe Bazaar build's store services.

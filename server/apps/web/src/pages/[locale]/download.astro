@@ -1,0 +1,25 @@
+---
+import type { GetStaticPaths } from 'astro';
+import type { Locale } from '@app/shared';
+import Base from '../../layouts/Base.astro';
+import StoreButtons from '../../components/StoreButtons.astro';
+import { ui } from '../../content/ui';
+import { brand } from '../../lib/brand';
+import { fill } from '../../lib/i18n';
+import { liveStores } from '../../lib/stores';
+
+export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
+
+/** The store buttons, each only once the app is published there. No direct download: the stores are the only channels. */
+const locale = Astro.params.locale as Locale;
+const strings = ui[locale];
+const anyLive = liveStores(brand, locale).length > 0;
+---
+<Base locale={locale} page="download" title={strings.downloadTitle} description={strings.downloadDescription}>
+  <section class="hero">
+    <h1>{fill(locale, strings.downloadTitle)}</h1>
+    <p class="lead">{fill(locale, strings.downloadDescription)}</p>
+    <StoreButtons locale={locale} soon={strings.downloadSoon} />
+    {anyLive && <p class="muted">{fill(locale, strings.downloadOnlyStores)}</p>}
+  </section>
+</Base>

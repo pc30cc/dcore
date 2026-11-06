@@ -1,0 +1,11 @@
+{
+  "call": {
+    "id": "1287390234923499001",
+    "conversationId": "1287390234923400001",
+    "kind": "video",
+    "role": "caller",
+    "state": "ringing",
+    "placedAt": "2026-11-06T09:20:00.000Z",
+    "ringExpiresAt": "2026-11-06T09:20:45.000Z"
+  }
+}

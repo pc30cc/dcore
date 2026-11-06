@@ -1,0 +1,68 @@
+{
+  "results": [
+    {
+      "target": "bnegar2kq7xm4",
+      "result": "matched",
+      "conversation": {
+        "id": "1287390234923400001",
+        "peer": {
+          "id": "bnegar2kq7xm4",
+          "name": "Negar",
+          "photo": {
+            "id": "1287390234923410001",
+            "w": 1080,
+            "h": 1350,
+            "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+            "url": "https://media.example.com/p/1287390234923410001/1/640.webp"
+          },
+          "verified": true,
+          "online": true,
+          "activeRecently": true
+        },
+        "state": "active",
+        "source": "like",
+        "createdAt": "2026-11-05T21:00:00.000Z",
+        "lastMessage": null,
+        "unread": 0,
+        "myReadId": "1287390234923417601",
+        "peerReadId": "1287390234923417602",
+        "peerDeliveredId": "1287390234923417602",
+        "callsAllowed": {
+          "me": true,
+          "peer": false
+        },
+        "muted": false
+      }
+    },
+    {
+      "target": "celif5ztr3wa2",
+      "result": "passed"
+    },
+    {
+      "target": "dolivia6nb4ks",
+      "result": "rewound"
+    }
+  ],
+  "quotas": {
+    "likes": {
+      "limit": -1,
+      "used": 40,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    },
+    "superlikes": {
+      "limit": 3,
+      "used": 1,
+      "resetsAt": "2026-11-10T00:00:00.000Z"
+    },
+    "dm": {
+      "limit": 1,
+      "used": 0,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    },
+    "boosts": {
+      "limit": 1,
+      "used": 0,
+      "resetsAt": "2026-12-01T00:00:00.000Z"
+    }
+  }
+}

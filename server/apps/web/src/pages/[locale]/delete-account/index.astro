@@ -1,0 +1,91 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { accountDeletionRoutes, type Locale } from '@app/shared';
+import Base from '../../../layouts/Base.astro';
+import DeletionErrors from '../../../components/DeletionErrors.astro';
+import RichText from '../../../components/RichText.astro';
+import Sections from '../../../components/Sections.astro';
+import Subscriptions from '../../../components/Subscriptions.astro';
+import { deletion } from '../../../content/deletion';
+import { ui } from '../../../content/ui';
+import { brand } from '../../../lib/brand';
+import { fill } from '../../../lib/i18n';
+import { settings } from '../../../lib/settings';
+
+export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
+
+/**
+ * Account deletion without signing in. The phone form is a plain HTML form
+ * posting to the API, which answers with a redirect to the code page; no
+ * script is needed. "Signed in with Google" needs Google's own script, the
+ * only one the site loads, and only here, when a web client id is set.
+ */
+const locale = Astro.params.locale as Locale;
+const strings = deletion[locale];
+const common = ui[locale];
+const startAction = `${settings.apiOrigin}${accountDeletionRoutes.start}`;
+const googleAction = `${settings.apiOrigin}${accountDeletionRoutes.google}`;
+const clientId = settings.googleWebClientId;
+const mailto = `mailto:${brand.legal.supportEmail}?subject=${encodeURIComponent(strings.mailSubject)}`;
+const googleScript =
+  clientId === undefined
+    ? undefined
+    : `(function(){var f=document.getElementById('google-form'),b=document.getElementById('google-button'),x=document.getElementById('google-unavailable');if(!f||!b||!x)return;var s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onerror=function(){x.hidden=false;};s.onload=function(){var g=window.google&&window.google.accounts&&window.google.accounts.id;if(!g){x.hidden=false;return;}g.initialize({client_id:${JSON.stringify(clientId)},ux_mode:'popup',auto_select:false,itp_support:true,callback:function(r){if(!r||!r.credential)return;f.elements.namedItem('idToken').value=r.credential;f.submit();}});g.renderButton(b,{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'pill',locale:${JSON.stringify(locale)}});};document.head.appendChild(s);})();`;
+---
+<Base
+  locale={locale}
+  page="delete-account"
+  title={strings.title}
+  description={strings.description}
+  formAction={[settings.apiOrigin]}
+  inlineScripts={googleScript === undefined ? [] : [googleScript]}
+  google={googleScript !== undefined}
+>
+  <article class="document">
+    <h1>{fill(locale, strings.title)}</h1>
+    <p class="lead">{fill(locale, strings.description)}</p>
+    <DeletionErrors locale={locale} codes={['phone_invalid', 'rate_limited', 'sms_unavailable', 'google_token_invalid', 'maintenance', 'error']} />
+
+    <section class="panel" aria-labelledby="phone-title">
+      <h2 id="phone-title">{strings.phoneTitle}</h2>
+      <p>{fill(locale, strings.phoneBody)}</p>
+      <form class="form" id="start-form" method="post" action={startAction}>
+        <input type="hidden" name="locale" value={locale} />
+        <label for="phone">{strings.phoneLabel}</label>
+        <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32" dir="ltr" aria-describedby="phone-hint" />
+        <p class="hint" id="phone-hint">{strings.phoneHint}</p>
+        <button class="button" type="submit">{strings.sendCode}</button>
+      </form>
+    </section>
+
+    {googleScript !== undefined && (
+      <section class="panel" id="google" aria-labelledby="google-title">
+        <h2 id="google-title">{strings.googleTitle}</h2>
+        <p>{strings.googleBody}</p>
+        <form id="google-form" method="post" action={googleAction} hidden>
+          <input type="hidden" name="idToken" value="" />
+          <input type="hidden" name="locale" value={locale} />
+        </form>
+        <div class="google-button" id="google-button"></div>
+        <p class="muted" id="google-unavailable" hidden><RichText locale={locale} text={strings.googleUnavailable} /></p>
+        <noscript><p class="muted"><RichText locale={locale} text={strings.googleNoScript} /></p></noscript>
+      </section>
+    )}
+
+    <Subscriptions locale={locale} />
+
+    <Sections locale={locale} sections={strings.sections} />
+
+    <section>
+      <h2>{strings.noPhoneTitle}</h2>
+      <p><RichText locale={locale} text={strings.noPhoneBody} /></p>
+      <p><a class="button secondary" href={mailto}>{strings.mailButton}</a></p>
+    </section>
+
+    <aside class="notice" role="note">
+      <strong>{common.draftTitle}</strong>
+      <p>{fill(locale, common.draftBody)}</p>
+    </aside>
+  </article>
+  {googleScript !== undefined && <script is:inline set:html={googleScript}></script>}
+</Base>

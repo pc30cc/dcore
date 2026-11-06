@@ -1,0 +1,48 @@
+{
+  "plan": "plus",
+  "planExpiresAt": "2026-12-06T09:00:00.000Z",
+  "autoRenew": true,
+  "source": "play",
+  "manageUrl": "https://example.com/subscriptions",
+  "features": {
+    "see_likes": true,
+    "rewind": true,
+    "read_receipts": false,
+    "incognito": false,
+    "travel_mode": true,
+    "advanced_filters": true,
+    "profile_views": false,
+    "second_look": false,
+    "priority_likes": false,
+    "new_feature": true
+  },
+  "quotas": {
+    "likes": {
+      "limit": -1,
+      "used": 40,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    },
+    "superlikes": {
+      "limit": 3,
+      "used": 1,
+      "resetsAt": "2026-11-10T00:00:00.000Z"
+    },
+    "dm": {
+      "limit": 1,
+      "used": 0,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    },
+    "boosts": {
+      "limit": 1,
+      "used": 0,
+      "resetsAt": "2026-12-01T00:00:00.000Z"
+    }
+  },
+  "wallet": {
+    "superlike": 2,
+    "boost": 0,
+    "spotlight": 1,
+    "dm": 3
+  },
+  "boostEndsAt": "2026-11-06T09:44:03.120Z"
+}
