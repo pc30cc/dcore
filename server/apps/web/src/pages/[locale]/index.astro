@@ -1,0 +1,36 @@
+---
+import type { GetStaticPaths } from 'astro';
+import type { Locale } from '@app/shared';
+import Base from '../../layouts/Base.astro';
+import RichText from '../../components/RichText.astro';
+import { ui } from '../../content/ui';
+import { brand, brandCopy } from '../../lib/brand';
+import { fill, pagePath, pageSlugs } from '../../lib/i18n';
+
+export const getStaticPaths = (() => brand.locales.map((locale) => ({ params: { locale } }))) satisfies GetStaticPaths;
+
+const locale = Astro.params.locale as Locale;
+const strings = ui[locale];
+// The pitch and the meta description are the brand's, never written in code.
+const tagline = brandCopy(brand.tagline, locale);
+const description = brandCopy(brand.description, locale) || tagline;
+---
+<Base locale={locale} title={strings.homeTitle} description={description}>
+  <section class="hero">
+    <h1>{fill(locale, strings.homeTitle)}</h1>
+    {tagline && <p class="lead">{fill(locale, tagline)}</p>}
+    {strings.homeBody.map((text) => <p><RichText locale={locale} text={text} /></p>)}
+  </section>
+  <section class="panel">
+    <h2>{strings.homeStoresTitle}</h2>
+    <p class="muted">{strings.homeStoresBody}</p>
+  </section>
+  <section>
+    <h2>{strings.homePoliciesTitle}</h2>
+    <ul class="cards">
+      {pageSlugs.map((slug) => (
+        <li><a class="card" href={pagePath(locale, slug)}>{strings.pageNames[slug]}</a></li>
+      ))}
+    </ul>
+  </section>
+</Base>

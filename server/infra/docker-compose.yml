@@ -1,0 +1,144 @@
+# Local infrastructure for a development machine (Docker Desktop or any Docker
+# engine). Everything binds to 127.0.0.1 only.
+#
+#   cp infra/.env.example infra/.env      # then set the passwords
+#   docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+#
+# Without Docker (this repo's CI and cloud containers): infra/dev/native.sh.
+#
+# The API and the worker run on the host (pnpm dev:api, pnpm dev:worker) and
+# reach these on localhost. Ports:
+#   5432  PostgreSQL 17 + PostGIS (direct: migrations, admin tasks)
+#   6432  PgBouncer, transaction mode (the API and the worker)
+#   6379  Valkey (Redis protocol: rate limits, BullMQ, streams)
+#   8000  Centrifugo (chat; placeholder configuration)
+#   7880  LiveKit (calls; placeholder configuration), 7881/tcp, 50000-50100/udp
+#   9000  S3 API (MinIO), 9001 its console
+name: app-dev
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.7
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
+      POSTGRES_DB: postgres
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in infra/.env}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=200
+      - -c
+      - log_min_duration_statement=250ms
+      - -c
+      - log_lock_waits=on
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d app_dev]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.1-p0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in infra/.env}
+    # The image's entrypoint would write its own config; this one is mounted.
+    entrypoint: [/bin/sh, -c]
+    command:
+      - >-
+        printf '"app" "%s"\n' "$$APP_DB_PASSWORD" > /tmp/userlist.txt &&
+        exec pgbouncer /etc/pgbouncer/pgbouncer.ini
+    ports:
+      - 127.0.0.1:6432:6432
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    restart: unless-stopped
+    # noeviction: BullMQ must never lose keys to memory pressure.
+    command: [valkey-server, --appendonly, 'yes', --maxmemory-policy, noeviction]
+    ports:
+      - 127.0.0.1:6379:6379
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  centrifugo:
+    image: centrifugo/centrifugo:v6.10
+    restart: unless-stopped
+    command: [centrifugo, --config=/centrifugo/config.yaml]
+    environment:
+      CENTRIFUGO_CLIENT_TOKEN_HMAC_SECRET_KEY: ${CENTRIFUGO_TOKEN_SECRET:?set CENTRIFUGO_TOKEN_SECRET in infra/.env}
+      CENTRIFUGO_HTTP_API_KEY: ${CENTRIFUGO_API_KEY:?set CENTRIFUGO_API_KEY in infra/.env}
+    ports:
+      - 127.0.0.1:8000:8000
+    volumes:
+      - ./centrifugo/config.yaml:/centrifugo/config.yaml:ro
+
+  livekit:
+    image: livekit/livekit-server:v1.13
+    restart: unless-stopped
+    command: [--config, /etc/livekit.yaml]
+    environment:
+      LIVEKIT_KEYS: '${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/.env}: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/.env}'
+    ports:
+      - 127.0.0.1:7880:7880
+      - 127.0.0.1:7881:7881
+      - 127.0.0.1:50000-50100:50000-50100/udp
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+
+  # Upstream MinIO stopped publishing community images (minio/minio no longer
+  # resolves on Docker Hub, checked 2026-11-06); this is the community build
+  # Pigsty maintains of the same server. Production uses an S3-compatible object
+  # store behind a CDN; this is only an S3 endpoint for development.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in infra/.env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY in infra/.env}
+    ports:
+      - 127.0.0.1:9000:9000
+      - 127.0.0.1:9001:9001
+    volumes:
+      - minio-data:/data
+
+  # Creates the media bucket once (private: photos are served through signed URLs).
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-10-26T00-00-00Z
+    depends_on: [minio]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in infra/.env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in infra/.env}
+      S3_BUCKET: ${S3_BUCKET:-media}
+    entrypoint: [/bin/sh, -c]
+    command:
+      - >-
+        until mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" >/dev/null 2>&1; do sleep 1; done &&
+        mc mb --ignore-existing "local/$$S3_BUCKET" &&
+        mc anonymous set none "local/$$S3_BUCKET"
+    restart: 'no'
+
+volumes:
+  postgres-data:
+  valkey-data:
+  minio-data:

@@ -1,0 +1,33 @@
+{
+  "name": "@app/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Background jobs (BullMQ) and Redis Streams consumers.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@app/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx watch --conditions=@app/source src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@app/config": "workspace:*",
+    "@app/shared": "workspace:*",
+    "bullmq": "^6.5.3",
+    "ioredis": "^6.0.0",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15"
+  }
+}

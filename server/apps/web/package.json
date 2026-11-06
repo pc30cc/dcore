@@ -1,0 +1,22 @@
+{
+  "name": "@app/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The public website: static pages only (legal pages, account deletion, support). No sign-in anywhere.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@app/config": "workspace:*",
+    "@app/shared": "workspace:*",
+    "astro": "^7.4.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12"
+  }
+}

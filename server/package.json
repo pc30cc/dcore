@@ -1,0 +1,34 @@
+{
+  "name": "@app/server",
+  "private": true,
+  "description": "Server monorepo: API, worker, admin panel and public website.",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10.16"
+  },
+  "scripts": {
+    "lint": "eslint --max-warnings=0 .",
+    "typecheck": "pnpm -r --workspace-concurrency=2 typecheck",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "db:migrate": "pnpm --filter @app/db migrate",
+    "dev:api": "pnpm --filter @app/api dev",
+    "dev:worker": "pnpm --filter @app/worker dev",
+    "dev:admin": "pnpm --filter @app/admin dev",
+    "dev:web": "pnpm --filter @app/web dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.14.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

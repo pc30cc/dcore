@@ -1,0 +1,4 @@
+coverage/
+.astro/
+*.tsbuildinfo
+.vite/

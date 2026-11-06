@@ -1,0 +1,40 @@
+---
+import type { PageSlug } from '../lib/i18n';
+import { brand, siteOrigin } from '../lib/brand';
+import { pagePath } from '../lib/i18n';
+import { ui } from '../content/ui';
+
+interface Props {
+  slug?: PageSlug | undefined;
+}
+
+/**
+ * A page without a language: sends the visitor to the page in the language
+ * their browser prefers among the brand's, or the brand's default. Without
+ * JavaScript the meta refresh goes to the default; the links stay visible.
+ */
+const { slug } = Astro.props;
+const target = pagePath(brand.defaultLocale, slug);
+const targets = Object.fromEntries(brand.locales.map((locale) => [locale, pagePath(locale, slug)]));
+const names = { en: 'English', fa: 'فارسی', tr: 'Türkçe' } as const;
+const script = `(function(){var t=${JSON.stringify(targets)};var l=(navigator.languages||[navigator.language||'']);for(var i=0;i<l.length;i++){var c=String(l[i]).slice(0,2).toLowerCase();if(t[c]){location.replace(t[c]);return;}}location.replace(${JSON.stringify(target)});})();`;
+---
+<!doctype html>
+<html lang={brand.defaultLocale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>{brand.appName}</title>
+    <link rel="canonical" href={`${siteOrigin}${target}`} />
+    <script is:inline set:html={script}></script>
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+  </head>
+  <body>
+    <ul>
+      {brand.locales.map((locale) => (
+        <li><a href={targets[locale]} lang={locale} hreflang={locale}>{names[locale]} · {ui[locale].chooseLanguage}</a></li>
+      ))}
+    </ul>
+  </body>
+</html>

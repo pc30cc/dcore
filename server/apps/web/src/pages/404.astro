@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/Base.astro';
+import { ui } from '../content/ui';
+import { brand } from '../lib/brand';
+import { pagePath } from '../lib/i18n';
+
+const locale = brand.defaultLocale;
+const strings = ui[locale];
+---
+<Base locale={locale} title={strings.notFoundTitle} description={strings.notFoundBody} noindex>
+  <section class="hero">
+    <h1>{strings.notFoundTitle}</h1>
+    <p class="lead">{strings.notFoundBody}</p>
+    <p><a class="button" href={pagePath(locale)}>{strings.homeLink}</a></p>
+  </section>
+</Base>

@@ -1,0 +1,286 @@
+/*
+ * One stylesheet, no framework. Colours come from the brand (set on <html>
+ * by the layout) and neutrals; layout uses logical properties only, so the
+ * Persian pages mirror without extra rules.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --surface: #f6f6f7;
+  --text: #16161a;
+  --muted: #55555f;
+  --border: #e3e3e8;
+  --brand: var(--brand-light);
+  --on-brand: var(--on-brand-light);
+  --notice-bg: #fff7e0;
+  --notice-border: #e9c46a;
+  --radius: 14px;
+  --font: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111114;
+    --surface: #1b1b20;
+    --text: #f2f2f5;
+    --muted: #a7a7b3;
+    --border: #2c2c34;
+    --brand: var(--brand-dark);
+    --on-brand: var(--on-brand-dark);
+    --notice-bg: #2a2416;
+    --notice-border: #8a6d1f;
+  }
+}
+
+html[lang="fa"] {
+  --font: var(--font-persian), Tahoma, ui-sans-serif, system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+html[lang="fa"] body {
+  line-height: 1.9;
+}
+
+a {
+  color: var(--text);
+  text-decoration-color: var(--brand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--brand);
+}
+
+a:focus-visible,
+.button:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.container {
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+
+.skip {
+  position: absolute;
+  inset-inline-start: 8px;
+  inset-block-start: -100px;
+  padding: 8px 12px;
+  background: var(--brand);
+  color: var(--on-brand);
+  border-radius: 8px;
+  z-index: 10;
+}
+
+.skip:focus {
+  inset-block-start: 8px;
+}
+
+.site-header {
+  border-block-end: 1px solid var(--border);
+}
+
+.header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding-block: 14px;
+}
+
+.wordmark {
+  font-weight: 700;
+  font-size: 1.2rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.languages ul {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.languages a {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.languages a[aria-current="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
+main {
+  padding-block: 40px 56px;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+  line-height: 1.2;
+  margin-block: 0 12px;
+}
+
+h2 {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  margin-block: 32px 8px;
+}
+
+.lead {
+  font-size: 1.2rem;
+  color: var(--muted);
+  margin-block: 0 24px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.panel,
+.notice {
+  margin-block: 24px;
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panel h2 {
+  margin-block-start: 0;
+}
+
+.notice {
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
+}
+
+.notice p {
+  margin: 4px 0 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: block;
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.card:hover {
+  border-color: var(--brand);
+}
+
+.document ul,
+.document ol {
+  padding-inline-start: 1.4em;
+}
+
+.document li + li {
+  margin-block-start: 6px;
+}
+
+.button {
+  display: inline-block;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button:hover {
+  color: var(--on-brand);
+  filter: brightness(1.05);
+}
+
+.site-footer {
+  border-block-start: 1px solid var(--border);
+  padding-block: 32px 24px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 24px;
+}
+
+.site-footer h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-block: 0 8px;
+}
+
+html[lang="fa"] .site-footer h2 {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.site-footer ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
+.copyright {
+  margin-block-start: 24px;
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a,
+  .card {
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+}

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launch window, the same colour as the app's background
+         (ui/theme/Color.kt, Palette.Light.background), so the system splash
+         hands over to the first frame without a flash. The brand colour
+         (brand_primary) is generated from brand.json by the build. -->
+    <color name="launch_background">#FFFBFA</color>
+    <color name="launch_mark">#FFFFFF</color>
+</resources>

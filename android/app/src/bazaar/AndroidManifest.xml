@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      The Cafe Bazaar build. Poolakey's own manifest brings the rest: the
+      PAY_THROUGH_BAZAAR permission, its billing receiver and the
+      <queries> entries for the Bazaar app; this one is said here as well
+      because the app opens Bazaar's pages itself (BazaarStoreInfo,
+      BazaarRating), whatever Poolakey's manifest says in a later version.
+    -->
+    <queries>
+        <package android:name="com.farsitel.bazaar" />
+    </queries>
+</manifest>

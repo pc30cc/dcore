@@ -1,0 +1,20 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Refuse to install when the Node version does not match "engines".
+engineStrict: true
+autoInstallPeers: false
+
+# A version must have been public for three days before it is installed, so a
+# hijacked release has time to be found and pulled (pnpm 10.16+).
+minimumReleaseAge: 4320
+
+# Only these packages may run install scripts.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+
+# Optional native speed-ups whose pure-JS fallback is used instead.
+ignoredBuiltDependencies:
+  - msgpackr-extract

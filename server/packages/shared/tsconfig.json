@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Shared code runs in Node, in browsers and documents the Android contract:
+    // web-standard APIs only (no Node types, so Buffer and friends do not compile).
+    "lib": ["es2024", "dom"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

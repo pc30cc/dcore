@@ -1,0 +1,127 @@
+# AGP, Kotlin, Compose and Gradle move together: change them as a set, not
+# one by one.
+#
+# The store SDKs below were resolved on 2026-11-06: Play's from Google Maven
+# (maven-metadata.xml), Poolakey from JitPack's metadata.
+
+[versions]
+agp = "9.4.1"
+kotlin = "2.4.20"
+composeBom = "2026.09.00"
+coreKtx = "1.19.0"
+activityCompose = "1.13.0"
+lifecycle = "2.11.0"
+datastore = "1.2.1"
+ktor = "3.6.0"
+serialization = "1.11.0"
+coroutines = "1.11.0"
+robolectric = "4.17"
+androidxTestJunit = "1.3.0"
+junit = "4.13.2"
+desugar = "2.1.5"
+coil = "3.6.3"
+# Navigation 3: the back stack is app state (a list of keys) that the app owns.
+navigation3 = "1.2.0"
+# Calls, once they are added. Declared, not yet a dependency.
+livekit = "2.29.2"
+profileinstaller = "1.4.1"
+room = "2.8.5"
+# Since 2.3.0 KSP's version is no longer tied to Kotlin's; AGP 9's built-in
+# Kotlin is supported from 2.3.1.
+ksp = "2.3.12"
+# Push, once it is wired. Declared, not yet a dependency: FCM needs Google Play
+# services, which many phones that install from Cafe Bazaar do not have, so the
+# bazaar flavor will need a push path of its own.
+firebaseBom = "34.19.0"
+
+# Store SDKs. Each is a dependency of ONE flavor only (app/build.gradle.kts),
+# and tools/check-store-separation.sh proves the other flavor's APK has none
+# of its classes.
+#
+# Cafe Bazaar's in-app billing SDK, from JitPack (2.3.0 is its newest release).
+poolakey = "2.3.0"
+# Play Billing Library. 9.1.0 is the newest on Google Maven (2026-06-18); Play
+# requires a supported major (8 or later) for new apps and updates.
+playBilling = "9.1.0"
+playReview = "2.0.2"
+playAppUpdate = "2.1.0"
+playIntegrity = "1.6.0"
+
+[libraries]
+desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+# collectAsStateWithLifecycle: a flow collected from a composable stops when
+# the screen stops.
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+
+# The BOM decides every androidx.compose version below it.
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# The CORE icon set only: material-icons-extended is a very large artifact to
+# acquire by accident.
+androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
+
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-logging = { group = "io.ktor", name = "ktor-client-logging", version.ref = "ktor" }
+ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
+# A ViewModel per Navigation 3 entry, cleared when the entry leaves the stack.
+androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycle" }
+
+livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
+
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+
+# Cafe Bazaar (bazaarImplementation only).
+poolakey = { group = "com.github.cafebazaar.Poolakey", name = "poolakey", version.ref = "poolakey" }
+
+# Google Play (playImplementation only).
+play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "playBilling" }
+play-review-ktx = { group = "com.google.android.play", name = "review-ktx", version.ref = "playReview" }
+play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
+play-integrity = { group = "com.google.android.play", name = "integrity", version.ref = "playIntegrity" }
+
+# Tests. Robolectric keeps the suite on the JVM and off an emulator.
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+# Compose's compiler ships with Kotlin. This and serialization are the ONLY
+# Kotlin plugins applied: AGP 9 compiles Kotlin on its own and refuses to start
+# if org.jetbrains.kotlin.android is applied too.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+# Exports the database schema, one JSON file per version, so a migration is
+# written against what actually shipped.
+androidx-room = { id = "androidx.room", version.ref = "room" }

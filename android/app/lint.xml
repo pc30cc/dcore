@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- Every string ships in English, Persian and Turkish. A key missing from
+         one of them is a screen half in another language; a key only in a
+         translation is a string nobody reads. -->
+    <issue id="MissingTranslation" severity="error" />
+    <issue id="ExtraTranslation" severity="error" />
+
+    <!-- Versions are pinned in gradle/libs.versions.toml on purpose and move
+         together, not one by one when lint sees a newer release. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+
+    <!-- targetSdk follows Play's requirement (API 36 since 2026-08-31) on
+         purpose; raising it is a reviewed change with its own behaviour tests,
+         not a lint suggestion. compileSdk is already the newest (37). -->
+    <issue id="OldTargetApi" severity="ignore" />
+</lint>

@@ -1,0 +1,30 @@
+# Gradle / Android build output
+build/
+.gradle/
+.kotlin/
+local.properties
+*.apk
+*.aab
+*.iml
+
+# Android Studio
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Written by Gradle 9 when it provisions a daemon JVM; it names this machine's JDK.
+gradle/gradle-daemon-jvm.properties
+
+# Signing material, never. A store binds the app to its key for as long as the
+# app exists; a committed keystore lets anyone who cloned the repository sign
+# an update. Passwords never belong in a file at all.
+*.jks
+*.keystore
+*.p12
+*.pepk
+keystore.properties
+signing.properties
+
+# Firebase's client configuration is never committed.
+google-services.json

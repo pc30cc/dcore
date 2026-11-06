@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ always draws its own splash: the app's background colour
+         and its launcher icon. The splash route then takes over in the same
+         colour, so the hand-over shows no flash. -->
+    <style name="Theme.App" parent="Theme.App.Base">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+    </style>
+</resources>

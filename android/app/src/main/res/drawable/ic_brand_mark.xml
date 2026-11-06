@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The neutral mark that stands in for a brand logo: two overlapping circles.
+     Tinted at use (BrandMark). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FF000000"
+        android:fillAlpha="0.55"
+        android:pathData="M18,10a14,14 0 1,0 0,28a14,14 0 1,0 0,-28z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M30,10a14,14 0 1,0 0,28a14,14 0 1,0 0,-28z" />
+</vector>

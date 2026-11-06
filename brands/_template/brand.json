@@ -1,0 +1,56 @@
+{
+  "$comment": "Template brand. Copy to brands/<id>/brand.json. No brand name may appear anywhere else in the code.",
+  "id": "_template",
+  "appName": "App",
+  "shortName": "App",
+  "tagline": { "en": "Your tagline", "fa": "شعار شما", "tr": "Sloganınız" },
+  "description": { "en": "Your description", "fa": "توضیح شما", "tr": "Açıklamanız" },
+  "ios": {
+    "bundleId": "com.example.app",
+    "appleTeamId": "XXXXXXXXXX",
+    "associatedDomains": ["applinks:link.example.com"]
+  },
+  "android": {
+    "package": "com.example.app",
+    "applicationId": {
+      "bazaar": "com.example.app",
+      "play": "com.example.app"
+    },
+    "versionCode": 1,
+    "versionName": "0.1.0",
+    "appLinkHosts": ["link.example.com"]
+  },
+  "domains": {
+    "api": "api.example.com",
+    "links": "link.example.com",
+    "legal": "example.com"
+  },
+  "legal": {
+    "privacyUrl": "https://example.com/privacy",
+    "termsUrl": "https://example.com/terms",
+    "guidelinesUrl": "https://example.com/guidelines",
+    "deleteAccountUrl": "https://example.com/delete-account",
+    "supportEmail": "support@example.com"
+  },
+  "assets": {
+    "icon": "icon.png",
+    "adaptiveIconForeground": "adaptive-foreground.png",
+    "splash": "splash.png",
+    "logo": "logo.svg",
+    "logoMark": "mark.svg"
+  },
+  "colors": {
+    "brand": { "light": "#E8466A", "dark": "#FF6B8A" },
+    "onBrand": { "light": "#FFFFFF", "dark": "#1A0A0F" }
+  },
+  "fonts": {
+    "latin": "Inter",
+    "persian": "Vazirmatn"
+  },
+  "planNames": {
+    "plus": { "en": "Plus", "fa": "پلاس", "tr": "Plus" },
+    "premium": { "en": "Premium", "fa": "پریمیوم", "tr": "Premium" }
+  },
+  "defaultLocale": "en",
+  "locales": ["en", "fa", "tr"]
+}

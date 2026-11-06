@@ -1,0 +1,25 @@
+{
+  "name": "@app/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Environment parsing and brand loading shared by every server app and build tool.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@app/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@app/shared": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

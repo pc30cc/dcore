@@ -1,0 +1,87 @@
+---
+import type { Locale } from '@app/shared';
+import LanguageSwitcher from '../components/LanguageSwitcher.astro';
+import { ui } from '../content/ui';
+import { brand, siteOrigin } from '../lib/brand';
+import { dir, fill, pagePath, pageSlugs, type PageSlug } from '../lib/i18n';
+import '../styles/global.css';
+
+interface Props {
+  locale: Locale;
+  title: string;
+  description: string;
+  slug?: PageSlug | undefined;
+  /** For pages that must not be indexed (404). */
+  noindex?: boolean | undefined;
+}
+
+const { locale, title, description, slug, noindex = false } = Astro.props;
+const strings = ui[locale];
+const pageTitle = slug ? `${fill(locale, title)} · ${brand.appName}` : brand.appName;
+const canonical = `${siteOrigin}${pagePath(locale, slug)}`;
+const brandStyle = [
+  `--brand-light:${brand.colors.brand.light}`,
+  `--brand-dark:${brand.colors.brand.dark}`,
+  `--on-brand-light:${brand.colors.onBrand.light}`,
+  `--on-brand-dark:${brand.colors.onBrand.dark}`,
+  `--font-latin:${JSON.stringify(brand.fonts.latin)}`,
+  `--font-persian:${JSON.stringify(brand.fonts.persian)}`,
+].join(';');
+---
+<!doctype html>
+<html lang={locale} dir={dir(locale)} style={brandStyle}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content={brand.colors.brand.light} />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content={brand.colors.brand.dark} />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={fill(locale, description)} />
+    {noindex ? (
+      <meta name="robots" content="noindex" />
+    ) : (
+      <>
+        <link rel="canonical" href={canonical} />
+        {brand.locales.map((code) => <link rel="alternate" hreflang={code} href={`${siteOrigin}${pagePath(code, slug)}`} />)}
+        <link rel="alternate" hreflang="x-default" href={`${siteOrigin}${pagePath(brand.defaultLocale, slug)}`} />
+      </>
+    )}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={brand.appName} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={fill(locale, description)} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={locale} />
+  </head>
+  <body>
+    <a class="skip" href="#main">{strings.skipToContent}</a>
+    <header class="site-header">
+      <div class="container header-row">
+        <a class="wordmark" href={pagePath(locale)}>{brand.appName}</a>
+        <LanguageSwitcher locale={locale} slug={slug} />
+      </div>
+    </header>
+    <main id="main" class="container">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <nav aria-label={strings.footerPolicies}>
+          <h2>{strings.footerPolicies}</h2>
+          <ul>
+            {pageSlugs.map((page) => (
+              <li><a href={pagePath(locale, page)} aria-current={page === slug ? 'page' : undefined}>{strings.pageNames[page]}</a></li>
+            ))}
+          </ul>
+        </nav>
+        <div>
+          <h2>{strings.footerContact}</h2>
+          <p><a href={`mailto:${brand.legal.supportEmail}`} dir="ltr">{brand.legal.supportEmail}</a></p>
+        </div>
+      </div>
+      <p class="container copyright">© {new Date().getFullYear()} {brand.appName}</p>
+    </footer>
+  </body>
+</html>

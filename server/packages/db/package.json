@@ -1,0 +1,33 @@
+{
+  "name": "@app/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PostgreSQL access: a PgBouncer-safe pool, a typed query helper, transactions and the migration runner.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@app/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "migrate": "node dist/cli/migrate.js",
+    "migrate:dev": "tsx --conditions=@app/source src/cli/migrate.ts"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15"
+  }
+}

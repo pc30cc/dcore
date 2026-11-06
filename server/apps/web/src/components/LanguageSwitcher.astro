@@ -1,0 +1,30 @@
+---
+import type { Locale } from '@app/shared';
+import { brand } from '../lib/brand';
+import { pagePath, type PageSlug } from '../lib/i18n';
+import { ui } from '../content/ui';
+
+interface Props {
+  locale: Locale;
+  slug?: PageSlug | undefined;
+}
+
+const { locale, slug } = Astro.props;
+const names: Record<Locale, string> = { en: 'English', fa: 'فارسی', tr: 'Türkçe' };
+---
+<nav class="languages" aria-label={ui[locale].languageLabel}>
+  <ul>
+    {brand.locales.map((code) => (
+      <li>
+        <a
+          href={pagePath(code, slug)}
+          lang={code}
+          hreflang={code}
+          aria-current={code === locale ? 'true' : undefined}
+        >
+          {names[code]}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

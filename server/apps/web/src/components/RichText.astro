@@ -1,0 +1,26 @@
+---
+import type { Locale } from '@app/shared';
+import { brandValues, fill } from '../lib/i18n';
+import { segments } from '../lib/richText';
+
+interface Props {
+  locale: Locale;
+  text: string;
+}
+
+const { locale, text } = Astro.props;
+const values = brandValues(locale);
+const parts = segments(fill(locale, text), {
+  emails: [values['supportEmail'] ?? ''],
+  paths: [values['deleteAccountPath'] ?? ''],
+});
+---
+{parts.map((part) =>
+  part.kind === 'email' ? (
+    <a href={`mailto:${part.value}`} dir="ltr">{part.value}</a>
+  ) : part.kind === 'link' ? (
+    <a href={part.href} dir="ltr">{part.value}</a>
+  ) : (
+    part.value
+  ),
+)}

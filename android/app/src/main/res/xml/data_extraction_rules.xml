@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing leaves this device: not to cloud backup, not in a device-to-device
+  transfer. The session is encrypted under a Keystore key that cannot be
+  exported, so a copied session could not be read anyway; excluding it makes
+  a new phone ask for a sign-in, which is the honest outcome. The cache
+  database is a copy of what the server has.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+    </device-transfer>
+</data-extraction-rules>

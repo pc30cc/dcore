@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pre-Android-12 spelling of data_extraction_rules.xml. -->
+<full-backup-content>
+    <exclude domain="root" path="." />
+</full-backup-content>
