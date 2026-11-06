@@ -378,6 +378,8 @@ class SampleApiTest {
         expectProblem(413, ProblemCodes.PAYLOAD_TOO_LARGE) { api.startPhotoUpload(5, PhotoMime.Jpeg, 20L * 1024 * 1024) }
         val ticket = api.startPhotoUpload(5, PhotoMime.Webp, 900_000)
         assertEquals("PUT", ticket.upload.method)
+        expectProblem(422, ProblemCodes.UPLOAD_MISSING) { api.completePhotoUpload(ticket.photoId) }
+        api.put(ticket.upload, ByteArray(1_024), "image/webp")
         assertEquals(PhotoStatus.Processing, api.completePhotoUpload(ticket.photoId).status)
         assertEquals(PhotoStatus.Processing, api.me().value.profile!!.photos.single { it.id == ticket.photoId }.status)
         clock.advance(6_000)
@@ -387,11 +389,11 @@ class SampleApiTest {
     }
 
     @Test
-    fun theLastPhotoCannotBeDeleted() = runTest {
+    fun aShownProfileKeepsTheMinimumOfPhotos() = runTest {
         val api = SampleApi(clock = clock)
         val photos = api.me().value.profile!!.photos
-        photos.dropLast(1).forEach { api.deletePhoto(it.id) }
-        expectProblem(422, ProblemCodes.LAST_PHOTO) { api.deletePhoto(photos.last().id) }
+        photos.drop(2).forEach { api.deletePhoto(it.id) }
+        expectProblem(422, ProblemCodes.PHOTO_MIN) { api.deletePhoto(photos[1].id) }
     }
 
     @Test

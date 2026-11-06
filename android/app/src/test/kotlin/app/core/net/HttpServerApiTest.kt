@@ -4,6 +4,8 @@ import app.core.common.Diag
 import app.core.common.FakeClock
 import app.core.model.AccountStatus
 import app.core.model.AppEvent
+import app.core.model.ConsentKind
+import app.core.model.ConsentVersions
 import app.core.model.AuthResult
 import app.core.model.AuthUser
 import app.core.model.BazaarPurchaseRequest
@@ -127,7 +129,9 @@ class HttpServerApiTest {
         Case("startPhoneChange", HttpMethod.Post, "/v1/me/phone/start", "otp-start") { startPhoneChange(PhoneStartRequest("+905321234567", "tr")) },
         Case("verifyPhoneChange", HttpMethod.Post, "/v1/me/phone/verify", null, HttpStatusCode.NoContent) { verifyPhoneChange("ch_1", "123456") },
         Case("me", HttpMethod.Get, "/v1/me", "me") { me() },
-        Case("setBasics", HttpMethod.Put, "/v1/me/basics", "own-profile") { setBasics(LocalDate.of(1995, 4, 2), Gender.Woman) },
+        Case("setBasics", HttpMethod.Put, "/v1/me/basics", "own-profile") { setBasics(LocalDate.of(1995, 4, 2), Gender.Woman, ConsentVersions(1, 1)) },
+        Case("consents", HttpMethod.Get, "/v1/me/consents", "consents") { consents() },
+        Case("setConsent", HttpMethod.Put, "/v1/me/consents/guidelines", null) { setConsent(ConsentKind.Guidelines, 2, accepted = true) },
         Case("updateProfile", HttpMethod.Patch, "/v1/me/profile", "own-profile") { updateProfile(ProfilePatch(about = "Hi")) },
         Case("updatePreferences", HttpMethod.Patch, "/v1/me/preferences", "preferences") { updatePreferences(PreferencesPatch(ageMax = 40)) },
         Case("updateSettings", HttpMethod.Patch, "/v1/me/settings", "settings") { updateSettings(SettingsPatch(hideAge = true)) },

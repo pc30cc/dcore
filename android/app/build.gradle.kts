@@ -237,6 +237,14 @@ android {
                 "PLAY_CLOUD_PROJECT_NUMBER",
                 "${buildValue("play.cloudProjectNumber", "PLAY_CLOUD_PROJECT_NUMBER")?.toLongOrNull() ?: 0L}L",
             )
+            // The OAuth web client Google ID tokens are issued for (the
+            // server verifies them against the same id). Public, not a
+            // secret; empty leaves "Continue with Google" out of the build.
+            buildConfigField(
+                "String",
+                "GOOGLE_WEB_CLIENT_ID",
+                literal(buildValue("play.googleWebClientId", "PLAY_GOOGLE_WEB_CLIENT_ID") ?: ""),
+            )
         }
     }
 
@@ -358,6 +366,10 @@ dependencies {
 
     implementation(libs.androidx.profileinstaller)
 
+    // Photos: memory and disk cache, downsampling, crossfade (media/ImageLoading).
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // MARK: Store SDKs, one flavor each. `src/main` must never import them.
     "bazaarImplementation"(libs.poolakey)
 
@@ -365,6 +377,12 @@ dependencies {
     "playImplementation"(libs.play.review.ktx)
     "playImplementation"(libs.play.app.update.ktx)
     "playImplementation"(libs.play.integrity)
+    // Sign in with Google (Credential Manager) and the SMS Retriever: Google
+    // Play services APIs, so the Play build only.
+    "playImplementation"(libs.androidx.credentials)
+    "playImplementation"(libs.androidx.credentials.play.services.auth)
+    "playImplementation"(libs.googleid)
+    "playImplementation"(libs.play.services.auth.api.phone)
 
     // @Preview renders through this; debug-only so it never ships.
     debugImplementation(libs.androidx.compose.ui.tooling)

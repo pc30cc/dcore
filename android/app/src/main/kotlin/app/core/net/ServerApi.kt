@@ -14,6 +14,9 @@ import app.core.model.CallKind
 import app.core.model.CallToken
 import app.core.model.City
 import app.core.model.Config
+import app.core.model.ConsentKind
+import app.core.model.ConsentRecord
+import app.core.model.ConsentVersions
 import app.core.model.Conversation
 import app.core.model.ConversationPatch
 import app.core.model.ConversationsPage
@@ -150,8 +153,17 @@ interface ServerApi {
     /** `GET /v1/me`, revalidated with its ETag. Also callable by restricted and deleting accounts. */
     suspend fun me(): Fetched<Me>
 
-    /** `PUT /v1/me/basics`: once, during onboarding. `under_age` closes the account. */
-    suspend fun setBasics(birthDate: LocalDate, gender: Gender): OwnProfile
+    /**
+     * `PUT /v1/me/basics`: once, during onboarding, with the legal text
+     * versions the person accepted. `under_age` closes the account.
+     */
+    suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile
+
+    /** `GET /v1/me/consents`. */
+    suspend fun consents(): List<ConsentRecord>
+
+    /** `PUT /v1/me/consents/:kind`: accepts (or withdraws) [version] of a text or an explicit consent. */
+    suspend fun setConsent(kind: ConsentKind, version: Int, accepted: Boolean)
 
     /** `PATCH /v1/me/profile`. */
     suspend fun updateProfile(patch: ProfilePatch): OwnProfile

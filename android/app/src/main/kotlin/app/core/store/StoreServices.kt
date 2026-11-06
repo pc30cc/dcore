@@ -33,4 +33,8 @@ class StoreServices(
     val updates: AppUpdates,
     val rating: AppRating,
     val integrity: DeviceIntegrity,
+    /** Sign-in with an account on the phone (Google, in the Play build only). */
+    val externalSignIn: ExternalSignIn = ExternalSignIn.None,
+    /** Sign-in codes read from the text message (SMS Retriever, in the Play build only). */
+    val smsCodes: SmsCodeReceiver = SmsCodeReceiver.None,
 )

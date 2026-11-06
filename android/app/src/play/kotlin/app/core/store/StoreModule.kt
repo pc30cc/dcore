@@ -19,6 +19,8 @@ internal object StoreModule {
             updates = PlayUpdates(context, diag),
             rating = PlayRating(context, diag),
             integrity = PlayIntegrity(context, BuildConfig.PLAY_CLOUD_PROJECT_NUMBER, diag),
+            externalSignIn = GoogleSignIn(context, BuildConfig.GOOGLE_WEB_CLIENT_ID, diag),
+            smsCodes = PlaySmsRetriever(diag),
         )
     }
 }

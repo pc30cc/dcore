@@ -1,0 +1,8 @@
+{
+  "consents": [
+    { "kind": "terms", "version": 3, "acceptedAt": "2026-11-06T09:14:03.120Z" },
+    { "kind": "privacy", "version": 2, "acceptedAt": "2026-11-06T09:14:03.120Z" },
+    { "kind": "gender_matching", "version": 1, "acceptedAt": "2026-11-06T09:15:10.000Z", "store": "bazaar" },
+    { "kind": "a_future_kind", "version": 1 }
+  ]
+}

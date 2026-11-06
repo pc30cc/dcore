@@ -54,6 +54,10 @@ class Problem(
     val confirmToken: String? get() = string("confirmToken")
     val category: String? get() = string("category")
 
+    /** `consent_required`: the consents to accept again. */
+    val kinds: List<String>
+        get() = (members["kinds"] as? JsonArray).orEmpty().mapNotNull { it.stringOrNull }
+
     /** `upgrade_required`. */
     val minVersionCode: Int? get() = int("minVersionCode")
 
@@ -156,6 +160,7 @@ object ProblemCodes {
     const val ENTITLEMENT_REQUIRED = "entitlement_required"
     const val CALLS_NOT_ALLOWED = "calls_not_allowed"
     const val STORE_NOT_SUPPORTED = "store_not_supported"
+    const val CONSENT_REQUIRED = "consent_required"
 
     // 409
     const val ALREADY_SET = "already_set"
@@ -182,6 +187,7 @@ object ProblemCodes {
     const val MESSAGE_REFUSED = "message_refused"
     const val PHOTO_LIMIT = "photo_limit"
     const val LAST_PHOTO = "last_photo"
+    const val PHOTO_MIN = "photo_min"
     const val UPLOAD_MISSING = "upload_missing"
     const val PURCHASE_INVALID = "purchase_invalid"
     const val LIMIT_REACHED = "limit_reached"

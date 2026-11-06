@@ -1,6 +1,12 @@
 package app.core.net
 
 import app.core.common.Clock
+import app.core.media.BlobTransport
+import app.core.model.ConsentKind
+import app.core.model.ConsentRecord
+import app.core.model.ConsentVersions
+import app.core.model.Intention
+import app.core.model.OnboardingCodes
 import app.core.model.AccountLocation
 import app.core.model.AccountStatus
 import app.core.model.AppEvent
@@ -146,7 +152,10 @@ import java.time.temporal.ChronoUnit
  * can tell: the same error codes and extension members, quotas, the
  * free-plan blur of likes, idempotent sends by client id, ETag-like
  * "unchanged" answers, call states that move with [clock], photos that are
- * "processed" a few seconds after their upload.
+ * "processed" a few seconds after their upload (it also takes the upload's
+ * bytes itself, as [BlobTransport], so a ticket that was never uploaded is
+ * refused with `upload_missing`), sign-up that finishes only when what it
+ * needs is there.
  *
  * Every call is recorded in [requestLog] by route label, so a test can count
  * what a flow asked for.
@@ -159,7 +168,9 @@ class SampleApi(
     signedIn: Boolean = true,
     /** How long after placing a call the other side answers; null: they never do (the ring times out). */
     private val answerAfterMs: Long? = 4_000,
-) : ServerApi {
+    /** New profiles wait for a review before they are shown (the panel's waitlist). */
+    private val waitlist: Boolean = false,
+) : ServerApi, BlobTransport {
 
     private val lock = Mutex()
     private val _events = MutableSharedFlow<ApiEvent>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -212,9 +223,17 @@ class SampleApi(
     private val moderation = mutableListOf<ModerationAction>()
     private val appeals = mutableMapOf<Id, Appeal>()
 
-    private class PendingUpload(val position: Int)
+    private class PendingUpload(val position: Int, val startedAt: Long, var uploaded: Boolean = false)
     private val uploads = mutableMapOf<Id, PendingUpload>()
     private val processingSince = mutableMapOf<Id, Long>()
+    private var uploadCount = 0
+    private val toReject = mutableSetOf<Id>()
+
+    /** Accepted consents: kind to version. A new account starts with none. */
+    private val consents = mutableMapOf(
+        ConsentKind.Terms to 1, ConsentKind.Privacy to 1, ConsentKind.Guidelines to 1,
+    )
+    private var reviewSince: Long? = null
 
     private var verification = VerificationState(VerificationStatus.None)
     private var verificationSubmittedAt: Long? = null
@@ -526,11 +545,27 @@ class SampleApi(
         val phone = check(challengeId, code)
         val isNew = knownPhones.add(phone)
         if (isNew) {
-            profile = OwnProfile(id = NEW_ACCOUNT)
+            startNewAccount()
             issue(AuthUser(NEW_ACCOUNT, AccountStatus.Onboarding, 0), isNew = true)
         } else {
             issue(AuthUser(SampleData.ME, AccountStatus.Active, 0), isNew = false)
         }
+    }
+
+    /** A fresh account: nothing set, nothing accepted, nowhere yet. */
+    private fun startNewAccount() {
+        profile = OwnProfile(id = NEW_ACCOUNT)
+        preferences = DiscoveryPreferences()
+        notifications = NotificationPrefs()
+        location = AccountLocation()
+        lastLocationAt = null
+        consents.clear()
+        uploads.clear()
+        processingSince.clear()
+        toReject.clear()
+        uploadCount = 0
+        reviewSince = null
+        bumpMe()
     }
 
     override suspend fun googleNonce(): GoogleNonce = route("auth.google.nonce") {
@@ -541,7 +576,12 @@ class SampleApi(
     override suspend fun signInWithGoogle(idToken: String, nonceId: String, device: DeviceInfo): AuthResult = route("auth.google") {
         if (store != "play") fail(403, ProblemCodes.STORE_NOT_SUPPORTED)
         if (idToken.isBlank()) fail(400, ProblemCodes.GOOGLE_TOKEN_INVALID)
-        issue(AuthUser(SampleData.ME, AccountStatus.Active, 0), isNew = false)
+        if (idToken.startsWith(NEW_GOOGLE_TOKEN)) {
+            startNewAccount()
+            issue(AuthUser(NEW_ACCOUNT, AccountStatus.Onboarding, 0), isNew = true)
+        } else {
+            issue(AuthUser(SampleData.ME, AccountStatus.Active, 0), isNew = false)
+        }
     }
 
     override suspend fun logout(allSessions: Boolean) = route("auth.logout") {
@@ -567,9 +607,22 @@ class SampleApi(
         val due = processingSince.filterValues { nowMs() - it >= PROCESSING_MS }.keys
         if (due.isNotEmpty()) {
             profile = profile.copy(
-                photos = profile.photos.map { if (it.id in due) it.copy(status = PhotoStatus.Approved, url = "https://media.example.com/p/${it.id}/1/640.webp") else it },
+                photos = profile.photos.map {
+                    when {
+                        it.id !in due -> it
+                        it.id in toReject -> it.copy(status = PhotoStatus.Rejected, rejectReason = REJECT_REASON)
+                        else -> it.copy(status = PhotoStatus.Approved, url = "https://media.example.com/p/${it.id}/1/640.webp")
+                    }
+                },
             )
             due.forEach { processingSince.remove(it) }
+            bumpMe()
+        }
+        val waiting = reviewSince
+        val current = session
+        if (waiting != null && current?.status == AccountStatus.PendingReview && nowMs() - waiting >= REVIEW_MS) {
+            session = current.copy(status = AccountStatus.Active)
+            reviewSince = null
             bumpMe()
         }
         val submitted = verificationSubmittedAt
@@ -599,6 +652,7 @@ class SampleApi(
             flags = mapOf("voice_prompts" to true, "message_requests" to true),
             moderation = moderation.filter { it.kind != ModerationKind.Warning && (it.endsAt == null || it.endsAt > now()) },
             deletion = deletion,
+            consentsDue = LEGAL.filter { (consents[it] ?: 0) < 1 },
         )
     }
 
@@ -608,18 +662,56 @@ class SampleApi(
         fetched("me:${me.id}", meVersion, me)
     }
 
-    override suspend fun setBasics(birthDate: LocalDate, gender: Gender): OwnProfile = route("me.basics") {
+    override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile = route("me.basics") {
         val me = full()
         if (profile.birthDate != null) fail(409, ProblemCodes.ALREADY_SET)
+        if (consents.terms < 1 || consents.privacy < 1) fail(403, ProblemCodes.CONSENT_REQUIRED, "kinds" to "terms,privacy")
+        if (gender == Gender.Unknown) fail(422, ProblemCodes.FIELD_INVALID)
         val age = Period.between(birthDate, now().atOffset(ZoneOffset.UTC).toLocalDate()).years
         if (age < 18) {
             session = null
             fail(422, ProblemCodes.UNDER_AGE)
         }
         profile = profile.copy(birthDate = birthDate, gender = gender, age = age)
+        this.consents[ConsentKind.Terms] = consents.terms
+        this.consents[ConsentKind.Privacy] = consents.privacy
+        consents.guidelines?.let { this.consents[ConsentKind.Guidelines] = it }
         session = me.copy(onboardingStep = maxOf(me.onboardingStep, 1))
         bumpMe()
         profile
+    }
+
+    override suspend fun consents(): List<ConsentRecord> = route("me.consents") {
+        user()
+        consents.map { (kind, version) -> ConsentRecord(kind, version, acceptedAt = now()) }
+    }
+
+    override suspend fun setConsent(kind: ConsentKind, version: Int, accepted: Boolean) = route("me.consents.set") {
+        user()
+        if (kind == ConsentKind.Unknown || version < 1) fail(422, ProblemCodes.FIELD_INVALID)
+        if (accepted) consents[kind] = version else consents.remove(kind)
+        bumpMe()
+    }
+
+    /**
+     * `onboardingStep = DONE`: like the server, sign-up finishes only when
+     * everything required is there; then the account is shown (or waits for
+     * a review).
+     */
+    private fun finishOnboarding(me: AuthUser): AuthUser {
+        val missing = buildList {
+            if (profile.name.isBlank()) add("displayName")
+            if (profile.birthDate == null || profile.gender == Gender.Unknown) add("basics")
+            if (preferences.interestedIn.isEmpty()) add("interestedIn")
+            if (profile.intention == null || profile.intention == Intention.Unknown) add("intention")
+            if (profile.photos.count { it.status != PhotoStatus.Rejected } < LIMITS_PHOTOS_MIN) add("photos")
+            if (location.city == null) add("location")
+            if ((consents[ConsentKind.Guidelines] ?: 0) < 1) add("guidelines")
+        }
+        if (missing.isNotEmpty()) fail(422, ProblemCodes.FIELD_INVALID, "missing" to missing.joinToString(","))
+        val next = if (waitlist) AccountStatus.PendingReview else AccountStatus.Active
+        if (waitlist) reviewSince = nowMs()
+        return me.copy(status = next, onboardingStep = OnboardingCodes.DONE)
     }
 
     override suspend fun updateProfile(patch: ProfilePatch): OwnProfile = route("me.profile") {
@@ -646,7 +738,9 @@ class SampleApi(
         }
         val textChanged = patch.about != null || patch.jobTitle != null || patch.displayName != null || patch.prompts != null
         profile = if (textChanged) next.copy(textState = TextState.Checking, v = next.v + 1) else next.copy(v = next.v + 1)
-        patch.onboardingStep?.let { session = me.copy(onboardingStep = it) }
+        patch.onboardingStep?.let { step ->
+            session = if (step >= OnboardingCodes.DONE && me.status == AccountStatus.Onboarding) finishOnboarding(me) else me.copy(onboardingStep = step)
+        }
         bumpMe()
         profile
     }
@@ -717,10 +811,13 @@ class SampleApi(
         if (last != null && nowMs() - last < LOCATION_EVERY_MS) {
             fail(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to (LOCATION_EVERY_MS - (nowMs() - last) + 999) / 1000)
         }
+        val lat = update.lat
+        val lng = update.lng
+        if (update.cityId == null && (lat == null || lng == null)) fail(422, ProblemCodes.FIELD_INVALID)
         lastLocationAt = nowMs()
         // Like the server: the position picks a city and is forgotten.
-        val city = update.cityId?.let { id -> SampleData.cities.firstOrNull { it.id == id } }
-            ?: SampleData.cityCentres.minByOrNull { (_, c) -> sq(c.first - update.lat) + sq(c.second - update.lng) }?.key?.let(SampleData::city)
+        val city = update.cityId?.let { id -> SampleData.cities.firstOrNull { it.id == id } ?: fail(422, ProblemCodes.FIELD_INVALID) }
+            ?: SampleData.cityCentres.minByOrNull { (_, c) -> sq(c.first - lat!!) + sq(c.second - lng!!) }?.key?.let(SampleData::city)
         location = location.copy(city = city, country = city?.country)
         bumpMe()
         LocationResult(city, city?.country)
@@ -736,13 +833,15 @@ class SampleApi(
 
     override suspend fun startPhotoUpload(position: Int, mime: PhotoMime, bytes: Long): PhotoUploadTicket = route("me.photos.start") {
         full()
+        // An upload nobody completed holds its position for an hour, like the server's up:<photoId>.
+        uploads.entries.removeAll { nowMs() - it.value.startedAt >= UPLOAD_TTL_MS }
         if (position !in 0 until LIMITS_PHOTOS) fail(422, ProblemCodes.FIELD_INVALID)
         if (profile.photos.size + uploads.size >= LIMITS_PHOTOS) fail(422, ProblemCodes.PHOTO_LIMIT)
         if (profile.photos.any { it.position == position } || uploads.values.any { it.position == position }) fail(409, ProblemCodes.POSITION_TAKEN)
         if (mime == PhotoMime.Unknown) fail(415, ProblemCodes.UNSUPPORTED_MEDIA_TYPE)
         if (bytes > MAX_PHOTO_BYTES || bytes <= 0) fail(413, ProblemCodes.PAYLOAD_TOO_LARGE)
         val id = nextId()
-        uploads[id] = PendingUpload(position)
+        uploads[id] = PendingUpload(position, nowMs())
         PhotoUploadTicket(
             id,
             UploadTarget(
@@ -754,12 +853,37 @@ class SampleApi(
         )
     }
 
+    /**
+     * The presigned PUT, answered here instead of by storage: the bytes must
+     * be a picture the size the ticket was asked for, sent before the ticket
+     * expires.
+     */
+    override suspend fun put(target: UploadTarget, body: ByteArray, contentType: String, onProgress: (Float) -> Unit) {
+        synchronized(_requestLog) { _requestLog += "sample.upload" }
+        val id = target.url.substringAfter("/u/", "").substringBefore('?')
+        // A slow uplink, in a few steps, so the progress ring has something to show.
+        for (step in 1..UPLOAD_STEPS) {
+            kotlinx.coroutines.delay(UPLOAD_STEP_MS)
+            onProgress(step.toFloat() / UPLOAD_STEPS)
+        }
+        lock.withLock {
+            val upload = uploads[id] ?: throw ApiError.Http(403, Problem(status = 403, code = null))
+            if (target.expiresAt != null && now() > target.expiresAt) throw ApiError.Http(403, Problem(status = 403, code = null))
+            if (body.isEmpty() || !contentType.startsWith("image/")) throw ApiError.Http(400, Problem(status = 400, code = null))
+            upload.uploaded = true
+        }
+    }
+
     override suspend fun completePhotoUpload(photoId: Id): PhotoProcessing = route("me.photos.complete") {
         full()
         profile.photos.firstOrNull { it.id == photoId }?.let { return@route PhotoProcessing(it.id, it.position, it.status) }
-        val upload = uploads.remove(photoId) ?: fail(404, ProblemCodes.NOT_FOUND)
+        val upload = uploads[photoId] ?: fail(404, ProblemCodes.NOT_FOUND)
+        if (!upload.uploaded) fail(422, ProblemCodes.UPLOAD_MISSING)
+        uploads.remove(photoId)
         profile = profile.copy(photos = profile.photos + OwnPhoto(photoId, upload.position, PhotoStatus.Processing))
         processingSince[photoId] = nowMs()
+        // Every fourth photo is "refused by moderation", so the refused state can be seen.
+        if (++uploadCount % REJECT_EVERY == 0) toReject += photoId
         bumpMe()
         PhotoProcessing(photoId, upload.position, PhotoStatus.Processing)
     }
@@ -778,9 +902,11 @@ class SampleApi(
     override suspend fun deletePhoto(photoId: Id) = route("me.photos.delete") {
         full()
         if (profile.photos.none { it.id == photoId }) fail(404, ProblemCodes.NOT_FOUND)
-        if (profile.photos.size <= 1) fail(422, ProblemCodes.LAST_PHOTO)
+        // During sign-up photos come and go freely; a shown profile keeps the minimum.
+        if (user().status != AccountStatus.Onboarding && profile.photos.size <= LIMITS_PHOTOS_MIN) fail(422, ProblemCodes.PHOTO_MIN)
         profile = profile.copy(photos = profile.photos.filterNot { it.id == photoId })
         processingSince.remove(photoId)
+        toReject.remove(photoId)
         bumpMe()
     }
 
@@ -1519,6 +1645,18 @@ class SampleApi(
         private const val VERIFICATION_MS = 10_000L
         private const val MAX_PHOTO_BYTES = 15L * 1024 * 1024
         private const val LIMITS_PHOTOS = 9
+        private const val LIMITS_PHOTOS_MIN = 2
+        private const val REJECT_EVERY = 4
+        private const val UPLOAD_TTL_MS = 3_600_000L
+        private const val UPLOAD_STEPS = 5
+        private const val UPLOAD_STEP_MS = 120L
+        private const val REVIEW_MS = 15_000L
+        private const val REJECT_REASON = "The face isn't clearly visible in this photo."
+
+        /** A Google ID token starting with this signs up a new account (any other signs in the sample one). */
+        const val NEW_GOOGLE_TOKEN = "sample-new"
+
+        private val LEGAL = listOf(ConsentKind.Terms, ConsentKind.Privacy, ConsentKind.Guidelines)
         private const val LIMITS_ABOUT = 500
         private const val LIMITS_COMMENT = 300
         private const val LIMITS_MESSAGE = 2000

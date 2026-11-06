@@ -8,6 +8,11 @@ import app.core.model.AppealRequest
 import app.core.model.AuthResult
 import app.core.model.AuthUser
 import app.core.model.BasicsRequest
+import app.core.model.ConsentKind
+import app.core.model.ConsentList
+import app.core.model.ConsentRecord
+import app.core.model.ConsentUpdate
+import app.core.model.ConsentVersions
 import app.core.model.BazaarPurchaseRequest
 import app.core.model.BlockList
 import app.core.model.BlockRequest
@@ -232,11 +237,20 @@ class HttpServerApi(
         return fetched
     }
 
-    override suspend fun setBasics(birthDate: LocalDate, gender: Gender): OwnProfile =
+    override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile =
         client.send(
             "me.basics", HttpMethod.Put, "v1/me/basics",
-            BasicsRequest(birthDate, gender), BasicsRequest.serializer(), OwnProfile.serializer(), Idempotency.IDEMPOTENT,
+            BasicsRequest(birthDate, gender, consents), BasicsRequest.serializer(), OwnProfile.serializer(), Idempotency.IDEMPOTENT,
         ).value
+
+    override suspend fun consents(): List<ConsentRecord> =
+        client.get("me.consents", "v1/me/consents", ConsentList.serializer()).value.consents
+
+    override suspend fun setConsent(kind: ConsentKind, version: Int, accepted: Boolean) =
+        client.sendNoContent(
+            "me.consents.set", HttpMethod.Put, "v1/me/consents/${seg(kind.wire)}",
+            ConsentUpdate(version, accepted), ConsentUpdate.serializer(), Idempotency.IDEMPOTENT,
+        )
 
     override suspend fun updateProfile(patch: ProfilePatch): OwnProfile =
         client.send(

@@ -46,6 +46,8 @@ data class LegalLinks(
     val childSafetyUrl: String = "",
     val deleteAccountUrl: String = "",
     val supportEmail: String = "",
+    /** The text versions a person must have accepted. */
+    val versions: LegalVersions = LegalVersions(),
 )
 
 /** Version codes: below [required] the app cannot be used; below [recommended] it suggests an update. */
@@ -93,6 +95,10 @@ data class FieldDef(
     @SerialName("private") val isPrivate: Boolean = false,
     /** Usable as an advanced filter. */
     val filterable: Boolean = false,
+    /** A special category (religion, ...): stored only with the sensitive-fields consent. */
+    val sensitive: Boolean = false,
+    /** Must be answered before the profile is complete. */
+    val required: Boolean = false,
 )
 
 @Serializable

@@ -46,12 +46,16 @@ data class Me(
     /** Active ones only; the history is a separate read. */
     val moderation: List<ModerationAction> = emptyList(),
     val deletion: PendingDeletion? = null,
+    /** Legal texts whose current version the person has not accepted yet. */
+    val consentsDue: List<ConsentKind> = emptyList(),
 )
 
 @Serializable
 data class BasicsRequest(
     val birthDate: LocalDate,
     val gender: Gender,
+    /** The legal text versions the person was shown and accepted. */
+    val consents: ConsentVersions,
 )
 
 /**
@@ -125,12 +129,13 @@ data class NotificationPrefsPatch(
 
 /**
  * `PUT /v1/me/location`. The server keeps only a coarse cell of it; the body
- * itself is never logged, here or there.
+ * itself is never logged, here or there. A city picked from the list
+ * (`source = city`) is sent as its [cityId] alone, without a position.
  */
 @Serializable
 data class LocationUpdate(
-    val lat: Double,
-    val lng: Double,
+    val lat: Double? = null,
+    val lng: Double? = null,
     val source: LocationSource,
     val accuracyM: Int? = null,
     val cityId: Int? = null,

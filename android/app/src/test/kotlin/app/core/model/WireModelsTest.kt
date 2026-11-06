@@ -35,6 +35,7 @@ class WireModelsTest {
         "call-token" to CallToken.serializer(),
         "cities" to CityList.serializer(),
         "config" to Config.serializer(),
+        "consents" to ConsentList.serializer(),
         "conversation" to Conversation.serializer(),
         "conversation-body" to ConversationBody.serializer(),
         "conversations" to ConversationsPage.serializer(),
@@ -337,8 +338,14 @@ class WireModelsTest {
         val location = Wire.json.encodeToString(LocationUpdate.serializer(), LocationUpdate(35.7, 51.4, LocationSource.Gps))
         assertEquals(setOf("lat", "lng", "source"), keysOf(location))
 
-        val basics = Wire.json.encodeToString(BasicsRequest.serializer(), BasicsRequest(LocalDate.of(1995, 4, 2), Gender.Nonbinary))
-        assertEquals("""{"birthDate":"1995-04-02","gender":"nonbinary"}""", basics)
+        val basics = Wire.json.encodeToString(
+            BasicsRequest.serializer(),
+            BasicsRequest(LocalDate.of(1995, 4, 2), Gender.Nonbinary, ConsentVersions(terms = 3, privacy = 2)),
+        )
+        assertEquals("""{"birthDate":"1995-04-02","gender":"nonbinary","consents":{"terms":3,"privacy":2}}""", basics)
+
+        val byCity = Wire.json.encodeToString(LocationUpdate.serializer(), LocationUpdate(source = LocationSource.City, cityId = 112931))
+        assertEquals("""{"source":"city","cityId":112931}""", byCity)
 
         val photo = Wire.json.encodeToString(PhotoUploadRequest.serializer(), PhotoUploadRequest(0, PhotoMime.Heic, 1_000L))
         assertEquals("""{"position":0,"mime":"image/heic","bytes":1000}""", photo)

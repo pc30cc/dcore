@@ -260,7 +260,7 @@ internal object SampleData {
                             FieldOption(33, t("انگلیسی", "English", "İngilizce")),
                         ),
                     ),
-                    FieldDef(4, "religion", t("دین", "Religion", "Din"), "text", isPrivate = true),
+                    FieldDef(4, "religion", t("دین", "Religion", "Din"), "text", isPrivate = true, sensitive = true),
                 ),
                 prompts = listOf(
                     PromptDef(1, t("بهترین سفری که رفتم…", "The best trip I took…", "En iyi seyahatim…")),
