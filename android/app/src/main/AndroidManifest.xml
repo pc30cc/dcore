@@ -7,6 +7,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Sign-up asks for these at their own step, each with its reason first.
+         Approximate location only: the server keeps a cell of a few
+         kilometres, never a position. Notifications: Android 13+ asks. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!--
       Shared by both stores. What only one store needs (its billing permission,
       its package in <queries>, its SDK's components) comes from that flavor's

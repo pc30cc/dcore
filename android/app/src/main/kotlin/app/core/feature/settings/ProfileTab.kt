@@ -79,6 +79,7 @@ fun ProfileTab() {
     val snackbar = remember { SnackbarHostState() }
     var showLanguages by rememberSaveable { mutableStateOf(false) }
     var showLicences by rememberSaveable { mutableStateOf(false) }
+    var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     var paymentsStatus by rememberSaveable { mutableStateOf<Int?>(null) }
     // Play reports the update flow's result here; the next check shows the state.
     val updateLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {}
@@ -143,6 +144,9 @@ fun ProfileTab() {
                 SettingsRow(brandString(R.string.settings_licences)) { showLicences = true }
             }
             item {
+                SettingsRow(brandString(R.string.action_sign_out)) { confirmSignOut = true }
+            }
+            item {
                 Text(
                     text = brandString(R.string.settings_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, storeName),
                     style = MaterialTheme.typography.bodySmall,
@@ -165,6 +169,22 @@ fun ProfileTab() {
         )
     }
     if (showLicences) LicencesDialog(onDismiss = { showLicences = false })
+    if (confirmSignOut) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text(brandString(R.string.settings_sign_out_title)) },
+            text = { Text(brandString(R.string.settings_sign_out_body)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmSignOut = false
+                    scope.launch { graph.auth.signOut() }
+                }) { Text(brandString(R.string.action_sign_out)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmSignOut = false }) { Text(brandString(R.string.action_cancel)) }
+            },
+        )
+    }
 }
 
 @StringRes

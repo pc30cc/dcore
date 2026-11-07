@@ -51,6 +51,13 @@ sealed interface ApiEvent {
 
     /** The service is in maintenance (503 `maintenance`). */
     data class Maintenance(val message: String?) : ApiEvent
+
+    /**
+     * The account may not do this any more (403 `account_banned`,
+     * `account_suspended` or `account_deleted`): the session works, the app
+     * shows the account's state.
+     */
+    data class AccountState(val problem: Problem) : ApiEvent
 }
 
 /** A decoded answer and the headers it came with. */
@@ -444,6 +451,7 @@ class ApiClient(
         when {
             status == 426 -> _events.tryEmit(ApiEvent.UpgradeRequired(problem.minVersionCode))
             status == 503 && problem.code == ProblemCodes.MAINTENANCE -> _events.tryEmit(ApiEvent.Maintenance(problem.message))
+            status == 403 && problem.code in ProblemCodes.ACCOUNT_STATE -> _events.tryEmit(ApiEvent.AccountState(problem))
         }
         return ApiError.Http(status, problem)
     }

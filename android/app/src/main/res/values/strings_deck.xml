@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The deck, the match moment, the likes list and the full profile view.
+  Kept in a file of their own so features built side by side do not edit the
+  same file; every key is also in values-fa and values-tr.
+-->
+<resources>
+    <!-- The deck -->
+    <string name="deck_filters">Filters</string>
+    <string name="deck_loading">Finding people for you</string>
+    <string name="deck_action_pass">Pass</string>
+    <string name="deck_action_like">Like</string>
+    <string name="deck_action_superlike">Super like</string>
+    <string name="deck_action_rewind">Rewind</string>
+    <string name="deck_action_details">Open profile</string>
+    <string name="deck_action_next_photo">Next photo</string>
+    <string name="deck_action_previous_photo">Previous photo</string>
+    <string name="deck_name_age">%1$s, %2$s</string>
+    <string name="deck_photo_position">Photo %1$s of %2$s</string>
+    <string name="deck_distance_km">%1$s km away</string>
+    <string name="deck_distance_less">Less than %1$s km away</string>
+    <string name="deck_city_distance">%1$s · %2$s</string>
+    <string name="deck_traveling">Traveling</string>
+    <string name="deck_active_recently">Active recently</string>
+    <string name="deck_likes_you">Likes you</string>
+    <string name="deck_superliked_you">Super liked you</string>
+    <string name="deck_verified">Verified</string>
+    <string name="deck_stamp_like">LIKE</string>
+    <string name="deck_stamp_pass">PASS</string>
+    <string name="deck_superlikes_left">%1$s super likes left</string>
+
+    <!-- The end of the deck -->
+    <string name="deck_exhausted_title">You\'ve seen everyone for now</string>
+    <string name="deck_exhausted_body">New people join every day. Widen your search to meet more of them now.</string>
+    <string name="deck_widen_distance">Search up to %1$s km</string>
+    <string name="deck_widen_distance_generic">Search further away</string>
+    <string name="deck_widen_country">Search the whole country</string>
+    <string name="deck_widen_age">Widen ages to %1$s–%2$s</string>
+    <string name="deck_widen_age_generic">Widen the age range</string>
+    <string name="deck_boost">Boost your profile</string>
+    <string name="deck_boost_started">Your boost runs until %1$s.</string>
+    <string name="deck_boost_none">You have no boosts left.</string>
+    <string name="deck_change_filters">Change filters</string>
+    <string name="deck_check_again">Check again</string>
+    <string name="deck_widening">Looking further…</string>
+
+    <!-- Why the deck cannot be shown -->
+    <string name="feed_offline_title">You\'re offline</string>
+    <string name="feed_offline_body">Connect to the internet and this page fills again by itself.</string>
+    <string name="feed_error_title">This didn\'t load</string>
+    <string name="feed_error_body">Something went wrong on our side. Try again in a moment.</string>
+    <string name="feed_retry">Try again</string>
+    <string name="deck_onboarding_title">Finish your profile first</string>
+    <string name="deck_onboarding_body">Add your photos and details, then you can start meeting people.</string>
+    <string name="deck_onboarding_action">Go to my profile</string>
+    <string name="deck_snoozed_title">You\'re snoozed</string>
+    <string name="deck_snoozed_body">While snoozed, nobody sees your profile and you see no one new.</string>
+    <string name="deck_snoozed_action">Turn snooze off</string>
+    <string name="deck_snooze_failed">Snooze is still on. Try again.</string>
+    <string name="deck_location_title">{appName} needs your location</string>
+    <string name="deck_location_body">People are shown by distance from your city. Share your location in your profile, then try again.</string>
+
+    <!-- What became of a like -->
+    <string name="deck_like_offline">Your like wasn\'t sent: you\'re offline.</string>
+    <string name="deck_like_failed">Your like wasn\'t sent. Try again.</string>
+    <string name="deck_rate_limited">You\'re swiping very fast. Take a short break, then carry on.</string>
+    <string name="deck_out_of_likes_title">You\'re out of likes for now</string>
+    <string name="deck_out_of_superlikes_title">No super likes left</string>
+    <string name="deck_quota_resets">More arrive at %1$s.</string>
+    <string name="deck_quota_resets_soon">More arrive soon.</string>
+    <string name="deck_rewind_title">Changed your mind?</string>
+    <string name="deck_rewind_body">Rewind brings back the last person you passed.</string>
+    <string name="deck_rewind_nothing">Nothing to bring back: only your last pass can be rewound, right after it.</string>
+    <string name="upsell_plans">Included with %1$s.</string>
+    <string name="upsell_plans_generic">Included with a paid plan.</string>
+    <string name="upsell_not_yet">Plans can\'t be bought in this version of the app yet.</string>
+    <string name="action_got_it">Got it</string>
+
+    <!-- A like on one photo or one answer -->
+    <string name="like_item_photo_title">Like %1$s\'s photo</string>
+    <string name="like_item_prompt_title">Like %1$s\'s answer</string>
+    <string name="like_item_comment_label">Add a comment (optional)</string>
+    <string name="like_item_comment_hint">Say what caught your eye</string>
+    <string name="like_item_counter">%1$s/%2$s</string>
+    <string name="like_item_send">Send like</string>
+    <string name="like_item_sending">Sending…</string>
+    <string name="like_item_refused">This comment can\'t be sent. Please keep it kind and respectful.</string>
+    <string name="like_item_offline">You\'re offline. Your like will be sent once you try again online.</string>
+    <string name="like_item_failed">Your like wasn\'t sent. Try again.</string>
+    <string name="like_photo">Like this photo</string>
+    <string name="like_prompt">Like this answer</string>
+
+    <!-- The full profile -->
+    <string name="profile_view_close">Close profile</string>
+    <string name="profile_view_about">About</string>
+    <string name="profile_view_basics">Basics</string>
+    <string name="profile_view_voice_answer">Voice answer · %1$s</string>
+    <string name="profile_view_voice_unavailable">Voice answers can\'t be played in this version yet.</string>
+    <string name="profile_view_like_back">Like back</string>
+    <string name="profile_view_photo">Photo %1$s of %2$s</string>
+    <string name="profile_view_intention_serious">Something serious</string>
+    <string name="profile_view_intention_marriage">Marriage</string>
+    <string name="profile_view_intention_friendship">Friendship</string>
+    <string name="profile_view_intention_not_sure">Not sure yet</string>
+
+    <!-- The match moment -->
+    <string name="match_title">It\'s a match!</string>
+    <string name="match_body">You and %1$s like each other.</string>
+    <string name="match_send_message">Send a message</string>
+    <string name="match_keep_swiping">Keep swiping</string>
+    <string name="match_announcement">It\'s a match with %1$s</string>
+
+    <!-- The likes list -->
+    <string name="likes_count">%1$s people like you</string>
+    <string name="likes_count_plus">%1$s+ people like you</string>
+    <string name="likes_count_one">1 person likes you</string>
+    <string name="likes_banner_title">See who likes you</string>
+    <string name="likes_banner_body">Open every like, read their comments and like them back.</string>
+    <string name="likes_daily_reveal">Today\'s free look</string>
+    <string name="likes_superlike">Super like</string>
+    <string name="likes_liked_photo">Liked your photo</string>
+    <string name="likes_liked_prompt">Liked your answer</string>
+    <string name="likes_hidden_person">Someone who likes you. Hidden on your plan.</string>
+    <string name="likes_empty_action">Discover people</string>
+    <string name="likes_more_failed">More likes didn\'t load.</string>
+    <string name="likes_open_profile">Open %1$s\'s profile</string>
+    <string name="likes_comment_quote">“%1$s”</string>
+    <string name="likes_pass_done">You passed on %1$s.</string>
+
+    <!-- Filters -->
+    <string name="filters_title">Who you see</string>
+    <string name="filters_distance">Maximum distance</string>
+    <string name="filters_distance_value">%1$s km</string>
+    <string name="filters_whole_country">Anywhere in my country</string>
+    <string name="filters_age">Age range</string>
+    <string name="filters_age_value">%1$s–%2$s</string>
+    <string name="filters_verified_only">Verified profiles only</string>
+    <string name="filters_apply">Show people</string>
+    <string name="filters_saving">Saving…</string>
+    <string name="filters_failed">Your filters weren\'t saved. Try again.</string>
+    <string name="filters_limit">You\'ve changed the distance many times today. Try again tomorrow.</string>
+</resources>

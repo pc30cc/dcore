@@ -8,7 +8,13 @@ import app.core.brand.AppBrand
 import app.core.cache.CacheDatabaseHolder
 import app.core.common.Clock
 import app.core.common.Diag
+import app.core.feature.auth.AuthGate
+import app.core.feature.legal.LegalAcceptance
 import app.core.i18n.AppLocales
+import app.core.media.BlobTransport
+import app.core.media.HttpBlobTransport
+import app.core.media.LocalPhotoCache
+import app.core.media.PhotoUploader
 import app.core.net.AndroidDeviceIdentity
 import app.core.net.ApiClient
 import app.core.net.Backend
@@ -22,6 +28,9 @@ import app.core.storage.SecureStore
 import app.core.storage.SessionStore
 import app.core.store.StoreModule
 import app.core.store.StoreServices
+import app.core.sync.CachedDeckSnapshotStore
+import app.core.sync.DeckRepository
+import app.core.sync.EntitlementRepository
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -93,6 +102,39 @@ class AppGraph(private val app: Application) {
 
     /** The store this build was made for: Cafe Bazaar or Google Play, from the flavor's `StoreModule`. */
     val store: StoreServices by lazy { StoreModule.create(app, diag) }
+
+    /** Where the app's root is: signed out, signing up, restricted, in (feature/auth). */
+    val auth: AuthGate by lazy { AuthGate(api, store.externalSignIn, store.smsCodes, appScope, diag) }
+
+    /** The privacy notice and terms accepted on this install, before an account exists. */
+    val legal: LegalAcceptance by lazy { LegalAcceptance(secureStore, clock) }
+
+    /** Where photo bytes go: the presigned URL, never the API (on the sample backend, the sample). */
+    val blobs: BlobTransport by lazy { (api as? BlobTransport) ?: HttpBlobTransport(OkHttp.create()) }
+
+    val photoUploader: PhotoUploader by lazy { PhotoUploader(api, blobs, clock, diag) }
+
+    /** Photos this phone uploaded, shown while the server processes them. */
+    val photoCache: LocalPhotoCache by lazy { LocalPhotoCache(java.io.File(app.cacheDir, "own-photos")) }
+
+    /** Plan, features and quotas, read when a screen first needs them (sync/). */
+    val entitlements: EntitlementRepository by lazy {
+        EntitlementRepository(fetch = { api.entitlements() }, diag = diag)
+    }
+
+    /** The deck and the swipes on their way, for the deck and the likes list (sync/). */
+    val deck: DeckRepository by lazy {
+        DeckRepository(
+            scope = appScope,
+            fetchPage = { limit -> api.deck(limit) },
+            sendSwipes = { swipes -> api.swipe(swipes) },
+            account = { api.sessionUser()?.id },
+            store = CachedDeckSnapshotStore(responseCache, diag),
+            onQuotas = { result -> entitlements.applyQuotas(result.quotas) },
+            clock = clock,
+            diag = diag,
+        )
+    }
 }
 
 val Context.appGraph: AppGraph get() = (applicationContext as CoreApp).graph

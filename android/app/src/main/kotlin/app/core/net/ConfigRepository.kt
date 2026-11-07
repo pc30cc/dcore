@@ -31,6 +31,10 @@ class ConfigRepository(
 
     private val started = AtomicBoolean(false)
 
+    /** Asks again now (a "try again" on the maintenance screen): the fresh copy, or null when it could not be read. */
+    suspend fun refresh(): Config? =
+        runCatchingUnlessCancelled { api.config(locale()).value }.getOrNull()?.also { _config.value = it }
+
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {

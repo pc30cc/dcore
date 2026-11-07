@@ -22,15 +22,27 @@ class StringsCompletenessTest {
     private val res = File("src/main/res")
     private val locales = listOf("values", "values-fa", "values-tr")
 
+    /** Every string of [folder], from `strings.xml` and the per-feature `strings_*.xml` files; plurals by `name#quantity`. */
     private fun strings(folder: String): Map<String, String> {
-        val file = File(res, "$folder/strings.xml")
-        assertTrue("missing ${file.path}", file.isFile)
-        val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
-        val nodes = document.getElementsByTagName("string")
-        return (0 until nodes.length)
-            .map { nodes.item(it) as Element }
-            .filter { it.getAttribute("translatable") != "false" }
-            .associate { it.getAttribute("name") to it.textContent }
+        val main = File(res, "$folder/strings.xml")
+        assertTrue("missing ${main.path}", main.isFile)
+        val files = File(res, folder).listFiles { f -> f.name.startsWith("strings") && f.name.endsWith(".xml") }.orEmpty().sortedBy { it.name }
+        return files.flatMap { file ->
+            val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
+            val nodes = document.getElementsByTagName("string")
+            val singles = (0 until nodes.length)
+                .map { nodes.item(it) as Element }
+                .filter { it.getAttribute("translatable") != "false" }
+                .map { it.getAttribute("name") to it.textContent }
+            val plurals = document.getElementsByTagName("plurals")
+            // Quantities differ by language (Persian and Turkish need only "other"); "other" is the one all share.
+            val others = (0 until plurals.length).map { plurals.item(it) as Element }.mapNotNull { plural ->
+                val items = plural.getElementsByTagName("item")
+                (0 until items.length).map { items.item(it) as Element }.firstOrNull { it.getAttribute("quantity") == "other" }
+                    ?.let { "${plural.getAttribute("name")}#other" to it.textContent }
+            }
+            singles + others
+        }.toMap()
     }
 
     private val placeholder = Regex("""\{[A-Za-z]+}|%\d+\$[sd]""")

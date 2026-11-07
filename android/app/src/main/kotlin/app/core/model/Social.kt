@@ -70,6 +70,8 @@ data class LikeItem(
 @Serializable
 data class LikesPage(
     val total: Int = 0,
+    /** A like bucket is at its cap: show [total] as "N+". */
+    val totalPlus: Boolean = false,
     val items: List<LikeItem> = emptyList(),
     val nextCursor: String? = null,
 )

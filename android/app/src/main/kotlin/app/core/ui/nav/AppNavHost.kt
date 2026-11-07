@@ -21,6 +21,15 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import app.core.BuildConfig
+import app.core.LocalAppGraph
+import app.core.feature.auth.MaintenanceScreen
+import app.core.feature.auth.RestoreRoute
+import app.core.feature.auth.RestrictedRoute
+import app.core.feature.auth.ReviewRoute
+import app.core.feature.auth.Root
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.feature.auth.AuthRoute
 import app.core.feature.main.MainRoute
 import app.core.feature.onboarding.OnboardingRoute
@@ -46,24 +55,57 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object MainKey : NavKey
 
+@Serializable data object ReviewKey : NavKey
+
+@Serializable data object RestrictedKey : NavKey
+
+@Serializable data object RestoreKey : NavKey
+
+/** The root key for each place [AuthGate] can put the app. */
+private fun Root.key(): NavKey = when (this) {
+    Root.Splash -> SplashKey
+    Root.SignIn -> AuthKey
+    Root.Onboarding -> OnboardingKey
+    Root.Review -> ReviewKey
+    Root.Restricted -> RestrictedKey
+    Root.Restore -> RestoreKey
+    Root.Main -> MainKey
+}
+
 /**
  * The root of the app: one back stack the app owns. The main tabs keep their
  * own state inside [MainRoute]; when detail screens arrive, each tab gets its
  * own stack.
  *
- * A build below the server's minimum for its store (`GET /v1/config`) sees only
- * [UpdateRequiredScreen].
+ * Which root is shown (sign-in, sign-up, review, restricted, restore, the
+ * app) is [AuthGate]'s decision; this follows it. A build below the server's
+ * minimum for its store (`GET /v1/config`, or a 426 from any request) sees
+ * only [UpdateRequiredScreen]; maintenance shows [MaintenanceScreen].
  */
 @Composable
 fun AppNavHost(config: Config?) {
+    val gate = LocalAppGraph.current.auth
+    LaunchedEffect(gate) { gate.start() }
+    val root by gate.root.collectAsStateWithLifecycle()
+    val upgrade by gate.upgrade.collectAsStateWithLifecycle()
+    val maintenance by gate.maintenance.collectAsStateWithLifecycle()
+
     // The config is asked for this build's store, so its minimum is this store's.
-    val minimum = config?.minVersion?.required ?: 0
-    if (BuildConfig.VERSION_CODE < minimum) {
+    val minimum = maxOf(config?.minVersion?.required ?: 0, upgrade ?: 0)
+    if (BuildConfig.VERSION_CODE < minimum || (upgrade != null && upgrade == 0)) {
         UpdateRequiredScreen()
+        return
+    }
+    if (config?.maintenance?.enabled == true || maintenance != null) {
+        MaintenanceScreen(maintenance ?: config?.maintenance?.message)
         return
     }
 
     val backStack = rememberNavBackStack(SplashKey)
+    LaunchedEffect(root) {
+        val key = root.key()
+        if (root != Root.Splash && backStack.firstOrNull() != key) backStack.replaceAll(key)
+    }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val reducedMotion = LocalReducedMotion.current
 
@@ -78,18 +120,12 @@ fun AppNavHost(config: Config?) {
         popTransitionSpec = { backward(rtl, reducedMotion) },
         predictivePopTransitionSpec = { backward(rtl, reducedMotion) },
         entryProvider = entryProvider {
-            entry<SplashKey> {
-                SplashRoute(onResolved = { signedIn -> backStack.replaceAll(if (signedIn) MainKey else AuthKey) })
-            }
-            entry<AuthKey> {
-                AuthRoute(onPreview = { backStack.add(OnboardingKey) })
-            }
-            entry<OnboardingKey> {
-                OnboardingRoute(
-                    onExit = { backStack.removeLastOrNull() },
-                    onFinished = { backStack.replaceAll(MainKey) },
-                )
-            }
+            entry<SplashKey> { SplashRoute() }
+            entry<AuthKey> { AuthRoute() }
+            entry<OnboardingKey> { OnboardingRoute() }
+            entry<ReviewKey> { ReviewRoute() }
+            entry<RestrictedKey> { RestrictedRoute() }
+            entry<RestoreKey> { RestoreRoute() }
             entry<MainKey> { MainRoute() }
         },
     )

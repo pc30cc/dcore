@@ -176,6 +176,16 @@ internal object SampleData {
         card("kalex2mn5kqrs", "Alex", 27, Gender.Nonbinary, 2643743, 5, 9091, 3, intention = Intention.NotSure),
         card("layse3rt6wpzu", "Ayşe", 23, Gender.Woman, 323786, 44, 9101, 2),
         card("mroya4gh7jkle", "رویا", 26, Gender.Woman, 124665, 6, 9111, 4, about = "", likesYou = true),
+        // Further away: a deck within 50 km runs out, and widening the distance brings these in.
+        card(
+            "nnazanin5kq2a", "نازنین", 27, Gender.Woman, 112931, 9, 9121, 3,
+            intention = Intention.Serious, job = "پزشک", verified = true,
+            prompts = listOf(ProfilePrompt(2, "کتاب‌فروشی‌های انقلاب و یه چای داغ")),
+            fields = listOf(ProfileFieldValue(1, number = 165), ProfileFieldValue(3, options = listOf(31, 33))),
+        ),
+        card("oleyla6mw3pzb", "Leyla", 29, Gender.Woman, 113646, 86, 9131, 3, intention = Intention.Serious, job = "Mimar"),
+        card("pdeniz7xr4kqa", "Deniz", 25, Gender.Woman, 311046, 160, 9141, 2, intention = Intention.Friendship),
+        card("qsepideh2nb5t", "سپیده", 31, Gender.Woman, 124665, 260, 9151, 3, intention = Intention.Marriage, likesYou = true),
     )
 
     fun person(id: String): ProfileCard? = people.firstOrNull { it.id == id }

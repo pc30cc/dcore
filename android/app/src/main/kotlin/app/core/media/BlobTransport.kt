@@ -1,5 +1,6 @@
 package app.core.media
 
+import app.core.model.Problem
 import app.core.model.UploadTarget
 import app.core.net.ApiError
 import io.ktor.client.HttpClient
@@ -15,7 +16,6 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
-import app.core.model.Problem
 
 /**
  * Where an upload's bytes go: the presigned URL the server handed out, never
@@ -51,8 +51,9 @@ class HttpBlobTransport(engine: HttpClientEngine) : BlobTransport {
                 method = HttpMethod.parse(target.method.uppercase())
                 headers {
                     target.headers.forEach { (name, value) ->
-                        // Content-Type travels with the body, below.
-                        if (!name.equals("Content-Type", ignoreCase = true)) append(name, value)
+                        // Content-Type travels with the body, below; the length and host are the
+                        // engine's to set (the body is exactly the size the ticket was asked for).
+                        if (ENGINE_HEADERS.none { it.equals(name, ignoreCase = true) }) append(name, value)
                     }
                 }
                 val type = target.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value ?: contentType
@@ -73,5 +74,9 @@ class HttpBlobTransport(engine: HttpClientEngine) : BlobTransport {
             throw ApiError.Http(answer.status.value, Problem(status = answer.status.value, code = null))
         }
         onProgress(1f)
+    }
+
+    private companion object {
+        val ENGINE_HEADERS = listOf("Content-Type", "Content-Length", "Host", "Transfer-Encoding")
     }
 }

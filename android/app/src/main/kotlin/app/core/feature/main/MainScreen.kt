@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import app.core.R
+import app.core.feature.deck.DeckRoute
+import app.core.feature.likes.LikesRoute
 import app.core.feature.settings.ProfileTab
 import app.core.i18n.brandString
 import app.core.ui.components.EmptyState
@@ -37,9 +39,9 @@ enum class MainTab(@StringRes val label: Int, @DrawableRes val icon: Int) {
  * Discover goes to Discover first, then leaves the app, as people expect of
  * a bottom bar.
  *
- * Discover, Likes and Chats are empty states: the deck, the likes list and
- * the conversations need the server's endpoints (`GET /deck`, `GET /likes`,
- * `GET /matches`), and chat and calls are not built yet.
+ * Discover is the deck and Likes the likes list (feature/deck, feature/likes).
+ * Chats is still an empty state: "send a message" after a match switches to
+ * it, and opening that conversation is the chat's to do once it exists.
  */
 @Composable
 fun MainRoute() {
@@ -62,15 +64,13 @@ fun MainRoute() {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             when (tab) {
-                MainTab.DISCOVER -> EmptyState(
-                    icon = R.drawable.ic_tab_discover,
-                    title = brandString(R.string.discover_empty_title),
-                    body = brandString(R.string.discover_empty_body),
+                MainTab.DISCOVER -> DeckRoute(
+                    onOpenChat = { _ -> tab = MainTab.CHATS },
+                    onOpenProfile = { tab = MainTab.PROFILE },
                 )
-                MainTab.LIKES -> EmptyState(
-                    icon = R.drawable.ic_tab_likes,
-                    title = brandString(R.string.likes_empty_title),
-                    body = brandString(R.string.likes_empty_body),
+                MainTab.LIKES -> LikesRoute(
+                    onOpenChat = { _ -> tab = MainTab.CHATS },
+                    onBrowse = { tab = MainTab.DISCOVER },
                 )
                 MainTab.CHATS -> EmptyState(
                     icon = R.drawable.ic_tab_chats,

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The deck -->
+    <string name="deck_filters">فیلترها</string>
+    <string name="deck_loading">در حال پیدا کردن آدم‌ها برای شما</string>
+    <string name="deck_action_pass">رد</string>
+    <string name="deck_action_like">لایک</string>
+    <string name="deck_action_superlike">سوپرلایک</string>
+    <string name="deck_action_rewind">برگشت</string>
+    <string name="deck_action_details">دیدن پروفایل</string>
+    <string name="deck_action_next_photo">عکس بعدی</string>
+    <string name="deck_action_previous_photo">عکس قبلی</string>
+    <string name="deck_name_age">%1$s، %2$s</string>
+    <string name="deck_photo_position">عکس %1$s از %2$s</string>
+    <string name="deck_distance_km">%1$s کیلومتر فاصله</string>
+    <string name="deck_distance_less">کمتر از %1$s کیلومتر فاصله</string>
+    <string name="deck_city_distance">%1$s · %2$s</string>
+    <string name="deck_traveling">در سفر</string>
+    <string name="deck_active_recently">به‌تازگی فعال</string>
+    <string name="deck_likes_you">شما را لایک کرده</string>
+    <string name="deck_superliked_you">شما را سوپرلایک کرده</string>
+    <string name="deck_verified">تأییدشده</string>
+    <string name="deck_stamp_like">لایک</string>
+    <string name="deck_stamp_pass">رد</string>
+    <string name="deck_superlikes_left">%1$s سوپرلایک باقی مانده</string>
+
+    <!-- The end of the deck -->
+    <string name="deck_exhausted_title">فعلاً همه را دیده‌اید</string>
+    <string name="deck_exhausted_body">هر روز آدم‌های تازه می‌آیند. برای دیدن آدم‌های بیشتر، جستجو را گسترده‌تر کنید.</string>
+    <string name="deck_widen_distance">جستجو تا %1$s کیلومتر</string>
+    <string name="deck_widen_distance_generic">جستجو در فاصلهٔ دورتر</string>
+    <string name="deck_widen_country">جستجو در کل کشور</string>
+    <string name="deck_widen_age">گسترش سن به %1$s تا %2$s</string>
+    <string name="deck_widen_age_generic">گسترش بازهٔ سنی</string>
+    <string name="deck_boost">بوست پروفایل</string>
+    <string name="deck_boost_started">بوست شما تا %1$s فعال است.</string>
+    <string name="deck_boost_none">بوستی برایتان نمانده است.</string>
+    <string name="deck_change_filters">تغییر فیلترها</string>
+    <string name="deck_check_again">دوباره بگرد</string>
+    <string name="deck_widening">در حال جستجوی دورتر…</string>
+
+    <!-- Why the deck cannot be shown -->
+    <string name="feed_offline_title">به اینترنت وصل نیستید</string>
+    <string name="feed_offline_body">وقتی دوباره وصل شوید، این صفحه خودش پر می‌شود.</string>
+    <string name="feed_error_title">این بخش باز نشد</string>
+    <string name="feed_error_body">مشکلی از طرف ما پیش آمد. چند لحظهٔ دیگر دوباره امتحان کنید.</string>
+    <string name="feed_retry">دوباره امتحان کنید</string>
+    <string name="deck_onboarding_title">اول پروفایلتان را کامل کنید</string>
+    <string name="deck_onboarding_body">عکس‌ها و اطلاعاتتان را اضافه کنید، بعد می‌توانید با آدم‌ها آشنا شوید.</string>
+    <string name="deck_onboarding_action">رفتن به پروفایل من</string>
+    <string name="deck_snoozed_title">حالت استراحت روشن است</string>
+    <string name="deck_snoozed_body">در حالت استراحت کسی پروفایل شما را نمی‌بیند و شما هم آدم تازه‌ای نمی‌بینید.</string>
+    <string name="deck_snoozed_action">خاموش کردن حالت استراحت</string>
+    <string name="deck_snooze_failed">حالت استراحت هنوز روشن است. دوباره امتحان کنید.</string>
+    <string name="deck_location_title">{appName} به موقعیت شما نیاز دارد</string>
+    <string name="deck_location_body">آدم‌ها بر اساس فاصله از شهر شما نشان داده می‌شوند. موقعیتتان را در پروفایل ثبت کنید و دوباره امتحان کنید.</string>
+
+    <!-- What became of a like -->
+    <string name="deck_like_offline">لایک شما فرستاده نشد: به اینترنت وصل نیستید.</string>
+    <string name="deck_like_failed">لایک شما فرستاده نشد. دوباره امتحان کنید.</string>
+    <string name="deck_rate_limited">خیلی سریع سوایپ می‌کنید. کمی استراحت کنید و بعد ادامه دهید.</string>
+    <string name="deck_out_of_likes_title">فعلاً لایکی برایتان نمانده</string>
+    <string name="deck_out_of_superlikes_title">سوپرلایکی نمانده</string>
+    <string name="deck_quota_resets">ساعت %1$s دوباره پر می‌شود.</string>
+    <string name="deck_quota_resets_soon">به‌زودی دوباره پر می‌شود.</string>
+    <string name="deck_rewind_title">نظرتان عوض شد؟</string>
+    <string name="deck_rewind_body">با «برگشت»، آخرین کسی که رد کردید دوباره نشان داده می‌شود.</string>
+    <string name="deck_rewind_nothing">چیزی برای برگشت نیست: فقط آخرین رد، آن هم بلافاصله، برمی‌گردد.</string>
+    <string name="upsell_plans">در %1$s هست.</string>
+    <string name="upsell_plans_generic">در اشتراک‌های پولی هست.</string>
+    <string name="upsell_not_yet">در این نسخهٔ اپ هنوز نمی‌شود اشتراک خرید.</string>
+    <string name="action_got_it">متوجه شدم</string>
+
+    <!-- A like on one photo or one answer -->
+    <string name="like_item_photo_title">لایک عکس %1$s</string>
+    <string name="like_item_prompt_title">لایک جواب %1$s</string>
+    <string name="like_item_comment_label">یک یادداشت بنویسید (اختیاری)</string>
+    <string name="like_item_comment_hint">بگویید چه چیزی توجهتان را جلب کرد</string>
+    <string name="like_item_counter">%1$s/%2$s</string>
+    <string name="like_item_send">فرستادن لایک</string>
+    <string name="like_item_sending">در حال فرستادن…</string>
+    <string name="like_item_refused">این یادداشت فرستاده نمی‌شود. لطفاً مهربان و محترمانه بنویسید.</string>
+    <string name="like_item_offline">به اینترنت وصل نیستید. وقتی وصل شدید دوباره بفرستید.</string>
+    <string name="like_item_failed">لایک شما فرستاده نشد. دوباره امتحان کنید.</string>
+    <string name="like_photo">لایک این عکس</string>
+    <string name="like_prompt">لایک این جواب</string>
+
+    <!-- The full profile -->
+    <string name="profile_view_close">بستن پروفایل</string>
+    <string name="profile_view_about">دربارهٔ من</string>
+    <string name="profile_view_basics">مشخصات</string>
+    <string name="profile_view_voice_answer">جواب صوتی · %1$s</string>
+    <string name="profile_view_voice_unavailable">در این نسخه هنوز نمی‌شود جواب‌های صوتی را پخش کرد.</string>
+    <string name="profile_view_like_back">لایک متقابل</string>
+    <string name="profile_view_photo">عکس %1$s از %2$s</string>
+    <string name="profile_view_intention_serious">رابطهٔ جدی</string>
+    <string name="profile_view_intention_marriage">ازدواج</string>
+    <string name="profile_view_intention_friendship">دوستی</string>
+    <string name="profile_view_intention_not_sure">هنوز مطمئن نیستم</string>
+
+    <!-- The match moment -->
+    <string name="match_title">مچ شدید!</string>
+    <string name="match_body">شما و %1$s همدیگر را لایک کرده‌اید.</string>
+    <string name="match_send_message">پیام بدهید</string>
+    <string name="match_keep_swiping">ادامهٔ سوایپ</string>
+    <string name="match_announcement">با %1$s مچ شدید</string>
+
+    <!-- The likes list -->
+    <string name="likes_count">%1$s نفر شما را لایک کرده‌اند</string>
+    <string name="likes_count_plus">بیش از %1$s نفر شما را لایک کرده‌اند</string>
+    <string name="likes_count_one">۱ نفر شما را لایک کرده</string>
+    <string name="likes_banner_title">ببینید چه کسی لایکتان کرده</string>
+    <string name="likes_banner_body">همهٔ لایک‌ها و یادداشت‌ها را ببینید و لایک متقابل بدهید.</string>
+    <string name="likes_daily_reveal">نگاه رایگان امروز</string>
+    <string name="likes_superlike">سوپرلایک</string>
+    <string name="likes_liked_photo">عکستان را لایک کرده</string>
+    <string name="likes_liked_prompt">جوابتان را لایک کرده</string>
+    <string name="likes_hidden_person">کسی که شما را لایک کرده. در اشتراک فعلی شما پنهان است.</string>
+    <string name="likes_empty_action">دیدن آدم‌ها</string>
+    <string name="likes_more_failed">لایک‌های بیشتر باز نشد.</string>
+    <string name="likes_open_profile">دیدن پروفایل %1$s</string>
+    <string name="likes_comment_quote">«%1$s»</string>
+    <string name="likes_pass_done">%1$s را رد کردید.</string>
+
+    <!-- Filters -->
+    <string name="filters_title">چه کسانی را ببینید</string>
+    <string name="filters_distance">بیشترین فاصله</string>
+    <string name="filters_distance_value">%1$s کیلومتر</string>
+    <string name="filters_whole_country">هر جای کشور</string>
+    <string name="filters_age">بازهٔ سنی</string>
+    <string name="filters_age_value">%1$s تا %2$s</string>
+    <string name="filters_verified_only">فقط پروفایل‌های تأییدشده</string>
+    <string name="filters_apply">نشانم بده</string>
+    <string name="filters_saving">در حال ذخیره…</string>
+    <string name="filters_failed">فیلترها ذخیره نشد. دوباره امتحان کنید.</string>
+    <string name="filters_limit">امروز فاصله را زیاد عوض کرده‌اید. فردا دوباره امتحان کنید.</string>
+</resources>

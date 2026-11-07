@@ -2,6 +2,9 @@ package app.core.net
 
 import app.core.common.Clock
 import app.core.media.BlobTransport
+import app.core.store.ExternalSignIn
+import app.core.store.ExternalSignInResult
+import app.core.store.SmsCodeReceiver
 import app.core.model.ConsentKind
 import app.core.model.ConsentRecord
 import app.core.model.ConsentVersions
@@ -170,7 +173,7 @@ class SampleApi(
     private val answerAfterMs: Long? = 4_000,
     /** New profiles wait for a review before they are shown (the panel's waitlist). */
     private val waitlist: Boolean = false,
-) : ServerApi, BlobTransport {
+) : ServerApi, BlobTransport, ExternalSignIn, SmsCodeReceiver {
 
     private val lock = Mutex()
     private val _events = MutableSharedFlow<ApiEvent>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -256,8 +259,12 @@ class SampleApi(
     private fun now(): Instant = clock.now()
     private fun nowMs(): Long = clock.nowMillis()
 
-    private fun fail(status: Int, code: String, vararg members: Pair<String, Any?>): Nothing =
-        throw ApiError.Http(status, Problem.of(status, code, *members))
+    private fun fail(status: Int, code: String, vararg members: Pair<String, Any?>): Nothing {
+        val problem = Problem.of(status, code, *members)
+        // As the funnel does: the account's state is news for the whole app.
+        if (status == 403 && code in ProblemCodes.ACCOUNT_STATE) _events.tryEmit(ApiEvent.AccountState(problem))
+        throw ApiError.Http(status, problem)
+    }
 
     private suspend fun <T> route(name: String, block: suspend () -> T): T {
         synchronized(_requestLog) { _requestLog += name }
@@ -432,6 +439,9 @@ class SampleApi(
             .filter { it.id !in swiped && it.id !in blocked }
             .filter { preferences.interestedIn.isEmpty() || it.gender in preferences.interestedIn || it.gender == Gender.Unknown }
             .filter { (it.age ?: 0) in preferences.ageMin..preferences.ageMax }
+            // Like the server: the distance limit (unless the whole country) and verified only.
+            .filter { preferences.wholeCountry || (it.distance?.km ?: 0) <= preferences.maxDistanceKm }
+            .filter { !preferences.verifiedOnly || it.verified }
             .sortedByDescending { it.likesYou }
             .forEach { deckQueue += it.id }
     }
@@ -566,6 +576,29 @@ class SampleApi(
         uploadCount = 0
         reviewSince = null
         bumpMe()
+    }
+
+    // MARK: - The phone's side of sign-in, for the sample
+
+    private var googleSignUps = 0
+
+    override val available: Boolean get() = store == "play"
+
+    /** The sample's Google account picker: every pick signs up a new account. */
+    override suspend fun signIn(activity: android.app.Activity, nonce: String, silentFirst: Boolean): ExternalSignInResult {
+        kotlinx.coroutines.delay(SHEET_MS)
+        return ExternalSignInResult.Token("$NEW_GOOGLE_TOKEN.${++googleSignUps}.$nonce")
+    }
+
+    override suspend fun signOut() = Unit
+
+    override fun appHash(context: android.content.Context): String = "SampleHash1"
+
+    /** The text message "arrives" a few seconds after a code was sent, as the retriever would read it. */
+    override fun codes(context: android.content.Context, length: Int): Flow<String> = kotlinx.coroutines.flow.flow {
+        kotlinx.coroutines.delay(SMS_ARRIVES_MS)
+        val sent = lock.withLock { lastOtpAt.values.maxOrNull() }
+        if (sent != null && nowMs() - sent < OTP_TTL_MS) emit(SampleData.CODE.take(length))
     }
 
     override suspend fun googleNonce(): GoogleNonce = route("auth.google.nonce") {
@@ -1647,6 +1680,8 @@ class SampleApi(
         private const val LIMITS_PHOTOS = 9
         private const val LIMITS_PHOTOS_MIN = 2
         private const val REJECT_EVERY = 4
+        private const val SHEET_MS = 600L
+        private const val SMS_ARRIVES_MS = 2_500L
         private const val UPLOAD_TTL_MS = 3_600_000L
         private const val UPLOAD_STEPS = 5
         private const val UPLOAD_STEP_MS = 120L
