@@ -37,9 +37,12 @@ export type QueueName = (typeof queueNames)[number];
  */
 export const queueJobs = {
   system: ['heartbeat'],
+  deck: ['refill'],
   photo: ['process', 'delete'],
-  account: ['deletion-fanout', 'purge', 'deletion-sweep'],
-  maint: ['partitions', 'active-drain', 'sessions-cleanup'],
+  account: ['deletion-fanout', 'purge', 'deletion-sweep', 'unmatch-purge'],
+  push: ['send'],
+  chat: ['like-notes'],
+  maint: ['partitions', 'active-drain', 'sessions-cleanup', 'lk-rebuild'],
 } as const satisfies Partial<Record<QueueName, readonly string[]>>;
 
 /** Queues that have jobs. */

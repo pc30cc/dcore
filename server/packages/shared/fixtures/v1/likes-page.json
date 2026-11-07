@@ -1,0 +1,40 @@
+{
+  "total": 3001,
+  "totalPlus": true,
+  "items": [
+    {
+      "liker": {
+        "id": "cn5wy6l3naf5b",
+        "v": 3,
+        "name": "Negar",
+        "age": 27,
+        "gender": "woman",
+        "verified": true,
+        "superliked": true,
+        "likesYou": true,
+        "photos": [
+          {
+            "id": "1287390234923420001",
+            "w": 1080,
+            "h": 1350,
+            "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+            "url": "https://cdn.example.com/p/1287390234923420001/1/640.webp?exp=1794096000&sig=Zm9vYmFy"
+          }
+        ],
+        "prompts": [],
+        "fields": []
+      },
+      "kind": "superlike",
+      "item": {
+        "kind": "photo",
+        "ref": "1287390234923420001"
+      },
+      "comment": "That view!"
+    },
+    {
+      "blurhash": "L6PZfSi_.AyE_3t7t7R**0o#DgR4",
+      "kind": "like"
+    }
+  ],
+  "nextCursor": "eyJ3IjoyOTM3LCJpIjoiMTI4NzM5MDIzNDkyMzQwMDAwMSJ9"
+}

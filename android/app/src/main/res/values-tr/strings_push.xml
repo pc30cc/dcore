@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="push_channel_messages">Mesajlar</string>
+    <string name="push_channel_messages_about">Yeni mesajlar, mesaj istekleri ve cevapsız aramalar.</string>
+    <string name="push_channel_matches">Eşleşmeler</string>
+    <string name="push_channel_matches_about">Biriyle birbirinizi beğendiğinizde.</string>
+    <string name="push_channel_likes">Beğeniler</string>
+    <string name="push_channel_likes_about">Biri profilini beğendiğinde.</string>
+    <string name="push_channel_calls">Aramalar</string>
+    <string name="push_channel_calls_about">Eşleşmelerinden gelen sesli ve görüntülü aramalar.</string>
+    <string name="push_channel_calls_ongoing">Süren arama</string>
+    <string name="push_channel_calls_ongoing_about">Bir aramadayken gösterilir.</string>
+    <string name="push_channel_account">Hesap ve güvenlik</string>
+    <string name="push_channel_account_about">Hesabın, bildirimler ve destek yanıtları.</string>
+    <string name="push_channel_offers">Teklifler</string>
+    <string name="push_channel_offers_about">Ara sıra teklifler. {appName} içinde açmadıkça kapalıdır.</string>
+
+    <string name="push_message_title">Yeni mesaj</string>
+    <string name="push_message_body">Okumak için {appName} uygulamasını aç.</string>
+    <string name="push_match_title">Yeni bir eşleşmen var</string>
+    <string name="push_match_body">Sıcakken bir merhaba de.</string>
+    <string name="push_like_title">Biri seni beğendi</string>
+    <string name="push_like_body">Beğenilerini görmek için {appName} uygulamasını aç.</string>
+    <string name="push_request_title">Yeni mesaj isteği</string>
+    <string name="push_request_body">Biri seninle konuşmak istiyor.</string>
+    <string name="push_call_missed_title">Cevapsız arama</string>
+    <string name="push_call_missed_body">Geri aramak için {appName} uygulamasını aç.</string>
+    <string name="push_account_title">Hesabın</string>
+    <string name="push_account_body">Hesabınla ilgili bir haber var.</string>
+    <string name="push_support_title">Destek yanıtladı</string>
+    <string name="push_support_body">Yanıtı okumak için {appName} uygulamasını aç.</string>
+    <string name="push_offer_title">Sana bir teklif</string>
+    <string name="push_offer_body">Görmek için {appName} uygulamasını aç.</string>
+</resources>

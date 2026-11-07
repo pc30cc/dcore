@@ -1,4 +1,4 @@
-import { cellToLatLng, cellToParent, getResolution, isValidCell, latLngToCell } from 'h3-js';
+import { cellArea, cellToLatLng, cellToParent, getResolution, gridDisk, isValidCell, latLngToCell } from 'h3-js';
 
 /**
  * Locations are kept as H3 cells, never as coordinates: the API turns a
@@ -62,6 +62,17 @@ export function parentCell(cell: string | bigint, resolution: number): string {
   const hex = cellIdToHex(cell);
   if (resolution > getResolution(hex)) throw new RangeError('a parent must be coarser');
   return hexToCellId(cellToParent(hex, resolution));
+}
+
+/** The cells within `k` rings of a cell (the cell itself included), as the database stores them. */
+export function cellDisk(cell: string | bigint, k: number): string[] {
+  if (!Number.isInteger(k) || k < 0) throw new RangeError('k must be a non-negative integer');
+  return gridDisk(cellIdToHex(cell), k).map(hexToCellId);
+}
+
+/** The edge of a regular hexagon with this cell's area, in km (cells differ in size across the globe). */
+export function cellEdgeKm(cell: string | bigint): number {
+  return Math.sqrt((2 * cellArea(cellIdToHex(cell), 'km2')) / (3 * Math.sqrt(3)));
 }
 
 const EARTH_RADIUS_KM = 6371.0088;

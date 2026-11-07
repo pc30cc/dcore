@@ -92,6 +92,13 @@ data class ReadCursors(
 /**
  * One page of a conversation, oldest first.
  *
+ * [syncCursor] is the position below which every message is durable on the
+ * server (`min(newest id returned, write-behind watermark - 1)`). A reader
+ * stores it, not the newest id it saw, and asks `after=<syncCursor>` next
+ * time: rows that reach the server's database late are then still fetched,
+ * and the repeats are dropped by id. Null from a server that does not send
+ * it: the newest id returned stands in.
+ *
  * [writeLagMs] comes from the `X-Write-Lag-Ms` header, not the body: how far
  * the server's write-behind is behind. Above 2000 a reader asks for `after`
  * again a little later, because a message sent in that window may not be in
@@ -101,6 +108,7 @@ data class ReadCursors(
 data class MessagesPage(
     val items: List<Message> = emptyList(),
     val hasMore: Boolean = false,
+    val syncCursor: Id? = null,
     val readCursors: ReadCursors = ReadCursors(),
     val peerDeliveredId: Id? = null,
     @Transient val writeLagMs: Long? = null,

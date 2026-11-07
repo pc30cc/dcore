@@ -77,5 +77,61 @@ export function createKeys(prefix: string) {
     lastSeen: (uid: string | bigint) => k('ls', uid),
     presence: (uid: string | bigint) => k('pres', uid),
     accountsHidden: () => k('vis', 'out'),
+
+    // Deck (kv-cache): the prepared queue (ids only), its metadata, the refill guard, cards, boosts, seen filters
+    deckQueue: (uid: string | bigint) => k('deck', uid),
+    deckMeta: (uid: string | bigint) => k('deckm', uid),
+    deckLock: (uid: string | bigint) => k('deck', 'lock', uid),
+    card: (uid: string | bigint, version: number | string, catalogue: number | string) => k('card', uid, version, catalogue),
+    boosted: (cellR5: string | bigint) => k('bst', cellR5),
+    /** Bloom filter of the people `uid` swiped in 15-day period `period`; tier 0, 1 (`:x`), 2 (`:y`). */
+    seen: (uid: string | bigint, period: number, tier: 0 | 1 | 2) =>
+      tier === 0 ? k('seen', uid, period) : k('seen', uid, period, tier === 1 ? 'x' : 'y'),
+    seenCount: (uid: string | bigint, period: number) => k('seen', uid, period, 'n'),
+
+    // Likes received (kv-core): weekly buckets of pending likers ({@link likeWeek}), the cap marker, the rebuilt flag
+    likesIn: (uid: string | bigint, week: number) => k('lkin', uid, week),
+    likesInFull: (uid: string | bigint, week: number) => k('lkin', uid, week, 'full'),
+    likesReady: () => k('lk', 'ready'),
+    /** The super likers among a bucket's likers (small: super likes are rationed). */
+    likesInSuper: (uid: string | bigint, week: number) => k('lkin', uid, week, 's'),
+    /** The day's one open like on a free plan (the liker's id), chosen once a day. */
+    likesReveal: (uid: string | bigint, day: string) => k('lkr', uid, day),
+
+    // Swipes (kv-core): daily, weekly and monthly quotas (`q:likes:<uid>:<yyyymmdd>`, `q:sl:<uid>:<yyyyww>`)
+    quota: (feature: string, uid: string | bigint, period: string) => k('q', feature, uid, period),
+
+    // Write-behind streams (kv-core): `wb:like`, `wb:match` (W3), `wb:msg` (W4), their dead letters and watermarks
+    stream: (name: 'like' | 'match' | 'msg') => k('wb', name),
+    streamDead: (name: 'like' | 'match' | 'msg') => k('wb', name, 'dead'),
+    /** The smallest app id not yet durable in PostgreSQL for that stream (every id below it is). */
+    streamWatermark: (name: 'like' | 'msg') => k('wb', name, 'wm'),
+
+    // Conversations (matches): eligibility cache (kv-cache), lists and their versions (kv-core)
+    matchState: (matchId: string | bigint) => k('mt', matchId),
+    conversationList: (uid: string | bigint) => k('cl', uid),
+    conversationVersion: (uid: string | bigint) => k('cv', uid),
+    /** Set while a conversation list's peers were checked against the visibility rule less than a minute ago. */
+    conversationListChecked: (uid: string | bigint) => k('cl', 'ok', uid),
+    /** A person's name, first photo and badge for lists, under their own-account version `mev` (kv-cache). */
+    peerSummary: (uid: string | bigint, version: number) => k('ps', uid, version),
   };
+}
+
+/** Like buckets kept per person: the current ISO-style week and the four before it. */
+export const LIKE_BUCKET_WEEKS = 5;
+
+/**
+ * The like bucket week of a time: whole weeks since Monday 1969-12-29 UTC
+ * (ISO weeks start on Monday), so consecutive weeks are consecutive numbers.
+ */
+export function likeWeek(time: Date | number): number {
+  const ms = typeof time === 'number' ? time : time.getTime();
+  return Math.floor((Math.floor(ms / 86_400_000) + 3) / 7);
+}
+
+/** The weeks whose buckets are live at `time`, oldest first (`w-4 … w`). */
+export function likeWeeks(time: Date | number): number[] {
+  const w = likeWeek(time);
+  return Array.from({ length: LIKE_BUCKET_WEEKS }, (_, i) => w - (LIKE_BUCKET_WEEKS - 1) + i);
 }

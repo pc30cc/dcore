@@ -46,6 +46,15 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['DELETE', '/v1/me/photos/{photoId}', '204', false],
   // §3.5
   ['PUT', '/v1/devices/current', '204', false],
+  // §3.6
+  ['GET', '/v1/deck', '200', true],
+  ['POST', '/v1/swipes', '200', true],
+  // §3.7 and §3.4 (a profile opened from a list)
+  ['GET', '/v1/likes', '200', true],
+  ['GET', '/v1/profiles/{publicUid}', '200', true],
+  // §3.8 (the list and the unmatch; messages are W4)
+  ['GET', '/v1/conversations', '200', true],
+  ['DELETE', '/v1/conversations/{id}', '204', false],
   // §3.11 (reads and appeals; the API name of the actions is "moderation")
   ['GET', '/v1/me/moderation', '200', true],
   ['POST', '/v1/appeals', '201', true],
@@ -104,7 +113,7 @@ describe('the route registry', () => {
   });
 
   it('answers an unknown /v1 route with 404, not with a stand-in', async () => {
-    for (const url of ['/v1/deck', '/v1/likes', '/v1/test']) {
+    for (const url of ['/v1/likes/nope', '/v1/matches', '/v1/test']) {
       const res = await app.inject({ method: 'GET', url, headers: { 'x-client': 'play/120' } });
       expect(res.statusCode, url).toBe(404);
     }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createPool, instrumentPool, statementCounter, type Pool } from '@app/db';
 import {
+  CentrifugoPublisher,
   ClientIpResolver,
   DenyList,
   IdGenerator,
@@ -13,6 +14,7 @@ import {
   type KeyBuilder,
   type MediaStore,
   type PublicIds,
+  type RealtimePublisher,
   type ServerSecrets,
 } from '@app/shared/server';
 import Fastify, { LogController } from 'fastify';
@@ -36,10 +38,14 @@ import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
 import { accountRoutes } from './routes/account.js';
 import { authRoutes } from './routes/auth.js';
+import { deckRoutes } from './routes/deck.js';
 import { deletionRoutes } from './routes/deletion.js';
 import { healthRoutes } from './routes/health.js';
 import { photoRoutes } from './routes/photos.js';
 import { publicDeletionRoutes } from './routes/publicDeletion.js';
+import { conversationRoutes } from './routes/conversations.js';
+import { likeRoutes } from './routes/likes.js';
+import { swipeRoutes } from './routes/swipes.js';
 import { BullJobProducer, type JobProducer } from './services/jobs.js';
 
 declare module 'fastify' {
@@ -67,6 +73,8 @@ declare module 'fastify' {
     media: MediaStore | null;
     /** Jobs for the worker's queues. */
     jobs: JobProducer;
+    /** Centrifugo's server API for the events the API publishes; null when not configured (nothing is published). */
+    realtime: RealtimePublisher | null;
   }
 }
 
@@ -90,6 +98,8 @@ export interface AppDependencies {
   media?: MediaStore | null | undefined;
   /** A job producer owned by the caller (tests); otherwise BullMQ on the app's Valkey connection. */
   jobs?: JobProducer | undefined;
+  /** A realtime publisher (tests pass a fake; null: none); otherwise Centrifugo when CENTRIFUGO_API_URL is set. */
+  realtime?: RealtimePublisher | null | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -184,6 +194,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   const clientPolicy = deps.clientPolicy ?? new ClientPolicyHolder();
   const media = deps.media !== undefined ? deps.media : config.storage ? createMediaStore(config.storage, { timeoutMs: config.storage.timeoutMs }) : null;
   const jobs = deps.jobs ?? new BullJobProducer({ redis, keyPrefix: config.redis.keyPrefix });
+  const realtime = deps.realtime !== undefined ? deps.realtime : config.realtime.api ? new CentrifugoPublisher(config.realtime.api) : null;
   const edges = new ClientIpResolver(parseEdgeTrust(config.edgeTrust));
   if (edges.ignoredEntries.length > 0) app.log.warn({ entries: edges.ignoredEntries }, 'CF_EDGE_TRUST: entries ignored');
 
@@ -200,6 +211,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   app.decorate('clientPolicy', clientPolicy);
   app.decorate('media', media);
   app.decorate('jobs', jobs);
+  app.decorate('realtime', realtime);
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -254,6 +266,10 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
 
   await app.register(healthRoutes, { readiness });
   await app.register(accountRoutes);
+  await app.register(deckRoutes);
+  await app.register(swipeRoutes);
+  await app.register(likeRoutes);
+  await app.register(conversationRoutes);
   await app.register(authRoutes);
   await app.register(photoRoutes);
   await app.register(deletionRoutes);

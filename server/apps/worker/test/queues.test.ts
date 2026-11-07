@@ -77,6 +77,7 @@ describe('the queues the worker runs', () => {
     expect(scheduled.sort()).toEqual([
       'account/deletion-sweep',
       'maint/active-drain',
+      'maint/lk-rebuild',
       'maint/partitions',
       'maint/sessions-cleanup',
       'system/heartbeat',

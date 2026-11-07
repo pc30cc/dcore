@@ -113,6 +113,25 @@ class AuthGate(
 
     private val started = AtomicBoolean(false)
 
+    private class SignOutHook(val before: suspend () -> Unit, val after: suspend () -> Unit)
+
+    private val signOutHooks = java.util.concurrent.CopyOnWriteArrayList<SignOutHook>()
+
+    /**
+     * Work a sign-out owes: [before] runs while the session still exists
+     * (clearing the push token on the server), [after] once it is gone
+     * (deleting the token, clearing caches and notifications). Both are best
+     * effort and never stop the sign-out. A session lost on the server runs
+     * [after] only.
+     */
+    fun onSignOut(before: suspend () -> Unit = {}, after: suspend () -> Unit = {}) {
+        signOutHooks += SignOutHook(before, after)
+    }
+
+    private suspend fun runHooks(which: (SignOutHook) -> (suspend () -> Unit)) {
+        signOutHooks.forEach { hook -> runCatchingUnlessCancelled { which(hook)() } }
+    }
+
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
@@ -164,6 +183,7 @@ class AuthGate(
         scope.launch {
             runCatchingUnlessCancelled { api.discardSession() }
             runCatchingUnlessCancelled { externalSignIn.signOut() }
+            runHooks { it.after }
             _accountProblem.value = null
             _notice.value = notice
             _root.value = Root.SignIn
@@ -176,12 +196,14 @@ class AuthGate(
      * token goes with it, so nobody can use it again from here).
      */
     suspend fun signOut(allSessions: Boolean = false) {
+        runHooks { it.before }
         runCatchingUnlessCancelled { api.logout(allSessions) }
             .onFailure {
                 diag.info(AREA, "sign-out could not reach the server (${it.javaClass.simpleName}); forgotten here")
                 runCatchingUnlessCancelled { api.discardSession() }
             }
         runCatchingUnlessCancelled { externalSignIn.signOut() }
+        runHooks { it.after }
         _accountProblem.value = null
         _notice.value = null
         _root.value = Root.SignIn

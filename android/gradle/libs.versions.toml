@@ -29,10 +29,15 @@ room = "2.8.5"
 # Since 2.3.0 KSP's version is no longer tied to Kotlin's; AGP 9's built-in
 # Kotlin is supported from 2.3.1.
 ksp = "2.3.12"
-# Push, once it is wired. Declared, not yet a dependency: FCM needs Google Play
-# services, which many phones that install from Cafe Bazaar do not have, so the
-# bazaar flavor will need a push path of its own.
+# Push (FCM, both store builds, behind app.core.push.PushTransport). Phones
+# without Google Play services get realtime while the app is open instead.
+# 34.19.0 resolves firebase-messaging 25.1.3 (Google Maven, 2026-11-07).
 firebaseBom = "34.19.0"
+# The one Play services call the app makes itself: isGooglePlayServicesAvailable
+# (GoogleApiAvailabilityLight). The same version firebase-messaging brings.
+playServicesBasement = "18.9.0"
+# One-off jobs with a network constraint (push registration), never polling.
+work = "2.11.2"
 
 # Store SDKs. Each is a dependency of ONE flavor only (app/build.gradle.kts),
 # and tools/check-store-separation.sh proves the other flavor's APK has none
@@ -70,6 +75,10 @@ androidx-room-testing = { group = "androidx.room", name = "room-testing", versio
 
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+play-services-basement = { group = "com.google.android.gms", name = "play-services-basement", version.ref = "playServicesBasement" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+# ProcessLifecycleOwner: whether the app is in front (one realtime socket only then).
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
 
 # The BOM decides every androidx.compose version below it.
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

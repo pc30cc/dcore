@@ -1,0 +1,414 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "68334e148b49a644b2eca0c8d12a330a",
+    "entities": [
+      {
+        "tableName": "http_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cache_key` TEXT NOT NULL, `etag` TEXT, `body` TEXT NOT NULL, `stored_at` INTEGER NOT NULL, PRIMARY KEY(`cache_key`))",
+        "fields": [
+          {
+            "fieldPath": "cacheKey",
+            "columnName": "cache_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "etag",
+            "columnName": "etag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedAtMillis",
+            "columnName": "stored_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cache_key"
+          ]
+        }
+      },
+      {
+        "tableName": "conversations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, `peer_id` TEXT NOT NULL, `peer_name` TEXT NOT NULL, `peer_photo_json` TEXT, `peer_verified` INTEGER NOT NULL, `peer_online` INTEGER NOT NULL, `peer_active_recently` INTEGER NOT NULL, `state` TEXT NOT NULL, `source` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `last_message_json` TEXT, `last_message_id` INTEGER, `last_activity_at` INTEGER NOT NULL, `unread` INTEGER NOT NULL, `my_read_id` INTEGER, `peer_read_id` INTEGER, `peer_delivered_id` INTEGER, `calls_me` INTEGER NOT NULL, `calls_peer` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `cached_at` INTEGER NOT NULL, PRIMARY KEY(`account_id`, `conversation_id`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerId",
+            "columnName": "peer_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerName",
+            "columnName": "peer_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerPhotoJson",
+            "columnName": "peer_photo_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "peerVerified",
+            "columnName": "peer_verified",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerOnline",
+            "columnName": "peer_online",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerActiveRecently",
+            "columnName": "peer_active_recently",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastMessageJson",
+            "columnName": "last_message_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastMessageId",
+            "columnName": "last_message_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastActivityAt",
+            "columnName": "last_activity_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unread",
+            "columnName": "unread",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "myReadId",
+            "columnName": "my_read_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "peerReadId",
+            "columnName": "peer_read_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "peerDeliveredId",
+            "columnName": "peer_delivered_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "callsMe",
+            "columnName": "calls_me",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "callsPeer",
+            "columnName": "calls_peer",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "muted",
+            "columnName": "muted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "conversation_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_conversations_account_id_last_activity_at",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "last_activity_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conversations_account_id_last_activity_at` ON `${TABLE_NAME}` (`account_id`, `last_activity_at`)"
+          },
+          {
+            "name": "index_conversations_account_id_peer_id",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "peer_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_conversations_account_id_peer_id` ON `${TABLE_NAME}` (`account_id`, `peer_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `local_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, `server_id` INTEGER, `client_id` TEXT, `sender_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `body` TEXT, `ref_id` INTEGER, `media_json` TEXT, `call_json` TEXT, `at` INTEGER NOT NULL, `sort_key` INTEGER NOT NULL, `send_state` INTEGER NOT NULL, `error_code` TEXT, `confirm_token` TEXT, `cached_at` INTEGER NOT NULL, PRIMARY KEY(`account_id`, `local_id`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localId",
+            "columnName": "local_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "server_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clientId",
+            "columnName": "client_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "senderId",
+            "columnName": "sender_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "refId",
+            "columnName": "ref_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mediaJson",
+            "columnName": "media_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "callJson",
+            "columnName": "call_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "at",
+            "columnName": "at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortKey",
+            "columnName": "sort_key",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sendState",
+            "columnName": "send_state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "error_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confirmToken",
+            "columnName": "confirm_token",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cachedAt",
+            "columnName": "cached_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "local_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_messages_account_id_conversation_id_sort_key",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "conversation_id",
+              "sort_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_account_id_conversation_id_sort_key` ON `${TABLE_NAME}` (`account_id`, `conversation_id`, `sort_key`)"
+          },
+          {
+            "name": "index_messages_account_id_conversation_id_server_id",
+            "unique": true,
+            "columnNames": [
+              "account_id",
+              "conversation_id",
+              "server_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_account_id_conversation_id_server_id` ON `${TABLE_NAME}` (`account_id`, `conversation_id`, `server_id`)"
+          },
+          {
+            "name": "index_messages_account_id_conversation_id_client_id",
+            "unique": true,
+            "columnNames": [
+              "account_id",
+              "conversation_id",
+              "client_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_messages_account_id_conversation_id_client_id` ON `${TABLE_NAME}` (`account_id`, `conversation_id`, `client_id`)"
+          },
+          {
+            "name": "index_messages_account_id_send_state",
+            "unique": false,
+            "columnNames": [
+              "account_id",
+              "send_state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_account_id_send_state` ON `${TABLE_NAME}` (`account_id`, `send_state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account_id` TEXT NOT NULL, `sync_key` TEXT NOT NULL, `cursor` TEXT, `oldest_id` INTEGER, `has_more_before` INTEGER NOT NULL, `stale` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`account_id`, `sync_key`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "account_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "sync_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursor",
+            "columnName": "cursor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "oldestId",
+            "columnName": "oldest_id",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hasMoreBefore",
+            "columnName": "has_more_before",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stale",
+            "columnName": "stale",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account_id",
+            "sync_key"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '68334e148b49a644b2eca0c8d12a330a')"
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="push_channel_messages">پیام‌ها</string>
+    <string name="push_channel_messages_about">پیام‌های تازه، درخواست‌های پیام و تماس‌های بی‌پاسخ.</string>
+    <string name="push_channel_matches">هم‌پسندی‌ها</string>
+    <string name="push_channel_matches_about">وقتی شما و کسی همدیگر را پسندیده‌اید.</string>
+    <string name="push_channel_likes">پسندها</string>
+    <string name="push_channel_likes_about">وقتی کسی پروفایل شما را می‌پسندد.</string>
+    <string name="push_channel_calls">تماس‌ها</string>
+    <string name="push_channel_calls_about">تماس‌های صوتی و تصویری از هم‌پسندهای شما.</string>
+    <string name="push_channel_calls_ongoing">تماس در جریان</string>
+    <string name="push_channel_calls_ongoing_about">تا وقتی در تماس هستید نشان داده می‌شود.</string>
+    <string name="push_channel_account">حساب و ایمنی</string>
+    <string name="push_channel_account_about">حساب شما، گزارش‌ها و پاسخ‌های پشتیبانی.</string>
+    <string name="push_channel_offers">پیشنهادها</string>
+    <string name="push_channel_offers_about">پیشنهادهای گاه‌به‌گاه. خاموش است مگر آن را در {appName} روشن کنید.</string>
+
+    <string name="push_message_title">پیام تازه</string>
+    <string name="push_message_body">برای خواندنش {appName} را باز کنید.</string>
+    <string name="push_match_title">هم‌پسندی تازه دارید</string>
+    <string name="push_match_body">تا داغ است سلام کنید.</string>
+    <string name="push_like_title">کسی شما را پسندیده</string>
+    <string name="push_like_body">برای دیدن پسندها {appName} را باز کنید.</string>
+    <string name="push_request_title">درخواست پیام تازه</string>
+    <string name="push_request_body">کسی می‌خواهد با شما گفتگو کند.</string>
+    <string name="push_call_missed_title">تماس بی‌پاسخ</string>
+    <string name="push_call_missed_body">برای تماس دوباره {appName} را باز کنید.</string>
+    <string name="push_account_title">حساب شما</string>
+    <string name="push_account_body">خبری درباره‌ی حساب شما هست.</string>
+    <string name="push_support_title">پشتیبانی پاسخ داد</string>
+    <string name="push_support_body">برای خواندن پاسخ {appName} را باز کنید.</string>
+    <string name="push_offer_title">پیشنهادی برای شما</string>
+    <string name="push_offer_body">برای دیدنش {appName} را باز کنید.</string>
+</resources>

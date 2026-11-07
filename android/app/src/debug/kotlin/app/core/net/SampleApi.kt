@@ -133,6 +133,17 @@ import app.core.model.VerificationSession
 import app.core.model.VerificationState
 import app.core.model.VerificationStatus
 import app.core.model.Wallet
+import app.core.model.ConversationChange
+import app.core.model.ConversationEndEvent
+import app.core.model.ConversationEvent
+import app.core.model.RealtimeTypes
+import app.core.model.ReceiptEvent
+import app.core.model.TypingEvent
+import app.core.realtime.RealtimeSocket
+import app.core.realtime.RealtimeTransport
+import app.core.realtime.SampleChannel
+import app.core.realtime.SamplePeer
+import app.core.realtime.SampleRealtime
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -173,7 +184,7 @@ class SampleApi(
     private val answerAfterMs: Long? = 4_000,
     /** New profiles wait for a review before they are shown (the panel's waitlist). */
     private val waitlist: Boolean = false,
-) : ServerApi, BlobTransport, ExternalSignIn, SmsCodeReceiver {
+) : ServerApi, BlobTransport, ExternalSignIn, SmsCodeReceiver, RealtimeTransport, SamplePeer {
 
     private val lock = Mutex()
     private val _events = MutableSharedFlow<ApiEvent>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -218,6 +229,10 @@ class SampleApi(
     private val requestByClientId = mutableMapOf<String, SentRequest>()
 
     private val calls = mutableMapOf<Id, Call>()
+
+    /** The account's realtime channel, and the in-memory Centrifugo a debug app on this backend connects to. */
+    val channel = SampleChannel(clock)
+    private val realtime by lazy { SampleRealtime(channel, this) { session?.let { "u:#${it.id}" } } }
 
     private var entitlements = freeEntitlements()
     private var entitlementsVersion = 1L
@@ -1056,6 +1071,7 @@ class SampleApi(
         thread.conversation = thread.conversation.copy(lastMessage = thread.messages.lastOrNull())
         threads[id] = thread
         bumpConversations()
+        channel.publish(RealtimeTypes.CONVERSATION, id, ConversationEvent.serializer(), ConversationEvent(thread.conversation, ConversationChange.Matched))
         return copy(conversation = thread.conversation)
     }
 
@@ -1106,6 +1122,8 @@ class SampleApi(
     private fun page(thread: Thread, items: List<Message>, hasMore: Boolean) = MessagesPage(
         items = items,
         hasMore = hasMore,
+        // Everything here is durable at once: the cursor is the newest id returned.
+        syncCursor = items.lastOrNull()?.id ?: thread.messages.lastOrNull()?.id,
         readCursors = ReadCursors(me = thread.conversation.myReadId, peer = thread.conversation.peerReadId),
         peerDeliveredId = thread.conversation.peerDeliveredId,
         writeLagMs = 0,
@@ -1154,6 +1172,8 @@ class SampleApi(
         sentByClientId[request.clientId] = message
         thread.conversation = thread.conversation.copy(lastMessage = message, myReadId = message.id)
         bumpConversations()
+        channel.publish(RealtimeTypes.MESSAGE, message.id, Message.serializer(), message)
+        if (message.kind == MessageKind.Text || message.kind == MessageKind.Gif) channel.mine(message)
         SentMessage(message, replayed = false)
     }
 
@@ -1167,6 +1187,7 @@ class SampleApi(
                 val unread = thread.messages.count { it.senderId != SampleData.ME && it.id.toLong() > readUpTo.toLong() }
                 thread.conversation = thread.conversation.copy(myReadId = readUpTo, unread = unread)
                 bumpConversations()
+                channel.publish(RealtimeTypes.RECEIPT, nextId(), ReceiptEvent.serializer(), ReceiptEvent(conversationId, SampleData.ME, readUpTo = readUpTo))
             }
         }
     }
@@ -1186,6 +1207,7 @@ class SampleApi(
             muted = patch.muted ?: c.muted,
         )
         bumpConversations()
+        channel.publish(RealtimeTypes.CONVERSATION, nextId(), ConversationEvent.serializer(), ConversationEvent(thread.conversation, ConversationChange.Updated))
         thread.conversation
     }
 
@@ -1194,6 +1216,7 @@ class SampleApi(
         liveThread(conversationId)
         threads.remove(conversationId)
         bumpConversations()
+        channel.publish(RealtimeTypes.CONVERSATION_END, nextId(), ConversationEndEvent.serializer(), ConversationEndEvent(conversationId))
     }
 
     // MARK: - Message requests
@@ -1248,6 +1271,7 @@ class SampleApi(
         threads[id] = Thread(conversation, mutableListOf(first))
         swiped += request.peer.id
         bumpConversations()
+        channel.publish(RealtimeTypes.CONVERSATION, nextId(), ConversationEvent.serializer(), ConversationEvent(conversation, ConversationChange.Accepted))
         conversation
     }
 
@@ -1293,6 +1317,7 @@ class SampleApi(
         thread.messages += message
         thread.conversation = thread.conversation.copy(lastMessage = message)
         bumpConversations()
+        channel.publish(RealtimeTypes.MESSAGE, message.id, Message.serializer(), message)
         return call
     }
 
@@ -1400,6 +1425,9 @@ class SampleApi(
     private fun blockNow(target: PublicUid) {
         if (target in blocked) return
         blocked[target] = now()
+        threads.values.filter { it.conversation.peer.id == target }.forEach {
+            channel.publish(RealtimeTypes.CONVERSATION_END, nextId(), ConversationEndEvent.serializer(), ConversationEndEvent(it.conversation.id))
+        }
         threads.entries.removeAll { it.value.conversation.peer.id == target }
         deckQueue.remove(target)
         bumpConversations()
@@ -1548,6 +1576,50 @@ class SampleApi(
     override suspend fun realtimeToken(): RealtimeToken = route("realtime.token") {
         val me = full()
         RealtimeToken("wss://rt.example.com/connection/websocket", "sample.rt.${nextId()}", now().plusSeconds(3600), "u:#${me.id}")
+    }
+
+    /** The in-memory Centrifugo (see [SampleRealtime]); the address is not dialled. */
+    override suspend fun open(url: String): RealtimeSocket = realtime.open(url)
+
+    // The other person in a sample conversation, for a chat that answers.
+
+    override suspend fun peerDelivered(conversationId: Id, upTo: Id) = lock.withLock {
+        val thread = threads[conversationId] ?: return@withLock
+        val peer = thread.conversation.peer.id
+        thread.conversation = thread.conversation.copy(peerDeliveredId = upTo)
+        channel.publish(RealtimeTypes.RECEIPT, nextId(), ReceiptEvent.serializer(), ReceiptEvent(conversationId, peer, deliveredUpTo = upTo))
+    }
+
+    override suspend fun peerRead(conversationId: Id, upTo: Id) = lock.withLock {
+        val thread = threads[conversationId] ?: return@withLock
+        val peer = thread.conversation.peer.id
+        // Read receipts reach this account only with the feature (as the server rules it).
+        if (!currentEntitlements().features.readReceipts) return@withLock
+        thread.conversation = thread.conversation.copy(peerReadId = upTo)
+        channel.publish(RealtimeTypes.RECEIPT, nextId(), ReceiptEvent.serializer(), ReceiptEvent(conversationId, peer, readUpTo = upTo))
+    }
+
+    override suspend fun peerTyping(conversationId: Id) = lock.withLock {
+        val thread = threads[conversationId] ?: return@withLock
+        channel.publish(RealtimeTypes.TYPING, nextId(), TypingEvent.serializer(), TypingEvent(conversationId, thread.conversation.peer.id), ephemeral = true)
+    }
+
+    override suspend fun peerSays(conversationId: Id): Boolean = lock.withLock {
+        val thread = threads[conversationId] ?: return@withLock false
+        if (thread.conversation.state != ConversationState.Active) return@withLock false
+        val peer = thread.conversation.peer.id
+        val theirs = thread.messages.lastOrNull { it.senderId == peer }?.body.orEmpty()
+        val replies = when {
+            theirs.any { it in '\u0600'..'\u06FF' } -> listOf("چه جالب! 😊", "منم همین‌طور فکر می‌کنم", "آره، حتماً!")
+            theirs.any { it in "ğüşıöçĞÜŞİÖÇ" } -> listOf("Harika! 😊", "Bence de", "Olur, neden olmasın!")
+            else -> listOf("Ha, love that 😊", "Same here!", "Sounds good to me")
+        }
+        val message = Message(nextId(), conversationId, peer, kind = MessageKind.Text, body = replies[thread.messages.size % replies.size], at = now())
+        thread.messages += message
+        thread.conversation = thread.conversation.copy(lastMessage = message, unread = thread.conversation.unread + 1)
+        bumpConversations()
+        channel.publish(RealtimeTypes.MESSAGE, message.id, Message.serializer(), message)
+        true
     }
 
     // MARK: - Deletion

@@ -97,6 +97,9 @@ function isNoGroup(error: unknown): boolean {
 
 const silent: ConsumerLog = { warn: () => undefined, error: () => undefined };
 
+/** Dead-letter streams keep about this many entries (`MAXLEN ~`); they alert when they grow. */
+export const DEAD_LETTER_MAXLEN = 100_000;
+
 /** Creates the group (and the stream) if needed. */
 export async function ensureGroup(redis: Redis, stream: string, group: string, startId: '$' | '0' = '$'): Promise<void> {
   try {
@@ -164,7 +167,7 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
       deadLetterStream,
       'MAXLEN',
       '~',
-      '10000',
+      String(DEAD_LETTER_MAXLEN),
       '*',
       'stream',
       stream,

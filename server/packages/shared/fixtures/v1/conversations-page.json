@@ -1,0 +1,24 @@
+{
+  "items": [
+    {
+      "id": "1287390234923400001",
+      "peer": {
+        "id": "cn5wy6l3naf5b",
+        "name": "Negar",
+        "photo": null,
+        "verified": false
+      },
+      "state": "active",
+      "source": "super_like",
+      "createdAt": "2026-11-06T09:14:03.120Z",
+      "lastMessage": null,
+      "unread": 0,
+      "callsAllowed": {
+        "me": true,
+        "peer": false
+      },
+      "muted": false
+    }
+  ],
+  "nextCursor": null
+}

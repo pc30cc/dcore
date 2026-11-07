@@ -1,4 +1,4 @@
-import { baseEnvShape, databaseEnvShape, envBoolean, envInt, envList, parseEnv, redisEnvShape, storageConfigOf, storageEnvShape, type Env, type StorageConfig } from '@app/config';
+import { baseEnvShape, databaseEnvShape, envBoolean, envInt, envList, envUrl, parseEnv, redisEnvShape, storageConfigOf, storageEnvShape, type Env, type StorageConfig } from '@app/config';
 import { parseKeyRing } from '@app/shared/server';
 import { z } from 'zod';
 
@@ -106,6 +106,9 @@ const envSchema = z
     /** The WebSocket URL apps connect to; default wss://<domains.realtime>/connection/websocket. */
     CENTRIFUGO_WS_URL: z.url({ protocol: /^wss?$/ }).optional(),
     REALTIME_TOKEN_TTL_SECONDS: envInt(3_600, { min: 300, max: 86_400 }),
+    /** Centrifugo's server API, for the events the API publishes itself (likes, ended conversations); unset: none are published. */
+    CENTRIFUGO_API_URL: envUrl(['http', 'https']).optional(),
+    CENTRIFUGO_API_KEY: z.string().min(16).optional(),
 
     /** The OAuth web client id Google ID tokens must be issued for (play sign-in); unset: Google sign-in is off. */
     GOOGLE_WEB_CLIENT_ID: z.string().regex(/^[0-9A-Za-z._-]{10,200}$/).optional(),
@@ -148,6 +151,10 @@ const envSchema = z
       ctx.addIssue({ code: 'custom', path: ['BRAND'], message: 'the template brand is not served in production' });
     }
     if (env.NODE_ENV === 'production') need('CENTRIFUGO_TOKEN_HMAC_SECRET', 'in production');
+    if ((env.CENTRIFUGO_API_URL === undefined) !== (env.CENTRIFUGO_API_KEY === undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['CENTRIFUGO_API_KEY'], message: 'CENTRIFUGO_API_URL and CENTRIFUGO_API_KEY come together' });
+    }
+    if (env.NODE_ENV === 'production') need('CENTRIFUGO_API_URL', 'in production');
     if (env.SMS_KAVENEGAR_API_KEY !== undefined) need('SMS_KAVENEGAR_TEMPLATE', 'with SMS_KAVENEGAR_API_KEY');
     if (env.SMS_SMSIR_API_KEY !== undefined) need('SMS_SMSIR_TEMPLATE_ID', 'with SMS_SMSIR_API_KEY');
     if (env.SMS_TELNYX_API_KEY !== undefined) need('SMS_TELNYX_VERIFY_PROFILE_ID', 'with SMS_TELNYX_API_KEY');
@@ -211,7 +218,13 @@ export interface ApiConfig {
   edgeTrust: string;
   pgBudget: 'off' | 'count' | 'enforce';
   brand: { id: string; dir: string | undefined };
-  realtime: { tokenSecret: string | undefined; wsUrl: string | undefined; tokenTtlSeconds: number };
+  realtime: {
+    tokenSecret: string | undefined;
+    wsUrl: string | undefined;
+    tokenTtlSeconds: number;
+    /** Centrifugo's server API; undefined: the API publishes nothing. */
+    api: { apiUrl: string; apiKey: string } | undefined;
+  };
   google: { webClientId: string | undefined };
   sms: {
     kavenegar: { apiKey: string; template: string } | undefined;
@@ -298,6 +311,7 @@ export function loadConfig(source: Env = process.env): ApiConfig {
       tokenSecret: env.CENTRIFUGO_TOKEN_HMAC_SECRET,
       wsUrl: env.CENTRIFUGO_WS_URL,
       tokenTtlSeconds: env.REALTIME_TOKEN_TTL_SECONDS,
+      api: env.CENTRIFUGO_API_URL && env.CENTRIFUGO_API_KEY ? { apiUrl: env.CENTRIFUGO_API_URL, apiKey: env.CENTRIFUGO_API_KEY } : undefined,
     },
     google: { webClientId: env.GOOGLE_WEB_CLIENT_ID },
     sms: {

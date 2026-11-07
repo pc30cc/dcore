@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { authResultSchema, googleNonceSchema, otpChallengeSchema, tokenPairSchema } from './auth.js';
 import { notificationPrefsSchema, ownProfileSchema, preferencesSchema, profileCardSchema, settingsSchema } from './common.js';
 import { configSchema } from './config.js';
+import { deckPageSchema } from './deck.js';
 import { deletionPreflightSchema, deletionScheduledSchema, publicDeletionChallengeSchema } from './deletion.js';
 import {
   appealBodySchema,
@@ -14,6 +15,7 @@ import {
 } from './me.js';
 import { photoCompletedSchema, photoUploadTicketSchema } from './photos.js';
 import { realtimeTokenSchema } from './realtime.js';
+import { conversationsPageSchema, likesPageSchema, swipesResponseSchema } from './social.js';
 
 /**
  * The response bodies of the routes this package describes, by the name of
@@ -48,6 +50,10 @@ export const responseSchemas = {
   moderation: moderationHistorySchema,
   appeal: appealBodySchema,
   'profile-card': profileCardSchema,
+  'deck-page': deckPageSchema,
+  'swipes-result': swipesResponseSchema,
+  'likes-page': likesPageSchema,
+  'conversations-page': conversationsPageSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ResponseFixtureName = keyof typeof responseSchemas;

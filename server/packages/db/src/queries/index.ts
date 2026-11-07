@@ -1,6 +1,7 @@
 export * from './account.js';
 export * from './auth.js';
 export * from './config.js';
+export * from './deck.js';
 export * from './define.js';
 export * from './deletion.js';
 export * from './devices.js';
@@ -9,3 +10,4 @@ export * from './maint.js';
 export * from './me.js';
 export * from './moderation.js';
 export * from './photos.js';
+export * from './social.js';

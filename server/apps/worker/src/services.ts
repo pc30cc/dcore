@@ -1,6 +1,7 @@
 import { createPool, type Pool } from '@app/db';
 import {
   CentrifugoPublisher,
+  FcmSender,
   IdGenerator,
   createKeys,
   createMediaStore,
@@ -8,6 +9,7 @@ import {
   type KeyBuilder,
   type MediaStore,
   type PublicIds,
+  type PushSender,
   type RealtimePublisher,
 } from '@app/shared/server';
 import type { Redis } from 'ioredis';
@@ -35,6 +37,8 @@ export interface WorkerServices {
   /** Null without S3: photo jobs wait and retry. */
   media: MediaStore | null;
   photoModerator: PhotoModerator;
+  /** FCM; null or absent without FCM_SERVICE_ACCOUNT_JSON (push jobs then finish without sending). */
+  push?: PushSender | null | undefined;
 }
 
 export interface OwnedServices {
@@ -69,6 +73,7 @@ export function createWorkerServices(config: WorkerConfig, redis: Redis, logger:
   if (cache !== redis) cache.on('error', (error: Error) => logger.warn({ err: error }, 'redis cache connection error'));
   if (!config.realtime) logger.warn('CENTRIFUGO_API_URL is not set: realtime events are not published');
   if (!config.storage) logger.warn('S3_* is not set: photo jobs wait until storage is configured');
+  if (!config.push) logger.warn('FCM_SERVICE_ACCOUNT_JSON is not set: pushes are not sent');
   const services: WorkerServices = {
     pg,
     cache,
@@ -78,6 +83,7 @@ export function createWorkerServices(config: WorkerConfig, redis: Redis, logger:
     realtime: config.realtime ? new CentrifugoPublisher(config.realtime) : null,
     media: config.storage ? createMediaStore(config.storage, { timeoutMs: config.storage.timeoutMs }) : null,
     photoModerator: new FakePhotoModerator({ autoApprove: config.photos.autoApprove }),
+    push: config.push ? new FcmSender({ account: config.push.account }) : null,
   };
   return {
     services,

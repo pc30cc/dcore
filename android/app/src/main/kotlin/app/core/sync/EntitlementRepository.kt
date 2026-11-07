@@ -50,6 +50,11 @@ class EntitlementRepository(
         _entitlements.update { it?.copy(quotas = quotas) }
     }
 
+    /** The server announced new entitlements (a purchase, renewal, refund, grant or wallet change). */
+    fun apply(entitlements: Entitlements) {
+        _entitlements.value = entitlements
+    }
+
     /** Another account signed in. */
     fun clear() {
         _entitlements.value = null

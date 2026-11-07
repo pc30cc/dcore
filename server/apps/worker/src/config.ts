@@ -12,7 +12,7 @@ import {
   type Env,
   type StorageConfig,
 } from '@app/config';
-import { queuePrefix } from '@app/shared/server';
+import { parseServiceAccount, queuePrefix, type FcmServiceAccount } from '@app/shared/server';
 import { z } from 'zod';
 
 /** 32 bytes, base64url (43 characters, no padding). */
@@ -53,6 +53,12 @@ const envSchema = z
     PHOTO_MAX_PIXELS: envInt(50_000_000, { min: 1_000_000, max: 268_402_689 }),
     /** Runs the periodic maintenance jobs (partitions, active drain, sessions clean-up). */
     MAINT_ENABLED: envBoolean(true),
+    /** Firebase Cloud Messaging: the service account (its JSON or the base64 of it); unset: pushes are not sent. Required in production. */
+    FCM_SERVICE_ACCOUNT_JSON: z.string().min(2).optional(),
+    /** Overrides the service account's project. */
+    FCM_PROJECT_ID: z.string().regex(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/).optional(),
+    /** Runs the write-behind stream consumers (likes, matches) in this process. */
+    STREAMS_ENABLED: envBoolean(true),
   })
   .superRefine((env, ctx) => {
     if (env.ID_PUBLIC_KEY === env.ID_BILLING_KEY) {
@@ -67,6 +73,14 @@ const envSchema = z
         ctx.addIssue({ code: 'custom', path: ['PHOTO_AUTO_APPROVE'], message: 'photos are never approved unseen in production' });
       }
       if (env.LOG_PRETTY) ctx.addIssue({ code: 'custom', path: ['LOG_PRETTY'], message: 'must be off in production (logs are JSON lines)' });
+      if (env.FCM_SERVICE_ACCOUNT_JSON === undefined) ctx.addIssue({ code: 'custom', path: ['FCM_SERVICE_ACCOUNT_JSON'], message: 'required in production' });
+    }
+    if (env.FCM_SERVICE_ACCOUNT_JSON !== undefined) {
+      try {
+        parseServiceAccount(env.FCM_SERVICE_ACCOUNT_JSON, env.FCM_PROJECT_ID);
+      } catch (error) {
+        ctx.addIssue({ code: 'custom', path: ['FCM_SERVICE_ACCOUNT_JSON'], message: (error as Error).message });
+      }
     }
   });
 
@@ -100,6 +114,9 @@ export interface WorkerConfig {
   realtime: { apiUrl: string; apiKey: string } | undefined;
   photos: { provider: WorkerEnv['MODERATION_PROVIDER']; autoApprove: boolean; concurrency: number; maxPixels: number };
   maint: { enabled: boolean };
+  /** Undefined without FCM_SERVICE_ACCOUNT_JSON: push jobs finish without sending. */
+  push: { account: FcmServiceAccount } | undefined;
+  streams: { enabled: boolean };
 }
 
 export function loadConfig(source: Env = process.env): WorkerConfig {
@@ -131,5 +148,10 @@ export function loadConfig(source: Env = process.env): WorkerConfig {
       maxPixels: env.PHOTO_MAX_PIXELS,
     },
     maint: { enabled: env.MAINT_ENABLED },
+    push: (() => {
+      const account = parseServiceAccount(env.FCM_SERVICE_ACCOUNT_JSON, env.FCM_PROJECT_ID);
+      return account ? { account } : undefined;
+    })(),
+    streams: { enabled: env.STREAMS_ENABLED },
   };
 }

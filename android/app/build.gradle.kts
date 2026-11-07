@@ -118,6 +118,18 @@ fun realtimeUrlFor(store: String): String =
     buildValue("$store.realtimeUrl", "${store.uppercase()}_REALTIME_URL")
         ?: "wss://${if (brandString("domains.realtime") != null) brandHost("domains.realtime") else brandHost("domains.api")}/connection/websocket"
 
+/**
+ * The store's Firebase client values (FCM without `google-services.json`):
+ * `-P<store>.firebase.<key>` / `<STORE>_FIREBASE_<KEY>`, else
+ * `android.firebase.<store>.<key>` in brand.json. Public identifiers that ship
+ * in every APK made with them, not credentials (the server holds the sending
+ * key). Empty ones leave push to the server's config, or off.
+ */
+fun firebaseValue(store: String, key: String): String =
+    buildValue("$store.firebase.$key", "${store.uppercase()}_FIREBASE_${key.uppercase()}")
+        ?: brandString("android.firebase.$store.$key")
+        ?: ""
+
 android {
     // The code's package. Neutral and never a brand: R, BuildConfig, the R8
     // rules and the Room schema folder name classes by it. What a phone knows
@@ -197,6 +209,10 @@ android {
             buildConfigField("String", "STORE", literal("bazaar"))
             buildConfigField("String", "API_BASE_URL", literal(apiBaseUrlFor("bazaar")))
             buildConfigField("String", "REALTIME_WS_URL", literal(realtimeUrlFor("bazaar")))
+            buildConfigField("String", "FIREBASE_APP_ID", literal(firebaseValue("bazaar", "appId")))
+            buildConfigField("String", "FIREBASE_API_KEY", literal(firebaseValue("bazaar", "apiKey")))
+            buildConfigField("String", "FIREBASE_PROJECT_ID", literal(firebaseValue("bazaar", "projectId")))
+            buildConfigField("String", "FIREBASE_SENDER_ID", literal(firebaseValue("bazaar", "projectNumber")))
             // Persian, whatever the phone's language, until the person picks
             // another in the app.
             buildConfigField("String", "DEFAULT_LOCALE", literal("fa"))
@@ -225,6 +241,10 @@ android {
             buildConfigField("String", "STORE", literal("play"))
             buildConfigField("String", "API_BASE_URL", literal(apiBaseUrlFor("play")))
             buildConfigField("String", "REALTIME_WS_URL", literal(realtimeUrlFor("play")))
+            buildConfigField("String", "FIREBASE_APP_ID", literal(firebaseValue("play", "appId")))
+            buildConfigField("String", "FIREBASE_API_KEY", literal(firebaseValue("play", "apiKey")))
+            buildConfigField("String", "FIREBASE_PROJECT_ID", literal(firebaseValue("play", "projectId")))
+            buildConfigField("String", "FIREBASE_SENDER_ID", literal(firebaseValue("play", "projectNumber")))
             // The phone's language when the app has it, English otherwise.
             buildConfigField("String", "DEFAULT_LOCALE", literal("en"))
             buildConfigField("boolean", "LOCALE_FOLLOWS_DEVICE", "true")
@@ -365,6 +385,13 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.androidx.profileinstaller)
+
+    // Push (both stores) and the foreground/background signal realtime follows.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.play.services.basement)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
 
     // Photos: memory and disk cache, downsampling, crossfade (media/ImageLoading).
     implementation(libs.coil.compose)

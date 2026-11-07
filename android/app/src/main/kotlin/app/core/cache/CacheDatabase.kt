@@ -31,9 +31,9 @@ import kotlinx.coroutines.withContext
  * answer carried. An unchanged answer is a 304 with no body, decided on the
  * server without touching its database.
  *
- * One table so far, [CachedResponseEntity]. Conversations, messages (with the
- * outbox), cards and sync state get their own tables when the sync layer is
- * built on it.
+ * Tables: [CachedResponseEntity] (stored answers and their validators), and
+ * the chat's [ConversationEntity], [MessageEntity] (with the outbox) and
+ * [SyncStateEntity] (see ChatTables.kt).
  *
  * **Versioned, with a cache's migration policy.** Every schema change bumps
  * [VERSION] and exports its JSON (`app/schemas`). Where no migration is written
@@ -48,12 +48,31 @@ import kotlinx.coroutines.withContext
  * the file from other apps, and a key for it could only live in the same
  * Keystore that already protects the session.
  */
-@Database(entities = [CachedResponseEntity::class], version = CacheDatabase.VERSION, exportSchema = true)
+@Database(
+    entities = [
+        CachedResponseEntity::class,
+        ConversationEntity::class,
+        MessageEntity::class,
+        SyncStateEntity::class,
+    ],
+    version = CacheDatabase.VERSION,
+    exportSchema = true,
+)
 abstract class CacheDatabase : RoomDatabase() {
     abstract fun cachedResponses(): CachedResponseDao
+    abstract fun conversations(): ConversationDao
+    abstract fun messages(): MessageDao
+    abstract fun syncState(): SyncStateDao
 
     companion object {
-        const val VERSION = 1
+        /**
+         * 2: the chat tables (conversations, messages with the outbox,
+         * sync_state). No build with version 1 was ever released, so 1 -> 2
+         * is the rebuild. From 2 on, `messages` holds the outbox (rows the
+         * server does not have yet): every later version owes it a real
+         * migration in [MIGRATIONS].
+         */
+        const val VERSION = 2
 
         /** A fixed neutral name: never derived from the brand. */
         const val NAME = "app-cache.db"

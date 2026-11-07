@@ -1,0 +1,53 @@
+{
+  "results": [
+    {
+      "target": "cn5wy6l3naf5b",
+      "result": "matched",
+      "conversation": {
+        "id": "1287390234923400001",
+        "peer": {
+          "id": "cn5wy6l3naf5b",
+          "name": "Negar",
+          "photo": {
+            "id": "1287390234923420001",
+            "w": 1080,
+            "h": 1350,
+            "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+            "url": "https://cdn.example.com/p/1287390234923420001/1/640.webp?exp=1794096000&sig=Zm9vYmFy"
+          },
+          "verified": true
+        },
+        "state": "active",
+        "source": "like",
+        "createdAt": "2026-11-06T09:14:03.120Z",
+        "lastMessage": null,
+        "unread": 0,
+        "callsAllowed": {
+          "me": true,
+          "peer": true
+        },
+        "muted": false
+      }
+    },
+    {
+      "target": "d4xq7m2kbz3wa",
+      "result": "passed"
+    },
+    {
+      "target": "e2mzq4hy7vtka",
+      "result": "quota"
+    }
+  ],
+  "quotas": {
+    "likes": {
+      "limit": 25,
+      "used": 25,
+      "resetsAt": "2026-11-07T00:00:00.000Z"
+    },
+    "superlikes": {
+      "limit": 1,
+      "used": 0,
+      "resetsAt": "2026-11-09T00:00:00.000Z"
+    }
+  }
+}

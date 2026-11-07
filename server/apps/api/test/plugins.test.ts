@@ -128,6 +128,8 @@ describe('statement budgets', () => {
       NODE_ENV: 'production',
       BRAND: 'live',
       CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
+      CENTRIFUGO_API_URL: 'http://centrifugo:8000',
+      CENTRIFUGO_API_KEY: 'a'.repeat(32),
       // Photo storage and its CDN are required in production.
       S3_ENDPOINT: 'https://s3.example.com',
       S3_BUCKET_PRIVATE: 'uploads',

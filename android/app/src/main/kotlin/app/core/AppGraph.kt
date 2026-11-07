@@ -28,7 +28,12 @@ import app.core.storage.SecureStore
 import app.core.storage.SessionStore
 import app.core.store.StoreModule
 import app.core.store.StoreServices
+import app.core.push.PushGraph
+import app.core.realtime.KtorRealtimeTransport
+import app.core.realtime.RealtimeCoordinator
+import app.core.realtime.RealtimeTransport
 import app.core.sync.CachedDeckSnapshotStore
+import app.core.sync.ChatGraph
 import app.core.sync.DeckRepository
 import app.core.sync.EntitlementRepository
 import io.ktor.client.engine.okhttp.OkHttp
@@ -127,7 +132,9 @@ class AppGraph(private val app: Application) {
         DeckRepository(
             scope = appScope,
             fetchPage = { limit -> api.deck(limit) },
-            sendSwipes = { swipes -> api.swipe(swipes) },
+            // A match the answer carries is in the chat list (and its thread
+            // opens) before any read.
+            sendSwipes = { swipes -> api.swipe(swipes).also(chat.sync::onSwipes) },
             account = { api.sessionUser()?.id },
             store = CachedDeckSnapshotStore(responseCache, diag),
             onQuotas = { result -> entitlements.applyQuotas(result.quotas) },
@@ -135,6 +142,24 @@ class AppGraph(private val app: Application) {
             diag = diag,
         )
     }
+
+    /** The realtime socket's transport: the real server's, or in a debug build on the sample backend, the sample's. */
+    private val realtimeTransport: RealtimeTransport by lazy { (api as? RealtimeTransport) ?: KtorRealtimeTransport() }
+
+    /** Conversations, messages, message requests and the realtime socket (sync/, realtime/). */
+    val chat: ChatGraph by lazy {
+        ChatGraph(app, api, cacheDatabase, realtimeTransport, auth, entitlements, config, appScope, clock, diag)
+    }
+
+    /**
+     * The one realtime connection, while the app is in front.
+     * [RealtimeCoordinator.events] is the stream for any feature that needs it
+     * (calls); [RealtimeCoordinator.health] says whether it is up.
+     */
+    val realtime: RealtimeCoordinator get() = chat.realtime
+
+    /** Push: the FCM transport, the registration, the router and the notification taps (push/). */
+    val push: PushGraph by lazy { PushGraph(app, api, secureStore, chat.sync, appScope, clock, diag) }
 }
 
 val Context.appGraph: AppGraph get() = (applicationContext as CoreApp).graph

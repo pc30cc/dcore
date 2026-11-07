@@ -6,18 +6,31 @@ import type { WorkerConfig } from './config.js';
 import { defaultQueues, type JobContext, type QueueDefinition } from './queues/index.js';
 import { createWorkerRedis } from './redis.js';
 import { createWorkerServices, type WorkerServices } from './services.js';
-import { startStreamConsumer, type StreamConsumer, type StreamConsumerOptions, type StreamDelivery } from './streams/consumer.js';
+import { closeSocialQueues } from './social/jobs.js';
+import { startBatchConsumer, type BatchConsumerOptions, type BatchResult } from './streams/batch.js';
+import { startStreamConsumer, type StreamConsumerOptions, type StreamDelivery } from './streams/consumer.js';
+import { defaultConsumers } from './streams/index.js';
 
-/** A Redis Streams consumer this process runs (chat fan-out, presence and the like). */
+/** A Redis Streams consumer this process runs, one entry at a time (new matches, chat fan-out). */
 export interface StreamConsumerDefinition
   extends Omit<StreamConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log'> {
+  kind?: 'entry' | undefined;
   handler(entry: StreamDelivery, context: JobContext): Promise<void>;
 }
+
+/** A write-behind stream consumer in batch mode (one statement per batch). */
+export interface BatchConsumerDefinition extends Omit<BatchConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log'> {
+  kind: 'batch';
+  handler(entries: readonly StreamDelivery[], context: JobContext): Promise<BatchResult | void>;
+}
+
+export type ConsumerDefinition = StreamConsumerDefinition | BatchConsumerDefinition;
 
 export interface WorkerRuntimeOptions {
   logger: Logger;
   queues?: readonly QueueDefinition[] | undefined;
-  consumers?: readonly StreamConsumerDefinition[] | undefined;
+  /** Defaults to the write-behind consumers (`defaultConsumers`); `[]` runs none. */
+  consumers?: readonly ConsumerDefinition[] | undefined;
   /** Clients owned by the caller (tests); otherwise made from the configuration and closed on stop. */
   services?: WorkerServices | undefined;
 }
@@ -37,7 +50,7 @@ export interface WorkerRuntime {
 export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOptions): Promise<WorkerRuntime> {
   const { logger } = options;
   const definitions = options.queues ?? defaultQueues(config);
-  const consumerDefinitions = options.consumers ?? [];
+  const consumerDefinitions = options.consumers ?? defaultConsumers(config);
 
   // One shared connection for processors and producers; BullMQ adds a
   // blocking connection per worker by duplicating it.
@@ -49,7 +62,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
 
   const workers: Worker[] = [];
   const schedulerQueues: Queue[] = [];
-  const consumers: StreamConsumer[] = [];
+  const consumers: { stop(): Promise<void> }[] = [];
   const consumerConnections: Redis[] = [];
 
   for (const definition of definitions) {
@@ -91,15 +104,27 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
     const connection = shared.duplicate({ connectionName: `stream:${definition.stream}:${config.workerId}` });
     consumerConnections.push(connection);
     const log = logger.child({ stream: definition.stream, group: definition.group });
-    consumers.push(
-      startStreamConsumer({
-        ...definition,
-        redis: connection,
-        consumer: config.workerId,
-        log,
-        handler: (entry) => definition.handler(entry, { ...context, log }),
-      }),
-    );
+    if (definition.kind === 'batch') {
+      consumers.push(
+        startBatchConsumer({
+          ...definition,
+          redis: connection,
+          consumer: config.workerId,
+          log,
+          handler: (entries) => definition.handler(entries, { ...context, log }),
+        }),
+      );
+    } else {
+      consumers.push(
+        startStreamConsumer({
+          ...definition,
+          redis: connection,
+          consumer: config.workerId,
+          log,
+          handler: (entry) => definition.handler(entry, { ...context, log }),
+        }),
+      );
+    }
   }
 
   logger.info(
@@ -115,6 +140,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
         // Workers finish their active jobs before close() resolves.
         await Promise.allSettled([...workers.map((w) => w.close()), ...consumers.map((c) => c.stop())]);
         await Promise.allSettled(schedulerQueues.map((q) => q.close()));
+        await closeSocialQueues(shared);
         if (owned) await owned.close().catch((error: unknown) => logger.error({ err: error }, 'closing services failed'));
         await Promise.allSettled([...consumerConnections, shared].map((c) => c.quit()));
         logger.info('worker stopped');

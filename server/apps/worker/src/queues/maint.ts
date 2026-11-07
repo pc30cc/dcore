@@ -1,6 +1,7 @@
 import { deleteStaleSessions, dropExpiredPartition, maintainPartitions, markActive, partitionParents, type PartitionAction } from '@app/db';
 import { utcDay } from '@app/shared/server';
 import type { Job } from 'bullmq';
+import { lkRebuildJob } from '../deck/likeBuckets.js';
 import { takeLease } from '../lease.js';
 import type { JobContext, QueueDefinition } from './types.js';
 
@@ -19,6 +20,9 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   `users_mark_active()` in batches of up to 5,000 ids.
  * - `sessions-cleanup` (weekly): sessions revoked or expired more than 30
  *   days ago, deleted in primary-key chunks of 5,000.
+ * - `lk-rebuild` (on demand, and every 15 minutes as a check that costs one
+ *   EXISTS while `lk:ready` is there): the like buckets from `likes` after a
+ *   Valkey loss (`deck/likeBuckets.ts`).
  */
 
 export const MAINT_QUEUE = 'maint';
@@ -163,6 +167,12 @@ export const maintQueue: QueueDefinition<{ day?: string }, unknown> = {
       repeat: { pattern: '41 4 * * 0', tz: 'UTC' },
       opts: { attempts: 3, backoff: { type: 'exponential', delay: 10 * 60_000 } },
     },
+    {
+      id: 'lk-rebuild',
+      name: 'lk-rebuild',
+      repeat: { every: 15 * 60_000 },
+      opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 } },
+    },
   ],
   async process(job: Job<{ day?: string }>, context) {
     switch (job.name) {
@@ -172,6 +182,8 @@ export const maintQueue: QueueDefinition<{ day?: string }, unknown> = {
         return activeDrainJob(context, job.data.day);
       case 'sessions-cleanup':
         return sessionsCleanupJob(context);
+      case 'lk-rebuild':
+        return lkRebuildJob(context);
       default:
         throw new Error(`the maint queue has no job named "${job.name}"`);
     }

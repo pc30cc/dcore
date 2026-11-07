@@ -17,6 +17,7 @@ import {
 } from '@app/shared/server';
 import { DelayedError, Queue, type Job } from 'bullmq';
 import { takeLease } from '../lease.js';
+import { unmatchPurgeJob, type UnmatchPurgeResult } from './unmatch.js';
 import type { JobContext, QueueDefinition } from './types.js';
 
 /**
@@ -261,7 +262,7 @@ export async function deletionSweepJob(context: JobContext, now: () => number): 
   return { leased: true, purges, fanouts };
 }
 
-export function accountQueue(options: AccountQueueOptions = {}): QueueDefinition<DeletionFanoutData | PurgeData | Record<string, never>, FanoutResult | PurgeResult | SweepResult> {
+export function accountQueue(options: AccountQueueOptions = {}): QueueDefinition<DeletionFanoutData | PurgeData | Record<string, never>, FanoutResult | PurgeResult | SweepResult | UnmatchPurgeResult> {
   const now = options.now ?? Date.now;
   return {
     name: ACCOUNT_QUEUE,
@@ -271,6 +272,7 @@ export function accountQueue(options: AccountQueueOptions = {}): QueueDefinition
       if (job.name === accountJobNames.fanout) return deletionFanoutJob(job as Job<DeletionFanoutData>, context);
       if (job.name === accountJobNames.purge) return purgeJob(job as Job<PurgeData>, context, now);
       if (job.name === accountJobNames.sweep) return deletionSweepJob(context, now);
+      if (job.name === 'unmatch-purge') return unmatchPurgeJob(job, context);
       throw new Error(`the account queue has no job named "${job.name}"`);
     },
   };
