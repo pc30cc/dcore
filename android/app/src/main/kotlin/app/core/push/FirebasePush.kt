@@ -1,8 +1,10 @@
 package app.core.push
 
 import android.content.Context
+import androidx.core.content.edit
 import app.core.BuildConfig
 import app.core.common.Diag
+import app.core.model.FirebaseClient
 import app.core.model.Wire
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailabilityLight
@@ -24,6 +26,12 @@ data class FirebaseClientConfig(
     val senderId: String = "",
 ) {
     val isComplete: Boolean get() = appId.isNotBlank() && apiKey.isNotBlank() && projectId.isNotBlank() && senderId.isNotBlank()
+
+    companion object {
+        /** The server's copy (`GET /v1/config`, `push.firebase`). */
+        fun of(client: FirebaseClient): FirebaseClientConfig =
+            FirebaseClientConfig(appId = client.appId.trim(), apiKey = client.apiKey.trim(), projectId = client.projectId.trim(), senderId = client.projectNumber.trim())
+    }
 }
 
 /**
@@ -109,7 +117,7 @@ object PushConfig {
     }.getOrNull()
 
     private fun save(context: Context, config: FirebaseClientConfig) {
-        prefs(context).edit().putString(KEY, Wire.json.encodeToString(FirebaseClientConfig.serializer(), config)).apply()
+        prefs(context).edit { putString(KEY, Wire.json.encodeToString(FirebaseClientConfig.serializer(), config)) }
     }
 
     /** A fixed neutral name, never derived from the brand. */

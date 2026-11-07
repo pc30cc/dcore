@@ -1,0 +1,490 @@
+# The whole server stack for Coolify's Docker Compose build pack.
+#
+#   Base directory:        /
+#   Docker Compose file:   /deploy/coolify/docker-compose.yml
+#
+# Build contexts are the repository root (Coolify runs compose with the base
+# directory as the project directory). Every variable is listed with a
+# placeholder in deploy/coolify/.env.example.
+#
+# Coolify magic variables:
+#   SERVICE_URL_<NAME>_<PORT>   declared in a service: Coolify gives that
+#                               service a domain (editable in its settings)
+#                               and routes it to the container port;
+#                               SERVICE_URL_<NAME> is that public URL
+#   SERVICE_PASSWORD[_64]_<ID>  a random password Coolify generates once
+#   SERVICE_USER_<ID>           a random user name Coolify generates once
+#
+# Public services (domain through Coolify's proxy): api, admin, web,
+# centrifugo (WebSocket), livekit (signalling), media, minio (S3 API for
+# presigned uploads). livekit also publishes its ICE TCP port and UDP media
+# range on the host. Everything else is reachable on the stack's network
+# only. migrate and minio-init are one-shot jobs.
+
+services:
+  # ── Data ──────────────────────────────────────────────────────────────
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/docker/postgres.Dockerfile
+    restart: unless-stopped
+    shm_size: 256m
+    stop_grace_period: 60s
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=postgres
+      - PG_DATABASE=app
+      - PG_OWNER_PASSWORD=${SERVICE_PASSWORD_PGOWNER}
+      - PG_API_PASSWORD=${SERVICE_PASSWORD_PGAPI}
+      - PG_WORKER_PASSWORD=${SERVICE_PASSWORD_PGWORKER}
+      - PG_ANALYST_PASSWORD=${PG_ANALYST_PASSWORD:-}
+      - BACKUP_PASSPHRASE=${SERVICE_PASSWORD_64_BACKUP}
+      - BACKUP_KEEP_DAYS=${BACKUP_KEEP_DAYS:-14}
+      - BACKUP_S3_URL=${BACKUP_S3_URL:-}
+      - BACKUP_S3_ACCESS_KEY_ID=${BACKUP_S3_ACCESS_KEY_ID:-}
+      - BACKUP_S3_SECRET_ACCESS_KEY=${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      - BACKUP_S3_REGION=${BACKUP_S3_REGION:-us-east-1}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - max_connections=100
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      - -c
+      - wal_compression=lz4
+      - -c
+      - log_min_duration_statement=250ms
+      - -c
+      - log_lock_waits=on
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - pg-backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/pg-roles.ok && pg_isready -q -h 127.0.0.1 -U postgres -d app"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # A first start runs initdb and the PostGIS set-up before roles.sh.
+      start_period: 180s
+
+  pgbouncer:
+    build:
+      context: .
+      dockerfile: deploy/docker/pgbouncer.Dockerfile
+    restart: unless-stopped
+    # One descriptor per client and per server connection (max_client_conn
+    # is 2000); the container default soft limit is often 1024.
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DATABASE=app
+      - PG_API_PASSWORD=${SERVICE_PASSWORD_PGAPI}
+      - PG_WORKER_PASSWORD=${SERVICE_PASSWORD_PGWORKER}
+      - PGBOUNCER_DEFAULT_POOL_SIZE=${PGBOUNCER_DEFAULT_POOL_SIZE:-20}
+      - PGBOUNCER_MAX_CLIENT_CONN=${PGBOUNCER_MAX_CLIENT_CONN:-2000}
+      - PGBOUNCER_MAX_DB_CONNECTIONS=${PGBOUNCER_MAX_DB_CONNECTIONS:-60}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -p 6432 -U app_api -d app"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  kv-core:
+    build:
+      context: .
+      dockerfile: deploy/docker/valkey.Dockerfile
+    restart: unless-stopped
+    environment:
+      - KV_ROLE=core
+      - KV_PASSWORD=${SERVICE_PASSWORD_KVCORE}
+      - KV_MAXMEMORY=${KV_CORE_MAXMEMORY:-2gb}
+    volumes:
+      - kv-core-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$KV_PASSWORD\" valkey-cli -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  kv-cache:
+    build:
+      context: .
+      dockerfile: deploy/docker/valkey.Dockerfile
+    restart: unless-stopped
+    environment:
+      - KV_ROLE=cache
+      - KV_PASSWORD=${SERVICE_PASSWORD_KVCACHE}
+      - KV_MAXMEMORY=${KV_CACHE_MAXMEMORY:-1gb}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$KV_PASSWORD\" valkey-cli -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  kv-rt:
+    build:
+      context: .
+      dockerfile: deploy/docker/valkey.Dockerfile
+    restart: unless-stopped
+    environment:
+      - KV_ROLE=rt
+      - KV_PASSWORD=${SERVICE_PASSWORD_KVRT}
+      - KV_MAXMEMORY=${KV_RT_MAXMEMORY:-512mb}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$KV_PASSWORD\" valkey-cli -p 6379 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      - SERVICE_URL_MINIO_9000
+      - MINIO_ROOT_USER=${SERVICE_USER_MINIO}
+      - MINIO_ROOT_PASSWORD=${SERVICE_PASSWORD_MINIO}
+      - MINIO_SITE_REGION=us-east-1
+      - MINIO_BROWSER=off
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  minio-init:
+    build:
+      context: .
+      dockerfile: deploy/docker/storage-init.Dockerfile
+    restart: "no"
+    exclude_from_hc: true
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - MINIO_URL=http://minio:9000
+      - MINIO_ROOT_USER=${SERVICE_USER_MINIO}
+      - MINIO_ROOT_PASSWORD=${SERVICE_PASSWORD_MINIO}
+      - S3_BUCKET_PRIVATE=${S3_BUCKET_PRIVATE:-uploads}
+      - S3_BUCKET_MEDIA=${S3_BUCKET_MEDIA:-media}
+      - APP_S3_ACCESS_KEY_ID=${SERVICE_USER_S3APP}
+      - APP_S3_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_64_S3APP}
+      - MEDIA_ORIGIN_SECRET=${SERVICE_PASSWORD_64_MEDIAORIGIN}
+
+  media:
+    build:
+      context: .
+      dockerfile: deploy/docker/media.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - SERVICE_URL_MEDIA_8080
+      - CDN_SIGNING_KEY=${SERVICE_PASSWORD_64_MEDIASIGN}
+      - S3_BUCKET_MEDIA=${S3_BUCKET_MEDIA:-media}
+      - MEDIA_ORIGIN=minio:9000
+      - MEDIA_ORIGIN_SECRET=${SERVICE_PASSWORD_64_MEDIAORIGIN}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ── Schema ────────────────────────────────────────────────────────────
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/node.Dockerfile
+      target: migrate
+    restart: "no"
+    exclude_from_hc: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Direct to PostgreSQL as the schema owner: the runner holds a session
+      # advisory lock, which PgBouncer in transaction mode cannot carry.
+      - MIGRATION_DATABASE_URL=postgres://app_owner:${SERVICE_PASSWORD_PGOWNER}@postgres:5432/app
+      - MIGRATION_LOCK_TIMEOUT_MS=${MIGRATION_LOCK_TIMEOUT_MS:-5000}
+
+  # ── Application ───────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/node.Dockerfile
+      target: api
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      kv-core:
+        condition: service_healthy
+      kv-cache:
+        condition: service_healthy
+    environment:
+      - SERVICE_URL_API_8080
+      - NODE_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_PRETTY=false
+      - REDIS_URL=redis://:${SERVICE_PASSWORD_KVCORE}@kv-core:6379/0
+      - REDIS_CACHE_URL=redis://:${SERVICE_PASSWORD_KVCACHE}@kv-cache:6379/0
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-app:}
+      - DATABASE_TARGET=pgbouncer
+      - ID_PUBLIC_KEY=${ID_PUBLIC_KEY:?ID_PUBLIC_KEY is required (32 bytes base64url, never changed)}
+      - ID_BILLING_KEY=${ID_BILLING_KEY:?ID_BILLING_KEY is required (32 bytes base64url, never changed)}
+      - CENTRIFUGO_API_URL=http://centrifugo:9000
+      - CENTRIFUGO_API_KEY=${SERVICE_PASSWORD_64_CENTRIFUGOAPI}
+      - LIVEKIT_API_URL=http://livekit:7880
+      - LIVEKIT_API_KEY=${SERVICE_USER_LIVEKIT}
+      - LIVEKIT_API_SECRET=${SERVICE_PASSWORD_64_LIVEKIT}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_REGION=${S3_REGION:-auto}
+      - S3_BUCKET_PRIVATE=${S3_BUCKET_PRIVATE:-uploads}
+      - S3_BUCKET_MEDIA=${S3_BUCKET_MEDIA:-media}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_PATH_STYLE=${S3_PATH_STYLE:-true}
+      - CDN_BASE_URL=${CDN_BASE_URL:-}
+      - CDN_SIGNING_KEY=${CDN_SIGNING_KEY:-}
+      - CDN_SIGNING_SCHEME=${CDN_SIGNING_SCHEME:-hmac}
+      - BUNDLED_S3_URL=${SERVICE_URL_MINIO}
+      - BUNDLED_S3_ACCESS_KEY_ID=${SERVICE_USER_S3APP}
+      - BUNDLED_S3_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_64_S3APP}
+      - BUNDLED_CDN_URL=${SERVICE_URL_MEDIA}
+      - BUNDLED_CDN_SIGNING_KEY=${SERVICE_PASSWORD_64_MEDIASIGN}
+      - PUBLIC_API_URL=${SERVICE_URL_API}
+      - PUBLIC_ADMIN_URL=${SERVICE_URL_ADMIN}
+      - PUBLIC_SITE_URL=${SERVICE_URL_WEB}
+      - PUBLIC_LINKS_URL=${PUBLIC_LINKS_URL:-}
+      - PUBLIC_REALTIME_URL=${SERVICE_URL_CENTRIFUGO}
+      - PUBLIC_RTC_URL=${SERVICE_URL_LIVEKIT}
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DATABASE_URL=postgres://app_api:${SERVICE_PASSWORD_PGAPI}@pgbouncer:6432/app
+      - DATABASE_APPLICATION_NAME=api
+      - DATABASE_POOL_MAX=${API_DATABASE_POOL_MAX:-10}
+      - BRAND=${BRAND:?BRAND is required (the brand id)}
+      - BRAND_JSON_BASE64=${BRAND_JSON_BASE64:?BRAND_JSON_BASE64 is required (base64 of brand.json)}
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - CF_EDGE_TRUST=${CF_EDGE_TRUST:-}
+      - OPENAPI_ENABLED=${OPENAPI_ENABLED:-false}
+      - SHUTDOWN_DRAIN_MS=${SHUTDOWN_DRAIN_MS:-5000}
+      - AUTH_JWT_ALG=EdDSA
+      - AUTH_JWT_ISSUER=${AUTH_JWT_ISSUER:-app-api}
+      - AUTH_JWT_KID=${AUTH_JWT_KID:-k1}
+      - AUTH_JWT_PRIVATE_KEY=${AUTH_JWT_PRIVATE_KEY:?AUTH_JWT_PRIVATE_KEY is required (Ed25519 PEM)}
+      - AUTH_JWT_PUBLIC_KEY=${AUTH_JWT_PUBLIC_KEY:?AUTH_JWT_PUBLIC_KEY is required (Ed25519 PEM)}
+      - AUTH_JWT_PREVIOUS_KID=${AUTH_JWT_PREVIOUS_KID:-}
+      - AUTH_JWT_PREVIOUS_PUBLIC_KEY=${AUTH_JWT_PREVIOUS_PUBLIC_KEY:-}
+      - HASH_PEPPERS=${HASH_PEPPERS:?HASH_PEPPERS is required}
+      - HASH_PEPPER_KID=${HASH_PEPPER_KID:-1}
+      - DATA_KEYS=${DATA_KEYS:?DATA_KEYS is required}
+      - DATA_KEY_ID=${DATA_KEY_ID:-1}
+      - CENTRIFUGO_TOKEN_HMAC_SECRET=${SERVICE_PASSWORD_64_CENTRIFUGOTOKEN}
+      - GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID:-}
+      - SMS_KAVENEGAR_API_KEY=${SMS_KAVENEGAR_API_KEY:-}
+      - SMS_KAVENEGAR_TEMPLATE=${SMS_KAVENEGAR_TEMPLATE:-}
+      - SMS_SMSIR_API_KEY=${SMS_SMSIR_API_KEY:-}
+      - SMS_SMSIR_TEMPLATE_ID=${SMS_SMSIR_TEMPLATE_ID:-}
+      - SMS_SMSIR_PARAMETER=${SMS_SMSIR_PARAMETER:-CODE}
+      - SMS_TELNYX_API_KEY=${SMS_TELNYX_API_KEY:-}
+      - SMS_TELNYX_VERIFY_PROFILE_ID=${SMS_TELNYX_VERIFY_PROFILE_ID:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/node.Dockerfile
+      target: worker
+    restart: unless-stopped
+    stop_grace_period: 45s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      kv-core:
+        condition: service_healthy
+      kv-cache:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_PRETTY=false
+      - REDIS_URL=redis://:${SERVICE_PASSWORD_KVCORE}@kv-core:6379/0
+      - REDIS_CACHE_URL=redis://:${SERVICE_PASSWORD_KVCACHE}@kv-cache:6379/0
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-app:}
+      - DATABASE_TARGET=pgbouncer
+      - ID_PUBLIC_KEY=${ID_PUBLIC_KEY:?ID_PUBLIC_KEY is required (32 bytes base64url, never changed)}
+      - ID_BILLING_KEY=${ID_BILLING_KEY:?ID_BILLING_KEY is required (32 bytes base64url, never changed)}
+      - CENTRIFUGO_API_URL=http://centrifugo:9000
+      - CENTRIFUGO_API_KEY=${SERVICE_PASSWORD_64_CENTRIFUGOAPI}
+      - LIVEKIT_API_URL=http://livekit:7880
+      - LIVEKIT_API_KEY=${SERVICE_USER_LIVEKIT}
+      - LIVEKIT_API_SECRET=${SERVICE_PASSWORD_64_LIVEKIT}
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_REGION=${S3_REGION:-auto}
+      - S3_BUCKET_PRIVATE=${S3_BUCKET_PRIVATE:-uploads}
+      - S3_BUCKET_MEDIA=${S3_BUCKET_MEDIA:-media}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_PATH_STYLE=${S3_PATH_STYLE:-true}
+      - CDN_BASE_URL=${CDN_BASE_URL:-}
+      - CDN_SIGNING_KEY=${CDN_SIGNING_KEY:-}
+      - CDN_SIGNING_SCHEME=${CDN_SIGNING_SCHEME:-hmac}
+      - BUNDLED_S3_URL=${SERVICE_URL_MINIO}
+      - BUNDLED_S3_ACCESS_KEY_ID=${SERVICE_USER_S3APP}
+      - BUNDLED_S3_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_64_S3APP}
+      - BUNDLED_CDN_URL=${SERVICE_URL_MEDIA}
+      - BUNDLED_CDN_SIGNING_KEY=${SERVICE_PASSWORD_64_MEDIASIGN}
+      - PUBLIC_API_URL=${SERVICE_URL_API}
+      - PUBLIC_ADMIN_URL=${SERVICE_URL_ADMIN}
+      - PUBLIC_SITE_URL=${SERVICE_URL_WEB}
+      - PUBLIC_LINKS_URL=${PUBLIC_LINKS_URL:-}
+      - PUBLIC_REALTIME_URL=${SERVICE_URL_CENTRIFUGO}
+      - PUBLIC_RTC_URL=${SERVICE_URL_LIVEKIT}
+      - WORKER_ID=worker-1
+      - DATABASE_URL=postgres://app_worker:${SERVICE_PASSWORD_PGWORKER}@pgbouncer:6432/app
+      - DATABASE_APPLICATION_NAME=worker
+      - DATABASE_POOL_MAX=${WORKER_DATABASE_POOL_MAX:-10}
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-4}
+      - PHOTO_CONCURRENCY=${PHOTO_CONCURRENCY:-2}
+      - MODERATION_PROVIDER=fake
+      - FCM_SERVICE_ACCOUNT_JSON=${FCM_SERVICE_ACCOUNT_JSON:?FCM_SERVICE_ACCOUNT_JSON is required (base64 of the service account JSON)}
+      - FCM_PROJECT_ID=${FCM_PROJECT_ID:-}
+    healthcheck:
+      test: ["CMD", "node", "/app/health.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  centrifugo:
+    build:
+      context: .
+      dockerfile: deploy/docker/centrifugo.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kv-rt:
+        condition: service_healthy
+    environment:
+      - SERVICE_URL_CENTRIFUGO_8000
+      - CENTRIFUGO_TOKEN_HMAC_SECRET=${SERVICE_PASSWORD_64_CENTRIFUGOTOKEN}
+      - CENTRIFUGO_API_KEY=${SERVICE_PASSWORD_64_CENTRIFUGOAPI}
+      - KV_RT_PASSWORD=${SERVICE_PASSWORD_KVRT}
+      - KV_RT_ADDRESS=kv-rt:6379
+      - CENTRIFUGO_ALLOWED_ORIGINS=${CENTRIFUGO_ALLOWED_ORIGINS:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  livekit:
+    build:
+      context: .
+      dockerfile: deploy/docker/livekit.Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      - SERVICE_URL_LIVEKIT_7880
+      - LIVEKIT_API_KEY=${SERVICE_USER_LIVEKIT}
+      - LIVEKIT_API_SECRET=${SERVICE_PASSWORD_64_LIVEKIT}
+      - LIVEKIT_WEBHOOK_URL=http://api:8080/v1/webhooks/livekit
+      - LIVEKIT_NODE_IP=${LIVEKIT_NODE_IP:-}
+      # These three must match the ports below (LiveKit announces them).
+      - LIVEKIT_RTC_TCP_PORT=7891
+      - LIVEKIT_RTC_UDP_START=51000
+      - LIVEKIT_RTC_UDP_END=51100
+    ports:
+      - "7891:7891/tcp"
+      - "51000-51100:51000-51100/udp"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7880/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  # ── Static sites ──────────────────────────────────────────────────────
+  admin:
+    build:
+      context: .
+      dockerfile: deploy/docker/static.Dockerfile
+      target: admin
+      args:
+        BRAND: ${BRAND:?BRAND is required (the brand id)}
+        BRAND_JSON_BASE64: ${BRAND_JSON_BASE64:?BRAND_JSON_BASE64 is required (base64 of brand.json)}
+    restart: unless-stopped
+    environment:
+      - SERVICE_URL_ADMIN_8080
+      - PUBLIC_API_URL=${SERVICE_URL_API}
+      - CDN_BASE_URL=${CDN_BASE_URL:-}
+      - BUNDLED_CDN_URL=${SERVICE_URL_MEDIA}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/static.Dockerfile
+      target: web
+      args:
+        BRAND: ${BRAND:?BRAND is required (the brand id)}
+        BRAND_JSON_BASE64: ${BRAND_JSON_BASE64:?BRAND_JSON_BASE64 is required (base64 of brand.json)}
+        SITE_URL: ${SERVICE_URL_WEB}
+        API_URL: ${SERVICE_URL_API}
+        LINKS_URL: ${PUBLIC_LINKS_URL:-}
+        GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-}
+        DELETION_GRACE_DAYS: ${DELETION_GRACE_DAYS:-30}
+    restart: unless-stopped
+    environment:
+      - SERVICE_URL_WEB_8080
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  pg-data:
+  pg-backups:
+  kv-core-data:
+  minio-data:

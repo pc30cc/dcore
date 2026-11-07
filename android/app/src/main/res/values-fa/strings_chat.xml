@@ -38,8 +38,8 @@
 
     <!-- Call lines -->
     <string name="chat_call_back">تماس دوباره</string>
-    <string name="chat_line_call_audio_length">تماس صوتی · %1$s</string>
-    <string name="chat_line_call_video_length">تماس تصویری · %1$s</string>
+    <string name="chat_line_call_audio_length">تماس صوتی، %1$s</string>
+    <string name="chat_line_call_video_length">تماس تصویری، %1$s</string>
     <string name="chat_line_call_audio_unanswered">تماس صوتی، بی‌پاسخ</string>
     <string name="chat_line_call_video_unanswered">تماس تصویری، بی‌پاسخ</string>
     <string name="chat_line_call_audio_missed">تماس صوتی از دست رفته</string>
@@ -76,7 +76,7 @@
     <string name="chat_like_note_theirs">پروفایلتان را پسندید</string>
     <string name="chat_like_note_mine">پروفایلش را پسندیدید</string>
     <string name="chat_photo">عکس</string>
-    <string name="chat_voice">پیام صوتی · %1$s</string>
+    <string name="chat_voice">پیام صوتی، %1$s</string>
     <string name="chat_voice_unavailable">پخش پیام صوتی در این نسخه هنوز ممکن نیست.</string>
     <string name="chat_unknown">این پیام در این نسخه از {appName} نشان داده نمی‌شود.</string>
     <string name="chat_reactions">واکنش‌ها: %1$s</string>
@@ -88,6 +88,7 @@
     <string name="chat_not_sent_refused">فرستاده نشد: این پیام با قوانین جامعه سازگار نیست.</string>
     <string name="chat_not_sent_expired">فرستاده نشد. برای تلاش دوباره بزنید.</string>
     <string name="chat_message_actions">گزینه‌های پیام</string>
+    <string name="chat_list_separator">"، "</string>
 
     <!-- Message actions -->
     <string name="chat_action_copy">رونوشت</string>
@@ -148,6 +149,7 @@
     <string name="requests_declined">رد شد. به او خبر داده نمی‌شود.</string>
     <string name="requests_withdrawn">پس گرفته شد.</string>
     <string name="requests_load_failed">درخواست‌های پیام بارگذاری نشدند</string>
+    <string name="requests_loading">در حال بارگذاری درخواست‌های پیام</string>
     <string name="requests_report_note">پیامش همراه گزارش فرستاده می‌شود و درخواست رد می‌شود.</string>
     <string name="requests_empty_inbox_title">درخواست پیامی ندارید</string>
     <string name="requests_empty_inbox_body">وقتی کسی پیش از هم‌پسندی برایتان بنویسد، این‌جا نشان داده می‌شود.</string>

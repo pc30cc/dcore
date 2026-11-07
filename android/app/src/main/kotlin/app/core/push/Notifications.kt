@@ -149,7 +149,11 @@ class Notifications(private val context: Context) : NotificationSink {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
             .build()
-        runCatching { manager.notify(tag, ID, notification) }
+        try {
+            manager.notify(tag, ID, notification)
+        } catch (_: SecurityException) {
+            // The permission was taken back between the check above and the post.
+        }
     }
 
     private fun builder(push: PushData, open: PendingIntent): NotificationCompat.Builder =

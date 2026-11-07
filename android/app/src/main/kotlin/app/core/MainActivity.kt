@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         // Realtime follows the app to the front and the account in; push
         // registers the device for whoever signs in.
         graph.chat.start()
-        graph.push.start(graph.auth)
+        graph.push.start(graph.auth, graph.config.config)
         if (savedInstanceState == null) openFrom(intent)
 
         setContent {

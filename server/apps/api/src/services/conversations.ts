@@ -31,8 +31,12 @@ import type { ConfigSnapshot } from './cfg.js';
  *   (under the peer's own-account version, so an edit of their profile shows
  *   at once). No statement.
  * - The visibility rule (context 2: a snoozed peer stays) is applied with
- *   one `visible_subset` read when the last check is older than a minute, or
- *   when a peer was hidden since (`vis:out`: bans, deletions, shadowbans).
+ *   one `visible_subset` read for the peers whose last check is older than a
+ *   minute or who were hidden since (`vis:out`: bans, deletions,
+ *   shadowbans). Each peer's verdict is kept with its time in `cl:ok:<uid>`
+ *   (a kv-cache hash that lives a minute from its first check), so a peer
+ *   found hidden stays hidden on the next pages and reads; a change of a
+ *   peer's visibility deletes the hash of each of their peers.
  * - After a cache loss the list is rebuilt from `matches` in one statement
  *   (visibility and peer cards included); missing match states and peer
  *   summaries are read in one statement each.
@@ -42,6 +46,15 @@ import type { ConfigSnapshot } from './cfg.js';
 
 /** How long a visibility check of a list stands. */
 export const LIST_CHECK_MS = 60_000;
+/** Clock slack between processes when comparing a hide time with a check time. */
+const CHECK_SLACK_MS = 5_000;
+
+/** A kept verdict: `<ms>:<1|0>`. */
+function parseCheck(value: string | null): { at: number; visible: boolean } | null {
+  if (value === null) return null;
+  const m = /^([0-9]{1,15}):([01])$/.exec(value);
+  return m ? { at: Number(m[1]), visible: m[2] === '1' } : null;
+}
 export const PEER_SUMMARY_TTL_SECONDS = 24 * 3_600;
 
 const cursorSchema = z.object({ s: z.number().int().nonnegative(), i: z.string().regex(/^[1-9][0-9]{0,18}$/) });
@@ -134,7 +147,7 @@ export class ConversationService {
     try {
       await storeConversationList(app.redis, app.keys, userId, entries);
       for (const row of rows) await cacheMatchState(app.redis, app.keys, stateOf(row));
-      await app.cache.set(app.keys.conversationListChecked(userId), String(Date.now()), 'PX', LIST_CHECK_MS);
+      await this.storeChecks(userId, rows.map((r) => r.peerId), new Set(rows.filter((r) => r.visible).map((r) => r.peerId)), Date.now());
     } catch (error) {
       this.log.warn({ err: error }, 'conversations: list not cached');
     }
@@ -157,24 +170,54 @@ export class ConversationService {
   }
 
   /**
-   * The peers the viewer may list (context 2). Checked at most once a minute,
-   * and again as soon as one of the peers was hidden after the last check.
+   * The peers the viewer may list (context 2). A peer is checked again
+   * (one statement for all of them) when their last verdict is older than a
+   * minute, or when they were hidden after it; otherwise the kept verdict
+   * stands.
    */
   private async visibleSet(userId: string, peerIds: readonly string[]): Promise<Set<string>> {
     const { app } = this;
-    if (peerIds.length === 0) return new Set();
-    const [checkedAt, hidden] = await Promise.all([
-      app.cache.get(app.keys.conversationListChecked(userId)),
-      app.redis.zmscore(app.keys.accountsHidden(), ...peerIds),
+    const visible = new Set<string>();
+    if (peerIds.length === 0) return visible;
+    const unique = [...new Set(peerIds)];
+    const key = app.keys.conversationListChecked(userId);
+    const [checks, hidden] = await Promise.all([
+      // Unreadable (a value of another shape, kv-cache down): every peer is checked.
+      app.cache.hmget(key, ...unique).catch(async (): Promise<(string | null)[]> => {
+        await app.cache.del(key).catch(() => undefined);
+        return [];
+      }),
+      app.redis.zmscore(app.keys.accountsHidden(), ...unique),
     ]);
-    const since = checkedAt === null ? null : Number(checkedAt);
-    const hiddenSince = hidden.some((score) => score !== null && since !== null && Number(score) >= since);
-    if (since !== null && !hiddenSince) return new Set(peerIds);
+    const unknown: string[] = [];
+    unique.forEach((id, i) => {
+      const check = parseCheck(checks[i] ?? null);
+      const hiddenAt = hidden[i] === null || hidden[i] === undefined ? null : Number(hidden[i]);
+      if (!check || (hiddenAt !== null && hiddenAt >= check.at - CHECK_SLACK_MS)) unknown.push(id);
+      else if (check.visible) visible.add(id);
+    });
+    if (unknown.length === 0) return visible;
     budget(this.request, 1);
     const now = Date.now();
-    const visible = await visiblePeers(app.pg, userId, peerIds, 2);
-    await app.cache.set(app.keys.conversationListChecked(userId), String(now), 'PX', LIST_CHECK_MS).catch(() => undefined);
+    const seen = await visiblePeers(app.pg, userId, unknown, 2);
+    for (const id of seen) visible.add(id);
+    await this.storeChecks(userId, unknown, seen, now);
     return visible;
+  }
+
+  /** Keeps the verdicts of a check (`<ms>:<1|0>` per peer); the hash lives a minute from its first verdict. */
+  private async storeChecks(userId: string, peerIds: readonly string[], visible: ReadonlySet<string>, at: number): Promise<void> {
+    if (peerIds.length === 0) return;
+    const { app } = this;
+    const key = app.keys.conversationListChecked(userId);
+    const fields: Record<string, string> = {};
+    for (const id of peerIds) fields[id] = `${at}:${visible.has(id) ? 1 : 0}`;
+    await app.cache
+      .multi()
+      .hset(key, fields)
+      .pexpire(key, LIST_CHECK_MS, 'NX')
+      .exec()
+      .catch((error: unknown) => this.log.warn({ err: error }, 'conversations: visibility verdicts not kept'));
   }
 
   /** Peer summaries from `ps:<uid>:<mev>`; the misses built in one statement and stored. */

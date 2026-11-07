@@ -19,7 +19,7 @@ import {
   countPendingLikes,
   dropFromDeck,
   dropPendingLikers,
-  isLikePending,
+  isLikeAnswered,
   jobId,
   matchSourceOf,
   parseCardSource,
@@ -206,8 +206,8 @@ export class SwipeService {
     if (use.allowed) {
       counted = true;
     } else if (kind === 2) {
-      // Beyond the weekly super likes: the wallet, unless the like is already pending (nothing is charged for it).
-      if (await isLikePending(app.redis, app.keys, me, targetId, this.now)) return { target: swipe.target, result: 'duplicate' };
+      // Beyond the weekly super likes: the wallet, unless the like would change nothing (pending, or the pair matched).
+      if (await isLikeAnswered(app.redis, app.keys, me, targetId, this.now)) return { target: swipe.target, result: 'duplicate' };
       const paid = await this.payFromWallet(likeId, targetId, itemKind, itemRef, comment);
       if (!paid) return { target: swipe.target, result: 'quota' };
       prepaid = true;

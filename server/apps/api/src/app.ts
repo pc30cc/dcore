@@ -43,6 +43,7 @@ import { deletionRoutes } from './routes/deletion.js';
 import { healthRoutes } from './routes/health.js';
 import { photoRoutes } from './routes/photos.js';
 import { publicDeletionRoutes } from './routes/publicDeletion.js';
+import { safetyRoutes } from './routes/safety.js';
 import { conversationRoutes } from './routes/conversations.js';
 import { likeRoutes } from './routes/likes.js';
 import { swipeRoutes } from './routes/swipes.js';
@@ -270,6 +271,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(swipeRoutes);
   await app.register(likeRoutes);
   await app.register(conversationRoutes);
+  await app.register(safetyRoutes);
   await app.register(authRoutes);
   await app.register(photoRoutes);
   await app.register(deletionRoutes);

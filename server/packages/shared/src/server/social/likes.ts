@@ -24,6 +24,15 @@ import { luaScript, runScript } from '../kv/scripts.js';
 /** A bucket lives this long after its first like (five weekly buckets, plus a margin). */
 export const LIKE_BUCKET_TTL_SECONDS = 36 * 86_400;
 
+/**
+ * How long `lkm:<lo>:<hi>` says that a pair matched. Matched people leave
+ * each other's buckets, so without it a like sent again after the match (an
+ * app resending a like whose answer it lost, or a card it showed before the
+ * match) would count as a new pending like and tell the other person about
+ * it. A week outlives every resend and every card a client keeps.
+ */
+export const MATCHED_PAIR_TTL_SECONDS = 7 * 86_400;
+
 export type LikeScriptOutcome = 'match' | 'duplicate' | 'check' | 'liked';
 
 export interface LikeScriptInput {
@@ -46,9 +55,9 @@ export interface LikeScriptInput {
   now?: number | undefined;
 }
 
-const likeScript = luaScript(new URL('./like.lua', import.meta.url), 'like', 25);
+const likeScript = luaScript(new URL('./like.lua', import.meta.url), 'like', 26);
 
-/** The 25 keys of the like script, in its order. */
+/** The 26 keys of the like script, in its order. */
 export function likeScriptKeys(keys: KeyBuilder, actorId: string, targetId: string, now: number): string[] {
   const weeks = likeWeeks(now);
   const current = likeWeek(now);
@@ -62,6 +71,7 @@ export function likeScriptKeys(keys: KeyBuilder, actorId: string, targetId: stri
     ...weeks.map((w) => keys.likesInSuper(actorId, w)),
     keys.likesInSuper(targetId, current),
     keys.likesReady(),
+    keys.likesMatched(actorId, targetId),
   ];
 }
 
@@ -84,6 +94,7 @@ export async function runLikeScript(redis: Redis, keys: KeyBuilder, input: LikeS
     input.noteIds[0],
     input.noteIds[1],
     input.prepaid ? '1' : '0',
+    MATCHED_PAIR_TTL_SECONDS,
   ]);
   const outcome = String(reply);
   if (outcome !== 'match' && outcome !== 'duplicate' && outcome !== 'check' && outcome !== 'liked') {
@@ -101,6 +112,16 @@ export async function isLikePending(redis: Redis, keys: KeyBuilder, actorId: str
     if (error) throw error;
     return Number(value) === 1;
   });
+}
+
+/**
+ * Whether a like of `targetId` by `actorId` would change nothing: it is still
+ * pending, or the two have matched (the like script answers `duplicate`).
+ * Read before anything is charged for a like. One round trip.
+ */
+export async function isLikeAnswered(redis: Redis, keys: KeyBuilder, actorId: string, targetId: string, now: number = Date.now()): Promise<boolean> {
+  const [matched, pending] = await Promise.all([redis.exists(keys.likesMatched(actorId, targetId)), isLikePending(redis, keys, actorId, targetId, now)]);
+  return matched === 1 || pending;
 }
 
 /**

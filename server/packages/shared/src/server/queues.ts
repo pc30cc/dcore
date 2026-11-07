@@ -40,6 +40,7 @@ export const queueJobs = {
   deck: ['refill'],
   photo: ['process', 'delete'],
   account: ['deletion-fanout', 'purge', 'deletion-sweep', 'unmatch-purge'],
+  safety: ['moderation-end', 'moderation-sweep', 'block-deck'],
   push: ['send'],
   chat: ['like-notes'],
   maint: ['partitions', 'active-drain', 'sessions-cleanup', 'lk-rebuild'],

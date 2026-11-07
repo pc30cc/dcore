@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
@@ -140,6 +141,7 @@ class CallPictureInPicture(private val activity: ComponentActivity) {
         if (spec != null) {
             builder.setAspectRatio(spec.aspect)
             builder.setActions(actions(spec))
+            sourceRect(spec.aspect)?.let { builder.setSourceRectHint(it) }
         } else {
             builder.setActions(emptyList())
         }
@@ -148,6 +150,24 @@ class CallPictureInPicture(private val activity: ComponentActivity) {
             builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()
+    }
+
+    /**
+     * Where the window's picture is on the full screen: the largest rect of
+     * the window's shape centred in it, which is what the full-screen picture
+     * shows. The system grows the window out of it, and back into it, rather
+     * than cutting from one to the other. Null before the screen is laid out.
+     */
+    private fun sourceRect(aspect: Rational): Rect? {
+        val view = activity.window?.decorView ?: return null
+        val width = view.width
+        val height = view.height
+        if (width <= 0 || height <= 0 || aspect.numerator <= 0 || aspect.denominator <= 0) return null
+        val ratio = aspect.toFloat()
+        val (w, h) = if (width.toFloat() / height > ratio) (height * ratio).toInt() to height else width to (width / ratio).toInt()
+        val left = (width - w) / 2
+        val top = (height - h) / 2
+        return Rect(left, top, left + w, top + h)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)

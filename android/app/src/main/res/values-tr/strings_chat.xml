@@ -88,6 +88,7 @@
     <string name="chat_not_sent_refused">Gönderilemedi: bu mesaj topluluk kurallarına aykırı.</string>
     <string name="chat_not_sent_expired">Gönderilemedi. Tekrar denemek için dokun.</string>
     <string name="chat_message_actions">Mesaj seçenekleri</string>
+    <string name="chat_list_separator">", "</string>
 
     <!-- Message actions -->
     <string name="chat_action_copy">Kopyala</string>
@@ -148,6 +149,7 @@
     <string name="requests_declined">Reddedildi. Kendisine haber verilmez.</string>
     <string name="requests_withdrawn">Geri çekildi.</string>
     <string name="requests_load_failed">Mesaj istekleri yüklenemedi</string>
+    <string name="requests_loading">Mesaj istekleri yükleniyor</string>
     <string name="requests_report_note">Mesajı bildirimle birlikte gönderilir ve istek reddedilir.</string>
     <string name="requests_empty_inbox_title">Mesaj isteği yok</string>
     <string name="requests_empty_inbox_body">Biri eşleşmeden önce sana yazarsa burada görünür.</string>

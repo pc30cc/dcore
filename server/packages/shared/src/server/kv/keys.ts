@@ -97,6 +97,8 @@ export function createKeys(prefix: string) {
     likesInSuper: (uid: string | bigint, week: number) => k('lkin', uid, week, 's'),
     /** The day's one open like on a free plan (the liker's id), chosen once a day. */
     likesReveal: (uid: string | bigint, day: string) => k('lkr', uid, day),
+    /** Set when two people matched: a like between them sent again later (a resend, a stale card) changes nothing. */
+    likesMatched: (a: string | bigint, b: string | bigint) => (BigInt(a) < BigInt(b) ? k('lkm', a, b) : k('lkm', b, a)),
 
     // Swipes (kv-core): daily, weekly and monthly quotas (`q:likes:<uid>:<yyyymmdd>`, `q:sl:<uid>:<yyyyww>`)
     quota: (feature: string, uid: string | bigint, period: string) => k('q', feature, uid, period),

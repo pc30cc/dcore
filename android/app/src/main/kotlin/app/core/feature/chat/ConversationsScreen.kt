@@ -93,7 +93,6 @@ fun ConversationsRoute(onOpen: (Id) -> Unit, onOpenRequests: () -> Unit, onBrows
     val state by vm.state.collectAsStateWithLifecycle()
     LifecycleStartEffect(vm) {
         vm.shown()
-        graph.push.notifications.clearLikes()
         onStopOrDispose { }
     }
     val actions = remember(vm, onOpen, onOpenRequests, onBrowse) {
@@ -314,6 +313,7 @@ private fun ConversationRow(
     val unread = conversation.unread
     val preview = if (typing) brandString(R.string.chat_typing) else previewText(conversation.lastMessage, me, clock).orEmpty()
     val time = conversation.lastMessage?.at?.let { listTime(clock, it, today) }.orEmpty()
+    val separator = brandString(R.string.chat_list_separator)
     val description = buildList {
         add(conversation.peer.name)
         if (conversation.peer.verified) add(brandString(R.string.deck_verified))
@@ -322,7 +322,7 @@ private fun ConversationRow(
         if (preview.isNotEmpty()) add(preview)
         if (time.isNotEmpty()) add(time)
         if (conversation.muted) add(brandString(R.string.chat_muted))
-    }.joinToString(", ")
+    }.joinToString(separator)
     Row(
         Modifier
             .fillMaxWidth()
@@ -338,20 +338,22 @@ private fun ConversationRow(
     ) {
         PeerAvatar(conversation.peer.photo, size = 56.dp, online = conversation.peer.online)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                Text(
-                    conversation.peer.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = if (unread > 0) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (conversation.peer.verified) VerifiedBadge(16.dp)
-                if (conversation.muted) {
-                    Icon(painterResource(R.drawable.ic_chat_muted), contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                // The name and its marks take what the time leaves; a long name ends in "…" before the marks.
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Text(
+                        conversation.peer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (unread > 0) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (conversation.peer.verified) VerifiedBadge(16.dp)
+                    if (conversation.muted) {
+                        Icon(painterResource(R.drawable.ic_chat_muted), contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                Spacer(Modifier.weight(1f))
                 Text(
                     time,
                     style = MaterialTheme.typography.labelMedium,

@@ -60,6 +60,7 @@ psql_super --dbname postgres \
   -v api_password="$PG_API_PASSWORD" \
   -v worker_password="$PG_WORKER_PASSWORD" \
   -v db="$db" <<'SQL'
+SET client_min_messages = warning;
 SET log_statement = 'none';
 SET log_min_duration_statement = -1;
 SET pg_stat_statements.track_utility = off;
@@ -97,6 +98,7 @@ SQL
 # an existing analyst role loses LOGIN.
 if [ -n "${PG_ANALYST_PASSWORD:-}" ]; then
   psql_super --dbname postgres -v analyst_password="$PG_ANALYST_PASSWORD" <<'SQL'
+SET client_min_messages = warning;
 SET log_statement = 'none';
 SET log_min_duration_statement = -1;
 SET pg_stat_statements.track_utility = off;
@@ -118,7 +120,7 @@ fi
 # the migrations' CREATE EXTENSION IF NOT EXISTS then finds them.
 for ext in $extensions; do
   case "$ext" in *[!a-z0-9_]*) echo "pg-roles: bad extension name $ext" >&2; exit 64 ;; esac
-  psql_super --dbname "$db" -c "CREATE EXTENSION IF NOT EXISTS \"$ext\""
+  psql_super --dbname "$db" -c "SET client_min_messages = warning" -c "CREATE EXTENSION IF NOT EXISTS \"$ext\""
 done
 
 echo "pg-roles: roles, database $db and extensions ($extensions) are in place" >&2

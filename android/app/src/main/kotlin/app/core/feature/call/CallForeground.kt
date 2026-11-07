@@ -1,5 +1,6 @@
 package app.core.feature.call
 
+import android.annotation.SuppressLint
 import android.content.pm.ServiceInfo
 import android.os.Build
 import app.core.model.Id
@@ -44,6 +45,9 @@ object NoCallForeground : CallForeground {
 object OngoingCallTypes {
     const val NONE = -1
 
+    // Plain ints, read on the device it runs on: the manifest declares the
+    // same bits, which is all Android 10 checks a service's types against.
+    @SuppressLint("InlinedApi")
     fun of(sdk: Int, video: Boolean, microphoneGranted: Boolean, cameraGranted: Boolean): Int {
         if (sdk < Build.VERSION_CODES.Q) return 0
         var types = 0

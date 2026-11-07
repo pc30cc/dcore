@@ -18,7 +18,7 @@ COPY --chmod=0755 deploy/postgres/start.sh /usr/local/bin/pg-start
 COPY --chmod=0755 deploy/postgres/backup.sh /usr/local/bin/pg-backup
 
 STOPSIGNAL SIGINT
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=180s --retries=6 \
   CMD test -f /tmp/pg-roles.ok && pg_isready -q -h 127.0.0.1 -U "${POSTGRES_USER:-postgres}" -d "${PG_DATABASE:-app}" || exit 1
 ENTRYPOINT ["pg-start"]
 CMD ["postgres"]

@@ -58,6 +58,11 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   // §3.11 (reads and appeals; the API name of the actions is "moderation")
   ['GET', '/v1/me/moderation', '200', true],
   ['POST', '/v1/appeals', '201', true],
+  // §3.11 (blocks and reports)
+  ['POST', '/v1/blocks', '204', false],
+  ['GET', '/v1/blocks', '200', true],
+  ['DELETE', '/v1/blocks/{target}', '204', false],
+  ['POST', '/v1/reports', '202', true],
   // §3.13
   ['POST', '/v1/realtime/token', '200', true],
   // §3.14

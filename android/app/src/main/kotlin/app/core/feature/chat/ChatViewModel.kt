@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.ZoneId
 
 /** Where a message of the account's own is on its way to being seen. */
 enum class Delivery { Pending, Failed, Confirm, Sent, Delivered, Read }
@@ -155,7 +157,7 @@ class ChatViewModel(
         base.copy(
             me = me,
             conversation = conversation ?: base.conversation,
-            items = transcript(rows, marks, conversation ?: base.conversation, readReceipts, atTop = !base.olderLoading && !base.moreOlder),
+            items = buildTranscript(rows, marks, conversation ?: base.conversation, readReceipts, atTop = !base.olderLoading && !base.moreOlder, me = me),
             loading = base.loading && rows.isEmpty(),
             loadFailed = base.loadFailed && rows.isEmpty(),
             ended = ended,
@@ -338,85 +340,96 @@ class ChatViewModel(
         ui.update { it.copy(notice = notice) }
     }
 
-    // MARK: - The transcript
-
-    private fun transcript(
-        rows: List<ChatMessage>,
-        marks: List<ChatMessage>,
-        conversation: Conversation?,
-        readReceipts: Boolean,
-        atTop: Boolean,
-    ): List<ChatItem> {
-        val reactions = HashMap<Long, LinkedHashMap<String, String>>()
-        val unsent = HashMap<Long, Unsent>()
-        val senderOf = rows.mapNotNull { m -> m.serverId?.let { it to m.senderId } }.toMap()
-        for (mark in marks) {
-            if (mark.state == SendState.FAILED) continue
-            val target = mark.refId ?: continue
-            when (mark.kind) {
-                MessageKind.Reaction -> {
-                    val byPerson = reactions.getOrPut(target) { LinkedHashMap() }
-                    val emoji = mark.body.orEmpty()
-                    if (emoji.isEmpty()) byPerson.remove(mark.senderId) else byPerson[mark.senderId] = emoji
-                }
-                MessageKind.Unsend -> {
-                    val sender = senderOf[target]
-                    unsent[target] = if (sender == null || sender == mark.senderId) Unsent.BySender else Unsent.Removed
-                }
-                else -> Unit
-            }
-        }
-        val peerRead = ChatMapping.idOf(conversation?.peerReadId)?.takeIf { readReceipts } ?: 0
-        val peerDelivered = maxOf(ChatMapping.idOf(conversation?.peerDeliveredId) ?: 0, peerRead)
-        val out = ArrayList<ChatItem>(rows.size + 8)
-        // rows are newest first.
-        for ((i, m) in rows.withIndex()) {
-            val older = rows.getOrNull(i + 1)
-            val newer = rows.getOrNull(i - 1)
-            val day = m.at.atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-            if (m.kind == MessageKind.Call) {
-                out += ChatItem.Call(m)
-            } else {
-                val id = m.serverId
-                val delivery = if (!m.mine) null else when (m.state) {
-                    SendState.PENDING -> Delivery.Pending
-                    SendState.FAILED -> Delivery.Failed
-                    SendState.CONFIRM -> Delivery.Confirm
-                    SendState.SENT -> when {
-                        id != null && id <= peerRead -> Delivery.Read
-                        id != null && id <= peerDelivered -> Delivery.Delivered
-                        else -> Delivery.Sent
-                    }
-                }
-                val people = id?.let { reactions[it] }.orEmpty()
-                out += ChatItem.Bubble(
-                    message = m,
-                    delivery = delivery,
-                    reactions = people.values.toList(),
-                    mine = account.value?.let { people[it] },
-                    unsent = id?.let { unsent[it] },
-                    joinsOlder = older != null && joins(m, older),
-                    joinsNewer = newer != null && joins(newer, m),
-                )
-            }
-            val olderDay = older?.at?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
-            if (olderDay != day) out += ChatItem.Day(day)
-        }
-        if (atTop && conversation != null) out += ChatItem.Intro(conversation)
-        return out
-    }
-
-    /** Two neighbours drawn as one run: same person, same kind of bubble, within a few minutes. */
-    private fun joins(newer: ChatMessage, older: ChatMessage): Boolean =
-        newer.senderId == older.senderId &&
-            older.kind != MessageKind.Call && newer.kind != MessageKind.Call &&
-            java.time.Duration.between(older.at, newer.at).abs().toMinutes() < RUN_MINUTES &&
-            older.at.atZone(java.time.ZoneId.systemDefault()).toLocalDate() == newer.at.atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-
     private companion object {
         const val WINDOW = 60
         const val WINDOW_STEP = 50
-        const val RUN_MINUTES = 5L
         const val MAX_EVIDENCE = 20
     }
 }
+
+/**
+ * The transcript, newest first (the list is drawn bottom-up), from the rows
+ * of a thread ([rows], newest first) and the marks on them ([marks]:
+ * reactions and unsends).
+ *
+ * The read mark is shown only with [readReceipts] (the plan's feature):
+ * without it a message read by the other person reads "delivered" at most,
+ * whatever pointer the phone holds. A day separator follows the oldest
+ * message of each day; the introduction closes the top only once nothing
+ * older exists ([atTop]).
+ */
+internal fun buildTranscript(
+    rows: List<ChatMessage>,
+    marks: List<ChatMessage>,
+    conversation: Conversation?,
+    readReceipts: Boolean,
+    atTop: Boolean,
+    me: PublicUid?,
+    zone: ZoneId = ZoneId.systemDefault(),
+): List<ChatItem> {
+    val reactions = HashMap<Long, LinkedHashMap<String, String>>()
+    val unsent = HashMap<Long, Unsent>()
+    val senderOf = rows.mapNotNull { m -> m.serverId?.let { it to m.senderId } }.toMap()
+    for (mark in marks) {
+        if (mark.state == SendState.FAILED) continue
+        val target = mark.refId ?: continue
+        when (mark.kind) {
+            MessageKind.Reaction -> {
+                val byPerson = reactions.getOrPut(target) { LinkedHashMap() }
+                val emoji = mark.body.orEmpty()
+                if (emoji.isEmpty()) byPerson.remove(mark.senderId) else byPerson[mark.senderId] = emoji
+            }
+            MessageKind.Unsend -> {
+                val sender = senderOf[target]
+                unsent[target] = if (sender == null || sender == mark.senderId) Unsent.BySender else Unsent.Removed
+            }
+            else -> Unit
+        }
+    }
+    val peerRead = ChatMapping.idOf(conversation?.peerReadId)?.takeIf { readReceipts } ?: 0
+    val peerDelivered = maxOf(ChatMapping.idOf(conversation?.peerDeliveredId) ?: 0, peerRead)
+    val out = ArrayList<ChatItem>(rows.size + 8)
+    for ((i, m) in rows.withIndex()) {
+        val older = rows.getOrNull(i + 1)
+        val newer = rows.getOrNull(i - 1)
+        val day = m.at.atZone(zone).toLocalDate()
+        if (m.kind == MessageKind.Call) {
+            out += ChatItem.Call(m)
+        } else {
+            val id = m.serverId
+            val delivery = if (!m.mine) null else when (m.state) {
+                SendState.PENDING -> Delivery.Pending
+                SendState.FAILED -> Delivery.Failed
+                SendState.CONFIRM -> Delivery.Confirm
+                SendState.SENT -> when {
+                    id != null && id <= peerRead -> Delivery.Read
+                    id != null && id <= peerDelivered -> Delivery.Delivered
+                    else -> Delivery.Sent
+                }
+            }
+            val people = id?.let { reactions[it] }.orEmpty()
+            out += ChatItem.Bubble(
+                message = m,
+                delivery = delivery,
+                reactions = people.values.toList(),
+                mine = me?.let { people[it] },
+                unsent = id?.let { unsent[it] },
+                joinsOlder = older != null && joins(m, older, zone),
+                joinsNewer = newer != null && joins(newer, m, zone),
+            )
+        }
+        val olderDay = older?.at?.atZone(zone)?.toLocalDate()
+        if (olderDay != day) out += ChatItem.Day(day)
+    }
+    if (atTop && conversation != null) out += ChatItem.Intro(conversation)
+    return out
+}
+
+/** Two neighbours drawn as one run: same person, same kind of bubble, within a few minutes of the same day. */
+private fun joins(newer: ChatMessage, older: ChatMessage, zone: ZoneId): Boolean =
+    newer.senderId == older.senderId &&
+        older.kind != MessageKind.Call && newer.kind != MessageKind.Call &&
+        Duration.between(older.at, newer.at).abs().toMinutes() < RUN_MINUTES &&
+        older.at.atZone(zone).toLocalDate() == newer.at.atZone(zone).toLocalDate()
+
+private const val RUN_MINUTES = 5L

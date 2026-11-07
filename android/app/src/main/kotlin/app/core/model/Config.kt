@@ -27,6 +27,20 @@ data class Config(
     val calls: CallSwitches = CallSwitches(),
     /** Text overrides from the admin panel, for this locale only; the app ships its own strings. */
     val strings: Map<String, String> = emptyMap(),
+    /** Push for the store in the query; used only by a build that has no Firebase project of its own. */
+    val push: PushOptions = PushOptions(),
+)
+
+@Serializable
+data class PushOptions(val firebase: FirebaseClient? = null)
+
+/** A Firebase project's public client values (the same names as the brand file's). None of them is a credential. */
+@Serializable
+data class FirebaseClient(
+    val appId: String = "",
+    val apiKey: String = "",
+    val projectId: String = "",
+    val projectNumber: String = "",
 )
 
 @Serializable

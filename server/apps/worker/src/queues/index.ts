@@ -5,12 +5,14 @@ import { deckQueue } from './deck.js';
 import { maintQueue } from './maint.js';
 import { photoQueue } from './photo.js';
 import { pushQueue } from './push.js';
+import { safetyQueue } from './safety.js';
 import { systemQueue } from './system.js';
 import type { QueueDefinition } from './types.js';
 
 /**
- * Every queue this worker runs. Moderation, push, store reconciliation and
- * the card-deck builder are added here as they are built.
+ * Every queue this worker runs (the queues of the shared `queueJobs` table).
+ * Moderation, calls, store reconciliation and the others are added here as
+ * they are built.
  */
 export function defaultQueues(config: WorkerConfig): QueueDefinition[] {
   return [
@@ -20,6 +22,7 @@ export function defaultQueues(config: WorkerConfig): QueueDefinition[] {
     deckQueue(),
     pushQueue,
     chatQueue,
+    safetyQueue,
     ...(config.maint.enabled ? [maintQueue] : []),
   ];
 }
@@ -30,5 +33,6 @@ export * from './deck.js';
 export * from './maint.js';
 export * from './photo.js';
 export * from './push.js';
+export * from './safety.js';
 export * from './system.js';
 export * from './types.js';

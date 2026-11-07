@@ -10,4 +10,5 @@ export * from './maint.js';
 export * from './me.js';
 export * from './moderation.js';
 export * from './photos.js';
+export * from './safety.js';
 export * from './social.js';

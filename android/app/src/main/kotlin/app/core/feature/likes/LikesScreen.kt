@@ -124,6 +124,8 @@ fun LikesRoute(onOpenChat: (Id?) -> Unit, onBrowse: () -> Unit, modifier: Modifi
     val config by graph.config.config.collectAsStateWithLifecycle()
     LifecycleStartEffect(vm) {
         vm.start()
+        // The list on screen says what the "new likes" notification said.
+        graph.push.notifications.clearLikes()
         onStopOrDispose { }
     }
     LaunchedEffect(vm) { context.internetAvailability().collect { if (it) vm.online() } }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { reportContext, reportReason } from '../codes.js';
+import { reportReason, type reportContext } from '../codes.js';
 import { cursorSchema } from '../pagination.js';
 import { idSchema, peerSummarySchema, publicUidSchema, timeSchema } from './common.js';
 

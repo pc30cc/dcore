@@ -11,16 +11,20 @@
 -- KEYS[19..23] lkin:<actor>:<w-4..w>:s       super likers of the actor
 -- KEYS[24]     lkin:<target>:<w>:s           super likers of the target, this week
 -- KEYS[25]     lk:ready                      the buckets are complete (absent after a loss)
+-- KEYS[26]     lkm:<lo>:<hi>                 the pair matched (set here on a match, and by every announcement)
 --
 -- ARGV[1] target, ARGV[2] actor, ARGV[3] like id, ARGV[4] kind (1 like, 2 super
 -- like), ARGV[5] item kind (0 profile, 1 photo, 2 prompt), ARGV[6] item ref (''
 -- for none), ARGV[7] comment ('' for none), ARGV[8] bucket lifetime in seconds,
 -- ARGV[9] bucket cap, ARGV[10] match id, ARGV[11] note id 1, ARGV[12] note id 2,
--- ARGV[13] '1' when the like row is already in PostgreSQL (paid from the wallet).
+-- ARGV[13] '1' when the like row is already in PostgreSQL (paid from the wallet),
+-- ARGV[14] lifetime of the matched-pair marker in seconds.
 --
 -- Returns 'match' (the target liked the actor: the match is appended to
 -- wb:match with the pre-minted ids), 'duplicate' (the actor's like of the
--- target is still pending: nothing written), 'check' (the actor's own buckets
+-- target is still pending, or the pair has matched: a like sent again after
+-- the match, by a resend or from a card shown before it; nothing written),
+-- 'check' (the actor's own buckets
 -- are incomplete, at their cap or after a loss: the caller looks the mutual
 -- like up in PostgreSQL, and the stream entry asks the writer to look again
 -- once the batch is durable) or 'liked'.
@@ -29,6 +33,8 @@ local function append_like(check)
   redis.call('XADD', KEYS[11], '*', 'id', ARGV[3], 't', ARGV[1], 'a', ARGV[2], 'k', ARGV[4],
              'ik', ARGV[5], 'ir', ARGV[6], 'c', ARGV[7], 'x', check, 'w', ARGV[13])
 end
+
+if redis.call('EXISTS', KEYS[26]) == 1 then return 'duplicate' end
 
 for i = 1, 5 do
   if redis.call('SISMEMBER', KEYS[i], ARGV[1]) == 1 then
@@ -40,6 +46,7 @@ for i = 1, 5 do
       redis.call('SREM', KEYS[18 + j], ARGV[1])
     end
     append_like('0')
+    redis.call('SET', KEYS[26], 1, 'EX', tonumber(ARGV[14]))
     redis.call('XADD', KEYS[12], '*', 'm', ARGV[10], 'a', ARGV[2], 't', ARGV[1], 's', ARGV[4],
                'n1', ARGV[11], 'n2', ARGV[12], 'l', ARGV[3], 'ik', ARGV[5], 'ir', ARGV[6], 'c', ARGV[7])
     return 'match'

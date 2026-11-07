@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.LocalAppGraph
@@ -131,7 +132,9 @@ fun CallHost(hooks: CallActivityHooks?) {
     val pip = hooks?.pictureInPicture
     val aspect = rememberVideoAspect(remote)
     val windowed = state.video && !state.ringingHere && !state.phase.isOver
-    LaunchedEffect(pip, windowed, aspect, state.muted, state.phase is CallPhase.Live) {
+    // The screen turning re-measures where the window grows from.
+    val screen = LocalWindowInfo.current.containerSize
+    LaunchedEffect(pip, windowed, aspect, state.muted, state.phase is CallPhase.Live, screen) {
         pip?.onMute = current::toggleMute
         pip?.onHangUp = current::hangUp
         pip?.onRestored = controller::expand
@@ -298,10 +301,12 @@ internal fun openAppSettings(context: Context) {
 
 /** The settings page that lets this app ring full screen (Android 14+), else the app's notification settings. */
 internal fun openFullScreenSettings(context: Context) {
-    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.fromParts("package", context.packageName, null))
-    } else {
-        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        // Android 7 has no notification settings page of its own: the app's page.
+        openNotificationSettings(context)
+        return
     }
-    runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.fromParts("package", context.packageName, null))
+    // A phone without that page (some vendors leave it out): the notification settings, never a dead button.
+    if (runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isFailure) openNotificationSettings(context)
 }

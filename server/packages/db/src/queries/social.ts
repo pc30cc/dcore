@@ -357,16 +357,23 @@ export interface ProfileView {
   card: unknown;
 }
 
-/** A profile opened from chat, likes or requests: the visibility rule and the card, in one statement. */
+/**
+ * A profile opened from chat, likes or requests: the visibility rule and the
+ * card, in one statement. A pair whose conversation ended (an unmatch, a
+ * block, a ban) no longer sees each other's profile, so a block reads
+ * exactly like an unmatch to the person blocked.
+ */
 export const profileFor = defineQuery({ name: 'social.profileFor', statements: 1 }, async (db, viewerId: string, targetId: string): Promise<ProfileView> => {
   const row = await maybeOne<{ visible: boolean; card: unknown }>(
     db,
-    sql`SELECT can_see(${viewerId}::bigint, ${targetId}::bigint,
-                       CASE WHEN EXISTS (SELECT 1 FROM matches m
-                                          WHERE m.user_lo = least(${viewerId}::bigint, ${targetId}::bigint)
-                                            AND m.user_hi = greatest(${viewerId}::bigint, ${targetId}::bigint)
-                                            AND m.state = 1)
-                            THEN 2 ELSE 1 END) AS visible,
+    sql`WITH pair AS (
+          SELECT m.state FROM matches m
+           WHERE m.user_lo = least(${viewerId}::bigint, ${targetId}::bigint)
+             AND m.user_hi = greatest(${viewerId}::bigint, ${targetId}::bigint)
+        )
+        SELECT NOT EXISTS (SELECT 1 FROM pair WHERE pair.state <> 1)
+               AND can_see(${viewerId}::bigint, ${targetId}::bigint,
+                           CASE WHEN EXISTS (SELECT 1 FROM pair WHERE pair.state = 1) THEN 2 ELSE 1 END) AS visible,
                profile_card(${targetId}::bigint) AS card`,
   );
   return { visible: row?.visible === true, card: row?.card ?? null };

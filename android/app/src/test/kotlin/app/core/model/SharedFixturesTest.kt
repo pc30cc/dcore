@@ -42,6 +42,7 @@ class SharedFixturesTest {
     private val responses: Map<String, KSerializer<*>> = mapOf(
         "appeal" to AppealBody.serializer(),
         "auth-result" to AuthResult.serializer(),
+        "blocks" to BlockList.serializer(),
         "cities" to CityList.serializer(),
         "config" to Config.serializer(),
         "consents" to ConsentList.serializer(),
@@ -66,6 +67,7 @@ class SharedFixturesTest {
         "profile-card" to ProfileCard.serializer(),
         "public-deletion-start" to PublicDeletionChallenge.serializer(),
         "realtime-token" to RealtimeToken.serializer(),
+        "report" to ReportReceipt.serializer(),
         "restore-account" to RestoredAccount.serializer(),
         "settings" to Settings.serializer(),
         "token-pair" to TokenPair.serializer(),

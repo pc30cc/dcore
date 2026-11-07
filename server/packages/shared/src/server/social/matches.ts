@@ -1,6 +1,7 @@
 import type { Redis } from 'ioredis';
 import type { KeyBuilder } from '../kv/keys.js';
 import { bumpVersion } from '../kv/versions.js';
+import { MATCHED_PAIR_TTL_SECONDS } from './likes.js';
 
 /**
  * Conversations (a match is the conversation) as the zero-statement paths
@@ -79,12 +80,14 @@ export async function readMatchStates(core: Redis, keys: KeyBuilder, matchIds: r
 
 /**
  * A new match is in PostgreSQL: cache its state, add it to both people's
- * lists and bump both list versions. Idempotent (the API's fast path and the
- * stream worker both call it).
+ * lists, mark the pair as matched for the like script (a match made from a
+ * `check` or by the stream writer did not pass through its match branch) and
+ * bump both list versions. Idempotent (the API's fast path and the stream
+ * worker both call it).
  */
 export async function announceMatch(core: Redis, keys: KeyBuilder, match: MatchState): Promise<void> {
   await cacheMatchState(core, keys, match);
-  const pipeline = core.pipeline();
+  const pipeline = core.pipeline().set(keys.likesMatched(match.lo, match.hi), 1, 'EX', MATCHED_PAIR_TTL_SECONDS);
   for (const uid of [match.lo, match.hi]) {
     const list = keys.conversationList(uid);
     pipeline.zadd(list, match.createdMs, match.id);

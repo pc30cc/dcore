@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import app.core.R
 import app.core.i18n.brandString
 import app.core.ui.theme.LocalReducedMotion
@@ -108,13 +109,13 @@ internal class SelfViewPlacement(context: Context) {
     var corner: SelfViewCorner
         get() = SelfViewCorner(prefs.getBoolean(KEY_LEFT, false), prefs.getBoolean(KEY_TOP, false))
         set(value) {
-            prefs.edit().putBoolean(KEY_LEFT, value.left).putBoolean(KEY_TOP, value.top).apply()
+            prefs.edit { putBoolean(KEY_LEFT, value.left).putBoolean(KEY_TOP, value.top) }
         }
 
     var width: Float
         get() = SelfViewSize.clamp(prefs.getFloat(KEY_WIDTH, SelfViewSize.DEFAULT))
         set(value) {
-            prefs.edit().putFloat(KEY_WIDTH, value).apply()
+            prefs.edit { putFloat(KEY_WIDTH, value) }
         }
 
     private companion object {

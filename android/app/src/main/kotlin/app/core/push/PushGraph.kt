@@ -12,15 +12,21 @@ import app.core.common.runCatchingUnlessCancelled
 import app.core.feature.auth.AuthGate
 import app.core.feature.auth.Root
 import app.core.i18n.AppLocales
+import app.core.model.Config
 import app.core.model.Id
 import app.core.model.PublicUid
 import app.core.net.ServerApi
 import app.core.storage.SecretStore
 import app.core.sync.ChatSync
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -76,9 +82,23 @@ class PushGraph(
 
     private val started = AtomicBoolean(false)
 
-    /** Registers for the signed-in account and keeps it current; called once the UI exists. */
-    fun start(auth: AuthGate) {
+    /**
+     * Registers for the signed-in account and keeps it current; called once
+     * the UI exists. [config] is the server's config: a build without a
+     * Firebase project of its own takes the server's from it.
+     */
+    fun start(auth: AuthGate, config: Flow<Config?> = emptyFlow()) {
         if (!started.compareAndSet(false, true)) return
+        scope.launch {
+            config.map { it?.push?.firebase?.let(FirebaseClientConfig::of) }.filterNotNull().distinctUntilChanged().collect { firebase ->
+                // True only when this just started Firebase: register now,
+                // not at the next launch.
+                if (PushConfig.adopt(context, firebase, diag)) {
+                    _availability.value = transport.availability()
+                    registrar.sync("push configured")
+                }
+            }
+        }
         scope.launch {
             auth.root.collect { root ->
                 if (root == Root.Splash) return@collect

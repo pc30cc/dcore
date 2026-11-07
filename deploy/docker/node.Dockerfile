@@ -3,14 +3,14 @@
 # Images of the server workspace's Node processes. Build context: the
 # repository root. Targets:
 #
-#   api      Fastify API (port 8080, GET /healthz)
+#   api      Fastify API (port 8080, GET /healthz and /readyz)
 #   worker   BullMQ queues and stream consumers (no port)
 #   migrate  one-shot migration runner (packages/db), exits when done
 #
 # Each runtime image holds only `pnpm deploy --prod` output: compiled dist/,
 # production node_modules, no sources of other packages, no dev tools.
 
-ARG NODE_IMAGE=node:24.22.1-alpine3.24
+ARG NODE_IMAGE=node:24.22-alpine
 
 # ── Build ────────────────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS build
@@ -33,7 +33,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
  && pnpm --filter @app/worker deploy --prod --legacy /out/worker \
  && pnpm --filter @app/db deploy --prod --legacy /out/migrate \
  && rm -rf /out/api/src /out/api/test /out/worker/src /out/worker/test /out/migrate/src /out/migrate/test \
- && find /out -maxdepth 2 \( -name 'tsconfig*.json' -o -name 'vitest.config.ts' -o -name '.env.example' \) -delete
+ && find /out -maxdepth 2 \( -name 'tsconfig*.json' -o -name 'vitest.config.ts' -o -name '.env.example' \) -delete \
+ && test -f /out/api/dist/main.js && test -f /out/worker/dist/main.js && test -f /out/migrate/dist/cli/migrate.js
 
 # ── Common runtime ───────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS runtime
@@ -43,31 +44,34 @@ RUN apk add --no-cache tini
 ENV NODE_ENV=production \
     LOG_PRETTY=false
 WORKDIR /app
+STOPSIGNAL SIGTERM
 # Application files stay owned by root and read-only for the process user.
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
 
+# Shared by the API and the worker: public addresses to settings, brand.
+FROM runtime AS node-service
+COPY --chmod=0755 deploy/scripts/brand.sh /usr/local/bin/brand.sh
+COPY --chmod=0644 deploy/scripts/public-urls.sh deploy/scripts/brand-hosts.mjs /usr/local/lib/deploy/
+COPY --chmod=0755 deploy/node/entrypoint.sh /usr/local/bin/service-entrypoint
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/service-entrypoint"]
+
 # ── API ──────────────────────────────────────────────────────────────────
-FROM runtime AS api
+FROM node-service AS api
 COPY --from=build /out/api /app
 COPY brands /app/brands
-COPY deploy/scripts/brand.sh /usr/local/bin/brand.sh
-COPY deploy/node/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
 ENV BRANDS_DIR=/app/brands \
     HOST=0.0.0.0 \
     PORT=8080
 EXPOSE 8080
-STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
   CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/healthz" || exit 1
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/api-entrypoint.sh"]
 CMD ["node", "--enable-source-maps", "dist/main.js"]
 
 # ── Worker ───────────────────────────────────────────────────────────────
-FROM runtime AS worker
+FROM node-service AS worker
 COPY --from=build /out/worker /app
-COPY deploy/node/worker-health.mjs /app/health.mjs
-STOPSIGNAL SIGTERM
+COPY --chmod=0644 deploy/node/worker-health.mjs /app/health.mjs
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node /app/health.mjs || exit 1
 CMD ["node", "--enable-source-maps", "dist/main.js"]

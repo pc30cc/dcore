@@ -1,5 +1,5 @@
 import { deleteAccount, type DeletionOutcome, type DeletionTarget } from '@app/db';
-import { ACCOUNT_QUEUE, accountJobAttempts, accountJobIds, accountJobNames, utcDay } from '@app/shared/server';
+import { ACCOUNT_QUEUE, accountJobAttempts, accountJobIds, accountJobNames, endConversations, markHiddenFromDecks, utcDay } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
@@ -52,9 +52,34 @@ export async function deleteAndFinish(
     fresh: outcome.kind === 'deleted',
   };
   request.log.info({ via, fresh: result.fresh, ended: outcome.kind === 'deleted' ? outcome.ended.length : 0 }, 'account deleted');
+  if (outcome.kind === 'deleted') await hideAtOnce(app, request, outcome.userId, outcome.deletedAtMs, outcome.ended);
   await finishDeletion(app, request, result, outcome.kind === 'deleted' ? outcome.sessionIds : []);
   if (result.fresh && options.reason !== undefined) await countReason(app, request, options.reason);
   return result;
+}
+
+/**
+ * Before the fan-out runs: the person leaves every deck queue (`vis:out`)
+ * and the conversations the deletion ended leave both lists (versions
+ * bumped), so the peers' next requests no longer show them. The fan-out
+ * repeats this (idempotent) and does the rest; a failure here is left to it.
+ */
+async function hideAtOnce(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  userId: string,
+  deletedAtMs: number,
+  ended: readonly { matchId: string; peerId: string }[],
+): Promise<void> {
+  try {
+    await markHiddenFromDecks(app.redis, app.keys, [userId], deletedAtMs);
+    await endConversations(
+      app,
+      ended.map(({ matchId, peerId }) => (BigInt(userId) < BigInt(peerId) ? { matchId, lo: userId, hi: peerId } : { matchId, lo: peerId, hi: userId })),
+    );
+  } catch (error) {
+    request.log.warn({ err: error }, 'deletion: lists not updated at once; the fan-out does it');
+  }
 }
 
 /** The steps after the database part; throws `service_unavailable` when Valkey cannot take them. */

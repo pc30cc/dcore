@@ -54,9 +54,16 @@ interface RealtimeSink {
  * return to the front within the server's history window (15 minutes) is
  * recovered from the stream instead of read again over REST. Cleared when
  * another account signs in.
+ *
+ * The ids of the events already delivered live here too, for the same
+ * reason: a run of the client lasts only while the app is in front, and the
+ * replay that resumes the next run may repeat what the last one delivered.
  */
-class RealtimePositions {
+class RealtimePositions(dedupeCapacity: Int = RealtimeTiming().dedupeCapacity) {
     private val positions = HashMap<String, StreamPosition>()
+
+    /** Event ids already handed on for this account, bounded (oldest forgotten). */
+    internal val seen = SeenSet(dedupeCapacity)
 
     @Volatile var account: String? = null
         private set
@@ -66,6 +73,7 @@ class RealtimePositions {
     fun useFor(account: String?) {
         if (this.account != account) {
             positions.clear()
+            seen.clear()
             this.account = account
         }
     }
@@ -133,7 +141,7 @@ class RealtimeClient(
     private val appVersion: String = "",
 ) {
     private val nudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    private val seen = SeenSet(timing.dedupeCapacity)
+    private val seen: SeenSet get() = positions.seen
     private val commandIds = AtomicInteger(0)
 
     /** The token in hand, and when it stops being usable by the phone's clock. */
@@ -523,6 +531,9 @@ internal class SeenSet(private val capacity: Int) {
     /** True when [key] was not already present. */
     @Synchronized
     fun add(key: String): Boolean = entries.put(key, Unit) == null
+
+    @Synchronized
+    fun clear() = entries.clear()
 
     @get:Synchronized
     val size: Int get() = entries.size

@@ -8,6 +8,7 @@ import {
   createKeys,
   dropPendingLikers,
   forgetMatch,
+  isLikeAnswered,
   isLikePending,
   isoWeek,
   likeScriptKeys,
@@ -98,7 +99,7 @@ describe.skipIf(!hasRedis)('likes, matches and quotas in Valkey (Lua, prefixed k
 
   it('gives every key to the script under the deployment prefix', () => {
     const list = likeScriptKeys(keys, '1', '2', now);
-    expect(list).toHaveLength(25);
+    expect(list).toHaveLength(26);
     expect(list.every((k) => k.startsWith(prefix))).toBe(true);
   });
 
@@ -129,6 +130,25 @@ describe.skipIf(!hasRedis)('likes, matches and quotas in Valkey (Lua, prefixed k
     // Both likes are in the like stream (the match's too: likes keep their rows).
     const likes = (await streamFields('like')).filter((e) => e['id'] === first.likeId || e['id'] === back.likeId);
     expect(likes.map((e) => parseLikeEntry(e).id).sort()).toEqual([first.likeId, back.likeId].sort());
+  });
+
+  it('answers duplicate to a like sent again after the match, from either side, and writes nothing', async () => {
+    const [a, b] = [id(), id()];
+    expect(await runLikeScript(redis, keys, like(a, b))).toBe('liked');
+    expect(await runLikeScript(redis, keys, like(b, a))).toBe('match');
+    expect(await redis.ttl(keys.likesMatched(b, a))).toBeGreaterThan(6 * 86_400);
+    const before = await Promise.all([redis.xlen(keys.stream('like')), redis.xlen(keys.stream('match'))]);
+    expect(await runLikeScript(redis, keys, like(b, a))).toBe('duplicate');
+    expect(await runLikeScript(redis, keys, like(a, b, { kind: 2 }))).toBe('duplicate');
+    expect(await Promise.all([redis.xlen(keys.stream('like')), redis.xlen(keys.stream('match'))])).toEqual(before);
+    expect(await isLikePending(redis, keys, a, b, now)).toBe(false);
+    expect(await isLikePending(redis, keys, b, a, now)).toBe(false);
+    expect(await isLikeAnswered(redis, keys, a, b, now)).toBe(true);
+    // A pair matched another way (a check, the stream writer) is marked by its announcement.
+    const [c, d] = [id(), id()];
+    expect(await isLikeAnswered(redis, keys, c, d, now)).toBe(false);
+    await announceMatch(redis, keys, { id: id(), lo: c, hi: d, state: 1, flags: 3, source: 1, createdMs: now });
+    expect(await runLikeScript(redis, keys, like(d, c))).toBe('duplicate');
   });
 
   it('keeps super likers apart and drops a passed liker', async () => {

@@ -93,6 +93,93 @@ class RealtimeCoordinatorTest {
         assertTrue(server.sockets.all { it.closed })
     }
 
+    private fun kotlinx.coroutines.test.TestScope.coordinator(server: FakeCentrifugo, listener: Listener): RealtimeCoordinator {
+        val clock = { testScheduler.currentTime }
+        var tokens = 0
+        return RealtimeCoordinator(
+            clientFactory = { sink, positions ->
+                RealtimeClient(
+                    tokens = { tokens++; RealtimeToken("wss://rt.test/c", "t$tokens", Instant.ofEpochMilli(clock() + 3_600_000), FakeCentrifugo.CHANNEL) },
+                    transport = server,
+                    sink = sink,
+                    fallbackUrl = "wss://rt.test/c",
+                    positions = positions,
+                    clock = clock,
+                    diag = Diag.Silent,
+                )
+            },
+            listener = listener,
+            scope = backgroundScope,
+            diag = Diag.Silent,
+        )
+    }
+
+    private fun Listener.messageIds() = events.filterIsInstance<RealtimeEvent.MessageArrived>().map { it.message.id }
+
+    @Test
+    fun anEventRepeatedWhileInTheBackgroundIsDeliveredOnceAfterTheReturn() = runTest {
+        val server = FakeCentrifugo()
+        val listener = Listener()
+        val coordinator = coordinator(server, listener)
+        coordinator.setAccount("abcdefghijklm")
+        coordinator.setForeground(true)
+        runCurrent()
+        server.publish(FakeCentrifugo.message(1001))
+        runCurrent()
+
+        // In the background the same event is published again (a publish
+        // retried after its first reply was lost) and a new one follows.
+        coordinator.setForeground(false)
+        runCurrent()
+        server.publish(FakeCentrifugo.message(1001))
+        server.publish(FakeCentrifugo.message(1002))
+        coordinator.setForeground(true)
+        runCurrent()
+        assertEquals(true to true, listener.connects.last())
+        assertEquals("the run that resumes remembers what the last one delivered", listOf("1001", "1002"), listener.messageIds())
+
+        // Another account remembers nothing of the first one's events.
+        coordinator.setAccount("zzzzzzzzzzzzz")
+        runCurrent()
+        server.publish(FakeCentrifugo.message(1001))
+        runCurrent()
+        assertEquals(listOf("1001", "1002", "1001"), listener.messageIds())
+    }
+
+    @Test
+    fun aReturnPastTheHistoryIsNotRecoveredSoTheSyncLayerReads() = runTest {
+        val server = FakeCentrifugo()
+        val listener = Listener()
+        val coordinator = coordinator(server, listener)
+        coordinator.setAccount("abcdefghijklm")
+        coordinator.setForeground(true)
+        runCurrent()
+        server.publish(FakeCentrifugo.message(1001))
+        runCurrent()
+        coordinator.setForeground(false)
+        runCurrent()
+
+        // The server lost its history (a restart, or the 15-minute TTL).
+        server.newEpoch()
+        server.publish(FakeCentrifugo.message(1002))
+        advanceTimeBy(20 * 60_000)
+        coordinator.setForeground(true)
+        runCurrent()
+        assertEquals("not recovered: the sync layer reconciles over REST", false to true, listener.connects.last())
+        assertEquals(listOf("1001"), listener.messageIds())
+        assertEquals(RealtimeHealth.CONNECTED, coordinator.health.value)
+
+        // From here on the new stream is followed and resumed.
+        server.publish(FakeCentrifugo.message(1003))
+        runCurrent()
+        server.drop()
+        server.publish(FakeCentrifugo.message(1004))
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(true to false, listener.connects.last())
+        assertEquals(listOf("1001", "1003", "1004"), listener.messageIds())
+    }
+
     @Test
     fun theNetworkReturningReachesTheSyncLayer() = runTest {
         val listener = Listener()

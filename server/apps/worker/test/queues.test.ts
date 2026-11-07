@@ -4,7 +4,7 @@ import { Queue } from 'bullmq';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 import { queueJobs, queuePrefix, type ActiveQueueName } from '@app/shared/server';
-import { defaultQueues, loadConfig, startWorker, type JobContext, type QueueDefinition } from '../src/index.js';
+import { defaultConsumers, defaultQueues, loadConfig, startWorker, type JobContext, type QueueDefinition } from '../src/index.js';
 import type { WorkerServices } from '../src/services.js';
 import { TEST_REDIS_URL, baseEnv, connect, hasRedis } from './support.js';
 
@@ -80,8 +80,16 @@ describe('the queues the worker runs', () => {
       'maint/lk-rebuild',
       'maint/partitions',
       'maint/sessions-cleanup',
+      'safety/moderation-sweep',
       'system/heartbeat',
     ]);
+  });
+
+  it('come with the write-behind consumers: wb:like in batch mode and wb:match, unless streams are turned off', () => {
+    const consumers = defaultConsumers(config).map((c) => `${c.stream} ${c.group} ${c.kind ?? 'entry'}`);
+    expect(consumers).toEqual([`${config.redis.keyPrefix}wb:like pg batch`, `${config.redis.keyPrefix}wb:match pg entry`]);
+    const queuesOnly = loadConfig({ ...baseEnv(), REDIS_URL: 'redis://127.0.0.1:1/0', STREAMS_ENABLED: 'false' });
+    expect(defaultConsumers(queuesOnly)).toEqual([]);
   });
 
   it.skipIf(!hasRedis)('start one BullMQ worker per queue and keep each schedule (redis-server)', async () => {
@@ -92,6 +100,15 @@ describe('the queues the worker runs', () => {
     try {
       expect(runtime.workers.map((w) => w.name).sort()).toEqual([...queues].sort());
       for (const worker of runtime.workers) expect(worker.isRunning(), worker.name).toBe(true);
+      // The write-behind consumers run too: each stream has the pg group once its consumer started.
+      for (const stream of ['wb:like', 'wb:match']) {
+        let groups: unknown[] = [];
+        for (let i = 0; i < 100 && groups.length === 0; i += 1) {
+          groups = (await admin.xinfo('GROUPS', `${prefix}${stream}`).catch(() => [])) as unknown[];
+          if (groups.length === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(JSON.stringify(groups), stream).toContain('"pg"');
+      }
       for (const definition of defaultQueues(live)) {
         if (!definition.schedules) continue;
         const queue = new Queue(definition.name, { connection: admin, prefix: queuePrefix(prefix) });

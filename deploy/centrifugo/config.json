@@ -2,7 +2,7 @@
   "log": { "level": "info" },
   "http_server": {
     "port": 8000,
-    "internal_port": 9000
+    "internal_port": "9000"
   },
   "client": {
     "allowed_origins": [],
@@ -12,10 +12,7 @@
     "token": { "hmac_secret_key": "" }
   },
   "http_api": { "key": "" },
-  "engine": {
-    "type": "redis",
-    "redis": { "address": "" }
-  },
+  "engine": { "type": "redis" },
   "channel": {
     "history_meta_ttl": "168h",
     "without_namespace": {

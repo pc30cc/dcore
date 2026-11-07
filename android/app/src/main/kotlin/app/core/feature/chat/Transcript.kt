@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.core.R
@@ -185,7 +186,8 @@ private fun Intro(item: ChatItem.Intro, clock: ChatClockText, today: LocalDate) 
             if (conversation.source == ConversationSource.Request) brandString(R.string.chat_intro_request, name)
             else brandString(R.string.chat_intro_matched, name),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { heading() },
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = Space.xl).semantics { heading() },
         )
         Text(
             clock.day(clock.date(conversation.createdAt), today),
@@ -196,6 +198,7 @@ private fun Intro(item: ChatItem.Intro, clock: ChatClockText, today: LocalDate) 
             brandString(R.string.chat_intro_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = Space.xl),
         )
     }
@@ -408,7 +411,7 @@ private fun bubbleDescription(item: ChatItem.Bubble, time: String): String {
     }
     val who = if (m.mine) brandString(R.string.chat_you) else null
     val reactions = item.reactions.takeIf { it.isNotEmpty() }?.let { brandString(R.string.chat_reactions, it.joinToString(" ")) }
-    return listOfNotNull(who, text, time, status, reactions).joinToString(", ")
+    return listOfNotNull(who, text, time, status, reactions).joinToString(brandString(R.string.chat_list_separator))
 }
 
 @Composable
