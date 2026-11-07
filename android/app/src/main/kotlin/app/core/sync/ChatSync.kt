@@ -409,8 +409,8 @@ class ChatSync(
     fun typed(conversationId: Id) {
         if (_health.value != RealtimeHealth.CONNECTED) return
         val now = clock.nowMillis()
-        val last = typingSentAt[conversationId] ?: 0
-        if (now - last < timing.typingThrottleMs) return
+        val last = typingSentAt[conversationId]
+        if (last != null && now - last < timing.typingThrottleMs) return
         typingSentAt[conversationId] = now
         scope.launch { runCatchingUnlessCancelled { api.sendTyping(conversationId) } }
     }

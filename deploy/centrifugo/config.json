@@ -1,0 +1,53 @@
+{
+  "log": { "level": "info" },
+  "http_server": {
+    "port": 8000,
+    "internal_port": 9000
+  },
+  "client": {
+    "allowed_origins": [],
+    "ping_interval": "25s",
+    "channel_limit": 8,
+    "user_connection_limit": 4,
+    "token": { "hmac_secret_key": "" }
+  },
+  "http_api": { "key": "" },
+  "engine": {
+    "type": "redis",
+    "redis": { "address": "" }
+  },
+  "channel": {
+    "history_meta_ttl": "168h",
+    "without_namespace": {
+      "allow_subscribe_for_client": false,
+      "allow_subscribe_for_anonymous": false,
+      "allow_publish_for_client": false,
+      "allow_publish_for_subscriber": false,
+      "allow_presence_for_client": false,
+      "allow_presence_for_subscriber": false,
+      "allow_history_for_client": false,
+      "allow_history_for_subscriber": false
+    },
+    "namespaces": [
+      {
+        "name": "u",
+        "allow_user_limited_channels": true,
+        "presence": true,
+        "join_leave": false,
+        "history_size": 100,
+        "history_ttl": "900s",
+        "force_recovery": true,
+        "allow_subscribe_for_client": false,
+        "allow_subscribe_for_anonymous": false,
+        "allow_publish_for_client": false,
+        "allow_publish_for_subscriber": false,
+        "allow_presence_for_client": false,
+        "allow_presence_for_subscriber": false,
+        "allow_history_for_client": false,
+        "allow_history_for_subscriber": false
+      }
+    ]
+  },
+  "health": { "enabled": true },
+  "admin": { "enabled": false }
+}

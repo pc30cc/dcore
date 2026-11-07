@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The call screen: the line under the name -->
+    <string name="call_status_calling">Aranıyor…</string>
+    <string name="call_status_ringing">Çalıyor…</string>
+    <string name="call_status_incoming_audio">Gelen sesli arama</string>
+    <string name="call_status_incoming_video">Gelen görüntülü arama</string>
+    <string name="call_status_connecting">Bağlanıyor…</string>
+    <string name="call_status_reconnecting">Yeniden bağlanıyor…</string>
+    <string name="call_status_peer_away">%1$s yeniden bağlanana kadar bekleniyor…</string>
+    <string name="call_peer_fallback">Eşleşmen</string>
+
+    <!-- The call screen: notices -->
+    <string name="call_notice_weak">Bağlantı zayıf</string>
+    <string name="call_notice_on_hold">Başka bir arama sesi kullanırken beklemede</string>
+    <string name="call_notice_relay">Ağın aramaları engelliyor olabilir. Bağlanmazsa başka bir ağ dene.</string>
+    <string name="call_degraded_microphone">Mikrofonun çalışmıyor, bu yüzden sesin kapalı.</string>
+    <string name="call_degraded_camera">Kameran açılamadı. Arama sesli olarak devam ediyor.</string>
+
+    <!-- The call screen: how it ended -->
+    <string name="call_end_ended">Arama bitti</string>
+    <string name="call_end_declined">Reddedildi</string>
+    <string name="call_end_cancelled">Arama iptal edildi</string>
+    <string name="call_end_no_answer">Yanıt yok</string>
+    <string name="call_end_missed_audio">Cevapsız sesli arama</string>
+    <string name="call_end_missed_video">Cevapsız görüntülü arama</string>
+    <string name="call_end_answered_elsewhere">Başka bir cihazda yanıtlandı</string>
+    <string name="call_end_caller_busy">Zaten bir aramadasın</string>
+    <string name="call_end_not_allowed">Önce ikinizin de aramalara izin vermesi gerekiyor</string>
+    <string name="call_end_calls_off">Aramalar şu an kullanılamıyor</string>
+    <string name="call_end_needs_plan">Aramalar planına dahil değil</string>
+    <string name="call_end_unavailable">Bu arama yapılamıyor</string>
+    <string name="call_end_limit">Aramalar şu an yoğun. Birazdan tekrar dene.</string>
+    <string name="call_end_rate_limited">Çok fazla arama yapıldı. Bir dakika sonra tekrar dene.</string>
+    <string name="call_end_offline">Çevrimdışısın</string>
+    <string name="call_end_no_microphone">Aramalar için mikrofon gerekiyor</string>
+    <string name="call_end_connection_lost">Arama koptu</string>
+    <string name="call_end_failed">Arama bağlanamadı</string>
+    <string name="call_end_no_microphone_body">Telefonunun ayarlarından {appName} için mikrofona izin ver, sonra tekrar ara.</string>
+
+    <!-- The call screen: buttons -->
+    <string name="call_action_answer">Yanıtla</string>
+    <string name="call_action_answer_video">Görüntülü yanıtla</string>
+    <string name="call_action_answer_audio">Yalnızca sesle yanıtla</string>
+    <string name="call_action_answer_video_short">Görüntülü</string>
+    <string name="call_action_answer_audio_short">Sesli</string>
+    <string name="call_action_decline">Reddet</string>
+    <string name="call_action_hang_up">Bitir</string>
+    <string name="call_action_hang_up_full">Aramayı bitir</string>
+    <string name="call_action_mute">Sessiz</string>
+    <string name="call_action_unmute">Sesi aç</string>
+    <string name="call_action_camera">Kamera</string>
+    <string name="call_action_camera_on">Kamerayı aç</string>
+    <string name="call_action_camera_off">Kamerayı kapat</string>
+    <string name="call_action_flip">Çevir</string>
+    <string name="call_action_flip_full">Kamerayı değiştir</string>
+    <string name="call_action_speaker">Hoparlör</string>
+    <string name="call_action_audio">Ses</string>
+    <string name="call_action_minimise">Aramayı küçült</string>
+    <string name="call_action_done">Kapat</string>
+    <string name="call_action_retry">Tekrar ara</string>
+
+    <!-- Where the sound goes -->
+    <string name="call_route_title">Aramayı şurada çal</string>
+    <string name="call_route_earpiece">Telefon</string>
+    <string name="call_route_speaker">Hoparlör</string>
+    <string name="call_route_wired">Kulaklık</string>
+    <string name="call_route_selected">Seçili</string>
+
+    <!-- The small picture on a video call -->
+    <string name="call_self_yours">Senin kameran</string>
+    <string name="call_self_theirs">Karşı tarafın kamerası (%1$s)</string>
+    <string name="call_self_swap">Görüntülerin yerini değiştir</string>
+    <string name="call_self_move">Sonraki köşeye taşı</string>
+    <string name="call_self_smaller">Küçült</string>
+    <string name="call_self_larger">Büyüt</string>
+    <string name="call_self_you_large">Sen tam ekrandasın</string>
+    <string name="call_self_they_large">Karşı taraf tam ekranda (%1$s)</string>
+    <string name="call_bubble_return">%1$s ile aramaya dön</string>
+
+    <!-- Notifications -->
+    <string name="call_notify_incoming_audio">Gelen sesli arama</string>
+    <string name="call_notify_incoming_video">Gelen görüntülü arama</string>
+    <string name="call_notify_incoming_public">{appName} üzerinde gelen arama</string>
+    <string name="call_notify_missed_audio">Cevapsız sesli arama</string>
+    <string name="call_notify_missed_video">Cevapsız görüntülü arama</string>
+    <string name="call_notify_missed_public">{appName} üzerinde cevapsız arama</string>
+    <string name="call_notify_ongoing_audio">Sesli arama</string>
+    <string name="call_notify_ongoing_video">Görüntülü arama</string>
+    <string name="call_notify_ongoing_public">{appName} üzerinde süren arama</string>
+
+    <!-- The chat header and the match's call settings -->
+    <string name="call_header_audio">%1$s ile sesli arama</string>
+    <string name="call_header_video">%1$s ile görüntülü arama</string>
+    <string name="call_header_off">%1$s ile aramalar kapalı. Değiştirmek için dokun.</string>
+    <string name="call_settings_title">%1$s ile aramalar</string>
+    <string name="call_settings_toggle">%1$s ile aramalara izin ver</string>
+    <string name="call_settings_body">Aramalar yalnızca ikiniz de izin verdiğinizde çalışır. Telefon numaran asla paylaşılmaz.</string>
+    <string name="call_settings_both">Birbirinizi arayabilirsiniz.</string>
+    <string name="call_settings_waiting">%1$s henüz aramalara izin vermedi.</string>
+    <string name="call_settings_off">Birbirinizi arayabilmek için bunu aç.</string>
+    <string name="call_settings_saving">Kaydediliyor…</string>
+    <string name="call_settings_failed">Kaydedilemedi. Bağlantını kontrol edip tekrar dene.</string>
+    <string name="call_settings_unavailable">Aramalar şu an kullanılamıyor.</string>
+    <string name="call_settings_voice">Sesli arama</string>
+    <string name="call_settings_video">Görüntülü arama</string>
+    <string name="call_ready_notifications">Aramaların çalabilmesi için bildirimleri aç.</string>
+    <string name="call_ready_notifications_action">Aç</string>
+    <string name="call_ready_full_screen">Aramalar bir bildirim şeridi olarak çalıyor. Kilit ekranında görmek için tam ekran aramalara izin ver.</string>
+    <string name="call_ready_full_screen_action">İzin ver</string>
+
+    <!-- The call in the chat -->
+    <string name="call_line_audio">Sesli arama</string>
+    <string name="call_line_video">Görüntülü arama</string>
+    <string name="call_line_missed_audio">Cevapsız sesli arama</string>
+    <string name="call_line_missed_video">Cevapsız görüntülü arama</string>
+    <string name="call_line_no_answer">Yanıt yok</string>
+    <string name="call_line_declined">Reddedildi</string>
+    <string name="call_line_cancelled">İptal edildi</string>
+    <string name="call_line_failed">Arama başarısız</string>
+    <string name="call_line_outgoing">Giden</string>
+    <string name="call_line_incoming">Gelen</string>
+    <string name="call_line_call_back">Geri ara</string>
+</resources>

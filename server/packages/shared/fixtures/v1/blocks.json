@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "user": {
+        "id": "bnegar2kq7xm4",
+        "name": "Negar",
+        "photo": {
+          "id": "1287390234923410001",
+          "w": 1080,
+          "h": 1350,
+          "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+          "url": "https://media.example.com/p/1287390234923410001/1/320.webp"
+        },
+        "verified": true
+      },
+      "blockedAt": "2026-11-01T12:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}

@@ -67,7 +67,8 @@ import app.core.ui.theme.Radius
 import app.core.ui.theme.Space
 
 /** Where the full profile was opened from: the actions at its foot differ. */
-enum class DetailsSource { Deck, Likes }
+/** Where the full profile was opened from: the deck, the likes list, or a conversation with a match (no swipe actions there). */
+enum class DetailsSource { Deck, Likes, Match }
 
 /** A photo or a prompt someone wants to like on its own. */
 data class LikeTarget(val card: ProfileCard, val item: LikedItem, val photoIndex: Int? = null, val promptText: String? = null, val question: String? = null)
@@ -90,12 +91,13 @@ fun ProfileDetailsDialog(
     onLike: () -> Unit,
     onSuperlike: (() -> Unit)?,
     onLikeItem: (LikeTarget) -> Unit,
+    onMessage: (() -> Unit)? = null,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        ProfileDetails(card, catalog, source, onDismiss, onPass, onLike, onSuperlike, onLikeItem)
+        ProfileDetails(card, catalog, source, onDismiss, onPass, onLike, onSuperlike, onLikeItem, onMessage = onMessage)
     }
 }
 
@@ -111,8 +113,12 @@ fun ProfileDetails(
     onSuperlike: (() -> Unit)?,
     onLikeItem: (LikeTarget) -> Unit,
     modifier: Modifier = Modifier,
+    /** "Write to them": a message request before matching (not offered for a match). */
+    onMessage: (() -> Unit)? = null,
 ) {
     val number = rememberNumbers()
+    // A match's profile, opened from the conversation: nothing to swipe or like.
+    val likeItem: (LikeTarget) -> Unit = if (source == DetailsSource.Match) { _ -> } else onLikeItem
     val sections = remember(card, catalog, number) { profileSections(card, catalog, number) }
     val reduced = LocalReducedMotion.current
     val rise = with(LocalDensity.current) { 64.dp.toPx() }
@@ -140,12 +146,12 @@ fun ProfileDetails(
                 items(sections, key = { it.key }) { section ->
                     when (section) {
                         is ProfileSection.PhotoBlock -> PhotoSection(card, section) {
-                            onLikeItem(LikeTarget(card, LikedItem(ItemKind.Photo, section.photo.id), photoIndex = section.index))
+                            likeItem(LikeTarget(card, LikedItem(ItemKind.Photo, section.photo.id), photoIndex = section.index))
                         }
                         ProfileSection.Header -> HeaderSection(card, catalog, number)
                         is ProfileSection.About -> TextBlock(brandString(R.string.profile_view_about), section.text)
                         is ProfileSection.PromptBlock -> PromptSection(section, number) {
-                            onLikeItem(
+                            likeItem(
                                 LikeTarget(
                                     card,
                                     LikedItem(ItemKind.Prompt, section.prompt.promptId.toString()),
@@ -176,7 +182,26 @@ fun ProfileDetails(
                 }
             }
 
-            DetailsActions(
+            if (onMessage != null && source != DetailsSource.Match) {
+                // Write to them, at the top end, over the first photo.
+                Surface(
+                    onClick = onMessage,
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.45f),
+                    contentColor = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(Space.xl)
+                        .size(Space.minTouch),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(painterResource(R.drawable.ic_deck_chat), contentDescription = brandString(R.string.request_write_to), modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+
+            if (source != DetailsSource.Match) DetailsActions(
                 source = source,
                 onPass = onPass,
                 onLike = onLike,

@@ -45,7 +45,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -92,7 +91,6 @@ fun ConversationsRoute(onOpen: (Id) -> Unit, onOpenRequests: () -> Unit, onBrows
     val graph = LocalAppGraph.current
     val vm: ConversationsViewModel = viewModel { ConversationsViewModel(graph.chat.sync, graph.push.availability) }
     val state by vm.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     LifecycleStartEffect(vm) {
         vm.shown()
         graph.push.notifications.clearLikes()
@@ -108,7 +106,6 @@ fun ConversationsRoute(onOpen: (Id) -> Unit, onOpenRequests: () -> Unit, onBrows
             override fun dismissPushNotice() = vm.dismissPushNotice()
         }
     }
-    LaunchedEffect(context) { /* keeps the composable keyed to the activity */ }
     ConversationsScreen(state, actions, modifier)
 }
 
@@ -388,7 +385,8 @@ private fun ConversationRow(
 
 @Composable
 private fun SkeletonList() {
-    Column(Modifier.fillMaxSize().padding(top = Space.md).clearAndSetSemantics { contentDescription = "" }) {
+    val loading = brandString(R.string.chat_list_loading)
+    Column(Modifier.fillMaxSize().padding(top = Space.md).clearAndSetSemantics { contentDescription = loading }) {
         repeat(SKELETON_ROWS) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(56.dp).clip(CircleShape).shimmer())

@@ -15,6 +15,7 @@ import {
 } from './me.js';
 import { photoCompletedSchema, photoUploadTicketSchema } from './photos.js';
 import { realtimeTokenSchema } from './realtime.js';
+import { blockListSchema, reportReceiptSchema } from './safety.js';
 import { conversationsPageSchema, likesPageSchema, swipesResponseSchema } from './social.js';
 
 /**
@@ -54,6 +55,8 @@ export const responseSchemas = {
   'swipes-result': swipesResponseSchema,
   'likes-page': likesPageSchema,
   'conversations-page': conversationsPageSchema,
+  blocks: blockListSchema,
+  report: reportReceiptSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ResponseFixtureName = keyof typeof responseSchemas;

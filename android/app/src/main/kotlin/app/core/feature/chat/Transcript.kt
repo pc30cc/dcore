@@ -419,7 +419,11 @@ private fun CallLineRow(item: ChatItem.Call, clock: ChatClockText, state: ChatUi
     val time = clock.time(item.message.at)
     val conversation = state.conversation
     val callBack = LocalChatCallBack.current
-    val tappable = callBack != null && conversation != null && conversation.callsAllowed.both && !state.ended
+    val onCallBack = if (callBack != null && conversation != null && conversation.callsAllowed.both && !state.ended) {
+        { callBack(conversation, call.kind) }
+    } else {
+        null
+    }
     val missed = call.caller != me && call.outcome != app.core.model.CallOutcome.Completed
     Box(Modifier.fillMaxWidth().padding(vertical = Space.sm), contentAlignment = Alignment.Center) {
         Surface(
@@ -427,7 +431,7 @@ private fun CallLineRow(item: ChatItem.Call, clock: ChatClockText, state: ChatUi
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
-                .then(if (tappable) Modifier.clickable { callBack?.invoke(conversation!!, call.kind) } else Modifier)
+                .then(if (onCallBack != null) Modifier.clickable(onClickLabel = brandString(R.string.chat_call_back), onClick = onCallBack) else Modifier)
                 .semantics(mergeDescendants = true) { },
         ) {
             Row(

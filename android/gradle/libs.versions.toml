@@ -22,7 +22,8 @@ desugar = "2.1.5"
 coil = "3.6.3"
 # Navigation 3: the back stack is app state (a list of keys) that the app owns.
 navigation3 = "1.2.0"
-# Calls, once they are added. Declared, not yet a dependency.
+# Calls (feature/call). The SDK only, not its Compose components, which pin
+# a Compose BOM of their own. Resolved from Maven Central 2026-11-07.
 livekit = "2.29.2"
 profileinstaller = "1.4.1"
 room = "2.8.5"

@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The chat list -->
+    <string name="chat_list_browse">دیدن آدم‌ها</string>
+    <string name="chat_list_loading">در حال بارگذاری گفتگوها</string>
+    <string name="chat_new_matches">هم‌پسندی‌های تازه</string>
+    <string name="chat_messages">پیام‌ها</string>
+    <string name="chat_say_hi_hint">به یکی از هم‌پسندهای تازه‌تان سلام کنید. سخت‌ترین پیام همیشه پیام اول است.</string>
+    <string name="chat_new_match_open">%1$s، هم‌پسندی تازه. باز کردن گفتگو.</string>
+    <string name="chat_requests">درخواست‌های پیام</string>
+    <string name="chat_requests_count">درخواست‌های پیام: %1$s</string>
+    <string name="chat_requests_hint">کسانی که پیش از هم‌پسندی برایتان نوشته‌اند</string>
+    <string name="chat_status_offline">آفلاین هستید. آنچه روی همین گوشی هست نشان داده می‌شود.</string>
+    <string name="chat_status_reconnecting">در حال اتصال دوباره…</string>
+    <string name="chat_status_connecting">در حال اتصال…</string>
+    <string name="chat_push_missing_title">اعلان‌ها به این گوشی نمی‌رسند</string>
+    <string name="chat_push_missing_body">سرویس‌های Google Play روی این گوشی در دسترس نیست؛ پیام‌های تازه فقط وقتی {appName} باز است می‌رسند.</string>
+    <string name="chat_typing">در حال نوشتن…</string>
+    <string name="chat_typing_a11y">%1$s در حال نوشتن است</string>
+    <string name="chat_online">آنلاین</string>
+    <string name="chat_active_recently">به‌تازگی فعال</string>
+    <string name="chat_unread_count">%1$s خوانده‌نشده</string>
+    <string name="chat_muted">بی‌صدا</string>
+    <string name="chat_day_today">امروز</string>
+    <string name="chat_day_yesterday">دیروز</string>
+
+    <!-- Previews in the list -->
+    <string name="chat_preview_you">شما: %1$s</string>
+    <string name="chat_preview_message">پیام</string>
+    <string name="chat_preview_like_note">پروفایلتان را پسندید: %1$s</string>
+    <string name="chat_preview_liked">پروفایلتان را پسندید</string>
+    <string name="chat_preview_photo">عکس</string>
+    <string name="chat_preview_voice">پیام صوتی</string>
+    <string name="chat_preview_call">تماس</string>
+    <string name="chat_preview_unsent">پیامی پس گرفته شد</string>
+    <string name="chat_preview_you_unsent">پیامی را پس گرفتید</string>
+    <string name="chat_preview_reaction">واکنش: %1$s</string>
+
+    <!-- Call lines -->
+    <string name="chat_call_back">تماس دوباره</string>
+    <string name="chat_line_call_audio_length">تماس صوتی · %1$s</string>
+    <string name="chat_line_call_video_length">تماس تصویری · %1$s</string>
+    <string name="chat_line_call_audio_unanswered">تماس صوتی، بی‌پاسخ</string>
+    <string name="chat_line_call_video_unanswered">تماس تصویری، بی‌پاسخ</string>
+    <string name="chat_line_call_audio_missed">تماس صوتی از دست رفته</string>
+    <string name="chat_line_call_video_missed">تماس تصویری از دست رفته</string>
+    <string name="chat_line_call_audio_failed">تماس صوتی وصل نشد</string>
+    <string name="chat_line_call_video_failed">تماس تصویری وصل نشد</string>
+
+    <!-- A thread -->
+    <string name="chat_view_profile">دیدن پروفایل</string>
+    <string name="chat_mute">بی‌صدا کردن اعلان‌ها</string>
+    <string name="chat_unmute">باصدا کردن اعلان‌ها</string>
+    <string name="chat_report">گزارش</string>
+    <string name="chat_block">مسدود کردن</string>
+    <string name="chat_unmatch">لغو هم‌پسندی</string>
+    <string name="chat_composer_hint">پیام</string>
+    <string name="chat_send">فرستادن</string>
+    <string name="chat_counter">%1$s/%2$s</string>
+    <string name="chat_ended_title">این گفتگو تمام شده است</string>
+    <string name="chat_ended_body">هنوز می‌توانید آنچه این‌جاست را بخوانید، ولی پیام تازه‌ای فرستاده نمی‌شود.</string>
+    <string name="chat_gone_title">این گفتگو در دسترس نیست</string>
+    <string name="chat_gone_body">شاید تمام شده باشد. گفتگوهای دیگرتان در بخش گفتگوها هست.</string>
+    <string name="chat_load_failed_title">پیام‌ها بارگذاری نشدند</string>
+    <string name="chat_load_failed_offline">آفلاین هستید. وقتی دوباره وصل شوید پیام‌ها بارگذاری می‌شوند.</string>
+    <string name="chat_loading_messages">در حال بارگذاری پیام‌ها</string>
+    <string name="chat_older_failed">پیام‌های قبلی بارگذاری نشدند</string>
+    <string name="chat_jump_newest">رفتن به تازه‌ترین پیام</string>
+    <string name="chat_intro_matched">شما و %1$s همدیگر را پسندیدید</string>
+    <string name="chat_intro_request">گفتگوی شما و %1$s با یک درخواست پیام شروع شد</string>
+    <string name="chat_intro_hint">درباره‌ی پروفایلش چیزی بگویید؛ ساده‌ترین راه شروع است.</string>
+    <string name="chat_you">شما</string>
+    <string name="chat_unsent_mine">این پیام را پس گرفتید</string>
+    <string name="chat_unsent_theirs">این پیام پس گرفته شد</string>
+    <string name="chat_removed">این پیام حذف شد</string>
+    <string name="chat_like_note_theirs">پروفایلتان را پسندید</string>
+    <string name="chat_like_note_mine">پروفایلش را پسندیدید</string>
+    <string name="chat_photo">عکس</string>
+    <string name="chat_voice">پیام صوتی · %1$s</string>
+    <string name="chat_voice_unavailable">پخش پیام صوتی در این نسخه هنوز ممکن نیست.</string>
+    <string name="chat_unknown">این پیام در این نسخه از {appName} نشان داده نمی‌شود.</string>
+    <string name="chat_reactions">واکنش‌ها: %1$s</string>
+    <string name="chat_status_sending">در حال فرستادن</string>
+    <string name="chat_status_sent">فرستاده شد</string>
+    <string name="chat_status_delivered">رسید</string>
+    <string name="chat_status_read">خوانده شد</string>
+    <string name="chat_not_sent">فرستاده نشد. برای گزینه‌ها بزنید.</string>
+    <string name="chat_not_sent_refused">فرستاده نشد: این پیام با قوانین جامعه سازگار نیست.</string>
+    <string name="chat_not_sent_expired">فرستاده نشد. برای تلاش دوباره بزنید.</string>
+    <string name="chat_message_actions">گزینه‌های پیام</string>
+
+    <!-- Message actions -->
+    <string name="chat_action_copy">رونوشت</string>
+    <string name="chat_action_unsend">پس گرفتن</string>
+    <string name="chat_action_report">گزارش پیام</string>
+    <string name="chat_action_retry">تلاش دوباره</string>
+    <string name="chat_action_delete">حذف</string>
+    <string name="chat_action_cancel_send">لغو فرستادن</string>
+    <string name="chat_action_react">واکنش با %1$s</string>
+    <string name="chat_action_remove_reaction">برداشتن واکنش</string>
+    <string name="chat_unsend_title">این پیام پس گرفته شود؟</string>
+    <string name="chat_unsend_body">برای هر دوی شما حذف می‌شود.</string>
+    <string name="chat_unsend_failed">پس گرفتن پیام انجام نشد.</string>
+    <string name="chat_copied">رونوشت گرفته شد</string>
+    <string name="chat_action_failed">انجام نشد. دوباره امتحان کنید.</string>
+    <string name="chat_action_offline">آفلاین هستید. وقتی وصل شدید دوباره امتحان کنید.</string>
+
+    <!-- Safety -->
+    <string name="chat_unmatch_title">هم‌پسندی با %1$s لغو شود؟</string>
+    <string name="chat_unmatch_body">این گفتگو برای هر دوی شما تمام می‌شود و دیگر همدیگر را نمی‌بینید.</string>
+    <string name="chat_block_title">%1$s مسدود شود؟</string>
+    <string name="chat_block_body">دیگر شما را نمی‌بیند و نمی‌تواند برایتان بنویسد، و این گفتگو تمام می‌شود. به او خبر داده نمی‌شود.</string>
+    <string name="chat_confirm_title">پیش از فرستادن</string>
+    <string name="chat_confirm_money">پیام‌هایی درباره‌ی پول راه رایج کلاه‌برداری‌اند. هرگز به کسی که ندیده‌اید پول نفرستید.</string>
+    <string name="chat_confirm_contact">دادن اطلاعات تماس به این زودی می‌تواند امنیت شما را به خطر بیندازد.</string>
+    <string name="chat_confirm_generic">شاید این پیام با قوانین جامعه سازگار نباشد.</string>
+    <string name="chat_confirm_send">با این حال بفرست</string>
+    <string name="chat_confirm_edit">ویرایش</string>
+    <string name="report_title">گزارش %1$s</string>
+    <string name="report_subtitle">گزارش‌ها محرمانه‌اند؛ به هیچ‌کس گفته نمی‌شود چه کسی گزارش داده است.</string>
+    <string name="report_reason_fake">پروفایل جعلی</string>
+    <string name="report_reason_harassment">آزار یا قلدری</string>
+    <string name="report_reason_inappropriate">پیام یا عکس نامناسب</string>
+    <string name="report_reason_scam">کلاه‌برداری یا درخواست پول</string>
+    <string name="report_reason_under_18">زیر ۱۸ سال</string>
+    <string name="report_reason_threat">تهدید یا خشونت</string>
+    <string name="report_reason_spam">هرزنامه</string>
+    <string name="report_reason_child_safety">ایمنی یک کودک</string>
+    <string name="report_reason_other">چیز دیگری</string>
+    <string name="report_reason_required">اول یک دلیل انتخاب کنید</string>
+    <string name="report_details_hint">چیز دیگری که باید بدانیم (اختیاری)</string>
+    <string name="report_block">مسدودش هم بکن</string>
+    <string name="report_with_message">پیامی که انتخاب کردید همراه گزارش فرستاده می‌شود.</string>
+    <string name="report_with_recent">پیام‌های اخیرش همراه گزارش فرستاده می‌شود تا تیم بتواند بررسی کند.</string>
+    <string name="report_send">فرستادن گزارش</string>
+    <string name="report_sent">ممنون. تیم آن را بررسی می‌کند.</string>
+    <string name="report_sent_blocked">ممنون. دیگر همدیگر را نمی‌بینید.</string>
+
+    <!-- Message requests -->
+    <string name="requests_inbox">دریافتی</string>
+    <string name="requests_inbox_count">دریافتی (%1$s)</string>
+    <string name="requests_sent">فرستاده</string>
+    <string name="requests_accept">پذیرفتن</string>
+    <string name="requests_decline">نپذیرفتن</string>
+    <string name="requests_withdraw">پس گرفتن</string>
+    <string name="requests_report">گزارش</string>
+    <string name="requests_pending">در انتظار پاسخ</string>
+    <string name="requests_declined">رد شد. به او خبر داده نمی‌شود.</string>
+    <string name="requests_withdrawn">پس گرفته شد.</string>
+    <string name="requests_load_failed">درخواست‌های پیام بارگذاری نشدند</string>
+    <string name="requests_report_note">پیامش همراه گزارش فرستاده می‌شود و درخواست رد می‌شود.</string>
+    <string name="requests_empty_inbox_title">درخواست پیامی ندارید</string>
+    <string name="requests_empty_inbox_body">وقتی کسی پیش از هم‌پسندی برایتان بنویسد، این‌جا نشان داده می‌شود.</string>
+    <string name="requests_empty_sent_title">چیزی نفرستاده‌اید</string>
+    <string name="requests_empty_sent_body">پیام‌هایی که پیش از هم‌پسندی می‌فرستید تا وقت پاسخ این‌جا می‌مانند.</string>
+    <string name="request_write_to">نوشتن به او</string>
+    <string name="request_send_title">نوشتن به %1$s</string>
+    <string name="request_send_body">پیش از هم‌پسندی پیام شما را می‌بیند. اگر بپذیرد، می‌توانید گفتگو را ادامه دهید.</string>
+    <string name="request_send_hint">درباره‌ی پروفایلش چیزی بگویید</string>
+    <string name="request_send">فرستادن</string>
+    <string name="request_sent">فرستاده شد. اگر بپذیرد، گفتگو در بخش گفتگوها پیدا می‌شود.</string>
+    <string name="request_already">پیش‌تر به %1$s نوشته‌اید.</string>
+    <string name="request_matched">همدیگر را پسندیده‌اید؛ در گفتگویتان بنویسید.</string>
+    <string name="request_open_chat">باز کردن گفتگو</string>
+    <string name="request_quota">پیام‌های امروزتان به کسانی که هنوز هم‌پسند نشده‌اید تمام شده است.</string>
+    <string name="request_quota_at">پیام‌های امروزتان به کسانی که هنوز هم‌پسند نشده‌اید تمام شده است. ساعت %1$s دوباره می‌شود.</string>
+    <string name="request_refused">این پیام فرستاده نمی‌شود. مهربان و محترمانه بنویسید.</string>
+    <string name="request_unavailable">این پروفایل در دسترس نیست.</string>
+    <string name="request_failed">فرستاده نشد. دوباره امتحان کنید.</string>
+</resources>

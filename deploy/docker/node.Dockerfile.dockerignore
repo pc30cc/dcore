@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.astro
+**/.vite
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+android
+deploy/coolify

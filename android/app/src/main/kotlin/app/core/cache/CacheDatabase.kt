@@ -81,12 +81,17 @@ abstract class CacheDatabase : RoomDatabase() {
         val MIGRATIONS: Array<Migration> = emptyArray()
 
         /** [name] null builds an in-memory database: tests, and the last resort. */
-        fun build(context: Context, name: String? = NAME): CacheDatabase {
+        fun build(
+            context: Context,
+            name: String? = NAME,
+            configure: (RoomDatabase.Builder<CacheDatabase>) -> Unit = {},
+        ): CacheDatabase {
             val builder = if (name == null) {
                 Room.inMemoryDatabaseBuilder(context.applicationContext, CacheDatabase::class.java)
             } else {
                 Room.databaseBuilder(context.applicationContext, CacheDatabase::class.java, name)
             }
+            configure(builder)
             return builder
                 .addMigrations(*MIGRATIONS)
                 // A cache with no migration path is rebuilt, in both
@@ -117,6 +122,8 @@ class CacheDatabaseHolder(
     private val context: Context,
     private val name: String? = CacheDatabase.NAME,
     private val diag: Diag = Diag.Android,
+    /** Builder settings for tests (a query context on the test's clock). */
+    private val configure: (RoomDatabase.Builder<CacheDatabase>) -> Unit = {},
 ) {
     private val lock = Mutex()
 
@@ -154,7 +161,7 @@ class CacheDatabaseHolder(
     }
 
     private fun open(): CacheDatabase {
-        if (name == null) return CacheDatabase.build(context, null)
+        if (name == null) return CacheDatabase.build(context, null, configure)
         attempt()?.let { return it }
         // The file would not open or would not verify: a torn write,
         // corruption, a schema that drifted at the same version. It is a
@@ -164,11 +171,11 @@ class CacheDatabaseHolder(
         attempt()?.let { return it }
         diag.warn(AREA, "cache database cannot be created; running this launch from memory")
         isVolatile = true
-        return CacheDatabase.build(context, null)
+        return CacheDatabase.build(context, null, configure)
     }
 
     private fun attempt(): CacheDatabase? {
-        val db = CacheDatabase.build(context, name)
+        val db = CacheDatabase.build(context, name, configure)
         return try {
             // Forces the open, the migration and Room's identity check now,
             // here, rather than on the first query from some screen.

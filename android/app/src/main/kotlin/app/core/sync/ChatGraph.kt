@@ -118,7 +118,7 @@ class ChatGraph(
         val user = if (root == Root.SignIn) null else runCatchingUnlessCancelled { api.sessionUser() }.getOrNull()
         val active = root == Root.Main && user != null
         sync.setAccount(user?.id, active)
-        realtime.setAccount(if (active) user?.id else null)
+        realtime.setAccount(if (active) user.id else null)
         if (user == null) entitlements.clear()
     }
 

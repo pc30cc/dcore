@@ -9,6 +9,7 @@ import app.core.cache.CacheDatabaseHolder
 import app.core.common.Clock
 import app.core.common.Diag
 import app.core.feature.auth.AuthGate
+import app.core.feature.call.CallGraph
 import app.core.feature.legal.LegalAcceptance
 import app.core.i18n.AppLocales
 import app.core.media.BlobTransport
@@ -158,8 +159,18 @@ class AppGraph(private val app: Application) {
      */
     val realtime: RealtimeCoordinator get() = chat.realtime
 
+    /**
+     * Calls between matched people (feature/call): the one call on this phone,
+     * its ring from push and realtime, and the match's call switch. Cheap to
+     * build: nothing in it opens a socket or sends a request until a call does.
+     */
+    val calls: CallGraph by lazy { CallGraph(app, apiOf = { api }, scope = appScope, clock = clock, diag = diag) }
+
     /** Push: the FCM transport, the registration, the router and the notification taps (push/). */
-    val push: PushGraph by lazy { PushGraph(app, api, secureStore, chat.sync, appScope, clock, diag) }
+    val push: PushGraph by lazy {
+        // Rings and their stops go to the calls, even for a push that cold-started the process.
+        PushGraph(app, api, secureStore, chat.sync, appScope, clock, diag).also { it.router.calls = calls.pushHandler }
+    }
 }
 
 val Context.appGraph: AppGraph get() = (applicationContext as CoreApp).graph

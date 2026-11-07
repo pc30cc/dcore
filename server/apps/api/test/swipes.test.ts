@@ -368,6 +368,17 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
       expect(full.items.every((i) => i.liker)).toBe(true);
       expect(full.items[0]).toMatchObject({ kind: 'superlike', item: { kind: 'prompt', ref: '3' }, comment: 'Great answer' });
       expect(full.items.find((i) => i.liker?.id === plain.publicUid)).toMatchObject({ comment: 'Hello Quinn', liker: { likesYou: true } });
+      // Pages of one follow each other to the end, each liker once.
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const pageOfOne = likesPageSchema.parse((await call(h, `/v1/likes?limit=1${cursor ? `&cursor=${cursor}` : ''}`, { token: me.token })).json());
+        walked.push(...pageOfOne.items.map((i) => i.liker!.id));
+        cursor = pageOfOne.nextCursor;
+      } while (cursor);
+      expect(walked).toEqual(full.items.map((i) => i.liker!.id));
+      expect((await call(h, '/v1/likes?cursor=bad!', { token: me.token })).statusCode).toBe(400);
+
       // A pass on a liker takes them off the list; a like back is a match.
       await swipe(me, [{ target: plain.publicUid, action: 'pass' }]);
       expect(likesPageSchema.parse((await call(h, '/v1/likes', { token: me.token })).json()).total).toBe(3);

@@ -397,6 +397,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
+    // Calls: WebRTC through LiveKit's SDK (feature/call: LiveKitRoom, VideoView
+    // and CallVideoEncoding are the only files that name it).
+    implementation(libs.livekit.android)
+
     // MARK: Store SDKs, one flavor each. `src/main` must never import them.
     "bazaarImplementation"(libs.poolakey)
 

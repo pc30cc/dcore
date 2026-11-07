@@ -144,7 +144,12 @@ import app.core.realtime.RealtimeTransport
 import app.core.realtime.SampleChannel
 import app.core.realtime.SamplePeer
 import app.core.realtime.SampleRealtime
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -480,6 +485,8 @@ class SampleApi(
             state = CallState.Ringing, placedAt = now(), ringExpiresAt = now().plusSeconds(RING_SECONDS),
         )
         calls[call.id] = call
+        // Over the socket, as the server rings an app in front.
+        publishCall(call)
         call
     }
 
@@ -1299,12 +1306,44 @@ class SampleApi(
         val next = when {
             call.role == CallRole.Caller && answerAfter != null && elapsed >= answerAfter && elapsed < RING_SECONDS * 1000 ->
                 call.copy(state = CallState.Active, rangAt = call.placedAt.plusMillis(500), answeredAt = call.placedAt.plusMillis(answerAfter))
-            elapsed >= RING_SECONDS * 1000 ->
-                finish(call.copy(state = CallState.Missed, outcome = CallOutcome.Missed, endedAt = call.ringExpiresAt, durationSeconds = 0, endReason = "ring_timeout"))
+            elapsed >= RING_SECONDS * 1000 -> {
+                val missed = call.copy(state = CallState.Missed, outcome = CallOutcome.Missed, endedAt = call.ringExpiresAt, durationSeconds = 0, endReason = "ring_timeout")
+                // The call's move first, then its line in the chat, as the server orders them.
+                calls[call.id] = missed
+                publishCall(missed)
+                return finish(missed)
+            }
+            // The other person's phone rings: the caller sees it (they show they are online).
+            call.role == CallRole.Caller && call.rangAt == null && elapsed >= SAMPLE_RANG_AFTER_MS ->
+                call.copy(rangAt = call.placedAt.plusMillis(SAMPLE_RANG_AFTER_MS))
             else -> call
         }
         calls[call.id] = next
+        if (next != call) publishCall(next)
         return next
+    }
+
+    /** The sample's own timers for a call it rings: the other phone rings, they answer, or the ring runs out. */
+    private val callTimers = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Every move of a call, on the account's channel, as the server publishes it. */
+    private fun publishCall(call: Call) {
+        channel.publish(RealtimeTypes.CALL, nextId(), Call.serializer(), call)
+    }
+
+    /**
+     * Moves [callId] along at the moments it would move, so a phone that asks
+     * nothing still hears every move. On the wall clock only: a test's own
+     * clock moves its calls itself, through the routes.
+     */
+    private fun followCall(callId: Id) {
+        if (clock !== Clock.System) return
+        for (atMs in listOfNotNull(SAMPLE_RANG_AFTER_MS, answerAfterMs, RING_SECONDS * 1000 + 100)) {
+            callTimers.launch {
+                delay(atMs)
+                lock.withLock { calls[callId]?.let(::advance) }
+            }
+        }
     }
 
     /** The call line in the chat, written once when a call ends. */
@@ -1339,6 +1378,8 @@ class SampleApi(
             placedAt = now(), ringExpiresAt = now().plusSeconds(RING_SECONDS),
         )
         calls[call.id] = call
+        publishCall(call)
+        followCall(call.id)
         call
     }
 
@@ -1369,6 +1410,7 @@ class SampleApi(
         if (call.state != CallState.Ringing) fail(409, if (call.answeredAt != null) ProblemCodes.ANSWERED_ELSEWHERE else ProblemCodes.NOT_RINGING)
         val next = call.copy(state = CallState.Connecting, answeredAt = now())
         calls[callId] = next
+        publishCall(next)
         CallAcceptance(next, token(next))
     }
 
@@ -1377,6 +1419,7 @@ class SampleApi(
         val duration = if (answered != null) Duration.between(answered, now()).seconds.coerceAtLeast(0) else 0
         val next = call.copy(state = state, outcome = outcome, endedAt = now(), durationSeconds = duration, endReason = reason)
         calls[call.id] = next
+        publishCall(next)
         return finish(next)
     }
 
@@ -1777,3 +1820,6 @@ class SampleApi(
         private val CAUTION = listOf("money transfer", "send money")
     }
 }
+
+/** When the sample's other phone says it rings, after a call is placed. */
+private const val SAMPLE_RANG_AFTER_MS = 600L

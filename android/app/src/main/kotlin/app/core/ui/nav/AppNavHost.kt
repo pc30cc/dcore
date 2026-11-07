@@ -31,7 +31,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.feature.auth.AuthRoute
+import app.core.feature.chat.ChatRoute
 import app.core.feature.main.MainRoute
+import app.core.feature.main.MainTab
+import app.core.feature.requests.RequestsRoute
+import app.core.push.OpenTarget
+import androidx.compose.runtime.remember
 import app.core.feature.onboarding.OnboardingRoute
 import app.core.feature.splash.SplashRoute
 import app.core.feature.splash.UpdateRequiredScreen
@@ -60,6 +65,12 @@ import kotlinx.serialization.Serializable
 @Serializable data object RestrictedKey : NavKey
 
 @Serializable data object RestoreKey : NavKey
+
+/** One conversation's thread, over the tabs. */
+@Serializable data class ChatKey(val conversationId: String) : NavKey
+
+/** The message requests, over the tabs. */
+@Serializable data object RequestsKey : NavKey
 
 /** The root key for each place [AuthGate] can put the app. */
 private fun Root.key(): NavKey = when (this) {
@@ -109,6 +120,25 @@ fun AppNavHost(config: Config?) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val reducedMotion = LocalReducedMotion.current
 
+    // A notification tap, once the app is in: the thread or the requests
+    // over the tabs, or a tab.
+    val links = LocalAppGraph.current.push.links
+    val tabs = remember { kotlinx.coroutines.flow.MutableSharedFlow<MainTab>(extraBufferCapacity = 1) }
+    LaunchedEffect(root) {
+        if (root != Root.Main) return@LaunchedEffect
+        links.pending.collect { target ->
+            target ?: return@collect
+            when (target) {
+                is OpenTarget.Thread -> backStack.openOver(ChatKey(target.conversationId))
+                OpenTarget.Requests -> backStack.openOver(RequestsKey)
+                OpenTarget.Chats -> { backStack.backToMain(); tabs.tryEmit(MainTab.CHATS) }
+                OpenTarget.Likes -> { backStack.backToMain(); tabs.tryEmit(MainTab.LIKES) }
+                else -> backStack.backToMain()
+            }
+            links.taken(target)
+        }
+    }
+
     NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },
@@ -126,9 +156,39 @@ fun AppNavHost(config: Config?) {
             entry<ReviewKey> { ReviewRoute() }
             entry<RestrictedKey> { RestrictedRoute() }
             entry<RestoreKey> { RestoreRoute() }
-            entry<MainKey> { MainRoute() }
+            entry<MainKey> {
+                MainRoute(
+                    onOpenChat = { id -> backStack.add(ChatKey(id)) },
+                    onOpenRequests = { backStack.add(RequestsKey) },
+                    tabRequests = tabs,
+                )
+            }
+            entry<ChatKey> { key -> ChatRoute(key.conversationId, onBack = { backStack.removeLastOrNull() }) }
+            entry<RequestsKey> {
+                RequestsRoute(
+                    onBack = { backStack.removeLastOrNull() },
+                    onOpenChat = { id ->
+                        backStack.removeLastOrNull()
+                        backStack.add(ChatKey(id))
+                    },
+                )
+            }
         },
     )
+}
+
+/** Opens [key] over the main tabs, replacing any thread or list already open over them. */
+private fun NavBackStack<NavKey>.openOver(key: NavKey) {
+    if (lastOrNull() == key) return
+    Snapshot.withMutableSnapshot {
+        removeAll { it is ChatKey || it is RequestsKey }
+        add(key)
+    }
+}
+
+/** Back to the tabs, closing what is open over them. */
+private fun NavBackStack<NavKey>.backToMain() {
+    Snapshot.withMutableSnapshot { removeAll { it is ChatKey || it is RequestsKey } }
 }
 
 /** Makes [key] the only entry, in one snapshot so no frame sees the stack empty. */

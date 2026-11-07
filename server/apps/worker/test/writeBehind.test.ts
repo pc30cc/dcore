@@ -12,7 +12,7 @@ import {
   type LikeScriptInput,
 } from '@app/shared/server';
 import { DelayedError, Queue, type Job } from 'bullmq';
-import { Redis } from 'ioredis';
+import type { Redis } from 'ioredis';
 import pino from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -228,7 +228,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       await consumer.stop();
       expect(await value<string>(`SELECT count(*)::text FROM likes WHERE id = $1`, [likeId])).toBe('1');
       expect(s.inserted).toBe(1);
-      const [[, dead]] = (await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][];
+      const dead = ((await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][])[0]?.[1];
       expect(dead).toEqual(expect.arrayContaining(['reason', 'malformed']));
     });
 
@@ -245,7 +245,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       await eventually(async () => (await redis.xlen(`${stream}:dead`)) === 1, 10_000);
       await consumer.stop();
       expect(await value<string>(`SELECT count(*)::text FROM likes WHERE id = ANY ($1::bigint[])`, [good])).toBe('2');
-      const [[, dead]] = (await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][];
+      const dead = ((await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][])[0]?.[1];
       expect(dead).toEqual(expect.arrayContaining(['reason', 'deliveries']));
       // Nothing is left pending.
       expect(((await redis.xpending(stream, 'pg')) as [number])[0]).toBe(0);

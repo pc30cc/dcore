@@ -1,0 +1,28 @@
+# LiveKit, single node. start.sh fills the @...@ values from the environment
+# and writes the result to /tmp/livekit.yaml at every start.
+#
+# Ports: 7880 HTTP/WebSocket signalling and server API (behind the proxy as
+# rtc.<domain>); 7881/tcp ICE over TCP and 50000-50100/udp media, both
+# published on the host's public address (no proxy can carry them).
+port: 7880
+log_level: info
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+@NODE_IP_LINES@
+room:
+  # Rooms are created by the API when a call is answered, never by a client.
+  auto_create: false
+  empty_timeout: 300
+  departure_timeout: 20
+  max_participants: 2
+keys:
+  "@API_KEY@": "@API_SECRET@"
+webhook:
+  api_key: "@API_KEY@"
+  urls:
+    - "@WEBHOOK_URL@"
+turn:
+  # LiveKit's own TURN stays off; the in-country relay is a separate service.
+  enabled: false

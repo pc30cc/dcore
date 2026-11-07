@@ -50,3 +50,9 @@
 # class for. None of them exist at runtime.
 -dontwarn org.slf4j.**
 -dontwarn java.lang.management.**
+
+# Calls. LiveKit ships rules for its own classes; the WebRTC layer under it
+# and the audio router are called from native code, which R8 cannot see.
+-keep class livekit.org.webrtc.** { *; }
+-keep class com.twilio.audioswitch.** { *; }
+-dontwarn livekit.org.webrtc.**

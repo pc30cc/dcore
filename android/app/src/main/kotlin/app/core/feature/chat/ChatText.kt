@@ -119,16 +119,16 @@ fun callLineText(call: CallLine, mine: Boolean, clock: ChatClockText): String {
     val video = call.kind == CallKind.Video
     return when (call.outcome) {
         CallOutcome.Completed -> brandString(
-            if (video) R.string.chat_call_video_length else R.string.chat_call_audio_length,
+            if (video) R.string.chat_line_call_video_length else R.string.chat_line_call_audio_length,
             callLength(clock, call.durationSeconds),
         )
         CallOutcome.Missed, CallOutcome.Declined, CallOutcome.Cancelled ->
             if (mine) {
-                brandString(if (video) R.string.chat_call_video_unanswered else R.string.chat_call_audio_unanswered)
+                brandString(if (video) R.string.chat_line_call_video_unanswered else R.string.chat_line_call_audio_unanswered)
             } else {
-                brandString(if (video) R.string.chat_call_video_missed else R.string.chat_call_audio_missed)
+                brandString(if (video) R.string.chat_line_call_video_missed else R.string.chat_line_call_audio_missed)
             }
-        else -> brandString(if (video) R.string.chat_call_video_failed else R.string.chat_call_audio_failed)
+        else -> brandString(if (video) R.string.chat_line_call_video_failed else R.string.chat_line_call_audio_failed)
     }
 }
 

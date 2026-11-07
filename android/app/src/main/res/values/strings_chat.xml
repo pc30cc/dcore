@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The chat list, threads, message requests and reporting from chat. Kept in a
+  file of their own so features built side by side do not edit the same file;
+  every key is also in values-fa and values-tr.
+-->
+<resources>
+    <!-- The chat list -->
+    <string name="chat_list_browse">Discover people</string>
+    <string name="chat_list_loading">Loading conversations</string>
+    <string name="chat_new_matches">New matches</string>
+    <string name="chat_messages">Messages</string>
+    <string name="chat_say_hi_hint">Say hello to one of your new matches. The first message is the hardest one.</string>
+    <string name="chat_new_match_open">%1$s, new match. Open the conversation.</string>
+    <string name="chat_requests">Message requests</string>
+    <string name="chat_requests_count">Message requests: %1$s</string>
+    <string name="chat_requests_hint">People who wrote to you before matching</string>
+    <string name="chat_status_offline">You\'re offline. Showing what\'s on this phone.</string>
+    <string name="chat_status_reconnecting">Reconnecting…</string>
+    <string name="chat_status_connecting">Connecting…</string>
+    <string name="chat_push_missing_title">Notifications can\'t reach this phone</string>
+    <string name="chat_push_missing_body">Google Play services isn\'t available, so new messages arrive only while {appName} is open.</string>
+    <string name="chat_typing">typing…</string>
+    <string name="chat_typing_a11y">%1$s is typing</string>
+    <string name="chat_online">Online</string>
+    <string name="chat_active_recently">Active recently</string>
+    <string name="chat_unread_count">%1$s unread</string>
+    <string name="chat_muted">Muted</string>
+    <string name="chat_day_today">Today</string>
+    <string name="chat_day_yesterday">Yesterday</string>
+
+    <!-- Previews in the list -->
+    <string name="chat_preview_you">You: %1$s</string>
+    <string name="chat_preview_message">Message</string>
+    <string name="chat_preview_like_note">Liked your profile: %1$s</string>
+    <string name="chat_preview_liked">Liked your profile</string>
+    <string name="chat_preview_photo">Photo</string>
+    <string name="chat_preview_voice">Voice message</string>
+    <string name="chat_preview_call">Call</string>
+    <string name="chat_preview_unsent">A message was unsent</string>
+    <string name="chat_preview_you_unsent">You unsent a message</string>
+    <string name="chat_preview_reaction">Reacted %1$s</string>
+
+    <!-- Call lines -->
+    <string name="chat_call_back">Call back</string>
+    <string name="chat_line_call_audio_length">Voice call · %1$s</string>
+    <string name="chat_line_call_video_length">Video call · %1$s</string>
+    <string name="chat_line_call_audio_unanswered">Voice call, no answer</string>
+    <string name="chat_line_call_video_unanswered">Video call, no answer</string>
+    <string name="chat_line_call_audio_missed">Missed voice call</string>
+    <string name="chat_line_call_video_missed">Missed video call</string>
+    <string name="chat_line_call_audio_failed">Voice call didn\'t connect</string>
+    <string name="chat_line_call_video_failed">Video call didn\'t connect</string>
+
+    <!-- A thread -->
+    <string name="chat_view_profile">View profile</string>
+    <string name="chat_mute">Mute notifications</string>
+    <string name="chat_unmute">Unmute notifications</string>
+    <string name="chat_report">Report</string>
+    <string name="chat_block">Block</string>
+    <string name="chat_unmatch">Unmatch</string>
+    <string name="chat_composer_hint">Message</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_counter">%1$s/%2$s</string>
+    <string name="chat_ended_title">This conversation has ended</string>
+    <string name="chat_ended_body">You can still read what\'s here, but no new messages can be sent.</string>
+    <string name="chat_gone_title">This conversation isn\'t available</string>
+    <string name="chat_gone_body">It may have ended. Your other conversations are in Chats.</string>
+    <string name="chat_load_failed_title">Couldn\'t load messages</string>
+    <string name="chat_load_failed_offline">You\'re offline. Messages will load when you\'re back online.</string>
+    <string name="chat_loading_messages">Loading messages</string>
+    <string name="chat_older_failed">Couldn\'t load earlier messages</string>
+    <string name="chat_jump_newest">Go to the newest message</string>
+    <string name="chat_intro_matched">You and %1$s matched</string>
+    <string name="chat_intro_request">You and %1$s started talking through a message request</string>
+    <string name="chat_intro_hint">Say something about their profile. It\'s the easiest way to start.</string>
+    <string name="chat_you">You</string>
+    <string name="chat_unsent_mine">You unsent this message</string>
+    <string name="chat_unsent_theirs">This message was unsent</string>
+    <string name="chat_removed">This message was removed</string>
+    <string name="chat_like_note_theirs">Liked your profile</string>
+    <string name="chat_like_note_mine">You liked their profile</string>
+    <string name="chat_photo">Photo</string>
+    <string name="chat_voice">Voice message · %1$s</string>
+    <string name="chat_voice_unavailable">Voice messages can\'t be played in this version yet.</string>
+    <string name="chat_unknown">This message can\'t be shown in this version of {appName}.</string>
+    <string name="chat_reactions">Reactions: %1$s</string>
+    <string name="chat_status_sending">Sending</string>
+    <string name="chat_status_sent">Sent</string>
+    <string name="chat_status_delivered">Delivered</string>
+    <string name="chat_status_read">Read</string>
+    <string name="chat_not_sent">Not sent. Tap for options.</string>
+    <string name="chat_not_sent_refused">Not sent: this message goes against the community guidelines.</string>
+    <string name="chat_not_sent_expired">Not sent. Tap to try again.</string>
+    <string name="chat_message_actions">Message options</string>
+
+    <!-- Message actions -->
+    <string name="chat_action_copy">Copy</string>
+    <string name="chat_action_unsend">Unsend</string>
+    <string name="chat_action_report">Report message</string>
+    <string name="chat_action_retry">Try again</string>
+    <string name="chat_action_delete">Delete</string>
+    <string name="chat_action_cancel_send">Cancel sending</string>
+    <string name="chat_action_react">React with %1$s</string>
+    <string name="chat_action_remove_reaction">Remove your reaction</string>
+    <string name="chat_unsend_title">Unsend this message?</string>
+    <string name="chat_unsend_body">It will be removed for both of you.</string>
+    <string name="chat_unsend_failed">Couldn\'t unsend that message.</string>
+    <string name="chat_copied">Copied</string>
+    <string name="chat_action_failed">That didn\'t work. Try again.</string>
+    <string name="chat_action_offline">You\'re offline. Try again when you\'re connected.</string>
+
+    <!-- Safety -->
+    <string name="chat_unmatch_title">Unmatch %1$s?</string>
+    <string name="chat_unmatch_body">This conversation ends for both of you, and you won\'t see each other again.</string>
+    <string name="chat_block_title">Block %1$s?</string>
+    <string name="chat_block_body">They won\'t be able to see you or write to you, and this conversation ends. They aren\'t told.</string>
+    <string name="chat_confirm_title">Before you send</string>
+    <string name="chat_confirm_money">Messages about money are a common way people get scammed. Never send money to someone you haven\'t met.</string>
+    <string name="chat_confirm_contact">Sharing contact details this early can put your safety at risk.</string>
+    <string name="chat_confirm_generic">This message may go against the community guidelines.</string>
+    <string name="chat_confirm_send">Send anyway</string>
+    <string name="chat_confirm_edit">Edit</string>
+    <string name="report_title">Report %1$s</string>
+    <string name="report_subtitle">Reports are private: nobody is told who sent one.</string>
+    <string name="report_reason_fake">Fake profile</string>
+    <string name="report_reason_harassment">Harassment or bullying</string>
+    <string name="report_reason_inappropriate">Inappropriate messages or photos</string>
+    <string name="report_reason_scam">Scam or asking for money</string>
+    <string name="report_reason_under_18">Under 18</string>
+    <string name="report_reason_threat">Threats or violence</string>
+    <string name="report_reason_spam">Spam</string>
+    <string name="report_reason_child_safety">A child\'s safety</string>
+    <string name="report_reason_other">Something else</string>
+    <string name="report_reason_required">Choose a reason first</string>
+    <string name="report_details_hint">Anything else we should know (optional)</string>
+    <string name="report_block">Also block them</string>
+    <string name="report_with_message">The message you picked goes with the report.</string>
+    <string name="report_with_recent">Their recent messages go with the report, so the team can check.</string>
+    <string name="report_send">Send report</string>
+    <string name="report_sent">Thanks. The team will look at it.</string>
+    <string name="report_sent_blocked">Thanks. You won\'t see each other again.</string>
+
+    <!-- Message requests -->
+    <string name="requests_inbox">Received</string>
+    <string name="requests_inbox_count">Received (%1$s)</string>
+    <string name="requests_sent">Sent</string>
+    <string name="requests_accept">Accept</string>
+    <string name="requests_decline">Decline</string>
+    <string name="requests_withdraw">Withdraw</string>
+    <string name="requests_report">Report</string>
+    <string name="requests_pending">Waiting for an answer</string>
+    <string name="requests_declined">Declined. They won\'t be told.</string>
+    <string name="requests_withdrawn">Withdrawn.</string>
+    <string name="requests_load_failed">Couldn\'t load message requests</string>
+    <string name="requests_report_note">Their message goes with the report, and the request is declined.</string>
+    <string name="requests_empty_inbox_title">No message requests</string>
+    <string name="requests_empty_inbox_body">When someone writes to you before you match, it shows up here.</string>
+    <string name="requests_empty_sent_title">Nothing sent</string>
+    <string name="requests_empty_sent_body">Messages you send before matching wait here until they\'re answered.</string>
+    <string name="request_write_to">Write to them</string>
+    <string name="request_send_title">Write to %1$s</string>
+    <string name="request_send_body">They\'ll see your message before you match. If they accept, you can keep talking.</string>
+    <string name="request_send_hint">Say something about their profile</string>
+    <string name="request_send">Send</string>
+    <string name="request_sent">Sent. If they accept, the conversation appears in Chats.</string>
+    <string name="request_already">You\'ve already written to %1$s.</string>
+    <string name="request_matched">You\'ve matched. Write in your conversation instead.</string>
+    <string name="request_open_chat">Open the conversation</string>
+    <string name="request_quota">You\'ve used today\'s messages to people you haven\'t matched.</string>
+    <string name="request_quota_at">You\'ve used today\'s messages to people you haven\'t matched. More at %1$s.</string>
+    <string name="request_refused">This message can\'t be sent. Keep it kind and respectful.</string>
+    <string name="request_unavailable">This profile isn\'t available.</string>
+    <string name="request_failed">Couldn\'t send. Try again.</string>
+</resources>

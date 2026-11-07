@@ -14,6 +14,39 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      Calls between matched people (feature/call). The microphone, the camera
+      and BLUETOOTH_CONNECT are asked for when a call is placed or answered,
+      never at launch; Bluetooth is how a headset is offered for the call's
+      sound on Android 12+. MODIFY_AUDIO_SETTINGS lets the call move between
+      earpiece, speaker and headset.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- A ring takes the whole screen, as a phone call does; from Android 14
+         the person can turn that off, and the ring is a heads-up notification. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- A call in progress runs under a foreground service typed for what it
+         uses (the microphone, and the camera while it is on), or Android
+         silences the microphone once the app is behind another or the screen
+         is off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- The proximity sensor turns the screen off at the ear on a voice call. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The media SDK's screen sharing, which the app never does: its service
+         and permission are removed (below), so no store asks to justify them. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        tools:node="remove" />
+    <!-- Not required: a phone without a camera can still take a voice call. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+
+    <!--
       Shared by both stores. What only one store needs (its billing permission,
       its package in <queries>, its SDK's components) comes from that flavor's
       manifest (src/bazaar, src/play) or its SDK's, never from here.
@@ -43,11 +76,18 @@
           reaches this activity instead of stacking a second copy.
           adjustResize: the keyboard resizes the window, and Compose's IME
           insets do the rest.
+          supportsPictureInPicture: a video call goes on in the system's small
+          window when the person leaves for another app. configChanges: size,
+          orientation and window-mode changes are handled by Compose, so turning
+          the phone or entering that window never rebuilds a call's video.
         -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -104,5 +144,23 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- Decline on a ring and End on a call, without opening the app. Not
+             exported: only this app's own notifications send it. -->
+        <receiver
+            android:name=".push.CallActionReceiver"
+            android:exported="false" />
+
+        <!-- A call in progress: started from the call while the app is in
+             front, stopped at its end. -->
+        <service
+            android:name=".feature.call.OngoingCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|camera" />
+
+        <!-- The media SDK's screen-share service: see the permission above. -->
+        <service
+            android:name="io.livekit.android.room.track.screencapture.ScreenCaptureService"
+            tools:node="remove" />
     </application>
 </manifest>

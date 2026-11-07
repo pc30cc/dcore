@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -119,6 +120,9 @@ interface DeckActions {
     fun messageShown(id: Long)
     fun openChat(conversationId: Id?)
     fun openProfile()
+
+    /** Write to [card] before matching (a message request); null-op where the screen offers none. */
+    fun writeTo(card: ProfileCard) {}
 }
 
 /** The real server behind the deck screen's extra calls. */
@@ -154,6 +158,7 @@ fun DeckRoute(onOpenChat: (Id?) -> Unit, onOpenProfile: () -> Unit, modifier: Mo
 
     val open by androidx.compose.runtime.rememberUpdatedState(onOpenChat)
     val profile by androidx.compose.runtime.rememberUpdatedState(onOpenProfile)
+    var writingTo by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<ProfileCard?>(null) }
     val actions = remember(vm) {
         object : DeckActions {
             override fun swiped(card: ProfileCard, action: SwipeAction) = vm.swiped(card, action)
@@ -176,6 +181,9 @@ fun DeckRoute(onOpenChat: (Id?) -> Unit, onOpenProfile: () -> Unit, modifier: Mo
             override fun messageShown(id: Long) = vm.messageShown(id)
             override fun openChat(conversationId: Id?) = open(conversationId)
             override fun openProfile() = profile()
+            override fun writeTo(card: ProfileCard) {
+                writingTo = card
+            }
         }
     }
     DeckScreen(
@@ -186,6 +194,9 @@ fun DeckRoute(onOpenChat: (Id?) -> Unit, onOpenProfile: () -> Unit, modifier: Mo
         actions = actions,
         modifier = modifier,
     )
+    writingTo?.let { card ->
+        app.core.feature.requests.MessageRequestSheet(card, onDismiss = { writingTo = null }, onOpenChat = { id -> open(id) })
+    }
 }
 
 private const val DEFAULT_COMMENT_MAX = 300
@@ -291,6 +302,7 @@ fun DeckScreen(
             onLike = { actions.fromDetails(SwipeAction.Like) },
             onSuperlike = { actions.fromDetails(SwipeAction.Superlike) },
             onLikeItem = actions::openItemLike,
+            onMessage = { actions.writeTo(card) },
         )
     }
 
