@@ -23,6 +23,7 @@ import {
   OtpStore,
   hashDomains,
   randomToken,
+  sha256,
   type KeyBuilder,
   type Limit,
 } from '@app/shared/server';
@@ -49,9 +50,12 @@ import { deleteAndFinish } from '../services/deletion.js';
  *   form, which cannot carry the token without a script): the code, then the
  *   deletion (`deleted_via` 2). By phone, a number with no request answers
  *   like a wrong code, counted per number (5 → `otp_locked`).
- * - `google` `{idToken, locale?}`: an ID token for our web client, at most 10
- *   minutes old (the page cannot ask for a nonce), then the deletion of the
- *   account with that Google identity.
+ * - `google` `{idToken, locale?}`: an ID token the website's Google button
+ *   got for our web client (its `azp` is the web client and it carries no
+ *   nonce, so a token the app got to sign in, which names the Android client
+ *   and our nonce, is refused), at most 10 minutes old (the page cannot ask
+ *   for a nonce), used once, then the deletion of the account with that
+ *   Google identity.
  *
  * A JSON request gets JSON (202, problems); a form post
  * (`application/x-www-form-urlencoded`) gets `303 See Other` to the
@@ -69,10 +73,15 @@ const DAY_MS = 86_400_000;
 const REQUEST_TTL_MS = 600_000;
 /** Google ID tokens older than this are refused (no nonce on the website). */
 const GOOGLE_MAX_AGE_SECONDS = 600;
+/** How long a used token is remembered: past the age at which it is refused anyway (with the verifier's clock tolerance). */
+const GOOGLE_USED_MS = (GOOGLE_MAX_AGE_SECONDS + 120) * 1_000;
 const FORM_BODY_LIMIT = 16_384;
 const FORM = 'application/x-www-form-urlencoded';
 
 const START_LIMITS = { ipHourly: 3, phoneDaily: 3, resendSeconds: 60 } as const;
+/** A request token is this many random bytes, base64url: exactly the shape below. */
+const REQUEST_TOKEN_BYTES = 24;
+const ISSUED_TOKEN = new RegExp(`^[A-Za-z0-9_-]{${Math.ceil((REQUEST_TOKEN_BYTES * 4) / 3)}}$`);
 const GOOGLE_IP_HOURLY = 10;
 
 /** The deletion challenges' own keys: `otp:del:<phoneHash>` and `otp:delc:<challengeId>`. */
@@ -102,6 +111,11 @@ function rateLimited(retryAfterMs: number): HttpProblem {
 
 function utcHour(now: number): string {
   return new Date(now).toISOString().slice(0, 13).replace(/[-T]/g, '');
+}
+
+/** A programming error, never a Valkey outage: it must not be answered (and logged) as one. */
+function isBug(error: unknown): boolean {
+  return error instanceof TypeError || error instanceof RangeError;
 }
 
 /** The body by its schema; a body that does not fit is the route's own refusal (as a wrong number, code or token). */
@@ -183,6 +197,7 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
     try {
       verdict = await app.limits.take(limits);
     } catch (error) {
+      if (isBug(error)) throw error;
       request.log.error({ err: error }, 'deletion start: Valkey unavailable, refused');
       throw new HttpProblem('sms_unavailable', { detail: 'Codes cannot be sent right now.', headers: { 'retry-after': '30' }, cause: error });
     }
@@ -192,7 +207,7 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
     }
 
     const account = await deletionAccountOf(app.pg, 1, phoneHashes(app, e164).map((h) => h.hash));
-    const requestToken = randomToken(24);
+    const requestToken = randomToken(REQUEST_TOKEN_BYTES);
     let challenge;
     try {
       challenge = await otp.issue({ e164, purpose: 'deletion', length: settings.otp.length, ttlSeconds: settings.otp.ttl_seconds });
@@ -203,6 +218,7 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
         .set(app.keys.deletionRequestByPhone(phoneHash), requestToken, 'PX', REQUEST_TTL_MS)
         .exec();
     } catch (error) {
+      if (isBug(error)) throw error;
       request.log.error({ err: error }, 'deletion start: the request could not be stored');
       throw new HttpProblem('sms_unavailable', { detail: 'Codes cannot be sent right now.', headers: { 'retry-after': '30' }, cause: error });
     }
@@ -261,7 +277,8 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
     try {
       let byPhone: string | null = null;
       if ('requestToken' in body) {
-        token = body.requestToken;
+        // Not a token this route issues: no request, as an expired one (after the IP's count below).
+        token = ISSUED_TOKEN.test(body.requestToken) ? body.requestToken : null;
       } else {
         const e164 = normalizePhone(body.phone);
         byPhone = e164 === null ? null : otp.phoneKeyHash(e164);
@@ -287,7 +304,7 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
         ipWindowMs: ipLimit.windowMs,
       });
     } catch (error) {
-      if (error instanceof HttpProblem) throw error;
+      if (error instanceof HttpProblem || isBug(error)) throw error;
       request.log.error({ err: error }, 'deletion confirm: Valkey unavailable, refused');
       throw new HttpProblem('service_unavailable', { detail: 'Codes cannot be checked right now.', headers: { 'retry-after': '30' }, cause: error });
     }
@@ -368,8 +385,32 @@ export const publicDeletionRoutes: FastifyPluginAsyncZod = async (app) => {
       }
       throw error;
     }
+    // Only a token of the website's button: one the app got to sign in names the Android client and our nonce.
+    if (identity.authorizedParty !== audience || identity.nonce !== undefined) {
+      request.log.info({ reason: identity.nonce !== undefined ? 'nonce' : 'authorized_party' }, 'deletion: google token refused');
+      throw new HttpProblem('google_token_invalid');
+    }
+    // Once: a token that was seen (copied from a log, replayed) deletes nothing again.
+    const used = app.keys.raw('del', 'g', sha256(body.idToken).toString('hex'));
+    let first;
+    try {
+      first = (await app.redis.set(used, '1', 'PX', GOOGLE_USED_MS, 'NX')) === 'OK';
+    } catch (error) {
+      throw new HttpProblem('service_unavailable', { detail: 'Try again in a moment.', headers: { 'retry-after': '30' }, cause: error });
+    }
+    if (!first) {
+      request.log.info({ reason: 'used' }, 'deletion: google token refused');
+      throw new HttpProblem('google_token_invalid');
+    }
     const hashes = app.secrets.hasher.hashAll(hashDomains.google, identity.sub).map((h) => h.hash);
-    const result = await deleteAndFinish(app, request, { provider: 2, subjectHashes: hashes }, 2);
+    let result;
+    try {
+      result = await deleteAndFinish(app, request, { provider: 2, subjectHashes: hashes }, 2);
+    } catch (error) {
+      // Nothing was deleted: the person may send the same token again.
+      await app.redis.del(used).catch(() => undefined);
+      throw error;
+    }
     if (result === null) throw new HttpProblem('not_found', { detail: 'No account signs in with this Google account.' });
     return { purgeAt: wireTime(result.purgeAtMs) };
   }

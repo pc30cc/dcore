@@ -223,6 +223,15 @@ describe('Google ID tokens', () => {
     expect(await reason(verifier.verify('not.a.token', { audience: AUDIENCE }))).toBe('malformed');
   });
 
+  it('names the client the token was issued to (azp, else the one audience) and its nonce', async () => {
+    const fromApp = await verifier.verify(await token({ azp: 'android-client.apps.googleusercontent.com', nonce: 'n-1' }), { audience: AUDIENCE });
+    expect(fromApp).toMatchObject({ authorizedParty: 'android-client.apps.googleusercontent.com', nonce: 'n-1' });
+    const fromSite = await verifier.verify(await token({ azp: AUDIENCE }), { audience: AUDIENCE });
+    expect(fromSite).toMatchObject({ authorizedParty: AUDIENCE, nonce: undefined });
+    expect((await verifier.verify(await token({}), { audience: AUDIENCE })).authorizedParty).toBe(AUDIENCE);
+    expect((await verifier.verify(await token({ azp: 42 }), { audience: AUDIENCE })).authorizedParty).toBeUndefined();
+  });
+
   it('has a fake with the same checks', async () => {
     const fake = new FakeGoogleIdTokenVerifier();
     const t = fake.mint({ sub: '42', audience: AUDIENCE, nonce: 'n' });

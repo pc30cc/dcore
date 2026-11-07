@@ -18,14 +18,21 @@ import { LimitUnavailableError } from './limits.js';
  *
  * Review accounts (app_config `auth.review_accounts`) get a challenge whose
  * HMAC is their fixed code's (`review:<code>` under the OTP domain), and no
- * message is sent.
+ * message is sent. Their code never changes and their numbers are handed
+ * out, so their wrong codes are also counted per number and day
+ * (`otp:rl:rv:<phoneHash>`): at {@link REVIEW_WRONG_DAILY} the number is
+ * locked until the day ends, the right code included.
  *
  * Every call fails closed: when Valkey cannot be asked,
  * {@link LimitUnavailableError} is thrown.
  */
 
 const issueScript = luaScript(new URL('./otpIssue.lua', import.meta.url), 'otp-issue', 2);
-const verifyScript = luaScript(new URL('./otpVerify.lua', import.meta.url), 'otp-verify', 3);
+const verifyScript = luaScript(new URL('./otpVerify.lua', import.meta.url), 'otp-verify', 4);
+
+/** Wrong codes a review number takes in a day before it is locked for the rest of it. */
+export const REVIEW_WRONG_DAILY = 10;
+const REVIEW_WRONG_WINDOW_MS = 86_400_000;
 
 /** What a challenge may be used for: signing in, the web deletion page, or adding a number to an account (`phone:<user id>`). */
 export type OtpPurpose = 'signin' | 'deletion' | `phone:${string}`;
@@ -125,7 +132,7 @@ export class OtpStore {
   /**
    * Checks `code` for a challenge. Counts the attempt against the caller's
    * IP limit (`ipKey`, `ipCap` per `ipWindowMs`) first; `maxAttempts` wrong
-   * codes end the challenge.
+   * codes end the challenge, and a review number's daily wrong codes lock it.
    */
   async verify(input: {
     challengeId: string;
@@ -142,7 +149,7 @@ export class OtpStore {
       reply = await runScript(
         this.redis,
         verifyScript,
-        [this.keys.otp(input.phoneHash), this.keys.otpChallenge(input.challengeId), input.ipKey],
+        [this.keys.otp(input.phoneHash), this.keys.otpChallenge(input.challengeId), input.ipKey, this.keys.otpReviewWrong(input.phoneHash)],
         [
           input.challengeId,
           input.purpose,
@@ -151,6 +158,8 @@ export class OtpStore {
           input.maxAttempts,
           this.codeHash(input.challengeId, input.code),
           reviewCodeHash(this.hasher, input.code),
+          REVIEW_WRONG_DAILY,
+          REVIEW_WRONG_WINDOW_MS,
         ],
       );
     } catch (error) {

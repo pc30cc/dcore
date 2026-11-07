@@ -1,6 +1,7 @@
 import { fileAppeal, ownModeration, type OwnAction } from '@app/db';
 import { appealBodySchema, appealRequestSchema, appealStatus, moderationHistorySchema, moderationKind, wireTime, type ModerationAction } from '@app/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { nextId } from '../auth/sessions.js';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
 import { requireScope, sessionOf } from '../services/session.js';
@@ -59,7 +60,9 @@ export const moderationRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const session = sessionOf(app, request);
       const { actionId, body } = request.body;
-      const outcome = await scrubbed(() => fileAppeal(app.pg, session.userId, actionId, app.ids.nextId(), body));
+      // No id lease (Valkey lost it): 503 with Retry-After, as every route that mints an id.
+      const appealId = nextId(app);
+      const outcome = await scrubbed(() => fileAppeal(app.pg, session.userId, actionId, appealId, body));
       switch (outcome.kind) {
         case 'not_found':
           throw new HttpProblem('not_found', { detail: 'No such action on this account.' });

@@ -370,11 +370,17 @@ describe.skipIf(!hasInfrastructure)('sessions, Google sign-in and the under-18 r
       expect((await me(signedIn.accessToken)).statusCode).toBe(401);
       expect((await refresh(signedIn.refreshToken)).json()).toMatchObject({ code: 'refresh_invalid' });
 
-      // The cache refuses the number before any code is sent...
-      const cached = await post(h, '/v1/auth/otp/start', { phone: number, locale: 'fa' });
-      expect(cached.json()).toMatchObject({ code: 'phone_banned' });
-      // ...and without it the bans still do.
+      // The start answers the refused number like any other (no oracle of refused numbers); its verify refuses it.
       const sameDb = new Redis(lost.toString());
+      await sameDb.del(h.app.keys.otpResendWait(h.app.otp.phoneKeyHash(number)));
+      const started = await post(h, '/v1/auth/otp/start', { phone: number, locale: 'fa' });
+      expect(started.statusCode).toBe(200);
+      expect(Object.keys(started.json<Record<string, unknown>>()).sort()).toEqual(['challengeId', 'channel', 'codeLength', 'resendAfterSeconds', 'ttlSeconds']);
+      const refusedCode = h.sms.kavenegar.codeFor(number) ?? '';
+      const refusedVerify = await post(h, '/v1/auth/otp/verify', { challengeId: started.json<{ challengeId: string }>().challengeId, code: refusedCode, ...device() });
+      expect(refusedVerify.statusCode).toBe(403);
+      expect(refusedVerify.json()).toMatchObject({ code: 'phone_banned' });
+      // Without the cache the bans still refuse it.
       await sameDb.flushdb();
       await sameDb.quit();
       expect((await signInWithPhone(h, number)).json()).toMatchObject({ code: 'phone_banned' });

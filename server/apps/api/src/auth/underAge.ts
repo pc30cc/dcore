@@ -11,9 +11,11 @@ import { nextId } from './sessions.js';
  * gender ever stored), its number (or Google account) and this build's
  * device key are refused for a year in `device_bans` (so losing Valkey
  * forgets nothing), its sessions, devices and identities are deleted, and
- * its access tokens stop at once (`deny:uid`). `minor:<phoneHash>` in
- * Valkey is only a cache of the refusal, so a refused number is not even
- * sent a code; sign-in reads the bans themselves.
+ * its access tokens stop at once (`deny:uid`). `minor:<phoneHash>` and
+ * `minor:d:<deviceKeyHash>` in Valkey are only a cache of the refusal; no
+ * sign-in path reads them. Sign-in reads the bans themselves, at otp/verify
+ * (otp/start answers a refused number like any other, so it tells no one
+ * which numbers are refused).
  *
  * The database refuses an under-age birth date on its own too (CHECK
  * `users_adult`, against the sign-up time the id carries).
@@ -35,8 +37,8 @@ export function isUnderAge(birthDate: string, today: Date = new Date()): boolean
 
 /**
  * Closes the calling account for age (see above). Returns false when the
- * account was no longer in onboarding (nothing changed). 4 statements in
- * one transaction.
+ * account was no longer in onboarding or its basics were already set
+ * (nothing changed). 4 statements in one transaction.
  */
 export async function refuseUnderAge(app: FastifyInstance, request: FastifyRequest): Promise<boolean> {
   const principal = request.principal;

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { hashDomains, reviewCodeHash } from '@app/shared/server';
+import { REVIEW_WRONG_DAILY, hashDomains, reviewCodeHash } from '@app/shared/server';
 import { Redis } from 'ioredis';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -283,6 +283,29 @@ describe.skipIf(!hasInfrastructure)('OTP sign-in (PostgreSQL and Valkey)', () =>
     expect((await row<{ flags: number }>(db, 'SELECT flags FROM users WHERE id = $1', [userId])).flags).toBe(1);
   });
 
+  it('locks a review number for the day after its daily wrong codes, however many challenges were started', async () => {
+    const number = phone('us');
+    h = await authApp(db);
+    h.settings.set(settingsWith({ reviewAccounts: [{ phone_hash: h.app.otp.phoneKeyHash(number), otp_hash: reviewCodeHash(h.app.secrets.hasher, '135791') }] }));
+    const start = async () => {
+      await redis.del(h.app.keys.otpResendWait(h.app.otp.phoneKeyHash(number)));
+      const started = await post(h, '/v1/auth/otp/start', { phone: number, locale: 'en' });
+      expect(started.statusCode).toBe(200);
+      return started.json<{ challengeId: string }>().challengeId;
+    };
+    const answers: string[] = [];
+    let challengeId = await start();
+    for (let i = 0; i < REVIEW_WRONG_DAILY; i += 1) {
+      if (i > 0 && i % 4 === 0) challengeId = await start();
+      answers.push((await post(h, '/v1/auth/otp/verify', { challengeId, code: String(200_000 + i), ...device('en') })).json<{ code: string }>().code);
+    }
+    expect(answers.slice(0, -1).every((code) => code === 'otp_invalid')).toBe(true);
+    expect(answers.at(-1)).toBe('otp_locked');
+    const right = await post(h, '/v1/auth/otp/verify', { challengeId: await start(), code: '135791', ...device('en') });
+    expect(right.statusCode).toBe(429);
+    expect(right.json()).toMatchObject({ code: 'otp_locked' });
+  });
+
   it('refuses a banned number and a banned device key of the same build, not of the other build', async () => {
     h = await authApp(db);
     const bannedNumber = phone('ir');
@@ -307,6 +330,31 @@ describe.skipIf(!hasInfrastructure)('OTP sign-in (PostgreSQL and Valkey)', () =>
       hasher.hash(hashDomains.phone, freed).hash,
     ]);
     expect((await signInWithPhone(h, freed)).statusCode).toBe(200);
+  });
+
+  it('answers the start of a number refused for age like any other, and counts it against every limit', async () => {
+    h = await authApp(db, { settings: settingsWith({ caps: { ip_hourly: 2 } }) });
+    const minor = phone('ir');
+    // What the under-age refusal leaves: the cache, and the ban it caches.
+    await redis.set(h.app.keys.minorPhone(h.app.otp.phoneKeyHash(minor)), '1', 'EX', 3_600);
+    await db.sql.query(`INSERT INTO device_bans (id, kind, value_hash, reason, expires_at) VALUES (id_next(), 2, $1, 'under_age', now() + interval '1 year')`, [
+      h.app.secrets.hasher.hash(hashDomains.phone, minor).hash,
+    ]);
+    const shape = (body: Record<string, unknown>) => ({ ...body, challengeId: typeof body['challengeId'] });
+    const other = await post(h, '/v1/auth/otp/start', { phone: phone('ir'), locale: 'fa' });
+    const refused = await post(h, '/v1/auth/otp/start', { phone: minor, locale: 'fa' });
+    expect(refused.statusCode).toBe(200);
+    expect(shape(refused.json())).toEqual(shape(other.json()));
+    expect(statements(refused)).toBe(0);
+    // Counted: the resend wait holds the number, and the two starts filled the IP's hourly cap (2).
+    expect((await post(h, '/v1/auth/otp/start', { phone: minor, locale: 'fa' })).statusCode).toBe(429);
+    expect((await post(h, '/v1/auth/otp/start', { phone: phone('ir'), locale: 'fa' })).statusCode).toBe(429);
+    // Only the holder of the number, with its code, learns that it is refused.
+    const code = h.sms.kavenegar.codeFor(minor);
+    expect(code).toMatch(/^[0-9]{6}$/);
+    const verify = await post(h, '/v1/auth/otp/verify', { challengeId: refused.json<{ challengeId: string }>().challengeId, code, ...device() });
+    expect(verify.statusCode).toBe(403);
+    expect(verify.json()).toMatchObject({ code: 'phone_banned' });
   });
 
   it('gives banned and suspended accounts a restricted session and deleted ones a restore session', async () => {

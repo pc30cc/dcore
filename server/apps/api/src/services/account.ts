@@ -1,6 +1,6 @@
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import { accountView, accountViewSchema, type AccountView, type AccountViewResult, type Pool, type Queryable } from '@app/db';
-import { bumpVersion, readVersion, type KeyBuilder } from '@app/shared/server';
+import { bumpVersion, bumpVersionFrom, readVersion, type KeyBuilder } from '@app/shared/server';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
@@ -14,7 +14,10 @@ import { z } from 'zod';
  * Every write to the account bumps `mev` after it is durable, so the next
  * read misses and rebuilds; nothing is ever purged. A reader that saw the
  * old version may store a fresher view under it, which is harmless: no one
- * reads that key again.
+ * reads that key again. A write whose transaction built the view stores it
+ * under its new version only when no other change was announced since the
+ * write read the version (another writer, the photo worker): else its view
+ * may miss that change, and the next read rebuilds instead.
  */
 
 export const ME_VIEW_TTL_SECONDS = 24 * 3_600;
@@ -31,6 +34,12 @@ export interface LoadedAccount {
   result: AccountViewResult;
   /** Whether the view came from Valkey (no SQL). */
   cached: boolean;
+}
+
+/** A view a write's transaction built, and the version read before that write began ({@link AccountStore.version}). */
+export interface FreshView {
+  since: number | null;
+  result: AccountViewResult;
 }
 
 export interface AccountStoreOptions {
@@ -103,19 +112,29 @@ export class AccountStore {
 
   /**
    * After a write is committed: a new version, with the view the write's
-   * transaction built stored under it (so the next read is warm). When
-   * Valkey cannot be written the old view may be served until it expires
-   * (24 h); that is logged as an error.
+   * transaction built stored under it (so the next read is warm) when the
+   * counter still held `fresh.since`; otherwise another change was
+   * announced while the write ran, the view may predate it, and nothing is
+   * stored (the next read rebuilds). When Valkey cannot be written the old
+   * view may be served until it expires (24 h); that is logged as an error.
    */
-  async changed(userId: string, fresh?: AccountViewResult): Promise<number | null> {
+  async changed(userId: string, fresh?: FreshView): Promise<number | null> {
+    const key = this.keys.meVersion(userId);
     let version: number;
+    let store = false;
     try {
-      version = await bumpVersion(this.redis, this.keys.meVersion(userId));
+      if (fresh && fresh.since !== null) {
+        const bumped = await bumpVersionFrom(this.redis, key, fresh.since);
+        version = bumped.version;
+        store = bumped.unchanged;
+      } else {
+        version = await bumpVersion(this.redis, key);
+      }
     } catch (error) {
       this.log.error({ err: error }, 'account: version not bumped; the cached view is stale until it expires');
       return null;
     }
-    if (fresh) await this.store(userId, version, fresh);
+    if (fresh && store) await this.store(userId, version, fresh.result);
     return version;
   }
 

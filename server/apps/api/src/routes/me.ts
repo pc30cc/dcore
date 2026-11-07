@@ -251,6 +251,8 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       const consents = (Object.entries(shown) as [LegalConsentKind, number][]).map(([kind, version]) => ({ kind: consentKind.code(kind), version }));
+      // The version before the write: its view is stored only if no other change comes in between.
+      const since = await app.account.version(session.userId);
       const fresh = await writing(() =>
         withTransaction(app.pg, async (tx) => {
           const set = await setBasics(tx, session.userId, body.birthDate, gender.code(body.gender), consents, session.storeCode ?? null);
@@ -258,7 +260,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           return app.account.build(tx, session.userId);
         }),
       );
-      await app.account.changed(session.userId, fresh);
+      await app.account.changed(session.userId, { since, result: fresh });
       return ownProfileOf(accountOf(fresh), ctx);
     },
   );
@@ -358,6 +360,8 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         write.prompts = { remove, set };
       }
 
+      // The version before the write: its view is stored only if no other change comes in between.
+      const since = await app.account.version(session.userId);
       const fresh = await writing(() =>
         withTransaction(app.pg, async (tx) => {
           await writeProfile(tx, session.userId, write);
@@ -385,7 +389,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           return built;
         }),
       );
-      await app.account.changed(session.userId, fresh);
+      await app.account.changed(session.userId, { since, result: fresh });
       return ownProfileOf(accountOf(fresh), ctx);
     },
   );

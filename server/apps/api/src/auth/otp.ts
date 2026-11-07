@@ -85,10 +85,9 @@ export async function startOtp(app: FastifyInstance, request: FastifyRequest, in
 
   let challenge;
   try {
-    // A number refused for age (cached from device_bans): no code is sent at all.
-    if (input.purpose === 'signin' && (await app.redis.exists(app.keys.minorPhone(phoneHash))) === 1) {
-      throw new HttpProblem('phone_banned');
-    }
+    // A refused number (age or a ban) is answered like any other here: a
+    // different answer would tell anyone which numbers are refused. Its code
+    // is sent, and otp/verify refuses it from device_bans, to its holder only.
     const verdict = await app.limits.take(limits);
     if (!verdict.ok) {
       request.log.info({ limit: verdict.limit.name }, 'otp start refused by a limit');
@@ -97,7 +96,7 @@ export async function startOtp(app: FastifyInstance, request: FastifyRequest, in
     challenge = await app.otp.issue({ e164, purpose: input.purpose, length: otp.length, ttlSeconds: otp.ttl_seconds, reviewHash: review?.otp_hash });
   } catch (error) {
     if (error instanceof HttpProblem || error instanceof TypeError || error instanceof RangeError) throw error;
-    // LimitUnavailableError, or a Valkey error from the age check: fail closed.
+    // LimitUnavailableError (Valkey): fail closed.
     request.log.error({ err: error, limitsDown: error instanceof LimitUnavailableError }, 'otp start: Valkey unavailable, refused');
     throw new HttpProblem('sms_unavailable', { detail: 'Codes cannot be sent right now.', headers: { 'retry-after': '30' }, cause: error });
   }

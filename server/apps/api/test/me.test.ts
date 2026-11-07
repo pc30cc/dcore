@@ -8,6 +8,7 @@ import {
   preferencesSchema,
   settingsSchema,
 } from '@app/shared';
+import { IdGeneratorUnavailableError, bumpVersion } from '@app/shared/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hasInfrastructure } from './support.js';
 import { call, migratedDatabase, problemExt, row, rows, seedUser, setAppConfig, startHarness, statements, type Harness, type TestDatabase } from './accountSupport.js';
@@ -95,6 +96,40 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       const edit = await call(h, '/v1/me/notifications', { method: 'PATCH', token: user.token, body: { likes: false } });
       expect(edit.statusCode).toBe(403);
       expect(problemExt('account_deleted', edit.json())['restorableUntil']).toBe(me.deletion?.purgeAt);
+    });
+
+    it("does not store an edit's view when another change was announced while the edit ran", async () => {
+      const user = await seed({ name: 'Ira' });
+      const photoId = h.app.ids.nextId();
+      await db.sql.query(`INSERT INTO photos (id, user_id, position) VALUES ($1, $2, 0)`, [photoId, user.id]);
+      const photoStatus = async () => meSchema.parse((await call(h, '/v1/me', { token: user.token })).json()).profile?.photos.find((p) => p.id === photoId)?.status;
+      expect(await photoStatus()).toBe('processing');
+
+      // The photo worker finishes the photo after the edit's transaction built its view, and before the edit announces it.
+      const account = h.app.account;
+      const original = account.changed.bind(account);
+      account.changed = async (userId, fresh) => {
+        if (userId === user.id && fresh) {
+          await db.sql.query(`UPDATE photos SET status = 3 WHERE id = $1`, [photoId]);
+          await bumpVersion(h.redis, h.app.keys.meVersion(userId));
+        }
+        return original(userId, fresh);
+      };
+      try {
+        const edit = await call(h, '/v1/me/profile', { method: 'PATCH', token: user.token, body: { about: 'Rivers' } });
+        expect(edit.statusCode).toBe(200);
+      } finally {
+        account.changed = original;
+      }
+      const after = await call(h, '/v1/me', { token: user.token });
+      expect(statements(after)).toBe(1);
+      expect(meSchema.parse(after.json()).profile?.photos.find((p) => p.id === photoId)?.status).toBe('approved');
+
+      // Nothing in between: the edit's own view is stored, and the next read is warm.
+      expect((await call(h, '/v1/me/profile', { method: 'PATCH', token: user.token, body: { about: 'Lakes' } })).statusCode).toBe(200);
+      const warm = await call(h, '/v1/me', { token: user.token });
+      expect(statements(warm)).toBe(0);
+      expect(meSchema.parse(warm.json()).profile?.about).toBe('Lakes');
     });
 
     it('refuses a request without a session, and one whose account is gone', async () => {
@@ -218,6 +253,21 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       }
       // Its tokens stop at once.
       expect((await call(h, '/v1/me', { token: user.token })).statusCode).toBe(401);
+    });
+
+    it('answers already_set to a second basics with an under-age date, and closes nothing', async () => {
+      const user = await seed({ status: 1, name: 'Ada' });
+      const bansBefore = await row<{ n: number }>(db, `SELECT count(*)::int AS n FROM device_bans WHERE reason = 'under_age'`);
+      const first = await call(h, '/v1/me/basics', { method: 'PUT', token: user.token, body: { birthDate: '1990-01-01', gender: 'woman', consents: { terms: 1, privacy: 1 } } });
+      expect(first.statusCode).toBe(200);
+      // Another phone of the same account, still on the birth-date step, sends a typo.
+      const again = await call(h, '/v1/me/basics', { method: 'PUT', token: user.token, body: { birthDate: '2015-01-01', gender: 'woman', consents: { terms: 1, privacy: 1 } } });
+      expect(again.statusCode).toBe(409);
+      expect(again.json()).toMatchObject({ code: 'already_set' });
+      expect(await row(db, `SELECT status, birth_date::text AS birth, deleted_via FROM users WHERE id = $1`, [user.id])).toEqual({ status: 1, birth: '1990-01-01', deleted_via: null });
+      expect(await row<{ n: number }>(db, `SELECT count(*)::int AS n FROM device_bans WHERE reason = 'under_age'`)).toEqual(bansBefore);
+      expect(await rows(db, `SELECT 1 FROM sessions WHERE user_id = $1`, [user.id])).toHaveLength(1);
+      expect((await call(h, '/v1/me', { token: user.token })).statusCode).toBe(200);
     });
 
     it('is refused by the database too: no birth date under 18 at sign-up time', async () => {
@@ -470,6 +520,42 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       // Someone else's action, or none: not found.
       const other = await penalised(6);
       expect((await call(h, '/v1/appeals', { method: 'POST', token: user.token, body: { actionId: other.actionId, body: 'x' } })).statusCode).toBe(404);
+    });
+
+    it('refuses a restricted session with its reason on the routes that cost no statement, also on a cold cache', async () => {
+      for (const [method, url] of [
+        ['POST', '/v1/realtime/token'],
+        ['GET', '/v1/cities?q=Teh'],
+      ] as const) {
+        // A new account each time: nothing of it is in Valkey yet, so the refusal reads account_view().
+        const { user, actionId } = await penalised(5);
+        const res = await call(h, url, { method, token: user.token });
+        expect(res.statusCode, url).toBe(403);
+        expect(problemExt('account_suspended', res.json())).toMatchObject({ reasonText: 'Repeated reports of harassment.', actionId, appealable: true });
+        expect(statements(res), url).toBe(1);
+      }
+    });
+
+    it('answers an appeal 503 with Retry-After while the process holds no id lease', async () => {
+      const { user, actionId } = await penalised(6);
+      const ids = h.app.ids;
+      const original = ids.nextId.bind(ids);
+      ids.nextId = () => {
+        throw new IdGeneratorUnavailableError('lease_stale');
+      };
+      let res;
+      try {
+        res = await call(h, '/v1/appeals', { method: 'POST', token: user.token, body: { actionId, body: 'Please look again.' } });
+      } finally {
+        ids.nextId = original;
+      }
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ code: 'service_unavailable' });
+      expect(res.headers['retry-after']).toBeDefined();
+      expect(statements(res)).toBe(0);
+      expect(h.logs.some((line) => line.includes('"level":50') && line.includes('/v1/appeals'))).toBe(false);
+      // Once the lease is back the appeal goes in.
+      expect((await call(h, '/v1/appeals', { method: 'POST', token: user.token, body: { actionId, body: 'Please look again.' } })).statusCode).toBe(201);
     });
 
     it('answers a banned account with the ban', async () => {

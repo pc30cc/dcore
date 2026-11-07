@@ -11,6 +11,7 @@ import { luaScript, runScript } from './scripts.js';
  */
 
 const versionScript = luaScript(new URL('./version.lua', import.meta.url), 'version', 1);
+const bumpFromScript = luaScript(new URL('./versionBumpFrom.lua', import.meta.url), 'version-bump-from', 1);
 
 /** Thirty days, renewed on every read and bump. */
 export const VERSION_TTL_SECONDS = 30 * 24 * 3_600;
@@ -29,4 +30,16 @@ export async function readVersion(redis: Redis, key: string, now: number = Date.
 /** A new version, after a change is durable. */
 export async function bumpVersion(redis: Redis, key: string, now: number = Date.now()): Promise<number> {
   return asVersion(await runScript(redis, versionScript, [key], [now, VERSION_TTL_SECONDS, 'bump']));
+}
+
+/**
+ * A new version, after a change is durable, and whether the counter still
+ * held `seen` (the value read before the change): only then can nothing
+ * newer have been announced in between, so a view built inside the change
+ * may be stored under the new version.
+ */
+export async function bumpVersionFrom(redis: Redis, key: string, seen: number, now: number = Date.now()): Promise<{ version: number; unchanged: boolean }> {
+  const reply = await runScript(redis, bumpFromScript, [key], [now, VERSION_TTL_SECONDS, seen]);
+  if (!Array.isArray(reply) || reply.length !== 2) throw new TypeError('version counter returned an unexpected reply');
+  return { version: asVersion(reply[0]), unchanged: Number(reply[1]) === 1 };
 }

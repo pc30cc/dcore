@@ -7,9 +7,13 @@ import {
   KeyedHasher,
   LimitUnavailableError,
   OtpStore,
+  REVIEW_WRONG_DAILY,
   RefreshGrace,
+  bumpVersion,
+  bumpVersionFrom,
   createKeys,
   otpCode,
+  readVersion,
   reviewCodeHash,
 } from '../../src/server/index.js';
 import { dropPrefix, hasRedis, testPrefix, testRedis } from './support.js';
@@ -136,11 +140,51 @@ describe.skipIf(!hasRedis)('sign-in state in Valkey (Lua, prefixed keys)', () =>
       expect(await verify(s, challengeId, ph, '246810')).toEqual({ outcome: 'ok', phone, review: true });
     });
 
+    it('locks a review number for the day at its daily cap of wrong codes, across challenges, the right code included', async () => {
+      const s = store();
+      const phone = '+14155550198';
+      const ph = s.phoneKeyHash(phone);
+      const review = reviewCodeHash(hasher, '864200');
+      const outcomes: string[] = [];
+      // A fresh challenge every 4 wrong codes (as an attacker would start them): the per-challenge 5 never ends it.
+      let current = await s.issue({ e164: phone, purpose: 'signin', length: 6, ttlSeconds: 300, reviewHash: review });
+      for (let i = 0; i < REVIEW_WRONG_DAILY; i += 1) {
+        if (i > 0 && i % 4 === 0) current = await s.issue({ e164: phone, purpose: 'signin', length: 6, ttlSeconds: 300, reviewHash: review });
+        outcomes.push((await verify(s, current.challengeId, ph, String(100_000 + i))).outcome);
+      }
+      expect(outcomes.slice(0, -1).every((o) => o === 'wrong')).toBe(true);
+      expect(outcomes.at(-1)).toBe('locked');
+      expect(await redis.pttl(keys.otpReviewWrong(ph))).toBeGreaterThan(86_000_000);
+      const next = await s.issue({ e164: phone, purpose: 'signin', length: 6, ttlSeconds: 300, reviewHash: review });
+      expect(await verify(s, next.challengeId, ph, '864200')).toEqual({ outcome: 'locked' });
+      // An ordinary number is never counted there.
+      const plain = '+14155550197';
+      const p = await s.issue({ e164: plain, purpose: 'signin', length: 6, ttlSeconds: 300 });
+      await verify(s, p.challengeId, s.phoneKeyHash(plain), p.code === '000000' ? '111111' : '000000');
+      expect(await redis.exists(keys.otpReviewWrong(s.phoneKeyHash(plain)))).toBe(0);
+    });
+
     it('counts verify attempts per IP, even past a dead challenge', async () => {
       const s = store();
       const ip = keys.otpVerifyIpLimit('203.0.113.9');
       for (let i = 0; i < 2; i += 1) expect(await verify(s, 'nochallenge1', 'f'.repeat(64), '123456', { ipKey: ip, ipCap: 2 })).toEqual({ outcome: 'missing' });
       expect(await verify(s, 'nochallenge1', 'f'.repeat(64), '123456', { ipKey: ip, ipCap: 2 })).toMatchObject({ outcome: 'ip_limited' });
+    });
+  });
+
+  describe('version counters', () => {
+    it('bumps from a seen value and says whether nothing else was announced since', async () => {
+      const key = keys.meVersion('4242');
+      const seen = await readVersion(redis, key, 1_000);
+      expect(seen).toBe(1_000);
+      expect(await bumpVersionFrom(redis, key, seen, 1_000)).toEqual({ version: 1_001, unchanged: true });
+      // Another change between the read and this bump: still a new version, but not the same counter.
+      const before = await readVersion(redis, key, 1_000);
+      await bumpVersion(redis, key, 1_000);
+      expect(await bumpVersionFrom(redis, key, before, 1_000)).toEqual({ version: 1_003, unchanged: false });
+      // A lost counter restarts at the clock and never matches what was seen before.
+      await redis.del(key);
+      expect(await bumpVersionFrom(redis, key, 1_003, 5_000)).toEqual({ version: 5_000, unchanged: false });
     });
   });
 

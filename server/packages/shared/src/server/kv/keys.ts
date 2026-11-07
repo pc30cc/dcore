@@ -50,6 +50,7 @@ export function createKeys(prefix: string) {
     otpResendWait: (phoneHash: string) => k('otp', 'rl', 'w', phoneHash),
     otpVerifyIpLimit: (ip: string) => k('otp', 'rl', 'v', ip),
     otpInstallLimit: (installId: string) => k('otp', 'rl', 'i', installId),
+    otpReviewWrong: (phoneHash: string) => k('otp', 'rl', 'rv', phoneHash),
     signInIpLimit: (route: string, ip: string) => k('si', 'rl', route, ip),
     googleNonce: (nonceId: string) => k('gn', nonceId),
     deletionRequest: (token: string) => k('delreq', token),

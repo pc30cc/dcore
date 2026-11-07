@@ -439,13 +439,15 @@ export interface UnderAgeResult {
  * renewed by upsert, so an earlier expired ban never blocks it and a
  * permanent one is never shortened); then its sessions, devices and
  * identities are deleted, so nothing personal stays. Only an account still
- * in onboarding (status 1) is closed this way.
+ * in onboarding (status 1) whose basics are not set yet (no birth date) is
+ * closed this way: once an adult birth date is stored, a later under-age
+ * date is the "already set" case, not a refusal.
  */
 export const closeUnderAge = defineQuery({ name: 'auth.closeUnderAge', statements: 4 }, async (tx, input: UnderAgeInput): Promise<UnderAgeResult> => {
   const closed = await maybeOne<{ id: string }>(
     tx,
     sql`UPDATE users SET status = 8, deleted_at = now(), deleted_via = 4, birth_date = NULL, gender = NULL, country = NULL
-         WHERE id = ${input.userId}::bigint AND status = 1
+         WHERE id = ${input.userId}::bigint AND status = 1 AND birth_date IS NULL
         RETURNING id::text`,
   );
   if (closed === null) return { closed: false, phoneHashes: [], deviceHashes: [], sessionIds: [] };

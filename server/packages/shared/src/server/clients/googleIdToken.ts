@@ -16,6 +16,15 @@ export interface GoogleIdentity {
   emailVerified?: boolean | undefined;
   issuedAt: Date;
   expiresAt: Date;
+  /**
+   * The client the token was issued to: `azp`, or the audience when the
+   * token names one and no `azp` (OpenID Connect). A token Google gives our
+   * Android app names the Android client here (its audience is the web
+   * client); one the website's Google button gives names the web client.
+   */
+  authorizedParty?: string | undefined;
+  /** The token's nonce claim, when it has one. */
+  nonce?: string | undefined;
 }
 
 export interface VerifyOptions {
@@ -94,14 +103,24 @@ export class JoseGoogleIdTokenVerifier implements GoogleIdTokenVerifier {
     }
     const email = payload['email'];
     const verified = payload['email_verified'];
+    const nonce = payload['nonce'];
     return {
       sub,
       email: typeof email === 'string' ? email : undefined,
       emailVerified: typeof verified === 'boolean' ? verified : verified === 'true' ? true : undefined,
       issuedAt: new Date(iat * 1_000),
       expiresAt: new Date(exp * 1_000),
+      authorizedParty: authorizedPartyOf(payload['azp'], payload['aud']),
+      nonce: typeof nonce === 'string' ? nonce : undefined,
     };
   }
+}
+
+/** `azp`, else the one audience (OpenID Connect Core §2); undefined when neither names a single client. */
+function authorizedPartyOf(azp: unknown, aud: unknown): string | undefined {
+  if (azp !== undefined) return typeof azp === 'string' ? azp : undefined;
+  if (typeof aud === 'string') return aud;
+  return Array.isArray(aud) && aud.length === 1 && typeof aud[0] === 'string' ? aud[0] : undefined;
 }
 
 function failureOf(error: unknown): GoogleTokenFailure {
@@ -129,15 +148,28 @@ function equalStrings(a: string, b: string): boolean {
  * claims: it is a random handle to what `mint` was given.
  */
 export class FakeGoogleIdTokenVerifier implements GoogleIdTokenVerifier {
-  private readonly tokens = new Map<string, { sub: string; audience: string; nonce?: string | undefined; email?: string | undefined; issuedAt: Date; expiresAt: Date }>();
+  private readonly tokens = new Map<
+    string,
+    { sub: string; audience: string; authorizedParty: string; nonce?: string | undefined; email?: string | undefined; issuedAt: Date; expiresAt: Date }
+  >();
   now: () => Date = () => new Date();
 
-  mint(claims: { sub: string; audience: string; nonce?: string | undefined; email?: string | undefined; issuedAt?: Date; lifetimeSeconds?: number }): string {
+  /** `authorizedParty` defaults to the audience (a token of the website's button); an app's token names its Android client. */
+  mint(claims: {
+    sub: string;
+    audience: string;
+    authorizedParty?: string | undefined;
+    nonce?: string | undefined;
+    email?: string | undefined;
+    issuedAt?: Date;
+    lifetimeSeconds?: number;
+  }): string {
     const token = `fake-google.${randomBytes(12).toString('base64url')}`;
     const issuedAt = claims.issuedAt ?? this.now();
     this.tokens.set(token, {
       sub: claims.sub,
       audience: claims.audience,
+      authorizedParty: claims.authorizedParty ?? claims.audience,
       nonce: claims.nonce,
       email: claims.email,
       issuedAt,
@@ -155,6 +187,14 @@ export class FakeGoogleIdTokenVerifier implements GoogleIdTokenVerifier {
     if (options.maxAgeSeconds !== undefined && (this.now().getTime() - claims.issuedAt.getTime()) / 1_000 > options.maxAgeSeconds) {
       throw new GoogleIdTokenError('too_old');
     }
-    return { sub: claims.sub, email: claims.email, emailVerified: claims.email !== undefined, issuedAt: claims.issuedAt, expiresAt: claims.expiresAt };
+    return {
+      sub: claims.sub,
+      email: claims.email,
+      emailVerified: claims.email !== undefined,
+      issuedAt: claims.issuedAt,
+      expiresAt: claims.expiresAt,
+      authorizedParty: claims.authorizedParty,
+      nonce: claims.nonce,
+    };
   }
 }

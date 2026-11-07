@@ -46,7 +46,7 @@ import { meContextOf } from './me.js';
 
 /** Room to commit the row before the worker looks for it. */
 const PROCESS_DELAY_MS = 1_000;
-/** The blob delete waits until the delete's transaction has surely committed (or failed). */
+/** The blob delete waits until the delete's transaction has most likely ended; it deletes only once the row is gone. */
 const DELETE_DELAY_MS = 10_000;
 /** Storage or the moderation provider failing for a while: retried with backoff (5 s, 10 s, 20 s, ...). */
 const PROCESS_ATTEMPTS = 6;
@@ -229,6 +229,8 @@ export const photoRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const session = sessionOf(app, request);
       const ctx = meContextOf(app, request, session);
+      // The version before the write: its view is stored only if no other change comes in between.
+      const since = await app.account.version(session.userId);
       const fresh = await scrubbed(() =>
         withTransaction(app.pg, async (tx) => {
           await tx.query('SET CONSTRAINTS photos_user_position_key DEFERRED');
@@ -242,7 +244,7 @@ export const photoRoutes: FastifyPluginAsyncZod = async (app) => {
           return app.account.build(tx, session.userId);
         }),
       );
-      await app.account.changed(session.userId, fresh);
+      await app.account.changed(session.userId, { since, result: fresh });
       return ownProfileOf(accountOf(fresh), ctx);
     },
   );

@@ -224,6 +224,19 @@ export const photoExists = defineQuery({ name: 'photos.exists', statements: 1 },
   return row.found;
 });
 
+/**
+ * Before a photo's blobs are deleted: whether its row is still there (the
+ * delete did not commit, or not yet) and whether a legal hold names the
+ * account (its blobs are then kept). One statement.
+ */
+export const photoDeletionState = defineQuery({ name: 'photos.deletionState', statements: 1 }, async (db, photoId: string, userId: string) => {
+  const row = await one<{ present: boolean; held: boolean }>(
+    db,
+    sql`SELECT EXISTS (SELECT 1 FROM photos WHERE id = ${photoId}::bigint) AS present, legal_hold_active(${userId}::bigint, NULL) AS held`,
+  );
+  return row;
+});
+
 /** Whether a legal hold names the account: its photos' blobs are then kept. */
 export const photoBlobsHeld = defineQuery({ name: 'photos.blobsHeld', statements: 1 }, async (db, userId: string) => {
   const row = await one<{ held: boolean }>(db, sql`SELECT legal_hold_active(${userId}::bigint, NULL) AS held`);

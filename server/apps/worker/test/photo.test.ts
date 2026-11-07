@@ -347,6 +347,41 @@ describe.skipIf(!hasDatabase || !hasRedis)('the photo jobs (PostgreSQL, Valkey)'
     expect(storage.keys('media', `p/${photoId}/`)).toEqual([]);
   });
 
+  it('keeps the blobs of a photo whose delete did not commit (its row is still there)', async () => {
+    const userId = await person();
+    const photoId = await uploaded(userId, await picture({ seed: 53 }));
+    await processPhotoJob(fakeJob<ProcessJobData>('process', { photoId }), context);
+    const blobs = storage.keys('media', `p/${photoId}/`);
+    expect(blobs).toHaveLength(3);
+    // The route queued the job, then its COMMIT failed: the row stays.
+    const job = fakeJob<DeleteJobData>('delete', { photoId, userId, blobVer: 1 });
+    const waits: number[] = [];
+    for (;;) {
+      const before = Date.now();
+      try {
+        const { result, tally } = await statementCounter.measure(() => deletePhotoJob(job, context));
+        expect(result).toEqual({ outcome: 'skipped', reason: 'not_deleted' });
+        expect(tally.statements).toBe(1);
+        break;
+      } catch (error) {
+        expect(error).toBeInstanceOf(DelayedError);
+        waits.push((job.delayedUntil ?? 0) - before);
+      }
+    }
+    // It looked again a few times, a little later each time, before giving up.
+    expect(waits.length).toBe(5);
+    expect(waits.every((ms, i) => i === 0 || ms > (waits[i - 1] ?? 0))).toBe(true);
+    expect(storage.keys('media', `p/${photoId}/`)).toEqual(blobs);
+    expect(await photoRow(photoId)).toBeDefined();
+
+    // A slow commit: the row goes while the job waits, and the next look deletes the blobs.
+    const slow = fakeJob<DeleteJobData>('delete', { photoId, userId, blobVer: 1 });
+    await expect(deletePhotoJob(slow, context)).rejects.toBeInstanceOf(DelayedError);
+    await db.admin.query('DELETE FROM photos WHERE id = $1', [photoId]);
+    expect(await deletePhotoJob(slow, context)).toEqual({ outcome: 'deleted', objects: 4 });
+    expect(storage.keys('media', `p/${photoId}/`)).toEqual([]);
+  });
+
   it('runs through BullMQ: a job queued before its row commits is processed once the row is there', async () => {
     const config = loadConfig({ ...baseEnv(), DATABASE_URL: db.url, REDIS_URL: TEST_REDIS_URL ?? '', REDIS_KEY_PREFIX: prefix, WORKER_ID: 'photo-test' });
     const runtime = await startWorker(config, { logger: pino({ level: 'silent' }), queues: [photoQueue(1)], services });

@@ -96,6 +96,9 @@ export function requireScope(app: FastifyInstance, account: AccountStore, scopes
     // The auth plugin's own answer first (401 token_expired tells the app to refresh).
     await app.requireUser(request, reply);
     const session = sessionOf(app, request);
-    if (!scopes.includes(session.scope)) throw await accountProblem(account, session.userId);
+    if (scopes.includes(session.scope)) return;
+    // The refusal reads the account (one statement on a cache miss) on top of what the route declares.
+    if (request.pgTally?.budget !== undefined) request.pgTally.budget += 1;
+    throw await accountProblem(account, session.userId);
   };
 }

@@ -1,4 +1,4 @@
-import { finishPhoto, photoBlobsHeld, photoExists, photoToProcess, type PhotoOutcome } from '@app/db';
+import { finishPhoto, photoDeletionState, photoExists, photoToProcess, type PhotoOutcome } from '@app/db';
 import { photoStatus, realtimeEnvelope, userChannel } from '@app/shared';
 import {
   bumpVersion,
@@ -24,9 +24,12 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   media bucket, then the outcome to the row (status 2, 3 or 4) in one
  *   statement, deletes the upload, bumps the own-account version and tells
  *   the person (`profile` event). Two statements per photo.
- * - `delete` (`delete.<photoId>.<ms>`, queued by the delete route): removes
- *   the variants of every version and the upload, unless a legal hold names
- *   the account; then it looks again a day later.
+ * - `delete` (`delete.<photoId>.<ms>`, queued by the delete route inside
+ *   the delete's transaction): removes the variants of every version and the
+ *   upload once the row is gone, unless a legal hold names the account (then
+ *   it looks again a day later). While the row is still there it waits a
+ *   little (the delete may not have committed yet); if it stays, the delete
+ *   failed and the blobs are kept.
  *
  * Both are idempotent: a re-run of `process` finds the row finished and only
  * tidies the upload; deleting objects that are gone succeeds.
@@ -38,7 +41,11 @@ export const PHOTO_QUEUE = 'photo';
 export const REJECT_TOO_SMALL = 6;
 export const REJECT_UNREADABLE = 8;
 
-/** While the row is not there yet (the job is queued before the insert commits): waits, then it counts as never written. */
+/**
+ * Waits while a row's transaction may not have committed yet: `process` waits
+ * for its row to appear (then it counts as never written), `delete` for its
+ * row to go (then the delete counts as failed).
+ */
 const ROW_WAITS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 const STORAGE_WAIT_MS = 60_000;
 const HOLD_RECHECK_MS = 24 * 3_600_000;
@@ -55,11 +62,13 @@ export interface DeleteJobData {
   photoId: string;
   userId: string;
   blobVer: number;
+  /** How often the row was found still there. */
+  waits?: number | undefined;
 }
 
 export type PhotoJobResult =
   | { outcome: 'processed'; status: 'review' | 'approved' | 'rejected' }
-  | { outcome: 'skipped'; reason: 'no_row' | 'finished' | 'deleted' }
+  | { outcome: 'skipped'; reason: 'no_row' | 'finished' | 'deleted' | 'not_deleted' }
   | { outcome: 'deleted'; objects: number };
 
 /** Puts the running job back in the delayed set; BullMQ then neither counts an attempt nor logs a failure. */
@@ -198,7 +207,16 @@ export async function deletePhotoJob(job: Job<DeleteJobData>, context: JobContex
   if (!ID.test(photoId) || !ID.test(userId) || !Number.isInteger(blobVer) || blobVer < 1) throw new Error('delete: bad job data');
   const media = requireMedia(context);
   if (!media) return later(job, context, STORAGE_WAIT_MS);
-  if (await photoBlobsHeld(services.pg, userId)) {
+  const state = await photoDeletionState(services.pg, photoId, userId);
+  if (state.present) {
+    // The delete's transaction has not committed (yet): its blobs are the photo's.
+    const waits = job.data.waits ?? 0;
+    const wait = ROW_WAITS_MS[waits];
+    if (wait !== undefined) return later(job, context, wait, { ...job.data, waits: waits + 1 });
+    log.warn('photo: the row is still there; the delete did not commit, blobs kept');
+    return { outcome: 'skipped', reason: 'not_deleted' };
+  }
+  if (state.held) {
     log.info('photo: a legal hold names the account; blobs kept, looking again tomorrow');
     return later(job, context, HOLD_RECHECK_MS);
   }

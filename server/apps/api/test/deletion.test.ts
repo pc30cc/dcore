@@ -365,6 +365,20 @@ describe.skipIf(!hasInfrastructure)('account deletion', () => {
       expect((await call(h, '/v1/me', { token: user.token })).statusCode).toBe(401);
     });
 
+    it('answers a token it never issues as an expired one, counted per IP, without an error log', async () => {
+      const address = nextIp();
+      const errorsBefore = h.logs.filter((line) => line.includes('"level":50')).length;
+      for (const requestToken of ['aaaaaaaaaaaaaaaa/bbbb', 'x'.repeat(201), 'short-but-valid-ish-16', `${'A'.repeat(31)}=`]) {
+        const res = await post('/v1/public/account-deletion/confirm', { requestToken, code: '123456' }, { ip: address });
+        expect(res.statusCode, requestToken).toBe(410);
+        expect(res.json()).toMatchObject({ code: 'otp_expired' });
+        expect(statements(res)).toBe(0);
+      }
+      expect(h.logs.filter((line) => line.includes('"level":50')).length).toBe(errorsBefore);
+      // Each counted against the IP's verify limit, like an unknown token.
+      expect(Number(await h.redis.get(`${h.prefix}del:rl:v:${address}`))).toBe(4);
+    });
+
     it('works as plain form posts: 303 to the website, the code form by phone, Persian digits', async () => {
       const user = await seed({ name: 'Lea' });
       const number = mobileNumber();
@@ -551,6 +565,32 @@ describe.skipIf(!hasInfrastructure)('account deletion', () => {
       const nobody = await post('/v1/public/account-deletion/google', { idToken: google.mint({ sub: 'g-nobody', audience: GOOGLE_CLIENT }) }, { ip: nextIp() });
       expect(nobody.statusCode).toBe(404);
       expect(await value<number>(`SELECT status FROM users WHERE id = $1`, [user.id])).toBe(3);
+    });
+
+    it('refuses a token the app got to sign in (the Android client, our nonce), and a website token used before', async () => {
+      const user = await seed({ name: 'Rai' });
+      const sub = `g-${randomBytes(6).toString('hex')}`;
+      await withGoogle(user, sub);
+      // The app's sign-in token: audience the web client, issued to the Android client, with the sign-in nonce.
+      const appToken = google.mint({ sub, audience: GOOGLE_CLIENT, authorizedParty: 'android-client.apps.example', nonce: 'sign-in-nonce' });
+      const fromApp = await post('/v1/public/account-deletion/google', { idToken: appToken }, { ip: nextIp() });
+      expect(fromApp.statusCode).toBe(400);
+      expect(fromApp.json()).toMatchObject({ code: 'google_token_invalid' });
+      expect(statements(fromApp)).toBe(0);
+      // A web client token that carries a nonce is not the website's either.
+      const withNonce = await post('/v1/public/account-deletion/google', { idToken: google.mint({ sub, audience: GOOGLE_CLIENT, nonce: 'n' }) }, { ip: nextIp() });
+      expect(withNonce.json()).toMatchObject({ code: 'google_token_invalid' });
+      expect(await value<number>(`SELECT status FROM users WHERE id = $1`, [user.id])).toBe(3);
+
+      // The website's token deletes once; the same token again is refused.
+      const siteToken = google.mint({ sub, audience: GOOGLE_CLIENT });
+      expect((await post('/v1/public/account-deletion/google', { idToken: siteToken }, { ip: nextIp() })).statusCode).toBe(202);
+      expect(await value<number>(`SELECT status FROM users WHERE id = $1`, [user.id])).toBe(7);
+      // (Without the single use, a replay of an already deleted account would answer 202 with its date.)
+      const replay = await post('/v1/public/account-deletion/google', { idToken: siteToken }, { ip: nextIp() });
+      expect(replay.statusCode).toBe(400);
+      expect(replay.json()).toMatchObject({ code: 'google_token_invalid' });
+      expect(statements(replay)).toBe(0);
     });
   });
 });
