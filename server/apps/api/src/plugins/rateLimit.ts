@@ -17,7 +17,8 @@ const IPV6_SUBNET = 56;
 export function rateLimitKey(request: FastifyRequest): string {
   const principal = request.principal;
   if (principal) return `${principal.kind}:${principal.subject}`;
-  return `ip:${normalizeIP(request.ip, IPV6_SUBNET)}`;
+  // Behind Cloudflare `request.ip` is an edge shared by many clients; `clientIp` is the client.
+  return `ip:${normalizeIP(request.clientIp ?? request.ip, IPV6_SUBNET)}`;
 }
 
 /**

@@ -4,6 +4,7 @@ export * from './appConfig.js';
 export * from './brand.js';
 export * from './codes.js';
 export * from './health.js';
+export * from './ids.js';
 export * from './locale.js';
 export * from './pagination.js';
 export * from './problem.js';

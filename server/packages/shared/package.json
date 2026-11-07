@@ -2,7 +2,7 @@
   "name": "@app/shared",
   "version": "0.0.0",
   "private": true,
-  "description": "Schemas and types shared by the API, the admin panel, the website and the Android contract.",
+  "description": "Schemas and types shared by the API, the admin panel, the website and the Android contract; `./server` is the Node-only part (ids, crypto, provider clients).",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -10,15 +10,26 @@
       "@app/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./server": {
+      "@app/source": "./src/server/index.ts",
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "fixtures"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && tsc -p src/server/tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.lib.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "h3-js": "^4.5.0",
+    "ioredis": "^6.0.0",
+    "jose": "^6.2.15",
     "zod": "^4.6.7"
   }
 }

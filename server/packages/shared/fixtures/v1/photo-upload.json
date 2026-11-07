@@ -1,0 +1,12 @@
+{
+  "photoId": "1287390234923410099",
+  "upload": {
+    "url": "https://s3.example.com/private-bucket/u/1287390234923410099?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abc",
+    "method": "PUT",
+    "headers": {
+      "Content-Type": "image/jpeg",
+      "Content-Length": "2481337"
+    },
+    "expiresAt": "2026-11-06T10:14:03.120Z"
+  }
+}

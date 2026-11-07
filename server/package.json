@@ -9,7 +9,7 @@
     "pnpm": ">=10.16"
   },
   "scripts": {
-    "lint": "eslint --max-warnings=0 .",
+    "lint": "NODE_OPTIONS=--max-old-space-size=4096 eslint --max-warnings=0 .",
     "typecheck": "pnpm -r --workspace-concurrency=2 typecheck",
     "test": "pnpm -r test",
     "build": "pnpm -r build",

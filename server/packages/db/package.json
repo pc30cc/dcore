@@ -24,7 +24,8 @@
     "migrate:dev": "tsx --conditions=@app/source src/cli/migrate.ts"
   },
   "dependencies": {
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",

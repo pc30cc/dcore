@@ -53,6 +53,17 @@ export default defineConfig(
     },
   },
 
+  // The admin panel and the website never load the Node-only part of the shared package.
+  {
+    files: ['apps/admin/**/*.{ts,tsx}', 'apps/web/**/*.{ts,tsx,mjs}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['@app/shared/server', '@app/shared/server/*'], message: 'Node only: never in the admin panel or the website.' }] },
+      ],
+    },
+  },
+
   // Tests may poke at values they just asserted on.
   {
     files: ['**/test/**/*.ts'],

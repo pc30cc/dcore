@@ -30,6 +30,8 @@ export const otpStartRequestSchema = z.object({
   smsAppHash: smsAppHash.optional(),
   /** A Play Integrity token, in the play build only. */
   integrityToken: z.string().min(1).max(8192).optional(),
+  /** The install's id (as at verify), when the app sends it: counted against `auth.otp_caps.install_daily`. */
+  installId: installIdSchema.optional(),
 });
 export type OtpStartRequest = z.infer<typeof otpStartRequestSchema>;
 

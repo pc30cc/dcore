@@ -11,11 +11,12 @@ import type { ApiConfig, SigningKeyConfig } from '../config.js';
  * expiry are the whole check. That is why they are short-lived (15 minutes by
  * default); revocation takes effect at the next refresh.
  *
- * TODO(auth): refresh tokens. They are opaque, stored hashed with their device
- * and session, rotated on every use, and a reused one revokes its whole family.
- * The refresh endpoint is POST /auth/refresh. Add per-session revocation (a
- * short Redis deny-list keyed by `sid`, never a database read on the request
- * path) if a refresh interval of 15 minutes proves too long.
+ * App tokens also carry `did` (the device row), `st` (the store code of
+ * the session, 1 play or 2 bazaar) and `scope` (`full`, `restricted` for a
+ * suspended or banned account, `restore` for one in its deletion grace);
+ * each route says which scopes it serves. Revocation before expiry is the
+ * Valkey deny list (`deny:sid`, `deny:uid`); refresh tokens are opaque and
+ * live in `sessions` (src/auth/sessions.ts).
  */
 
 /** Who a token is for. A user token is refused by admin routes and the other way round. */
@@ -33,14 +34,30 @@ export interface Principal {
   /** Admin roles; always empty for users. */
   roles: readonly string[];
   tokenId: string;
+  /** When the token was signed (`iat`): a user-wide revocation refuses tokens issued before it. */
+  issuedAt: Date;
   expiresAt: Date;
+  /** App tokens: the device row the session signed in from (`did`), when the token names one. */
+  deviceId?: string | undefined;
+  /** App tokens: the store code of the session (`st`: 1 play, 2 bazaar), when the token names one. */
+  storeCode?: number | undefined;
+  /** App tokens: what the session may do (`scope`); `full` when the token names none. */
+  scope: SessionScope;
 }
+
+/** `full` (statuses 1-4), `restricted` (suspended or banned), `restore` (deleted, in its grace period). */
+export const sessionScopes = ['full', 'restricted', 'restore'] as const;
+export type SessionScope = (typeof sessionScopes)[number];
 
 export interface IssueInput {
   kind: Audience;
   subject: string;
   sessionId: string;
   roles?: readonly string[] | undefined;
+  /** App tokens only: `did`, `st` and `scope` claims. */
+  deviceId?: string | undefined;
+  storeCode?: number | undefined;
+  scope?: SessionScope | undefined;
 }
 
 export interface IssuedToken {
@@ -48,7 +65,7 @@ export interface IssuedToken {
   expiresAt: Date;
 }
 
-export type TokenFailure = 'expired' | 'invalid';
+export type TokenFailure = 'expired' | 'invalid' | 'revoked';
 
 export class TokenError extends Error {
   readonly reason: TokenFailure;
@@ -72,7 +89,11 @@ const claimsSchema = z.object({
   jti: opaqueId,
   aud: z.enum(audiences),
   exp: z.number().int(),
+  iat: z.number().int(),
   roles: z.array(z.string().min(1).max(64)).max(32).optional(),
+  did: z.string().regex(/^[1-9][0-9]{0,18}$/).optional(),
+  st: z.number().int().min(1).max(3).optional(),
+  scope: z.enum(sessionScopes).optional(),
 });
 
 type Key = CryptoKey | Uint8Array;
@@ -115,6 +136,11 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
       const exp = now + accessTokenTtlSeconds;
       const payload: Record<string, unknown> = { sid: input.sessionId };
       if (input.kind === 'admin') payload['roles'] = [...(input.roles ?? [])];
+      if (input.kind === 'app') {
+        if (input.deviceId !== undefined) payload['did'] = input.deviceId;
+        if (input.storeCode !== undefined) payload['st'] = input.storeCode;
+        payload['scope'] = input.scope ?? 'full';
+      }
       const token = await new SignJWT(payload)
         .setProtectedHeader({ alg, kid: config.current.kid, typ: TOKEN_TYPE })
         .setIssuer(issuer)
@@ -145,14 +171,17 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
       }
       const claims = claimsSchema.safeParse(payload);
       if (!claims.success) throw new TokenError('invalid', 'token claims malformed', { cause: claims.error });
-      const { sub, sid, jti, aud, exp, roles } = claims.data;
+      const { sub, sid, jti, aud, exp, iat, roles, did, st, scope } = claims.data;
       return {
         kind: aud,
         subject: sub,
         sessionId: sid,
         roles: aud === 'admin' ? (roles ?? []) : [],
         tokenId: jti,
+        issuedAt: new Date(iat * 1_000),
         expiresAt: new Date(exp * 1_000),
+        ...(aud === 'app' ? { deviceId: did, storeCode: st } : {}),
+        scope: aud === 'app' ? (scope ?? 'full') : 'full',
       };
     },
   };

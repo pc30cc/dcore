@@ -1,0 +1,7 @@
+{
+  "challengeId": "ch_8f2a1c9d0b7e",
+  "codeLength": 6,
+  "ttlSeconds": 300,
+  "resendAfterSeconds": 60,
+  "channel": "sms"
+}

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runMigrations, type MigrationLog } from '../src/index.js';
-import { createTempDatabase, hasDatabase, type TempDatabase } from './support.js';
+import { createTempDatabase, hasDatabase, requireSetup, type TempDatabase } from './support.js';
 
 /**
  * The real migrations on an empty database, then checks of the schema's
@@ -108,8 +108,10 @@ describe.skipIf(!hasDatabase)('schema: the real migrations', () => {
     } catch {
       ready = false;
     }
+    requireSetup(ready, 'PostGIS cannot be created in a new database');
     if (!ready) return;
     roles = await ensureRoles(client);
+    requireSetup(roles, 'the group roles cannot be created');
     await runMigrations({ connectionString: db.url, directory: MIGRATIONS, log: quiet });
   }, 60_000);
 

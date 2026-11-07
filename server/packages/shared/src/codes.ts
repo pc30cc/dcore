@@ -47,7 +47,7 @@ export class CodeTable<N extends string> {
       byCode.set(code, name);
     }
     this.byCode = byCode;
-    this.schema = z.enum(this.names as [N, ...N[]]) as unknown as z.ZodEnum<{ [K in N]: K }>;
+    this.schema = z.enum(this.names as [N, ...N[]]);
   }
 
   /** The code of a wire name. */

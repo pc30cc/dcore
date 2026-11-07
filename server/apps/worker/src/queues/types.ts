@@ -1,7 +1,8 @@
-import type { Job, RepeatOptions } from 'bullmq';
+import type { Job, JobsOptions, RepeatOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { WorkerConfig } from '../config.js';
+import type { WorkerServices } from '../services.js';
 
 /** What a job processor may use. */
 export interface JobContext {
@@ -9,6 +10,10 @@ export interface JobContext {
   /** A shared, non-blocking connection for the processor's own commands. */
   redis: Redis;
   log: Logger;
+  /** PostgreSQL, ids, storage, realtime and the other clients of this process. */
+  services: WorkerServices;
+  /** The job's lock token (needed to move the running job back to delayed). */
+  token?: string | undefined;
 }
 
 export interface ScheduledJob {
@@ -17,6 +22,8 @@ export interface ScheduledJob {
   repeat: Omit<RepeatOptions, 'key'>;
   name: string;
   data?: Record<string, unknown>;
+  /** Attempts and backoff of each run (retention comes from the queue). */
+  opts?: Pick<JobsOptions, 'attempts' | 'backoff'> | undefined;
 }
 
 /**

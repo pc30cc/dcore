@@ -1,26 +1,72 @@
 import { randomUUID } from 'node:crypto';
-import { createPool, type Pool } from '@app/db';
+import { createPool, instrumentPool, statementCounter, type Pool } from '@app/db';
+import {
+  ClientIpResolver,
+  DenyList,
+  IdGenerator,
+  createKeys,
+  createPublicIds,
+  createMediaStore,
+  createServerSecrets,
+  parseEdgeTrust,
+  photoVariantUrl,
+  type KeyBuilder,
+  type MediaStore,
+  type PublicIds,
+  type ServerSecrets,
+} from '@app/shared/server';
 import Fastify, { LogController } from 'fastify';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Redis } from 'ioredis';
 import pino, { type Logger } from 'pino';
+import { authServicesPlugin, type AuthServicesOptions } from './auth/services.js';
 import { createAccessTokens, type AccessTokens } from './auth/tokens.js';
 import type { ApiConfig } from './config.js';
 import { createReadinessProbe, type ReadinessProbe } from './lib/readiness.js';
 import { closeRedis, createRedis } from './lib/redis.js';
+import { accountServicesPlugin, type AccountServicesOptions } from './plugins/accountServices.js';
 import { authPlugin } from './plugins/auth.js';
+import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
+import { clientIpPlugin } from './plugins/clientIp.js';
+import { denyListPlugin } from './plugins/denyList.js';
 import { errorsPlugin } from './plugins/errors.js';
 import { openapiPlugin } from './plugins/openapi.js';
+import { pgBudgetPlugin } from './plugins/pgBudget.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
+import { accountRoutes } from './routes/account.js';
+import { authRoutes } from './routes/auth.js';
+import { deletionRoutes } from './routes/deletion.js';
 import { healthRoutes } from './routes/health.js';
+import { photoRoutes } from './routes/photos.js';
+import { publicDeletionRoutes } from './routes/publicDeletion.js';
+import { BullJobProducer, type JobProducer } from './services/jobs.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     config: ApiConfig;
     pg: Pool;
+    /** kv-core (noeviction). */
     redis: Redis;
+    /** kv-cache (evicting): views, cards, deck queues; the kv-core client when REDIS_CACHE_URL is unset. */
+    cache: Redis;
     readiness: ReadinessProbe;
+    /** Valkey key names under the deployment prefix. */
+    keys: KeyBuilder;
+    /** `publicUid` and `billingRef` codecs. */
+    publicIds: PublicIds;
+    /** Keyed hashes and sealed values. */
+    secrets: ServerSecrets;
+    /** Access-token revocation (`deny:sid`, `deny:uid`). */
+    denyList: DenyList;
+    /** Application ids under this process's Valkey lease. */
+    ids: IdGenerator;
+    /** Minimum versions and maintenance, in memory; the config loader keeps it current. */
+    clientPolicy: ClientPolicyHolder;
+    /** Photo storage (private and media buckets, CDN links); null while S3 is not configured. */
+    media: MediaStore | null;
+    /** Jobs for the worker's queues. */
+    jobs: JobProducer;
   }
 }
 
@@ -29,8 +75,21 @@ export interface AppDependencies {
   pool?: Pool | undefined;
   /** A Redis client owned by the caller; otherwise one is created and closed with the app. */
   redis?: Redis | undefined;
+  /** The kv-cache client owned by the caller; otherwise one for REDIS_CACHE_URL, or the kv-core client. */
+  cache?: Redis | undefined;
   logger?: Logger | undefined;
   tokens?: AccessTokens | undefined;
+  /** An id generator owned by the caller; otherwise one is created, started on ready and stopped on close. */
+  ids?: IdGenerator | undefined;
+  clientPolicy?: ClientPolicyHolder | undefined;
+  /** Brand, city table and media links of the account routes (tests). */
+  accountServices?: AccountServicesOptions | undefined;
+  /** SMS senders, the Google verifier and the auth settings of the sign-in routes (tests). */
+  authServices?: AuthServicesOptions | undefined;
+  /** Photo storage (tests pass a fake; null: none); otherwise made from S3_* when set. */
+  media?: MediaStore | null | undefined;
+  /** A job producer owned by the caller (tests); otherwise BullMQ on the app's Valkey connection. */
+  jobs?: JobProducer | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -90,6 +149,9 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
     });
   const redis = deps.redis ?? createRedis({ url: config.redis.url, connectionName: 'api' });
   if (!deps.redis) redis.on('error', (error: Error) => app.log.warn({ err: error }, 'redis connection error'));
+  const ownCache = !deps.cache && config.redis.cacheUrl !== undefined;
+  const cache = deps.cache ?? (config.redis.cacheUrl ? createRedis({ url: config.redis.cacheUrl, connectionName: 'api-cache' }) : redis);
+  if (ownCache) cache.on('error', (error: Error) => app.log.warn({ err: error }, 'redis cache connection error'));
   const readiness = createReadinessProbe({
     pool,
     redis,
@@ -98,11 +160,46 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
     log: app.log,
   });
   const tokens = deps.tokens ?? (await createAccessTokens(config.auth));
+  if (config.pgBudget !== 'off') instrumentPool(pool, statementCounter);
+  const keys = createKeys(config.redis.keyPrefix);
+  const publicIds = createPublicIds(config.ids.publicKey, config.ids.billingKey);
+  const secrets = createServerSecrets(config.secrets);
+  const denyList = new DenyList({
+    redis,
+    keys,
+    accessTokenTtlSeconds: config.auth.accessTokenTtlSeconds,
+    clockSkewSeconds: config.auth.clockSkewSeconds,
+  });
+  const ids =
+    deps.ids ??
+    new IdGenerator({
+      redis,
+      keyPrefix: config.redis.keyPrefix,
+      onEvent: (event) => {
+        if (event.type === 'refresh_failed') app.log.warn({ err: event.error }, 'id lease: refresh failed');
+        else if (event.type === 'lost' || event.type === 'exhausted' || event.type === 'clock_jump') app.log.error({ event }, 'id lease');
+        else app.log.info({ event }, 'id lease');
+      },
+    });
+  const clientPolicy = deps.clientPolicy ?? new ClientPolicyHolder();
+  const media = deps.media !== undefined ? deps.media : config.storage ? createMediaStore(config.storage, { timeoutMs: config.storage.timeoutMs }) : null;
+  const jobs = deps.jobs ?? new BullJobProducer({ redis, keyPrefix: config.redis.keyPrefix });
+  const edges = new ClientIpResolver(parseEdgeTrust(config.edgeTrust));
+  if (edges.ignoredEntries.length > 0) app.log.warn({ entries: edges.ignoredEntries }, 'CF_EDGE_TRUST: entries ignored');
 
   app.decorate('config', config);
   app.decorate('pg', pool);
   app.decorate('redis', redis);
+  app.decorate('cache', cache);
   app.decorate('readiness', readiness);
+  app.decorate('keys', keys);
+  app.decorate('publicIds', publicIds);
+  app.decorate('secrets', secrets);
+  app.decorate('denyList', denyList);
+  app.decorate('ids', ids);
+  app.decorate('clientPolicy', clientPolicy);
+  app.decorate('media', media);
+  app.decorate('jobs', jobs);
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -112,15 +209,34 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
       // Not awaited: Redis being down must not keep the API from starting.
       redis.connect().catch((error: unknown) => app.log.warn({ err: error }, 'redis: first connection failed; retrying'));
     }
+    if (ownCache && cache.status === 'wait') {
+      cache.connect().catch((error: unknown) => app.log.warn({ err: error }, 'redis cache: first connection failed; retrying'));
+    }
+    if (!deps.ids) {
+      // Not awaited either: until a lease is held, minting refuses and the refresh timer keeps trying.
+      const startIds = () => {
+        ids.start().catch((error: unknown) => app.log.warn({ err: error }, 'id lease: none yet; retrying'));
+      };
+      if (redis.status === 'ready') startIds();
+      else redis.once('ready', startIds);
+    }
   });
   app.addHook('onClose', async () => {
+    if (!deps.jobs) await jobs.close();
+    if (!deps.ids) await ids.stop();
+    if (ownCache) await closeRedis(cache);
     if (!deps.redis) await closeRedis(redis);
     if (!deps.pool) await pool.end();
   });
 
   await app.register(errorsPlugin);
+  // First of the hooks, so that every later hook and handler runs inside the request's tally.
+  await app.register(pgBudgetPlugin, { mode: config.pgBudget, counter: statementCounter });
   await app.register(securityPlugin, { adminOrigins: config.corsAdminOrigins });
+  await app.register(clientIpPlugin, { resolver: edges });
+  await app.register(clientPlugin, { policy: () => clientPolicy.get(), defaultLocale: 'en' });
   await app.register(authPlugin, { tokens });
+  await app.register(denyListPlugin, { denyList, userIdOf: (subject) => publicIds.user.decodeId(subject) });
   await app.register(rateLimitPlugin, {
     redis,
     keyPrefix: config.redis.keyPrefix,
@@ -129,10 +245,22 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   });
   if (config.openapi.enabled) await app.register(openapiPlugin);
 
+  await app.register(accountServicesPlugin, {
+    // Own photos are shown at the 640 variant; without a CDN they carry no link.
+    ...(media?.urls ? { ownPhotoUrl: (photo: { id: string; blobVer: number }) => photoVariantUrl(media, photo.id, photo.blobVer, 640) } : {}),
+    ...deps.accountServices,
+  });
+  await app.register(authServicesPlugin, deps.authServices ?? {});
+
   await app.register(healthRoutes, { readiness });
+  await app.register(accountRoutes);
+  await app.register(authRoutes);
+  await app.register(photoRoutes);
+  await app.register(deletionRoutes);
+  await app.register(publicDeletionRoutes);
 
   if (config.openapi.enabled) {
-    app.get('/openapi.json', { schema: { hide: true }, config: { rateLimit: false } }, async () => app.swagger());
+    app.get('/openapi.json', { schema: { hide: true }, config: { rateLimit: false, pgBudget: 0 } }, async () => app.swagger());
   }
 
   return app;

@@ -6,3 +6,4 @@ export * from './devices.js';
 export * from './me.js';
 export * from './photos.js';
 export * from './realtime.js';
+export * from './registry.js';

@@ -1,0 +1,24 @@
+{
+  "interestedIn": [
+    "woman",
+    "nonbinary"
+  ],
+  "ageMin": 23,
+  "ageMax": 34,
+  "maxDistanceKm": 50,
+  "wholeCountry": false,
+  "verifiedOnly": true,
+  "intents": [
+    "serious",
+    "marriage"
+  ],
+  "filters": {
+    "smoking": [
+      21
+    ],
+    "height": [
+      160,
+      185
+    ]
+  }
+}

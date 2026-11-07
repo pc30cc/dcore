@@ -123,7 +123,14 @@ export const databaseEnvShape = {
 
 /** Variables of a process that talks to Redis or Valkey. */
 export const redisEnvShape = {
+  /** kv-core (noeviction): queues, limits, OTP, leases, counters and every other key that must not be evicted. */
   REDIS_URL: envUrl(['redis', 'rediss']),
+  /**
+   * kv-cache (allkeys-lru): what may be evicted and rebuilt (own-account
+   * views, cards, deck queues, entitlements, presence, last seen). Unset:
+   * the REDIS_URL instance (development).
+   */
+  REDIS_CACHE_URL: envUrl(['redis', 'rediss']).optional(),
   /** Prefixes every key, so several environments can share one instance safely. */
   REDIS_KEY_PREFIX: z
     .string()

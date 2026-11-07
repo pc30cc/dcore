@@ -1,0 +1,7 @@
+{
+  "subscription": {
+    "store": "play",
+    "active": true,
+    "manageUrl": "https://play.google.com/store/account/subscriptions"
+  }
+}

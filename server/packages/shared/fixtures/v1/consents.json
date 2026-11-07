@@ -1,0 +1,25 @@
+{
+  "consents": [
+    {
+      "kind": "terms",
+      "version": 1,
+      "acceptedAt": "2026-11-01T08:00:00.000Z"
+    },
+    {
+      "kind": "privacy",
+      "version": 1,
+      "acceptedAt": "2026-11-01T08:00:00.000Z"
+    },
+    {
+      "kind": "guidelines",
+      "version": 1,
+      "acceptedAt": "2026-11-01T08:04:12.500Z"
+    },
+    {
+      "kind": "marketing_push",
+      "version": 1,
+      "acceptedAt": "2026-11-01T08:05:00.000Z",
+      "withdrawnAt": "2026-11-03T19:20:00.000Z"
+    }
+  ]
+}

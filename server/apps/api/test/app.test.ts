@@ -156,7 +156,7 @@ describe('OpenAPI', () => {
     expect(res.statusCode).toBe(200);
     const doc = res.json<{ openapi: string; paths: Record<string, unknown>; components: { schemas: Record<string, unknown> } }>();
     expect(doc.openapi).toBe('3.1.0');
-    expect(Object.keys(doc.paths).sort()).toEqual(['/healthz', '/readyz']);
+    expect(Object.keys(doc.paths)).toEqual(expect.arrayContaining(['/healthz', '/readyz', '/v1/config', '/v1/me']));
     expect(doc.components.schemas).toHaveProperty('Problem');
   });
 });

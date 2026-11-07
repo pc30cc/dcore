@@ -1,0 +1,8 @@
+{
+  "type": "urn:problem-type:otp-invalid",
+  "title": "Wrong code",
+  "status": 400,
+  "code": "otp_invalid",
+  "requestId": "req-1",
+  "attemptsLeft": 3
+}

@@ -1,0 +1,9 @@
+{
+  "type": "call_incoming",
+  "callId": "1287390234923430001",
+  "conversationId": "1287390234923400001",
+  "kind": "video",
+  "peerName": "Negar",
+  "peerPhotoUrl": "https://cdn.example.com/p/1287390234923420001/1/320.webp?exp=1794096000&sig=Zm9v",
+  "expiresAt": "2026-11-06T09:15:45.000Z"
+}

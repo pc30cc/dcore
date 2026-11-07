@@ -1,0 +1,10 @@
+{
+  "type": "urn:problem-type:consent-required",
+  "title": "Consent required",
+  "status": 403,
+  "code": "consent_required",
+  "requestId": "req-1",
+  "kinds": [
+    "terms"
+  ]
+}

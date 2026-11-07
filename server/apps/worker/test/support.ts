@@ -13,6 +13,18 @@ if (!TEST_REDIS_URL && process.env['REQUIRE_INTEGRATION'] === '1') {
 }
 export const hasRedis = Boolean(TEST_REDIS_URL);
 
+/** Variables every worker configuration needs (a database nobody listens on, fresh id keys). */
+export function baseEnv(): Record<string, string> {
+  return {
+    NODE_ENV: 'test',
+    LOG_LEVEL: 'silent',
+    DATABASE_URL: 'postgres://nobody:nothing@127.0.0.1:1/none',
+    DATABASE_CONNECT_TIMEOUT_MS: '500',
+    ID_PUBLIC_KEY: randomBytes(32).toString('base64url'),
+    ID_BILLING_KEY: randomBytes(32).toString('base64url'),
+  };
+}
+
 export function connect(): Redis {
   return new Redis(TEST_REDIS_URL ?? '', { maxRetriesPerRequest: null });
 }

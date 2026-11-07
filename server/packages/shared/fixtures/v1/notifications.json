@@ -1,0 +1,8 @@
+{
+  "messages": true,
+  "matches": true,
+  "likes": false,
+  "calls": true,
+  "offers": false,
+  "previews": true
+}

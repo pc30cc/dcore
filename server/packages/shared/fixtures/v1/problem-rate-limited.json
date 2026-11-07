@@ -1,0 +1,8 @@
+{
+  "type": "urn:problem-type:rate-limited",
+  "title": "Too many requests",
+  "status": 429,
+  "code": "rate_limited",
+  "requestId": "req-1",
+  "retryAfterSeconds": 42
+}

@@ -49,6 +49,10 @@ export function testConfig(env: Record<string, string> = {}): ApiConfig {
     AUTH_JWT_ALG: 'HS256',
     AUTH_JWT_ISSUER: ISSUER,
     AUTH_JWT_SECRET: testSecret(),
+    ID_PUBLIC_KEY: testSecret(),
+    ID_BILLING_KEY: testSecret(),
+    HASH_PEPPERS: JSON.stringify({ 1: testSecret() }),
+    DATA_KEYS: JSON.stringify({ 1: testSecret() }),
     ...env,
   });
 }

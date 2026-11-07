@@ -28,7 +28,7 @@ APP_DATABASES="${APP_DATABASES:-app_dev app_test}"
 # Extensions created ahead of the migrations, as superuser, so a migration that
 # says CREATE EXTENSION IF NOT EXISTS runs as the (non-superuser) owner role.
 # An extension whose package is not installed is skipped with a warning.
-PG_EXTENSIONS="${PG_EXTENSIONS:-postgis vector pgcrypto citext}"
+PG_EXTENSIONS="${PG_EXTENSIONS:-postgis vector pgcrypto citext pg_stat_statements}"
 REDIS_PORT="${REDIS_PORT:-63790}"
 PGBOUNCER_PORT="${PGBOUNCER_PORT:-64320}"
 STATE_DIR="${STATE_DIR:-/var/tmp/app-dev}"
@@ -124,9 +124,25 @@ log_min_duration_statement = 250ms
 log_lock_waits = on
 EOF
   fi
+  # Statement statistics (pg_stat_statements): how many statements each test
+  # or load run really sent. Loaded at server start only, so a cluster made
+  # before this setting existed is restarted once.
+  local stats="/etc/postgresql/$PG_MAJOR/$PG_CLUSTER/conf.d/20-statements.conf"
+  if [ ! -s "$stats" ]; then
+    as_root tee "$stats" >/dev/null <<EOF
+# Written by infra/dev/native.sh: per-statement counts and timings.
+shared_preload_libraries = 'pg_stat_statements'
+pg_stat_statements.max = 10000
+pg_stat_statements.track = top
+track_io_timing = on
+EOF
+  fi
   if ! pg_cluster_online; then
     log "starting cluster $PG_MAJOR/$PG_CLUSTER"
     as_root pg_ctlcluster "$PG_MAJOR" "$PG_CLUSTER" start
+  elif ! psql_super postgres -tAc 'SHOW shared_preload_libraries' | grep -q pg_stat_statements; then
+    log "restarting cluster $PG_MAJOR/$PG_CLUSTER to load pg_stat_statements"
+    as_root pg_ctlcluster "$PG_MAJOR" "$PG_CLUSTER" restart -m fast
   fi
   provision_postgres
 }
@@ -261,7 +277,8 @@ cmd_env() {
   cat <<EOF
 export DATABASE_URL=postgres://$APP_DB_USER:$APP_DB_PASSWORD@127.0.0.1:$PG_PORT/$first_db
 export MIGRATION_DATABASE_URL=postgres://$APP_DB_USER:$APP_DB_PASSWORD@127.0.0.1:$PG_PORT/$first_db
-export TEST_DATABASE_URL=postgres://$APP_DB_USER:$APP_DB_PASSWORD@127.0.0.1:$PG_PORT/app_test
+# The tests create a database per file, PostGIS in it and the grant roles: superuser.
+export TEST_DATABASE_URL=postgres://postgres:$PG_SUPERUSER_PASSWORD@127.0.0.1:$PG_PORT/postgres
 export TEST_PGBOUNCER_URL=postgres://$APP_DB_USER:$APP_DB_PASSWORD@127.0.0.1:$PGBOUNCER_PORT/app_test
 export REDIS_URL=redis://127.0.0.1:$REDIS_PORT/0
 export TEST_REDIS_URL=redis://127.0.0.1:$REDIS_PORT/15

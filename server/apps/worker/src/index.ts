@@ -1,4 +1,4 @@
-export { loadConfig, type WorkerConfig } from './config.js';
+export { envVariables, loadConfig, type WorkerConfig } from './config.js';
 export { createLogger } from './logger.js';
 export * from './queues/index.js';
 export * from './streams/consumer.js';

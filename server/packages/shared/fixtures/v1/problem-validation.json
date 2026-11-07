@@ -1,0 +1,15 @@
+{
+  "type": "urn:problem-type:validation-failed",
+  "title": "Validation failed",
+  "status": 400,
+  "code": "validation_failed",
+  "requestId": "req-1",
+  "errors": [
+    {
+      "in": "body",
+      "pointer": "/about",
+      "code": "too_big",
+      "message": "too long"
+    }
+  ]
+}

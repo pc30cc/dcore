@@ -1,0 +1,184 @@
+{
+  "v": 42,
+  "appName": "Example",
+  "colors": {
+    "brand": {
+      "light": "#E8466A",
+      "dark": "#FF6B8A"
+    },
+    "onBrand": {
+      "light": "#FFFFFF",
+      "dark": "#1A0A0F"
+    }
+  },
+  "legal": {
+    "privacyUrl": "https://example.com/en/privacy/",
+    "termsUrl": "https://example.com/en/terms/",
+    "guidelinesUrl": "https://example.com/en/community-guidelines/",
+    "childSafetyUrl": "https://example.com/en/child-safety/",
+    "deleteAccountUrl": "https://example.com/en/delete-account/",
+    "supportEmail": "support@example.com",
+    "versions": {
+      "terms": 2,
+      "privacy": 1,
+      "guidelines": 1
+    }
+  },
+  "planNames": {
+    "plus": "Plus",
+    "premium": "Premium"
+  },
+  "minVersion": {
+    "required": 10,
+    "recommended": 12
+  },
+  "maintenance": {
+    "enabled": false
+  },
+  "auth": {
+    "otpLength": 6,
+    "methods": [
+      "phone",
+      "google"
+    ]
+  },
+  "catalog": {
+    "fields": [
+      {
+        "id": 1,
+        "key": "height",
+        "label": "Height",
+        "kind": "number",
+        "min": 120,
+        "max": 230,
+        "unit": "cm",
+        "private": false,
+        "filterable": true,
+        "sensitive": false,
+        "required": false
+      },
+      {
+        "id": 2,
+        "key": "smoking",
+        "label": "Smoking",
+        "kind": "single",
+        "options": [
+          {
+            "id": 21,
+            "label": "No"
+          },
+          {
+            "id": 22,
+            "label": "Sometimes"
+          }
+        ],
+        "private": false,
+        "filterable": true,
+        "sensitive": false,
+        "required": false
+      },
+      {
+        "id": 3,
+        "key": "languages",
+        "label": "Languages",
+        "kind": "multi",
+        "options": [
+          {
+            "id": 31,
+            "label": "Persian"
+          },
+          {
+            "id": 32,
+            "label": "English"
+          },
+          {
+            "id": 33,
+            "label": "Turkish"
+          }
+        ],
+        "private": false,
+        "filterable": false,
+        "sensitive": false,
+        "required": false
+      },
+      {
+        "id": 4,
+        "key": "religion",
+        "label": "Religion",
+        "kind": "text",
+        "private": true,
+        "filterable": false,
+        "sensitive": true,
+        "required": false
+      }
+    ],
+    "prompts": [
+      {
+        "id": 1,
+        "text": "The best trip I took"
+      },
+      {
+        "id": 3,
+        "text": "Hear it in my voice",
+        "category": "voice"
+      },
+      {
+        "id": 4,
+        "text": "My perfect Sunday breakfast"
+      }
+    ],
+    "intentions": [
+      {
+        "key": "serious",
+        "label": "Something serious"
+      },
+      {
+        "key": "marriage",
+        "label": "Marriage"
+      },
+      {
+        "key": "friendship",
+        "label": "Friendship"
+      },
+      {
+        "key": "not_sure",
+        "label": "Not sure yet"
+      }
+    ],
+    "reportReasons": [
+      {
+        "key": "fake",
+        "label": "Fake profile"
+      },
+      {
+        "key": "child_safety",
+        "label": "A child may be at risk"
+      }
+    ],
+    "deletionReasons": [
+      {
+        "key": "break",
+        "label": "I need a break"
+      },
+      {
+        "key": "met_someone",
+        "label": "I met someone"
+      }
+    ]
+  },
+  "limits": {
+    "photosMax": 9,
+    "photosMin": 2,
+    "promptsMax": 3,
+    "aboutMax": 500,
+    "messageMax": 2000,
+    "commentMax": 300
+  },
+  "calls": {
+    "audio": true,
+    "video": false
+  },
+  "strings": {
+    "deck.empty": "Nobody new nearby"
+  }
+}

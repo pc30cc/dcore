@@ -16,7 +16,7 @@ export const healthRoutes: FastifyPluginAsyncZod<HealthRoutesOptions> = async (a
     '/healthz',
     {
       logLevel: 'warn',
-      config: { rateLimit: false },
+      config: { rateLimit: false, pgBudget: 0 },
       schema: { tags: ['health'], summary: 'Liveness: the process is up', response: { 200: livenessSchema } },
     },
     async () => ({ status: 'ok' as const }),
@@ -26,7 +26,8 @@ export const healthRoutes: FastifyPluginAsyncZod<HealthRoutesOptions> = async (a
     '/readyz',
     {
       logLevel: 'warn',
-      config: { rateLimit: false },
+      // One `SELECT 1`, shared by every probe inside READINESS_CACHE_MS.
+      config: { rateLimit: false, pgBudget: 1 },
       schema: {
         tags: ['health'],
         summary: 'Readiness: PostgreSQL and Redis answer',

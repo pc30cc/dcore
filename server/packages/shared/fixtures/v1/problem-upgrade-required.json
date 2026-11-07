@@ -1,0 +1,8 @@
+{
+  "type": "urn:problem-type:upgrade-required",
+  "title": "Update required",
+  "status": 426,
+  "code": "upgrade_required",
+  "requestId": "req-1",
+  "minVersionCode": 12031
+}

@@ -1,0 +1,20 @@
+{
+  "t": "account",
+  "v": 1,
+  "id": "1287390234923417619",
+  "at": "2026-11-06T09:14:03.120Z",
+  "d": {
+    "status": "suspended",
+    "moderation": {
+      "id": "1287390234923455001",
+      "kind": "suspension",
+      "reasonText": "Repeated reports of harassment.",
+      "startsAt": "2026-11-01T10:00:00.000Z",
+      "endsAt": "2026-11-08T10:00:00.000Z",
+      "appeal": {
+        "id": "1287390234923455101",
+        "status": "open"
+      }
+    }
+  }
+}

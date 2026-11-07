@@ -1,0 +1,41 @@
+{
+  "t": "entitlement",
+  "v": 1,
+  "id": "1287390234923417617",
+  "at": "2026-11-06T09:14:03.120Z",
+  "d": {
+    "plan": "plus",
+    "planExpiresAt": "2026-12-06T00:00:00.000Z",
+    "autoRenew": true,
+    "source": "bazaar",
+    "features": {
+      "see_likes": true,
+      "rewind": true,
+      "read_receipts": false,
+      "incognito": true,
+      "travel_mode": true,
+      "advanced_filters": true,
+      "profile_views": false,
+      "second_look": false,
+      "priority_likes": false
+    },
+    "quotas": {
+      "likes": {
+        "limit": -1,
+        "used": 12,
+        "resetsAt": "2026-11-07T00:00:00.000Z"
+      },
+      "superlikes": {
+        "limit": 5,
+        "used": 3,
+        "resetsAt": "2026-11-10T00:00:00.000Z"
+      }
+    },
+    "wallet": {
+      "superlike": 0,
+      "boost": 1,
+      "spotlight": 0,
+      "dm": 3
+    }
+  }
+}

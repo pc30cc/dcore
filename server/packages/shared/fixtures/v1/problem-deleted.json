@@ -1,0 +1,8 @@
+{
+  "type": "urn:problem-type:account-deleted",
+  "title": "Account deleted",
+  "status": 403,
+  "code": "account_deleted",
+  "requestId": "req-1",
+  "restorableUntil": "2026-12-06T09:14:03.120Z"
+}

@@ -1,0 +1,8 @@
+{
+  "type": "urn:problem-type:maintenance",
+  "title": "Under maintenance",
+  "status": 503,
+  "code": "maintenance",
+  "requestId": "req-1",
+  "message": "Back in a few minutes."
+}

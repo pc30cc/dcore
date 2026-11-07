@@ -1,0 +1,80 @@
+name: server
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'server/**'
+      - 'brands/**'
+      - '.github/workflows/server.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'brands/**'
+      - '.github/workflows/server.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: server
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Integration suites fail instead of skipping when PostgreSQL or Redis is missing.
+      REQUIRE_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: server/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: server/.nvmrc
+          cache: pnpm
+          cache-dependency-path: server/pnpm-lock.yaml
+
+      # PostgreSQL 17 + PostGIS + pg_stat_statements, PgBouncer (transaction mode) and redis-server, natively.
+      - name: Start PostgreSQL, PgBouncer and Redis
+        run: |
+          bash infra/dev/native.sh up
+          bash infra/dev/native.sh env | sed -n 's/^export //p' >> "$GITHUB_ENV"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      # On an empty database: dry-run, then up, then a second up that must apply nothing.
+      - name: Migrations
+        run: |
+          PGPASSWORD="postgres" psql -h 127.0.0.1 -p 54317 -U postgres -v ON_ERROR_STOP=1 -q \
+            -c 'CREATE DATABASE ci_migrate OWNER app'
+          PGPASSWORD="postgres" psql -h 127.0.0.1 -p 54317 -U postgres -d ci_migrate -v ON_ERROR_STOP=1 -q \
+            -c 'CREATE EXTENSION postgis'
+          export MIGRATION_DATABASE_URL=postgres://app:app@127.0.0.1:54317/ci_migrate
+          pnpm --filter @app/db migrate:dev dry-run
+          test "$(pnpm --silent --filter @app/db migrate:dev status | grep -c '^pending:')" -gt 0
+          pnpm --filter @app/db migrate:dev up
+          pnpm --filter @app/db migrate:dev up | tee /tmp/second-up.txt
+          grep -q 'applied 0 file(s)' /tmp/second-up.txt
+          pnpm --filter @app/db migrate:dev status
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm --filter @app/shared --filter @app/config --filter @app/db --filter @app/api --filter @app/worker build

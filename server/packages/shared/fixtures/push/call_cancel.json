@@ -1,0 +1,5 @@
+{
+  "type": "call_cancel",
+  "callId": "1287390234923430001",
+  "reason": "answered_elsewhere"
+}

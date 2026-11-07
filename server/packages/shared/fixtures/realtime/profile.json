@@ -1,0 +1,14 @@
+{
+  "t": "profile",
+  "v": 1,
+  "id": "1287390234923417618",
+  "at": "2026-11-06T09:14:03.120Z",
+  "d": {
+    "photo": {
+      "id": "1287390234923410011",
+      "status": "rejected",
+      "rejectReason": "A face must be visible."
+    },
+    "textState": "approved"
+  }
+}

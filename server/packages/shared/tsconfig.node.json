@@ -1,0 +1,11 @@
+{
+  // `@app/shared/server` (Node only: crypto, sockets, provider clients) and
+  // the tests that need Node (fixtures and migrations read from disk).
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src/server", "test/server"]
+}

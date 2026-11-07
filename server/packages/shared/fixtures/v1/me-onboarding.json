@@ -1,0 +1,22 @@
+{
+  "id": "bq3vx7k2mze4a",
+  "status": "onboarding",
+  "onboardingStep": 1,
+  "store": "play",
+  "billingRef": "dr4tz2m5kpa7c",
+  "notifications": {
+    "messages": true,
+    "matches": true,
+    "likes": false,
+    "calls": true,
+    "offers": false,
+    "previews": true
+  },
+  "flags": {},
+  "moderation": [],
+  "consentsDue": [
+    "terms",
+    "privacy",
+    "guidelines"
+  ]
+}

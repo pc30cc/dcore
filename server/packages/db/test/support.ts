@@ -16,6 +16,16 @@ if (!TEST_DATABASE_URL && process.env['REQUIRE_INTEGRATION'] === '1') {
 
 export const hasDatabase = Boolean(TEST_DATABASE_URL);
 
+/**
+ * Under REQUIRE_INTEGRATION=1 a suite that cannot set up what it checks
+ * (PostGIS in a fresh database, the group roles) fails instead of skipping.
+ */
+export function requireSetup(ok: boolean, what: string): void {
+  if (!ok && process.env['REQUIRE_INTEGRATION'] === '1') {
+    throw new Error(`REQUIRE_INTEGRATION=1 but ${what} (TEST_DATABASE_URL must name a superuser)`);
+  }
+}
+
 export interface TempDatabase {
   url: string;
   name: string;
