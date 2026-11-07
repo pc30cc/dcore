@@ -11,8 +11,8 @@
 # uploaded there with AWS Signature V4 (BACKUP_S3_ACCESS_KEY_ID,
 # BACKUP_S3_SECRET_ACCESS_KEY, BACKUP_S3_REGION): the copy off this server.
 #
-# Restore: gpg --decrypt <file> | pg_restore -d <database> (see the owner's
-# guide). This is a daily logical copy; point-in-time recovery needs WAL
+# Restore: gpg --decrypt <file> | pg_restore -d <database>. This is a daily
+# logical copy; point-in-time recovery needs WAL
 # archiving, which this image does not configure.
 set -Eeuo pipefail
 
