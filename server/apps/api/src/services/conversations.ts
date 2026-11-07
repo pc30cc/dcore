@@ -106,7 +106,7 @@ export class ConversationService {
         await cacheMatchState(app.redis, app.keys, state).catch((error: unknown) => this.log.warn({ err: error }, 'conversations: state not cached'));
       }
     }
-    const active = page.map((p) => byId.get(p.id)).filter((m): m is MatchState => m !== undefined && m.state === 1);
+    const active = page.map((p) => byId.get(p.id)).filter((m): m is MatchState => m?.state === 1);
     const ended = page.filter((p) => !active.some((m) => m.id === p.id)).map((p) => p.id);
     // Ended or unknown conversations leave the list (the next read is already right).
     if (ended.length > 0) await app.redis.zrem(app.keys.conversationList(userId), ...ended).catch(() => undefined);
@@ -184,9 +184,12 @@ export class ConversationService {
     if (userIds.length === 0) return out;
     const unique = [...new Set(userIds)];
     const versions = await app.redis.mget(...unique.map((id) => app.keys.meVersion(id)));
-    const keyed = unique.map((id, i) => ({ id, version: versions[i] ? Number(versions[i]) : null }));
-    const withVersion = keyed.filter((k) => k.version !== null && Number.isSafeInteger(k.version) && (k.version ?? 0) > 0);
-    const values = withVersion.length > 0 ? await app.cache.mgetBuffer(...withVersion.map((k) => app.keys.peerSummary(k.id, k.version as number))) : [];
+    const withVersion: { id: string; version: number }[] = [];
+    unique.forEach((id, i) => {
+      const version = Number(versions[i] ?? 0);
+      if (Number.isSafeInteger(version) && version > 0) withVersion.push({ id, version });
+    });
+    const values = withVersion.length > 0 ? await app.cache.mgetBuffer(...withVersion.map((k) => app.keys.peerSummary(k.id, k.version))) : [];
     withVersion.forEach((k, i) => {
       const value = values[i];
       const card = value ? decodeCard(value) : null;

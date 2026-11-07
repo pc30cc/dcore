@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { conversationSchema, likesPageSchema, swipesResponseSchema, type Conversation } from '@app/shared';
 import { FakeRealtimePublisher } from '@app/shared/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -44,8 +43,12 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
     await db?.drop();
   });
 
+  const seeded: SeededUser[] = [];
+
   async function person(name = 'Sam', options: Parameters<typeof seedUser>[1] = {}): Promise<SeededUser> {
-    return seedUser(h, { name, ...options });
+    const user = await seedUser(h, { name, ...options });
+    seeded.push(user);
+    return user;
   }
 
   async function swipe(user: SeededUser, swipes: unknown[]) {
@@ -111,7 +114,7 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
       expect(json(matched)['quotas']).toMatchObject({ likes: { limit: 25, used: 1 } });
 
       // The worker announces it to both, once, under the match id.
-      await until(() => eventsOf(realtime, a.publicUid, 'conversation').some((e) => e.id === conversation.id));
+      await until(() => [a, b].every((u) => eventsOf(realtime, u.publicUid, 'conversation').some((e) => e.id === conversation.id)));
       expect(eventsOf(realtime, a.publicUid, 'conversation').filter((e) => e.id === conversation.id)).toHaveLength(1);
       expect(eventsOf(realtime, b.publicUid, 'conversation').filter((e) => e.id === conversation.id)).toHaveLength(1);
     });
@@ -127,7 +130,7 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
 
       const first = await call(h, '/v1/conversations', { token: a.token });
       expect(first.statusCode).toBe(200);
-      const etag = first.headers['etag'] as string;
+      const etag = String(first.headers['etag']);
       const items = (json(first)['items'] as Conversation[]).map((c) => c.id);
       expect(items).toContain(id);
       // Peer summaries were read once; now everything is warm.
@@ -356,7 +359,7 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
 
       // see-likes (a plus subscription in this store): every card, the liked item and the comment.
       await db.sql.query(`INSERT INTO subscriptions (user_id, started_at, expires_at, plan_id, store, status) VALUES ($1, now(), now() + interval '30 days', 2, 0, 4)`, [me.id]);
-      await h.cache.del(h.app.keys.entitlements(me.id, 2));
+      await h.app.cache.del(h.app.keys.entitlements(me.id, 2));
       await until(async () => Number((await row<{ n: string }>(db, `SELECT count(*)::text AS n FROM likes WHERE target_id = $1`, [me.id])).n) === 4);
       await call(h, '/v1/likes', { token: me.token });
       const paid = await call(h, '/v1/likes', { token: me.token });
@@ -404,10 +407,10 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
   });
 
   it('never sends a raw user id in any answer of this suite', () => {
-    const ids = h.bodies.join('\n');
-    for (const match of ids.matchAll(/"id":"([0-9]+)"/g)) {
-      expect(match[1]!.length > 0).toBe(true);
-    }
-    expect(randomBytes(1).length).toBe(1);
+    expect(seeded.length).toBeGreaterThan(200);
+    const bodies = h.bodies.join('\n');
+    for (const user of seeded) expect(bodies.includes(user.id), user.publicUid).toBe(false);
+    const published = JSON.stringify(realtime.published);
+    for (const user of seeded) expect(published.includes(user.id), user.publicUid).toBe(false);
   });
 });

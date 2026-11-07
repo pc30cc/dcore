@@ -64,7 +64,7 @@ export function matchEntryHandler(context: JobContext, options: { graceMs?: numb
     let row: MatchRow | null = await createMatch(services.pg, { matchId: entry.matchId, actorId: entry.actorId, targetId: entry.targetId, source });
     // No row: the pair may not match, or another writer's INSERT of it was not committed when this one began.
     row ??= await matchOfPair(services.pg, entry.actorId, entry.targetId);
-    if (!row || row.id !== entry.matchId || row.state !== 1) {
+    if (row?.id !== entry.matchId || row.state !== 1) {
       if (options.stats) options.stats.skipped += 1;
       log.info({ matchId: entry.matchId, existing: row?.id === entry.matchId ? 'ended' : row ? 'other' : 'refused' }, 'match entry: nothing to announce');
       return;

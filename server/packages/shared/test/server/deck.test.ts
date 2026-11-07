@@ -139,7 +139,7 @@ describe.skipIf(!hasRedis)('deck state in Valkey (prefixed keys)', () => {
     expect(filter.size).toBe(2);
     expect(ids.every((id) => filter.has(id))).toBe(true);
     // A full period takes nothing more.
-    await redis.set(keys.seenCount('9101', p), SEEN_PERIOD_CAPACITY);
+    await redis.set(keys.seenCount('9101', p), String(SEEN_PERIOD_CAPACITY));
     expect(await addSeen(redis, keys, '9101', ['77'], { returnDays: 30, now })).toEqual({ added: 0, count: SEEN_PERIOD_CAPACITY, full: true });
   });
 
@@ -198,9 +198,9 @@ describe.skipIf(!hasRedis)('deck state in Valkey (prefixed keys)', () => {
 
   it('remembers hides for the life of a queue only, trimmed in the same write', async () => {
     const now = Date.now();
-    await redis.zadd(keys.accountsHidden(), now - HIDDEN_WINDOW_MS - 1_000, 'old');
+    await redis.zadd(keys.accountsHidden(), String(now - HIDDEN_WINDOW_MS - 1_000), 'old');
     await markHiddenFromDecks(redis, keys, ['11', '12'], now);
-    expect(await redis.zrange(keys.accountsHidden(), 0, -1, 'WITHSCORES')).toEqual(['11', String(now), '12', String(now)]);
+    expect(await redis.zrange(keys.accountsHidden(), '0', '-1', 'WITHSCORES')).toEqual(['11', String(now), '12', String(now)]);
     await markHiddenFromDecks(redis, keys, [], now);
   });
 

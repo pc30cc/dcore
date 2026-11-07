@@ -173,7 +173,8 @@ describe('the score', () => {
     expect(order).toHaveLength(12);
     expect(new Set(order).size).toBe(12);
     let runs = 0;
-    for (let i = 1; i < order.length; i += 1) if (order[i]!.charAt(0) === order[i - 1]!.charAt(0)) runs += 1;
+    const group = (id: string) => (id.startsWith('a') ? 'a' : 'b');
+    for (let i = 1; i < order.length; i += 1) if (group(order[i]!) === group(order[i - 1]!)) runs += 1;
     expect(runs).toBeLessThanOrEqual(2);
     // A clearly better person still comes first.
     const lone = diversify([...people, { input: { ...base, userId: 'top', ageBand: 5, cityId: 1, attrs: [1, 2] }, score: 5 }]);

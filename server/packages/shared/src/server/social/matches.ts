@@ -131,7 +131,7 @@ export async function readConversationList(
   keys: KeyBuilder,
   userId: string,
   limit: number,
-  before?: { score: number; id: string } | undefined,
+  before?: { score: number; id: string },
 ): Promise<ConversationListPage> {
   const list = keys.conversationList(userId);
   const [marker, raw] = await Promise.all([
@@ -144,7 +144,7 @@ export async function readConversationList(
   if (marker === null) return { complete: false, items: [] };
   const items: { id: string; score: number }[] = [];
   for (let i = 0; i + 1 < raw.length; i += 2) {
-    const id = raw[i] as string;
+    const id = raw[i]!;
     const score = Number(raw[i + 1]);
     if (id === LIST_COMPLETE) continue;
     if (before && (score > before.score || (score === before.score && BigInt(id) >= BigInt(before.id)))) continue;

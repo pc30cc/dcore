@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { execute, many, maybeOne, sql, type Queryable } from '../query.js';
+import { execute, many, maybeOne, sql } from '../query.js';
 import { defineQuery } from './define.js';
 
 /**
