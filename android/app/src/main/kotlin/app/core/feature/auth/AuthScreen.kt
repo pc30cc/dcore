@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -37,10 +38,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
@@ -58,6 +62,7 @@ import app.core.feature.auth.welcome.WelcomeLayout
 import app.core.feature.auth.welcome.WelcomePalette
 import app.core.feature.auth.welcome.WelcomeTexts
 import app.core.feature.auth.welcome.rememberBubbleArt
+import app.core.i18n.APP_NAME_PLACEHOLDER
 import app.core.i18n.AppLanguage
 import app.core.i18n.AppLocales
 import app.core.i18n.LocalAppName
@@ -138,7 +143,8 @@ fun AuthRoute() {
             config = config?.welcome,
             language = language.tag,
             fallbackEyebrow = fallbackEyebrow,
-            fallbackHeadline = "*$APP_NAME_TOKEN*",
+            // The name alone, emphasised.
+            fallbackHeadline = "*$APP_NAME_PLACEHOLDER*",
             fallbackSubtitle = fallbackSubtitle,
         )
     }
@@ -149,7 +155,7 @@ fun AuthRoute() {
     ).map { if (persian) it else it.uppercase(java.util.Locale.forLanguageTag(language.tag)) }
     val art = rememberBubbleArt(content.pictures, labels, persian)
     val density = LocalDensity.current.density
-    val field = remember(density) { BubbleField(density) }
+    val field = remember(density, labels.size) { BubbleField(density, words = labels.size) }
     val sheetOpen = state.stage != AuthStage.Welcome
 
     SceneSystemBars(lightIcons = sheetOpen)
@@ -187,8 +193,6 @@ fun AuthRoute() {
         Notices()
     }
 }
-
-private const val APP_NAME_TOKEN = "{appName}"
 
 private const val INTEGRITY_WAIT_MS = 3_000L
 
@@ -252,12 +256,13 @@ private fun Notices() {
 /** "By continuing you agree to the Terms and the Privacy Policy", both as links, in white on the scene. */
 @Composable
 private fun LegalLine(termsUrl: String, privacyUrl: String) {
-    val terms = brandString(R.string.legal_terms)
-    val privacy = brandString(R.string.legal_privacy)
+    // A link's words stay on one line (no-break spaces): a link split over two lines reads as two.
+    val terms = brandString(R.string.legal_terms).replace(' ', '\u00A0')
+    val privacy = brandString(R.string.legal_privacy).replace(' ', '\u00A0')
     // The raw template, unformatted: its %1$s and %2$s become links below. Formatting it
     // with no arguments (brandString) throws MissingFormatArgumentException.
     val template = brandText(stringResource(R.string.auth_legal_notice_links), LocalAppName.current)
-    val linkStyle = TextLinkStyles(SpanStyle(color = WelcomePalette.Headline, fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline))
+    val linkStyle = TextLinkStyles(SpanStyle(color = WelcomePalette.Headline, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline))
     val text = buildAnnotatedString {
         val parts = template.split("%1\$s", "%2\$s")
         val order = Regex("%([12])\\\$s").findAll(template).map { it.groupValues[1] }.toList()
@@ -270,10 +275,10 @@ private fun LegalLine(termsUrl: String, privacyUrl: String) {
     }
     Text(
         text,
-        style = MaterialTheme.typography.bodySmall,
+        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 1.45.em, lineBreak = LineBreak.Heading),
         color = WelcomePalette.Terms,
         textAlign = TextAlign.Center,
-        modifier = Modifier.padding(top = 4.dp, start = 8.dp, end = 8.dp),
+        modifier = Modifier.widthIn(max = 320.dp).padding(top = 4.dp, start = 8.dp, end = 8.dp),
     )
 }
 

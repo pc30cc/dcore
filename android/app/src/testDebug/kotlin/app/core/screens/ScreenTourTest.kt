@@ -153,7 +153,7 @@ class ScreenTourTest {
         capture("welcome")
         compose.onNodeWithText(str(R.string.welcome_sign_up)).performClick()
 
-        waitFor(hasText(str(R.string.privacy_title)))
+        waitFor(hasText(Headline.plain(str(R.string.auth_sheet_privacy_title))))
         capture("privacy")
         compose.onNodeWithText(str(R.string.privacy_accept)).performClick()
 

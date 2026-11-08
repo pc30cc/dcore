@@ -15,7 +15,8 @@ import androidx.core.graphics.createBitmap
 /**
  * Illustrated people for the bubbles when the brand ships no pictures: a
  * warm gradient behind a simple figure (head, hair, shoulders), drawn with
- * shapes on a canvas. No photograph of anyone is involved.
+ * shapes on a canvas and framed close, as a portrait. No photograph of
+ * anyone is involved.
  *
  * Drawn on a 100 x 100 grid scaled to the bitmap; each index is a fixed
  * combination, so the same index always looks the same.
@@ -54,6 +55,10 @@ object GeneratedFaces {
 
         fun draw() {
             background()
+            // Close up, as a portrait in a bubble: the head about half the square, the shoulders cut by the rim.
+            canvas.translate(50f, 47f)
+            canvas.scale(ZOOM, ZOOM)
+            canvas.translate(-50f, -47f)
             backHair()
             body()
             head()
@@ -190,6 +195,8 @@ object GeneratedFaces {
         private fun shade(@ColorInt color: Int, amount: Float): Int = ColorUtils.blendARGB(color, 0xFF3A1A10.toInt(), amount)
     }
 
+    private const val ZOOM = 1.6f
+
     private const val SHORT = 0
     private const val LONG = 1
     private const val BUN = 2
@@ -206,9 +213,9 @@ object GeneratedFaces {
         intArrayOf(0xFFFFC7AE.toInt(), 0xFFF0775A.toInt()),
         intArrayOf(0xFFFFDDA6.toInt(), 0xFFEF9A42.toInt()),
         intArrayOf(0xFFFBBCD2.toInt(), 0xFFD65A82.toInt()),
-        intArrayOf(0xFFDCCBFF.toInt(), 0xFF8F7AE6.toInt()),
-        intArrayOf(0xFFBFE0F6.toInt(), 0xFF5F9DD8.toInt()),
-        intArrayOf(0xFFC4EDD6.toInt(), 0xFF51AF8D.toInt()),
+        intArrayOf(0xFFF8D2E0.toInt(), 0xFFD27A9A.toInt()),
+        intArrayOf(0xFFFFE2C6.toInt(), 0xFFF29A5E.toInt()),
+        intArrayOf(0xFFFFD0C8.toInt(), 0xFFE0706A.toInt()),
         intArrayOf(0xFFF7CFDC.toInt(), 0xFFAA5A80.toInt()),
         intArrayOf(0xFFF6DBBB.toInt(), 0xFFC8734F.toInt()),
     )

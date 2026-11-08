@@ -31,12 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
@@ -45,6 +43,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -147,7 +146,7 @@ fun WelcomeLayout(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(52.dp))
                 Column(
                     Modifier
                         .onGloballyPositioned {
@@ -161,33 +160,54 @@ fun WelcomeLayout(
                         },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Eyebrow(texts.eyebrow, persian, language, WelcomePalette.scrim(colors).copy(alpha = remember(colors) { WelcomePalette.eyebrowPill(colors) }))
-                    Spacer(Modifier.height(14.dp))
+                    Eyebrow(
+                        texts.eyebrow,
+                        persian,
+                        language,
+                        Modifier.onGloballyPositioned {
+                            coords.eyebrow.place = it
+                            coords.refresh(geometry)
+                        },
+                        onTextLayout = {
+                            coords.eyebrow.text = it
+                            coords.refresh(geometry)
+                        },
+                    )
+                    Spacer(Modifier.height(10.dp))
                     HeadlineText(
                         texts.headline,
                         persian,
                         Modifier.onGloballyPositioned {
-                            coords.headline = it
+                            coords.headline.place = it
+                            coords.refresh(geometry)
+                        },
+                        onTextLayout = {
+                            coords.headline.text = it
                             coords.refresh(geometry)
                         },
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     Text(
                         texts.subtitle,
                         style = TextStyle(
                             fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
-                            fontSize = if (persian) 14.sp else 15.sp,
-                            lineHeight = if (persian) 1.75.em else 1.42.em,
+                            fontSize = if (persian) 13.sp else 14.sp,
+                            lineHeight = if (persian) 1.7.em else 1.4.em,
                             color = WelcomePalette.Subtitle,
                             textAlign = TextAlign.Center,
+                            lineBreak = LineBreak.Heading,
                             shadow = Glow,
                         ),
                         modifier = Modifier
-                            .widthIn(max = 330.dp)
+                            .widthIn(max = 300.dp)
                             .onGloballyPositioned {
-                                coords.subtitle = it
+                                coords.subtitle.place = it
                                 coords.refresh(geometry)
                             },
+                        onTextLayout = {
+                            coords.subtitle.text = it
+                            coords.refresh(geometry)
+                        },
                     )
                 }
                 // The bubbles' band.
@@ -200,12 +220,12 @@ fun WelcomeLayout(
                             coords.controls = it
                             coords.refresh(geometry)
                         }
-                        .padding(bottom = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                        .padding(bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     ScenePill(texts.signIn, WelcomePalette.LightPill, WelcomePalette.OnLightPill, null, enabled, onSignIn)
-                    ScenePill(texts.signUp, WelcomePalette.DarkPill, WelcomePalette.OnDarkPill, BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)), enabled, onSignUp)
+                    ScenePill(texts.signUp, WelcomePalette.DarkGlass, WelcomePalette.OnDarkPill, DarkPillEdge, enabled, onSignUp)
                     below()
                 }
             }
@@ -218,66 +238,85 @@ private class Coordinates {
     var root: LayoutCoordinates? = null
     var text: LayoutCoordinates? = null
     var controls: LayoutCoordinates? = null
-    var headline: LayoutCoordinates? = null
-    var subtitle: LayoutCoordinates? = null
+    val eyebrow = Lines()
+    val headline = Lines()
+    val subtitle = Lines()
+
+    /** A text's place and its laid-out lines. */
+    class Lines {
+        var place: LayoutCoordinates? = null
+        var text: TextLayoutResult? = null
+    }
 
     fun refresh(geometry: SceneGeometry) {
         val root = root?.takeIf { it.isAttached } ?: return
         fun rect(of: LayoutCoordinates?): Rect? = of?.takeIf { it.isAttached }?.let { root.localBoundingBoxOf(it, clipBounds = false) }
+        // Each line as wide as its glyphs (a wrapped text's box is as wide as it was allowed to be).
+        fun lines(of: Lines): List<Rect> {
+            val place = of.place?.takeIf { it.isAttached } ?: return emptyList()
+            val layout = of.text ?: return emptyList()
+            val origin = root.localPositionOf(place, Offset.Zero)
+            return List(layout.lineCount) { i ->
+                Rect(origin.x + layout.getLineLeft(i), origin.y + layout.getLineTop(i), origin.x + layout.getLineRight(i), origin.y + layout.getLineBottom(i))
+            }
+        }
         geometry.update(
             text = rect(text) ?: Rect.Zero,
             controls = rect(controls),
-            headline = rect(headline) ?: Rect.Zero,
-            subtitle = rect(subtitle) ?: Rect.Zero,
+            eyebrow = lines(eyebrow),
+            headline = lines(headline),
+            subtitle = lines(subtitle),
         )
     }
 }
 
-/** The small line above the headline, letter-spaced capitals (not in Persian), on a pill of dark glass that keeps it readable on the sky. */
+/** The small line above the headline: letter-spaced capitals (not in Persian), readable through the scene's glow. */
 @Composable
-private fun Eyebrow(text: String, persian: Boolean, language: String, glass: Color) {
-    val pill = RoundedCornerShape(Radius.pill)
+private fun Eyebrow(text: String, persian: Boolean, language: String, modifier: Modifier, onTextLayout: (TextLayoutResult) -> Unit) {
     Text(
         if (persian) text else text.uppercase(Locale.forLanguageTag(language)),
         style = TextStyle(
             fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
-            fontSize = if (persian) 13.sp else 11.sp,
+            fontSize = if (persian) 12.sp else 11.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = if (persian) 0.em else 0.24.em,
+            letterSpacing = if (persian) 0.em else 0.22.em,
             color = WelcomePalette.Eyebrow,
             textAlign = TextAlign.Center,
+            shadow = Glow,
         ),
-        modifier = Modifier
-            .clip(pill)
-            .background(glass)
-            .border(1.dp, Color.White.copy(alpha = 0.16f), pill)
-            .padding(horizontal = 14.dp, vertical = 5.dp),
+        modifier = modifier,
+        onTextLayout = onTextLayout,
     )
 }
+
+/** Sign up's edge: a light line at its top fading out toward its bottom, like the rim of dark glass. */
+private val DarkPillEdge = BorderStroke(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f), Color.White.copy(alpha = 0.05f))))
 
 /** A soft dark glow under white text on the scene. */
 private val Glow = Shadow(color = Color(0x592B0A0E), offset = Offset(0f, 2f), blurRadius = 18f)
 
 @Composable
-private fun HeadlineText(source: String, persian: Boolean, modifier: Modifier) {
+private fun HeadlineText(source: String, persian: Boolean, modifier: Modifier, onTextLayout: (TextLayoutResult) -> Unit) {
     val size = if (persian) 28.sp else 32.sp
     val text = remember(source, persian) {
-        WelcomeType.headline(source, WelcomeType.emphasis(persian, if (persian) 33.sp else 39.sp))
+        WelcomeType.headline(source, WelcomeType.emphasis(persian, if (persian) 30.sp else 36.sp))
     }
     Text(
         text,
         style = TextStyle(
             fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
             fontSize = size,
-            fontWeight = if (persian) FontWeight.Bold else FontWeight.SemiBold,
-            lineHeight = if (persian) 1.5.em else 1.14.em,
-            letterSpacing = if (persian) 0.em else (-0.01).em,
+            fontWeight = FontWeight.Bold,
+            lineHeight = if (persian) 1.5.em else 1.1.em,
+            letterSpacing = if (persian) 0.em else (-0.02).em,
             color = WelcomePalette.Headline,
             textAlign = TextAlign.Center,
             lineBreak = LineBreak.Heading,
             shadow = Glow,
         ),
-        modifier = modifier.widthIn(max = 380.dp).semantics { heading() },
+        // Two lines, as the Latin one: the Persian runs shorter per word.
+        modifier = modifier.widthIn(max = if (persian) 300.dp else 380.dp).semantics { heading() },
+        onTextLayout = onTextLayout,
     )
 }
 
@@ -295,8 +334,8 @@ private fun ScenePill(text: String, container: Color, content: Color, border: Bo
             disabledContainerColor = container.copy(alpha = 0.6f),
             disabledContentColor = content.copy(alpha = 0.6f),
         ),
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
     ) {
         Text(text, style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center))
     }
@@ -308,7 +347,7 @@ private fun smooth(x: Float): Float {
 }
 
 /** How long the first moment takes to come into focus, and where in it the blur is gone. */
-private const val FOCUS_MS = 1_100
-private const val FOCUSED_AT = 0.86f
+private const val FOCUS_MS = 1_400
+private const val FOCUSED_AT = 0.75f
 private const val MAX_BLUR_DP = 22f
 private const val BLUR_LEVELS = 14

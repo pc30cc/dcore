@@ -16,6 +16,7 @@
     <string name="auth_sheet_signup_body">Bir dakikadan kısa sürer. Numaranıza SMS ile bir kod göndereceğiz.</string>
     <string name="auth_sheet_signin_body">Numaranızı girin, giriş için size SMS ile bir kod gönderelim.</string>
     <string name="auth_sheet_continue">Devam et</string>
+    <string name="auth_sheet_privacy_title">*Gizliliğiniz*</string>
     <string name="auth_phone_placeholder">Telefon numarası</string>
     <string name="auth_google_no_account">Bu telefonda Google hesabı yok. Ayarlar\'dan bir hesap ekleyin veya telefon numaranızla devam edin.</string>
     <string name="auth_google_unavailable">Google ile giriş şu anda kullanılamıyor. Telefon numaranızla devam edin.</string>

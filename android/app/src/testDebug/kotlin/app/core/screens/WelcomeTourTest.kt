@@ -141,7 +141,7 @@ class WelcomeTourTest {
         compose.onNodeWithText(signUp).performClick()
 
         // A new install: the privacy notice comes first, in the sheet.
-        waitFor(hasText(str(R.string.privacy_title)))
+        waitFor(hasText(Headline.plain(str(R.string.auth_sheet_privacy_title))))
         capture("signup-privacy")
         compose.onNodeWithText(str(R.string.privacy_accept)).performClick()
 

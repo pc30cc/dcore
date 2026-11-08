@@ -15,6 +15,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -80,12 +83,13 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -107,6 +111,7 @@ import app.core.ui.theme.LocalSemanticColors
 import app.core.ui.theme.Motion
 import app.core.ui.theme.Radius
 import app.core.ui.theme.Space
+import kotlinx.coroutines.delay
 
 /** Which button opened the sheet: the steps are the same, the greeting differs. */
 enum class SheetIntent { SignIn, SignUp }
@@ -128,7 +133,8 @@ fun AuthSheet(
     val visible = state.stage != AuthStage.Welcome
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = visible, enter = fadeIn(tween(Motion.MEDIUM_MS)), exit = fadeOut(tween(Motion.MEDIUM_MS))) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+            // A light dim: the scene above the sheet stays bright.
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.20f)))
         }
         AnimatedVisibility(
             visible = visible,
@@ -140,9 +146,9 @@ fun AuthSheet(
                     Modifier
                         .fillMaxSize()
                         .statusBarsPadding()
-                        .padding(top = 10.dp)
-                        .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                        .background(Brush.verticalGradient(listOf(WelcomePalette.SheetTop, WelcomePalette.SheetBottom)))
+                        .padding(top = 16.dp)
+                        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                        .background(Brush.verticalGradient(*WelcomePalette.sheetStops))
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime).only(WindowInsetsSides.Bottom)),
                 ) {
                     Box(
@@ -173,7 +179,7 @@ fun AuthSheet(
                         modifier = Modifier.weight(1f),
                     ) { stage ->
                         when (stage) {
-                            AuthStage.Privacy -> PrivacyStep(state, model, art)
+                            AuthStage.Privacy -> PrivacyStep(state, model, language, art)
                             AuthStage.Code -> CodeStep(state, model, language, art)
                             else -> PhoneStep(state, model, intent, language, art)
                         }
@@ -207,6 +213,7 @@ private fun SheetStep(
     actions: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val backLabel = brandString(R.string.action_back)
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -217,15 +224,17 @@ private fun SheetStep(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(Modifier.fillMaxWidth().padding(top = Space.sm)) {
-                Surface(
-                    onClick = onBack,
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.12f),
-                    contentColor = Color.White,
-                    modifier = Modifier.size(Space.minTouch),
+                // A small glass circle, inside a full-size touch target.
+                Box(
+                    Modifier
+                        .size(Space.minTouch)
+                        .clip(CircleShape)
+                        .clickable(onClick = onBack, role = Role.Button, onClickLabel = null)
+                        .semantics { contentDescription = backLabel },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = brandString(R.string.action_back), modifier = Modifier.size(28.dp))
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                     }
                 }
             }
@@ -233,7 +242,7 @@ private fun SheetStep(
             Spacer(Modifier.height(Space.md))
             Text(
                 title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 25.sp, fontWeight = FontWeight.Bold, lineHeight = 1.3.em),
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 1.3.em),
                 color = WelcomePalette.SheetText,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.semantics { heading() },
@@ -242,7 +251,7 @@ private fun SheetStep(
                 Spacer(Modifier.height(Space.sm))
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(lineBreak = LineBreak.Heading),
                     color = WelcomePalette.SheetTextSecondary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.widthIn(max = 340.dp),
@@ -267,13 +276,13 @@ private fun SheetStep(
 /** Three faces in overlapping bubbles: the sheet's small mark. Decorative. */
 @Composable
 private fun FaceCluster(art: BubbleArt) {
-    Canvas(Modifier.padding(top = Space.xs).size(width = 92.dp, height = 46.dp)) {
+    Canvas(Modifier.padding(top = Space.xs).size(width = 72.dp, height = 34.dp)) {
         val r = size.height * 0.40f
         val cy = size.height / 2f
         drawIntoCanvas { canvas ->
             val c = canvas.nativeCanvas
-            art.drawBadge(c, size.width / 2f - r * 1.15f, cy + r * 0.08f, r * 0.9f, 2, 40f)
-            art.drawBadge(c, size.width / 2f + r * 1.15f, cy + r * 0.08f, r * 0.9f, 4, 200f)
+            art.drawBadge(c, size.width / 2f - r * 0.95f, cy + r * 0.08f, r * 0.9f, 2, 40f)
+            art.drawBadge(c, size.width / 2f + r * 0.95f, cy + r * 0.08f, r * 0.9f, 4, 200f)
             art.drawBadge(c, size.width / 2f, cy, r * 1.05f, 0, 120f)
         }
     }
@@ -291,8 +300,9 @@ private fun SheetButton(text: String, onClick: () -> Unit, enabled: Boolean = tr
         colors = ButtonDefaults.buttonColors(
             containerColor = WelcomePalette.LightPill,
             contentColor = WelcomePalette.OnLightPill,
-            disabledContainerColor = WelcomePalette.LightPill.copy(alpha = 0.34f),
-            disabledContentColor = WelcomePalette.OnLightPill.copy(alpha = 0.62f),
+            // Still a light pill while it waits, its word faded.
+            disabledContainerColor = WelcomePalette.LightPill.copy(alpha = 0.80f),
+            disabledContentColor = WelcomePalette.DisabledOnLightPill,
         ),
     )
 }
@@ -306,7 +316,7 @@ private fun SheetLink(text: String, onClick: () -> Unit, enabled: Boolean = true
         }
         Text(
             text,
-            style = MaterialTheme.typography.labelLarge.copy(textDecoration = TextDecoration.Underline),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
             color = WelcomePalette.SheetText,
         )
     }
@@ -315,9 +325,9 @@ private fun SheetLink(text: String, onClick: () -> Unit, enabled: Boolean = true
 // MARK: - Privacy
 
 @Composable
-private fun PrivacyStep(state: AuthUiState, model: AuthViewModel, art: BubbleArt) {
+private fun PrivacyStep(state: AuthUiState, model: AuthViewModel, language: AppLanguage, art: BubbleArt) {
     SheetStep(
-        title = AnnotatedString(brandString(R.string.privacy_title)),
+        title = sheetTitle(brandString(R.string.auth_sheet_privacy_title), language),
         subtitle = brandString(R.string.privacy_intro),
         onBack = { model.back() },
         art = art,
@@ -344,10 +354,15 @@ private fun PhoneStep(state: AuthUiState, model: AuthViewModel, intent: SheetInt
     }
     val parsed = otp.parsed
     val invalidShown = parsed is PhoneParse.Invalid && PhoneNumbers.national(otp.phoneInput).length >= 4
-    val persian = language == AppLanguage.FA
     val title = brandString(if (intent == SheetIntent.SignUp) R.string.auth_sheet_signup_title else R.string.auth_sheet_signin_title)
+    // The number field takes the focus once the sheet has risen, so the keypad comes up under Continue.
+    val numberFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(Motion.MEDIUM_MS.toLong())
+        runCatching { numberFocus.requestFocus() }
+    }
     SheetStep(
-        title = WelcomeType.headline(title, WelcomeType.emphasis(persian, if (persian) 29.sp else 31.sp)),
+        title = sheetTitle(title, language),
         subtitle = brandString(if (intent == SheetIntent.SignUp) R.string.auth_sheet_signup_body else R.string.auth_sheet_signin_body),
         onBack = { model.back() },
         art = art,
@@ -379,6 +394,7 @@ private fun PhoneStep(state: AuthUiState, model: AuthViewModel, intent: SheetInt
         PhoneRow(
             otp = otp,
             language = language,
+            focus = numberFocus,
             isError = invalidShown || otp.sendError == SendError.Invalid,
             onPick = { picking = true },
             onChange = model::phoneChanged,
@@ -422,6 +438,7 @@ private fun PhoneStep(state: AuthUiState, model: AuthViewModel, intent: SheetInt
 private fun PhoneRow(
     otp: OtpState,
     language: AppLanguage,
+    focus: FocusRequester,
     isError: Boolean,
     onPick: () -> Unit,
     onChange: (String) -> Unit,
@@ -435,11 +452,11 @@ private fun PhoneRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
+                .heightIn(min = 52.dp)
                 .clip(pill)
                 .background(WelcomePalette.SheetField)
-                .border(1.dp, if (isError) DarkSemantic.danger else WelcomePalette.SheetFieldBorder, pill)
-                .padding(6.dp),
+                .then(if (isError) Modifier.border(1.dp, DarkSemantic.danger, pill) else Modifier)
+                .padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Surface(
@@ -459,7 +476,7 @@ private fun PhoneRow(
                         Digits.localize("+${otp.country.dialCode}", language),
                         style = MaterialTheme.typography.titleSmall.copy(textDirection = TextDirection.Ltr),
                     )
-                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = WelcomePalette.SheetText.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                 }
             }
             Spacer(Modifier.width(Space.md))
@@ -475,6 +492,7 @@ private fun PhoneRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = Space.minTouch)
+                    .focusRequester(focus)
                     .semantics {
                         contentType = ContentType.PhoneNumberNational
                         contentDescription = label
@@ -484,7 +502,7 @@ private fun PhoneRow(
                         if (otp.phoneInput.isEmpty()) {
                             Text(
                                 brandString(R.string.auth_phone_placeholder),
-                                style = text.copy(textDirection = TextDirection.Content, fontWeight = FontWeight.Normal),
+                                style = text.copy(textDirection = TextDirection.Content, fontWeight = FontWeight.Medium),
                                 color = WelcomePalette.SheetPlaceholder,
                             )
                         }
@@ -494,6 +512,13 @@ private fun PhoneRow(
             )
         }
     }
+}
+
+/** A sheet's title: its emphasised words (between asterisks) in the welcome's emphasis face. */
+@Composable
+private fun sheetTitle(source: String, language: AppLanguage): AnnotatedString {
+    val persian = language == AppLanguage.FA
+    return remember(source, persian) { WelcomeType.headline(source, WelcomeType.emphasis(persian, if (persian) 25.sp else 27.sp)) }
 }
 
 // MARK: - Code
@@ -522,7 +547,7 @@ private fun CodeStep(state: AuthUiState, model: AuthViewModel, language: AppLang
         title = AnnotatedString(brandString(R.string.auth_code_title)),
         subtitle = brandString(
             if (challenge.channel == OtpChannel.Call) R.string.auth_code_body_call else R.string.auth_code_body,
-            "⁦$number⁩",
+            "\u2066$number\u2069",
         ),
         onBack = { model.back() },
         art = art,

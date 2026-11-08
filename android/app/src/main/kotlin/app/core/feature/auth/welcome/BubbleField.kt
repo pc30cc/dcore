@@ -1,8 +1,10 @@
 package app.core.feature.auth.welcome
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -16,17 +18,24 @@ import kotlin.math.sqrt
  * is arithmetic over the arrays, so the frame loop makes no garbage.
  *
  * Each bubble floats around a home of its own (a weak spring with damping,
- * a slow wander of the home itself, a sideways sway and a vertical bob),
- * bubbles push each other apart softly, and the text and the buttons are
- * kept clear. A bubble can be dragged and flung (the spring brings it back
- * into the cluster) or popped: it bursts into a ring of droplets and forms
- * again at the bottom of the field a few seconds later.
+ * a slow wander of the home itself, a sideways sway and a vertical bob), the
+ * homes rise slowly (a bubble whose home reaches the top of the field fades
+ * out and comes back from below the screen), bubbles push each other apart
+ * softly (they may touch and overlap a little, as in a cluster), and the text
+ * is kept clear. A bubble can be dragged and flung (the spring brings it back
+ * into the cluster over a few seconds) or popped: it bursts into a ring of
+ * droplets and rises in again from below the screen a few seconds later.
+ *
+ * One bubble carries a word instead of a face, near the cluster's middle;
+ * it shows the [words] in turn ([wordFrom] fading into [wordTo]).
  *
  * With [layout]'s `intro`, every bubble starts held inside one large bubble
  * in the middle, which appears, swells and bursts at [BURST_AT], sending them
- * out to their homes. Without it they rest at their homes from the start.
+ * out to their homes; the word bubble waits in its middle, where the large
+ * bubble shows the first word, and stays there. Without it they rest at
+ * their homes from the start.
  */
-class BubbleField(private val density: Float, seed: Long = 0x5EED) {
+class BubbleField(private val density: Float, private val words: Int = 3, seed: Long = 0x5EED) {
 
     var count = 0
         private set
@@ -121,6 +130,20 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
 
     private var rng = seed or 1L
 
+    // The word bubble's words.
+    /** The word shown, and the one it is fading into ([wordMix] of the way); the same when not fading. */
+    var wordFrom = 0
+        private set
+    var wordTo = 0
+        private set
+    var wordMix = 0f
+        private set
+    private var wordClock = 0f
+
+    private val placed = BooleanArray(CAPACITY)
+    private var clusterX = 0f
+    private var clusterY = 0f
+
     val laidOut: Boolean get() = count > 0
 
     /**
@@ -205,7 +228,7 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         intro = true
         coreX = width / 2f
         coreY = (fieldTop + fieldBottom) / 2f
-        coreBase = min(width * 0.43f, (fieldBottom - fieldTop) * 0.46f)
+        coreBase = min(width * 0.40f, (fieldBottom - fieldTop) * 0.46f)
         if (!again) {
             coreR = coreBase * 0.6f
             coreAlpha = 0f
@@ -216,10 +239,20 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         val halfW = max(width / 2f, 1f)
         val halfH = max((fieldBottom - fieldTop) / 2f, 1f)
         for (i in 0 until n) {
+            if (labelIn(kind[i]) >= 0) {
+                // The word bubble: in the middle, unseen (the large bubble shows its word there).
+                heldX[i] = 0f
+                heldY[i] = 0f
+                state[i] = HELD
+                vx[i] = 0f
+                vy[i] = 0f
+                wobble[i] = 0f
+                continue
+            }
             var ox = (homeX[i] - coreX) / halfW * 0.8f
             var oy = (homeY[i] - coreY) / halfH * 0.8f
             val length = sqrt(ox * ox + oy * oy)
-            val reach = length.coerceIn(0.48f, 0.82f)
+            val reach = length.coerceIn(0.25f, 0.82f)
             if (length < 1e-3f) {
                 ox = cos(phase[i])
                 oy = sin(phase[i])
@@ -240,19 +273,32 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
     // MARK: - Homes
 
     /**
-     * Best-candidate sampling, largest first: each bubble takes, of a few
-     * dozen random spots in the band, the one farthest from those already
-     * placed. Even, never gridded, and the same for the same seed.
+     * Best-candidate sampling: the word bubble first, near the cluster's
+     * middle, then the rest largest first, each taking, of a few dozen
+     * random spots in the band, the one farthest from those already placed
+     * and nearest the middle. The result is a loose cluster, not a poster:
+     * small bubbles may nestle against larger ones, and a few faces are cut
+     * by the screen's sides. The same for the same seed.
      */
     private fun placeHomes(n: Int) {
         val saved = rng
         rng = HOME_SEED
         val dp = density
+        clusterX = width / 2f
+        clusterY = fieldTop + 0.5f * (fieldBottom - fieldTop)
+        for (i in 0 until n) placed[i] = false
+        for (i in 0 until n) {
+            if (labelIn(kind[i]) < 0) continue
+            homeX[i] = (clusterX + (nextFloat() - 0.5f) * 2f * LABEL_SPREAD * dp).coerceIn(baseR[i] + 10f * dp, width - baseR[i] - 10f * dp)
+            homeY[i] = (clusterY + (nextFloat() - 0.5f) * 2f * LABEL_SPREAD * dp).coerceIn(fieldTop + baseR[i], max(fieldTop + baseR[i], fieldBottom - baseR[i]))
+            placed[i] = true
+        }
         for (k in 0 until n) {
             val i = byRadiusDescending(k, n)
+            if (placed[i]) continue
             val radius = baseR[i]
-            // Words are never cut by the screen's edge; faces at most by a third.
-            val inset = if (BubbleField.labelIn(kind[i]) >= 0) radius + 10f * dp else radius * 0.62f
+            // Words are never cut by the screen's edge; faces may be, by up to two thirds.
+            val inset = if (labelIn(kind[i]) >= 0) radius + 10f * dp else radius * FACE_INSET
             val minX = min(inset, width / 2f)
             val maxX = max(width - inset, minX)
             val minY = fieldTop + radius * 0.8f
@@ -261,22 +307,10 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
             var bestY = (minY + maxY) / 2f
             var bestScore = -Float.MAX_VALUE
             repeat(CANDIDATES) {
-                // Two draws averaged: more of the cluster in the middle, fewer at the sides.
-                val cx = minX + (nextFloat() + nextFloat()) * 0.5f * (maxX - minX)
+                val cx = minX + nextFloat() * (maxX - minX)
                 val cy = minY + nextFloat() * (maxY - minY)
-                var score = Float.MAX_VALUE
-                for (m in 0 until k) {
-                    val j = byRadiusDescending(m, n)
-                    val dx = cx - homeX[j]
-                    val dy = cy - homeY[j]
-                    val gap = sqrt(dx * dx + dy * dy) - radius - baseR[j]
-                    if (gap < score) score = gap
-                }
-                // Away from what is kept clear, too.
-                for (q in 0 until keepOutCount) {
-                    val gap = distanceToRect(cx, cy, q) - radius - 6f * dp
-                    if (gap < score) score = gap
-                }
+                // The cluster is taller than wide, like the band: distance down counts for less.
+                val score = spotScore(i, cx, cy, n) - CLUSTER_PULL * hypot(cx - clusterX, (cy - clusterY) * CLUSTER_TALL)
                 if (score > bestScore) {
                     bestScore = score
                     bestX = cx
@@ -285,8 +319,31 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
             }
             homeX[i] = bestX
             homeY[i] = bestY
+            placed[i] = true
         }
         rng = saved
+    }
+
+    /**
+     * How much room bubble [i] would have at ([cx], [cy]): the least gap to
+     * the homes placed so far (small bubbles are allowed to nestle, so their
+     * gaps count a little larger) and to what is kept clear.
+     */
+    private fun spotScore(i: Int, cx: Float, cy: Float, n: Int): Float {
+        val dp = density
+        val radius = baseR[i]
+        var score = Float.MAX_VALUE
+        for (j in 0 until n) {
+            if (j == i || !placed[j]) continue
+            val gap = hypot(cx - homeX[j], cy - homeY[j]) - radius - baseR[j]
+            val nestle = if (radius < NESTLE_BELOW * dp || baseR[j] < NESTLE_BELOW * dp) NESTLE * (radius + baseR[j]) else 0f
+            if (gap + nestle < score) score = gap + nestle
+        }
+        for (q in 0 until keepOutCount) {
+            val gap = distanceToRect(cx, cy, q) - radius - 6f * dp
+            if (gap < score) score = gap
+        }
+        return score
     }
 
     /**
@@ -345,12 +402,34 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
                     x[i] = nx
                     y[i] = ny
                 }
+                LEAVING -> {
+                    // Its home reached the top: it fades out where it is, then comes back from below.
+                    timer[i] -= h
+                    r[i] = baseR[i] * (timer[i] / LEAVE).coerceIn(0f, 1f)
+                    vx[i] *= 1f - min(1f, h * 3f)
+                    vy[i] *= 1f - min(1f, h * 3f)
+                    x[i] += vx[i] * h
+                    y[i] += vy[i] * h
+                    if (timer[i] <= 0f) {
+                        state[i] = POPPED
+                        timer[i] = 0.3f + nextFloat() * 0.9f
+                    }
+                }
                 FREE -> {
                     // Extra damping for a moment after the burst, so the bubbles settle without overshooting.
                     val settle = if (t < BURST_AT + SETTLE) DAMPING + SETTLE_DAMPING * (1f - (t - BURST_AT) / SETTLE).coerceIn(0f, 1f) else DAMPING
+                    // The homes rise slowly (not the word bubble's, which keeps to the middle).
+                    if (labelIn(kind[i]) < 0 && !intro) {
+                        homeY[i] -= RISE * dp * h
+                        if (homeY[i] < fieldTop + baseR[i] * LEAVE_AT) {
+                            state[i] = LEAVING
+                            timer[i] = LEAVE
+                            continue
+                        }
+                    }
                     val wander = WANDER * dp
-                    val hx = homeX[i] + wander * sin(0.23f * t + phase[i])
-                    val hy = homeY[i] + wander * 0.7f * cos(0.19f * t + phase[i] * 1.7f)
+                    val hx = homeX[i] + wander * sin(WANDER_X * t + phase[i])
+                    val hy = homeY[i] + wander * 0.7f * cos(WANDER_Y * t + phase[i] * 1.7f)
                     ax[i] = SPRING * (hx - x[i]) - settle * vx[i] + SWAY * dp * sin(freq[i] * t + phase[i])
                     // Buoyancy: a steady lift, a little more for the small ones, held by the home's spring.
                     val lift = BUOYANCY * dp * (1f + 12f * dp / baseR[i])
@@ -385,7 +464,39 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         }
         for (i in 0 until n) wobble[i] = max(0f, wobble[i] - wobble[i] * h * WOBBLE_DECAY)
 
+        if (!intro) stepWords(h)
         stepParticles(h, dp)
+    }
+
+    /**
+     * The word bubble shows each word for [WORD_EVERY] seconds, then fades
+     * into the next over [WORD_FADE]; not while it is popped or away.
+     */
+    private fun stepWords(h: Float) {
+        if (words < 2) return
+        var shown = false
+        for (i in 0 until count) if (labelIn(kind[i]) >= 0 && moves(i)) shown = true
+        if (!shown) return
+        wordClock += h
+        if (wordClock < WORD_EVERY) return
+        val f = (wordClock - WORD_EVERY) / WORD_FADE
+        if (f >= 1f) {
+            wordFrom = wordTo
+            wordMix = 0f
+            wordClock = 0f
+        } else {
+            wordTo = (wordFrom + 1) % words
+            wordMix = f
+        }
+    }
+
+    /** The next word at once (a popped word bubble comes back with it). */
+    private fun nextWord() {
+        if (words < 2) return
+        wordFrom = (wordFrom + 1) % words
+        wordTo = wordFrom
+        wordMix = 0f
+        wordClock = 0f
     }
 
     private fun stepCore(n: Int) {
@@ -396,7 +507,7 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
             var scale = 0.6f + 0.4f * easeOutBack(appear)
             if (t > APPEAR) scale += 0.022f * sin((t - APPEAR) * 9.5f)
             // A last swell before it goes.
-            val swell = ((t - (BURST_AT - 0.14f)) / 0.14f).coerceIn(0f, 1f)
+            val swell = ((t - (BURST_AT - SWELL)) / SWELL).coerceIn(0f, 1f)
             scale += 0.07f * swell * swell
             coreR = coreBase * scale
             holdInsideCore(n)
@@ -411,6 +522,12 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         for (i in 0 until n) {
             if (state[i] != HELD) continue
             val jiggle = 0.02f * inner
+            if (labelIn(kind[i]) >= 0) {
+                x[i] = coreX
+                y[i] = coreY
+                r[i] = baseR[i]
+                continue
+            }
             x[i] = coreX + heldX[i] * inner + jiggle * sin(t * 2.1f + phase[i])
             y[i] = coreY + heldY[i] * inner + jiggle * cos(t * 1.7f + phase[i])
             r[i] = baseR[i] * HELD_SCALE * (inner / coreBase)
@@ -425,6 +542,16 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         for (i in 0 until n) {
             if (state[i] != HELD) continue
             state[i] = FREE
+            if (labelIn(kind[i]) >= 0) {
+                // The word bubble appears where the large bubble's word was, and drifts to its place nearby.
+                x[i] = coreX
+                y[i] = coreY
+                r[i] = baseR[i] * 0.8f
+                vx[i] = (homeX[i] - x[i]) * 0.8f
+                vy[i] = (homeY[i] - y[i]) * 0.8f
+                wobble[i] = 0.08f
+                continue
+            }
             val ox = x[i] - coreX
             val oy = y[i] - coreY
             val d = sqrt(ox * ox + oy * oy).coerceAtLeast(1f)
@@ -439,14 +566,14 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
 
     /** Pairs that overlap push apart (heavier bubbles less), with damping on approach. */
     private fun collide(n: Int, dp: Float) {
-        val gap = GAP * dp
         for (i in 0 until n) {
             if (!moves(i)) continue
             for (j in i + 1 until n) {
                 if (!moves(j)) continue
                 val dx = x[j] - x[i]
                 val dy = y[j] - y[i]
-                val minD = r[i] + r[j] + gap
+                // A soft touch: they may overlap a little before pushing back.
+                val minD = (r[i] + r[j]) * (1f - OVERLAP)
                 val d2 = dx * dx + dy * dy
                 if (d2 >= minD * minD || d2 < 1e-3f) continue
                 val d = sqrt(d2)
@@ -516,8 +643,8 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
                     }
                 }
             }
-            // Words stay whole on screen, faces at most half past a side; never far below or above it.
-            val inside = if (labelIn(kind[i]) >= 0) radius else radius * 0.5f
+            // Words stay whole on screen, faces at most two thirds past a side; never far below or above it.
+            val inside = if (labelIn(kind[i]) >= 0) radius else radius * FACE_INSET
             if (x[i] < inside) ax[i] += WALL * (inside - x[i])
             if (x[i] > width - inside) ax[i] -= WALL * (x[i] - (width - inside))
             if (y[i] < -radius) ay[i] += WALL * (-radius - y[i])
@@ -611,7 +738,7 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         vy[i] = velocityY * k
     }
 
-    /** Pops bubble [i]: droplets, a flash, and it forms again at the bottom a few seconds later. */
+    /** Pops bubble [i]: droplets, a flash, and it rises in again from below the screen a few seconds later. */
     fun pop(i: Int): Boolean {
         if (i !in 0 until count || !moves(i)) return false
         if (dragged == i) dragged = -1
@@ -622,15 +749,51 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         return true
     }
 
+    /**
+     * Bubble [i] comes back: from below the screen (behind the buttons), at
+     * full size, rising to a new home near the bottom of the field. The word
+     * bubble comes back to the middle, with the next word.
+     */
     private fun reform(i: Int) {
         val dp = density
+        if (labelIn(kind[i]) >= 0) {
+            nextWord()
+        } else {
+            reseedHome(i)
+        }
         state[i] = FREE
-        x[i] = (homeX[i] + (nextFloat() - 0.5f) * 60f * dp).coerceIn(baseR[i], width - baseR[i])
-        y[i] = fieldBottom - baseR[i] * 0.4f
+        x[i] = (homeX[i] + (nextFloat() - 0.5f) * 60f * dp).coerceIn(baseR[i], max(baseR[i], width - baseR[i]))
+        y[i] = height + baseR[i]
         vx[i] = 0f
-        vy[i] = -(70f + nextFloat() * 70f) * dp
-        r[i] = baseR[i] * 0.12f
+        vy[i] = -(90f + nextFloat() * 50f) * dp
+        r[i] = baseR[i]
         wobble[i] = 0.06f
+    }
+
+    /** A new home for bubble [i] near the bottom of the field: of a few spots there, the one with the most room. */
+    private fun reseedHome(i: Int) {
+        val dp = density
+        val radius = baseR[i]
+        val inset = radius * FACE_INSET
+        val maxY = max(fieldTop + radius, fieldBottom - radius)
+        val minY = max(fieldTop + radius, maxY - RESEED_DEPTH * dp)
+        var bestX = homeX[i]
+        var bestY = maxY
+        var bestScore = -Float.MAX_VALUE
+        for (k in 0 until count) placed[k] = state[k] != POPPED && state[k] != LEAVING
+        placed[i] = false
+        repeat(CANDIDATES / 2) {
+            val cx = inset + nextFloat() * max(0f, width - 2f * inset)
+            val cy = minY + nextFloat() * (maxY - minY)
+            val score = spotScore(i, cx, cy, count) - CLUSTER_PULL * 0.5f * abs(cx - clusterX)
+            if (score > bestScore) {
+                bestScore = score
+                bestX = cx
+                bestY = cy
+            }
+        }
+        homeX[i] = bestX
+        homeY[i] = bestY
     }
 
     // MARK: - Droplets
@@ -710,6 +873,9 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         const val DRAGGED = 2
         const val POPPED = 3
 
+        /** Fading out at the top of the field, before it comes back from below. */
+        const val LEAVING = 4
+
         /** A glass bubble with nothing inside. */
         const val EMPTY = -1
 
@@ -720,9 +886,14 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         fun labelIn(kind: Int): Int = if (kind <= -2) -2 - kind else -1
 
         /** The opening: it appears by [APPEAR], swells, and bursts at [BURST_AT]; all settled by [INTRO_END]. */
-        const val APPEAR = 0.35f
-        const val BURST_AT = 1.05f
-        const val INTRO_END = 2.8f
+        const val APPEAR = 0.45f
+        const val BURST_AT = 1.55f
+        const val INTRO_END = 3.3f
+        private const val SWELL = 0.20f
+
+        /** The word bubble: each word for this long (s), then a crossfade into the next. */
+        const val WORD_EVERY = 2.6f
+        const val WORD_FADE = 0.28f
 
         /** Tints the droplets cycle through (the rim's colours). */
         const val TINTS = 6
@@ -738,18 +909,28 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         private const val REFERENCE_W = 411f
         private const val REFERENCE_H = 500f
 
-        // Motion, per second (dp where it is a distance).
-        private const val SPRING = 1.8f
-        private const val DAMPING = 1.9f
+        // Motion, per second (dp where it is a distance). The spring is weak and a little under-damped
+        // (a fling glides away and drifts back over about five seconds).
+        private const val SPRING = 0.8f
+        private const val DAMPING = 1.25f
         private const val SETTLE = 1.8f
         private const val SETTLE_DAMPING = 0.8f
-        private const val SWAY = 15f
-        private const val BOB = 10f
+        private const val SWAY = 20f
+        private const val BOB = 14f
         private const val BUOYANCY = 5f
-        private const val WANDER = 10f
-        private const val PUSH = 70f
+        private const val WANDER = 24f
+        private const val WANDER_X = 0.12f
+        private const val WANDER_Y = 0.10f
+        private const val RISE = 4f
+        private const val LEAVE = 0.4f
+
+        /** A home this far (of the radius) below the field's top is where a rising bubble leaves; homes are placed lower. */
+        private const val LEAVE_AT = 0.5f
+        private const val PUSH = 45f
         private const val PUSH_DAMPING = 6f
-        private const val GAP = 3f
+
+        /** How far two bubbles may overlap (of the sum of their radii) before they push back. */
+        private const val OVERLAP = 0.08f
         private const val WALL = 46f
         private const val GROW = 6f
         private const val WOBBLE_DECAY = 4.5f
@@ -758,26 +939,36 @@ class BubbleField(private val density: Float, seed: Long = 0x5EED) {
         private const val MAX_SPEED = 2600f
         private const val MAX_FLING = 2200f
         private const val TOUCH_RADIUS = 22f
-        private const val HELD_SCALE = 0.42f
+        private const val HELD_SCALE = 0.52f
+
+        // Homes: the pull toward the cluster's middle (per dp of distance), how far small bubbles
+        // (below NESTLE_BELOW dp) may nestle into others, how far a face may be past a side, where the
+        // word bubble lives, and how deep the band is where a returning bubble finds its home.
+        private const val CLUSTER_PULL = 0.55f
+        private const val CLUSTER_TALL = 0.6f
+        private const val NESTLE_BELOW = 24f
+        private const val NESTLE = 0.15f
+        private const val FACE_INSET = 0.35f
+        private const val LABEL_SPREAD = 40f
+        private const val RESEED_DEPTH = 70f
         private const val REFORM_MIN = 2.4f
         private const val REFORM_SPREAD = 2.4f
         private const val REBALANCE_EVERY = 0.5f
 
         /**
-         * The bubbles (dp radius) and what each carries: faces in most, the
-         * three action words in three, and a few empty glass ones.
+         * The bubbles (dp radius) and what each carries, largest first: 21
+         * faces (most small, a few large), one word bubble, and six of empty
+         * glass. The tail is the smallest, which a small band drops first.
+         * The five smallest faces repeat middle-sized ones' faces (with
+         * fewer pictures than faces), never the large ones'.
          */
         private val SPEC_R = floatArrayOf(
-            58f, 50f, 43f, 39f, 37f, 35f, 33f, 31f,
-            34f, 32f, 30f,
-            27f, 25f, 24f, 23f, 22f, 21f, 20f, 19f, 18f,
-            14f, 12f, 10f, 9f, 8f, 7f,
+            46f, 41f, 37f, 34f, 33f, 31f, 30f, 28f, 26f, 25f, 24f, 23f, 22f, 22f,
+            21f, 20f, 19f, 18f, 17f, 16f, 15f, 15f, 14f, 13f, 12f, 11f, 9f, 7f,
         )
         private val SPEC_KIND = intArrayOf(
-            0, 1, 2, 3, 4, 5, 6, EMPTY,
-            -2, -3, -4,
-            7, 8, 9, 10, 11, 12, 13, 14, 15,
-            EMPTY, 16, EMPTY, EMPTY, EMPTY, EMPTY,
+            0, 1, 2, EMPTY, 3, labelOf(0), 4, 5, 6, 7, 8, 9, 10, EMPTY,
+            11, 12, 13, 14, 15, 25, 27, EMPTY, 29, 23, 30, EMPTY, EMPTY, EMPTY,
         )
 
         /** Indices of [SPEC_R], largest first (ties keep spec order). */

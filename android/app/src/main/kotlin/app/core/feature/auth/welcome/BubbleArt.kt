@@ -22,14 +22,16 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * The bubbles' pictures, made once and drawn scaled: the glass (an
- * iridescent rim, rotated per bubble so no two shimmer alike), the light on
- * it (always from the top left), the action words, and the faces cut to
- * circles. A frame only positions bitmaps, with paints kept here, so drawing
- * allocates nothing.
+ * The bubbles' pictures, made once and drawn scaled: the glass (a thin
+ * iridescent film at the rim with a soft halo outside it, rotated per bubble
+ * so no two shimmer alike), the light on it (always from the top left), the
+ * action words, and the faces cut to circles. The large opening bubble's rim
+ * is stroked with shaders made once at unit size, so it stays crisp at any
+ * size. A frame only positions bitmaps and transforms the canvas, with paints
+ * kept here, so drawing allocates nothing.
  */
 class BubbleArt(
-    /** The labelled bubbles' words, already in the screen's language and case. */
+    /** The word bubble's words, already in the screen's language and case. */
     labels: List<String>,
     labelTypeface: Typeface,
     /** Letter spacing for the words (em); 0 for scripts that join. */
@@ -61,39 +63,78 @@ class BubbleArt(
     private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
 
+    // The opening bubble's glass, at unit size: the canvas is scaled to its radius.
+    private val coreFilm = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        shader = SweepGradient(0f, 0f, FILM, null)
+    }
+    private val coreEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 0.006f
+        color = 0xB0FFFFFF.toInt()
+    }
+    private val coreBody = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(0f, 0f, 1f, BODY_COLORS, BODY_STOPS, Shader.TileMode.CLAMP)
+    }
+    private val coreHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(0f, 0f, HALO, HALO_COLORS, HALO_STOPS, Shader.TileMode.CLAMP)
+    }
+
     /**
      * Draws [field] onto [canvas] (scene pixels): the opening bubble's back,
-     * the bubbles from the smallest up, the opening bubble's glass over the
-     * ones it holds, then droplets and flashes.
+     * the bubbles from the smallest up (the ones it still holds faint, as if
+     * seen through its glass), the opening bubble's glass over them, then
+     * droplets and flashes.
      */
     fun draw(canvas: Canvas, field: BubbleField, density: Float) {
         val t = field.time
-        if (field.coreAlpha > 0f && field.coreR > 0f) drawCoreBack(canvas, field)
+        val core = field.coreAlpha > 0f && field.coreR > 0f
+        if (core) drawCoreBack(canvas, field)
         facesVersion
         val faceList = faces
         for (k in 0 until field.count) {
             val i = field.order[k]
-            if (field.state[i] == BubbleField.POPPED) continue
+            val state = field.state[i]
+            if (state == BubbleField.POPPED) continue
             val radius = field.r[i]
             if (radius < 0.5f) continue
+            val kind = field.kind[i]
+            val label = BubbleField.labelIn(kind) >= 0
+            // The word bubble waits unseen in the opening bubble's middle, where its word shows.
+            if (label && state == BubbleField.HELD) continue
+            val alpha = if (state == BubbleField.HELD) HELD_ALPHA else 255
             val squash = field.wobble[i] * sin(t * 17f + field.phase[i])
             canvas.save()
             canvas.translate(field.x[i], field.y[i])
             canvas.scale(1f + squash, 1f - squash)
-            val kind = field.kind[i]
-            val label = BubbleField.labelIn(kind)
             when {
-                label >= 0 && label < labelSprites.size -> blit(canvas, labelSprites[label], radius, 255)
-                kind >= 0 && faceList.isNotEmpty() -> blit(canvas, faceList[kind % faceList.size], radius * FACE_SHARE, 255)
+                label -> drawWord(canvas, field, radius)
+                kind >= 0 && faceList.isNotEmpty() -> blit(canvas, faceList[kind % faceList.size], radius * FACE_SHARE, alpha)
             }
-            canvas.rotate(field.phase[i] * 57.3f + t * 9f)
-            blit(canvas, rim, radius, 255)
-            canvas.rotate(-(field.phase[i] * 57.3f + t * 9f))
-            blit(canvas, light, radius, 255)
+            val spin = field.phase[i] * 57.3f + t * 9f
+            canvas.rotate(spin)
+            blit(canvas, rim, radius * HALO, alpha)
+            canvas.rotate(-spin)
+            blit(canvas, light, radius, alpha)
             canvas.restore()
         }
-        if (field.coreAlpha > 0f && field.coreR > 0f) drawCoreFront(canvas, field)
+        if (core) drawCoreFront(canvas, field, density)
         drawDroplets(canvas, field, density)
+    }
+
+    /** The word bubble: its word, crossfading into the next one when the field says so. */
+    private fun drawWord(canvas: Canvas, field: BubbleField, radius: Float) {
+        if (labelSprites.isEmpty()) return
+        val from = labelSprites[field.wordFrom % labelSprites.size]
+        val to = labelSprites[field.wordTo % labelSprites.size]
+        val mix = field.wordMix
+        if (mix <= 0f || from === to) {
+            blit(canvas, from, radius, 255)
+        } else {
+            val a = (mix * 255f).toInt()
+            blit(canvas, from, radius, 255 - a)
+            blit(canvas, to, radius, a)
+        }
     }
 
     private fun drawCoreBack(canvas: Canvas, field: BubbleField) {
@@ -102,15 +143,31 @@ class BubbleArt(
         canvas.drawCircle(field.coreX, field.coreY, field.coreR, corePaint)
     }
 
-    private fun drawCoreFront(canvas: Canvas, field: BubbleField) {
+    private fun drawCoreFront(canvas: Canvas, field: BubbleField, density: Float) {
         val a = (field.coreAlpha * 255).toInt()
+        val r = field.coreR
         canvas.save()
         canvas.translate(field.coreX, field.coreY)
-        coreWord?.let { blit(canvas, it, field.coreR * 0.5f, a) }
+        // The word, as small as the word bubble's: the opening bubble is that bubble, grown.
+        coreWord?.let { blit(canvas, it, LABEL_DP * density, a) }
+        canvas.save()
+        canvas.scale(r, r)
         canvas.rotate(field.time * 14f + 30f)
-        blit(canvas, rim, field.coreR, a)
-        canvas.rotate(-(field.time * 14f + 30f))
-        blit(canvas, light, field.coreR, a)
+        coreHalo.alpha = a
+        canvas.drawCircle(0f, 0f, HALO, coreHalo)
+        coreBody.alpha = a
+        canvas.drawCircle(0f, 0f, 1f, coreBody)
+        // The film: a soft wide band and a bright narrow one inside the edge, then the edge itself.
+        coreFilm.strokeWidth = 0.060f
+        coreFilm.alpha = (a * 0.25f).toInt()
+        canvas.drawCircle(0f, 0f, 1f - 0.035f, coreFilm)
+        coreFilm.strokeWidth = 0.035f
+        coreFilm.alpha = (a * 0.75f).toInt()
+        canvas.drawCircle(0f, 0f, 1f - 0.022f, coreFilm)
+        coreEdge.alpha = (a * 0xB0) / 255
+        canvas.drawCircle(0f, 0f, 1f - 0.003f, coreEdge)
+        canvas.restore()
+        blit(canvas, light, r, a)
         canvas.restore()
     }
 
@@ -148,57 +205,70 @@ class BubbleArt(
         canvas.translate(cx, cy)
         if (faceList.isNotEmpty()) blit(canvas, faceList[Math.floorMod(face, faceList.size)], radius * FACE_SHARE, 255)
         canvas.rotate(spin)
-        blit(canvas, rim, radius, 255)
+        blit(canvas, rim, radius * HALO, 255)
         canvas.rotate(-spin)
         blit(canvas, light, radius, 255)
         canvas.restore()
     }
 
     companion object {
-        /** Sprite sizes in pixels: the glass is drawn up to the opening bubble's size, words and faces smaller. */
+        /** Sprite sizes in pixels: the glass is drawn up to the largest bubble's size, words and faces smaller. */
         const val GLASS = 384
         const val LABEL = 256
         const val FACE = 224
 
-        /** How much of a bubble its face fills (the rest is glass). */
-        const val FACE_SHARE = 0.9f
+        /** How much of a bubble its face fills: nearly all, the film is thin. */
+        const val FACE_SHARE = 0.965f
 
-        /** The rim's thin-film colours, also the droplets'. */
-        private val TINTS = intArrayOf(
-            0xFFFF9AC8.toInt(), 0xFFFFD877.toInt(), 0xFF97F0CE.toInt(), 0xFF86C0FF.toInt(), 0xFFC1A1FF.toInt(), 0xFFFFB3A1.toInt(),
+        /** The halo outside the film: the rim's sprite reaches this far past the bubble's edge. */
+        private const val HALO = 1.06f
+
+        /** The word bubble's radius (dp): the opening bubble's word is drawn at this size too. */
+        const val LABEL_DP = 31f
+
+        /** The bubbles still inside the opening bubble, seen through its glass. */
+        private const val HELD_ALPHA = 140
+
+        /** The thin film's colours: pink, gold, a pale warm white, sky, lilac, rose, honey. */
+        private val FILM = intArrayOf(
+            0xFFFF7EB6.toInt(), 0xFFFFC56B.toInt(), 0xFFFFF1D6.toInt(), 0xFF8FD3FF.toInt(), 0xFFB596FF.toInt(),
+            0xFFFF9EC2.toInt(), 0xFFFFD98A.toInt(), 0xFFFF7EB6.toInt(),
         )
+
+        /** The droplets: the film's colours. */
+        private val TINTS = intArrayOf(
+            0xFFFF7EB6.toInt(), 0xFFFFC56B.toInt(), 0xFFFFF1D6.toInt(), 0xFF8FD3FF.toInt(), 0xFFB596FF.toInt(), 0xFFFF9EC2.toInt(),
+        )
+
+        /** The glass body: clear almost to the edge, a breath of white just inside it. */
+        private val BODY_COLORS = intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x10FFFFFF, 0x26FFFFFF, 0x00FFFFFF)
+        private val BODY_STOPS = floatArrayOf(0f, 0.80f, 0.93f, 0.985f, 1f)
+
+        /** The halo, as stops of [HALO]: nothing inside the bubble, a soft white just outside it, fading out. */
+        private val HALO_COLORS = intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF)
+        private val HALO_STOPS = floatArrayOf(0f, 1f / HALO - 0.004f, 1f / HALO, 1f)
 
         private fun paintRim(size: Int): Bitmap {
             val bitmap = createBitmap(size, size)
             val canvas = Canvas(bitmap)
             val c = size / 2f
-            val r = c - 1f
+            // The bubble's own radius in the sprite; the rest, out to its edge, is the halo.
+            val r = c / HALO - 1f
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            // The glass body: clear in the middle, a little milky toward the edge.
-            paint.shader = RadialGradient(
-                c, c, r,
-                intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x12FFFFFF, 0x30FFFFFF, 0x00FFFFFF),
-                floatArrayOf(0f, 0.62f, 0.86f, 0.975f, 1f),
-                Shader.TileMode.CLAMP,
-            )
+            paint.shader = RadialGradient(c, c, c, HALO_COLORS, HALO_STOPS, Shader.TileMode.CLAMP)
+            canvas.drawCircle(c, c, c, paint)
+            paint.shader = RadialGradient(c, c, r, BODY_COLORS, BODY_STOPS, Shader.TileMode.CLAMP)
             canvas.drawCircle(c, c, r, paint)
-            // The thin-film rim: rainbow colours through a ring-shaped mask.
+            // The thin film: its colours through a narrow ring-shaped mask just inside the edge.
             val layer = canvas.saveLayer(0f, 0f, size.toFloat(), size.toFloat(), null)
             paint.shader = RadialGradient(
                 c, c, r,
-                intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x99FFFFFF.toInt(), 0xF0FFFFFF.toInt(), 0x00FFFFFF),
-                floatArrayOf(0f, 0.74f, 0.9f, 0.975f, 1f),
+                intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x70FFFFFF, 0xF0FFFFFF.toInt(), 0x00FFFFFF),
+                floatArrayOf(0f, 0.88f, 0.95f, 0.985f, 1f),
                 Shader.TileMode.CLAMP,
             )
             canvas.drawCircle(c, c, r, paint)
-            paint.shader = SweepGradient(
-                c, c,
-                intArrayOf(
-                    0xFFFF8CC6.toInt(), 0xFFFFD36E.toInt(), 0xFFFFF4D6.toInt(), 0xFF8BEFC9.toInt(), 0xFF7DB8FF.toInt(),
-                    0xFFB596FF.toInt(), 0xFFFF9EC2.toInt(), 0xFFFFE7B0.toInt(), 0xFFFF8CC6.toInt(),
-                ),
-                null,
-            )
+            paint.shader = SweepGradient(c, c, FILM, null)
             paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
             canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
             paint.xfermode = null
@@ -206,8 +276,8 @@ class BubbleArt(
             // A crisp edge.
             paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = size / 160f
-            paint.color = 0x80FFFFFF.toInt()
+            paint.strokeWidth = size / 220f
+            paint.color = 0xB0FFFFFF.toInt()
             canvas.drawCircle(c, c, r - paint.strokeWidth / 2f, paint)
             return bitmap
         }
@@ -231,11 +301,11 @@ class BubbleArt(
                 canvas.drawCircle(0f, 0f, rx * c, paint)
                 canvas.restore()
             }
-            // The window the light comes through, top left, and its small hard core.
-            glint(-0.40f, -0.46f, 0.36f, 0.17f, -38f, 0xE6)
-            glint(-0.52f, -0.28f, 0.07f, 0.07f, 0f, 0xF2)
-            // The answering reflection, bottom right, fainter.
-            glint(0.42f, 0.52f, 0.30f, 0.09f, -40f, 0x5C)
+            // A soft bloom where the light comes in, top left, and its small bright point.
+            glint(-0.40f, -0.46f, 0.40f, 0.24f, -38f, 0x8C)
+            glint(-0.52f, -0.28f, 0.045f, 0.045f, 0f, 0xE0)
+            // The answering reflection, bottom right, faint.
+            glint(0.42f, 0.52f, 0.30f, 0.09f, -40f, 0x2E)
             return bitmap
         }
 
@@ -245,10 +315,10 @@ class BubbleArt(
             val c = size / 2f
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             if (filled) {
-                // Dark, smoky glass, so the white word reads on any background.
+                // Translucent dark glass, lit from a little above, so the white word reads on any background.
                 paint.shader = RadialGradient(
-                    c * 0.8f, c * 0.75f, c,
-                    intArrayOf(0xB0521A1E.toInt(), 0xC83A0C12.toInt(), 0xD82A070B.toInt()),
+                    c, c * 0.8f, c,
+                    intArrayOf(0x8C6A2430.toInt(), 0xA63A0C16.toInt(), 0xC02A070D.toInt()),
                     floatArrayOf(0f, 0.7f, 1f),
                     Shader.TileMode.CLAMP,
                 )
@@ -259,10 +329,10 @@ class BubbleArt(
             paint.typeface = typeface
             paint.letterSpacing = tracking
             paint.textAlign = Paint.Align.CENTER
-            // As large as fits: at most a quarter of the bubble high, 70 % of it wide.
-            var textSize = size * 0.20f
+            // Small, as on a label: about an eighth of the bubble high, at most 62 % of it wide.
+            var textSize = size * 0.135f
             paint.textSize = textSize
-            val maxWidth = size * 0.70f
+            val maxWidth = size * 0.62f
             val width = paint.measureText(word)
             if (width > maxWidth) {
                 textSize *= maxWidth / width
@@ -274,7 +344,20 @@ class BubbleArt(
             return bitmap
         }
 
-        /** [picture] cropped to its centre square, as a circle with a soft shade at the edge. */
+        /**
+         * A portrait cropped close to the face: a square of 80 % of its short
+         * side, centred a little above its middle, where faces sit in a
+         * portrait. For the brand's pictures; the generated figures are
+         * drawn close already.
+         */
+        fun portrait(picture: Bitmap): Bitmap {
+            val side = (min(picture.width, picture.height) * 0.8f).toInt().coerceAtLeast(1)
+            val left = (picture.width - side) / 2
+            val top = (picture.height * 0.42f - side / 2f).toInt().coerceIn(0, max(0, picture.height - side))
+            return Bitmap.createBitmap(picture, left, top, side, side)
+        }
+
+        /** [picture] cropped to its centre square, as a circle that brightens toward its rim. */
         fun faceSprite(picture: Bitmap): Bitmap {
             val size = FACE
             val bitmap = createBitmap(size, size)
@@ -291,8 +374,8 @@ class BubbleArt(
             canvas.drawCircle(c, c, c, paint)
             paint.shader = RadialGradient(
                 c, c, c,
-                intArrayOf(0x00000000, 0x00000000, 0x40200A08),
-                floatArrayOf(0f, 0.72f, 1f),
+                intArrayOf(0x00FFFFFF, 0x00FFFFFF, 0x33FFFFFF),
+                floatArrayOf(0f, 0.78f, 1f),
                 Shader.TileMode.CLAMP,
             )
             canvas.drawCircle(c, c, c, paint)

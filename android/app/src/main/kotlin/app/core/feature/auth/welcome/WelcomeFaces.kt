@@ -50,7 +50,7 @@ object WelcomeFaces {
                 is WelcomePicture.Asset -> decodeAsset(context, source.name)
                 is WelcomePicture.Remote -> if (remote) fetch(context, source.url) else null
             }
-            bitmap?.also { synchronized(pictures) { pictures[source] = it } }
+            bitmap?.let(BubbleArt::portrait)?.also { synchronized(pictures) { pictures[source] = it } }
         }
         if (loaded.isEmpty()) return emptyList()
         return if (loaded.size >= MIN_PICTURES) loaded else loaded + generated()
@@ -79,7 +79,7 @@ object WelcomeFaces {
         (ImageLoading.loader(context).execute(request) as? SuccessResult)?.image?.toBitmap()
     }.getOrNull()
 
-    private const val GENERATED = 12
+    private const val GENERATED = 16
     private const val MIN_PICTURES = 6
 }
 
@@ -97,7 +97,7 @@ fun rememberBubbleArt(pictures: List<WelcomePicture>, labels: List<String>, pers
         } else {
             Typeface.create("sans-serif", Typeface.BOLD)
         }
-        BubbleArt(labels, typeface, if (persian) 0f else 0.16f, WelcomeFaces.generated())
+        BubbleArt(labels, typeface, if (persian) 0f else 0.06f, WelcomeFaces.generated())
     }
     LaunchedEffect(art, pictures, remote) {
         val loaded = withContext(Dispatchers.Default) { WelcomeFaces.load(context.applicationContext, pictures, remote) }

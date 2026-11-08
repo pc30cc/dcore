@@ -22,6 +22,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -34,7 +38,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * Where the welcome's text and buttons are, in the scene's pixels: the
@@ -54,10 +62,12 @@ class SceneGeometry {
     var text = Rect.Zero
         private set
 
-    /** The headline and the subtitle, each: the scrim behind them is measured per line of text. */
-    var headline = Rect.Zero
+    /** The eyebrow's, the headline's and the subtitle's lines, each as wide as its glyphs: the glow behind them hugs these. */
+    var eyebrow: List<Rect> = emptyList()
         private set
-    var subtitle = Rect.Zero
+    var headline: List<Rect> = emptyList()
+        private set
+    var subtitle: List<Rect> = emptyList()
         private set
 
     /** The buttons and the terms line. */
@@ -70,10 +80,15 @@ class SceneGeometry {
         size: Size? = null,
         text: Rect? = null,
         controls: Rect? = null,
-        headline: Rect? = null,
-        subtitle: Rect? = null,
+        eyebrow: List<Rect>? = null,
+        headline: List<Rect>? = null,
+        subtitle: List<Rect>? = null,
     ) {
         var changed = false
+        if (eyebrow != null && differs(eyebrow, this.eyebrow)) {
+            this.eyebrow = eyebrow
+            changed = true
+        }
         if (headline != null && differs(headline, this.headline)) {
             this.headline = headline
             changed = true
@@ -101,13 +116,15 @@ class SceneGeometry {
     /** Touches here belong to the text's links and the buttons, not to the bubbles. */
     fun reserved(x: Float, y: Float): Boolean = controls.contains(Offset(x, y)) || text.contains(Offset(x, y))
 
+    private fun differs(a: List<Rect>, b: List<Rect>) = a.size != b.size || a.indices.any { differs(a[it], b[it]) }
+
     private fun differs(a: Rect, b: Rect) =
         abs(a.left - b.left) > 0.5f || abs(a.top - b.top) > 0.5f || abs(a.right - b.right) > 0.5f || abs(a.bottom - b.bottom) > 0.5f
 }
 
 /**
- * The welcome's moving picture: the brand's gradient, the bubbles, and the
- * scrim that keeps the text readable. Decorative: TalkBack does not see it.
+ * The welcome's moving picture: the brand's gradient, the warm glow that
+ * keeps the text readable, and the bubbles. Decorative: TalkBack does not see it.
  *
  * One frame loop drives everything while [running] and the screen is
  * resumed: finite through the opening (so tests that wait for idle see it
@@ -129,7 +146,7 @@ fun WelcomeScene(
     val density = LocalDensity.current.density
     // Plain, not state: written while drawing.
     val laidOutVersion = remember { intArrayOf(-1) }
-    val keepOut = remember { FloatArray(8) }
+    val keepOut = remember { FloatArray(4) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     // Lays the bubbles out when the text or the buttons moved: from the frame loop, and from the draw for a still scene.
@@ -156,63 +173,66 @@ fun WelcomeScene(
                 geometry.version
                 val stops = WelcomePalette.stops(colors)
                 val gradient = Brush.verticalGradient(*stops, startY = 0f, endY = size.height)
-                val scrimBrush = scrimBand(colors, geometry.headline, geometry.subtitle, headlineInk, size, 64f * density)
+                val glow = scrimGlow(colors, geometry, headlineInk, size, density)
                 onDrawBehind {
                     tick.longValue
                     ensureLaidOut()
                     drawRect(gradient)
+                    glow?.let { drawImage(it.image, dstOffset = it.offset, dstSize = it.size, filterQuality = FilterQuality.Low) }
                     drawIntoCanvas { art.draw(it.nativeCanvas, field, density) }
-                    scrimBrush?.let { (brush, rect) -> drawRect(brush, topLeft = rect.topLeft, size = rect.size) }
                 }
             },
     )
 }
 
+/** The glow behind the text, painted once per layout into a small image and drawn stretched (it has no detail to lose). */
+private class TextGlow(val image: ImageBitmap, val offset: IntOffset, val size: IntSize)
+
 /**
- * A soft band of the gradient's own deepest colour behind the headline and
- * the subtitle, each as dark as its text needs there (large text 3:1, the
- * subtitle 4.5:1, both with a margin), fading out above and below. Null
- * when the gradient needs none.
+ * The text's glow ([WelcomePalette.scrimProfile]) as an image a quarter of
+ * the scene's resolution: the eyebrow and the subtitle as normal text, the
+ * headline as large text in its least bright [ink]. Null when the gradient
+ * needs none or the text is not placed yet.
  */
-private fun scrimBand(colors: WelcomeColors, headline: Rect, subtitle: Rect, ink: Color, size: Size, pad: Float): Pair<Brush, Rect>? {
-    if (headline == Rect.Zero || subtitle == Rect.Zero || size.height <= 0f) return null
-    val h = size.height
-    val forHeadline = WelcomePalette.scrimOver(colors, headline.top / h, headline.bottom / h, ink, WelcomePalette.LARGE_TEXT)
-    val forSubtitle = WelcomePalette.scrimOver(colors, subtitle.top / h, subtitle.bottom / h, WelcomePalette.Subtitle, WelcomePalette.SMALL_TEXT)
-    if (forHeadline <= 0f && forSubtitle <= 0f) return null
-    // One level for the whole block (steps between lines would show as stripes), eased in and out.
-    val alpha = maxOf(forHeadline, forSubtitle)
-    val scrim = WelcomePalette.scrim(colors)
-    val top = (headline.top - pad).coerceAtLeast(0f)
-    val bottom = subtitle.bottom + pad
-    val span = bottom - top
-    fun at(y: Float) = ((y - top) / span).coerceIn(0f, 1f)
-    val brush = Brush.verticalGradient(
-        0f to scrim.copy(alpha = 0f),
-        at(headline.top - pad * 0.5f) to scrim.copy(alpha = alpha * 0.5f),
-        at(headline.top) to scrim.copy(alpha = alpha),
-        at(subtitle.bottom) to scrim.copy(alpha = alpha),
-        at(subtitle.bottom + pad * 0.5f) to scrim.copy(alpha = alpha * 0.5f),
-        1f to scrim.copy(alpha = 0f),
-        startY = top,
-        endY = bottom,
-    )
-    return brush to Rect(0f, top, size.width, bottom)
+private fun scrimGlow(colors: WelcomeColors, geometry: SceneGeometry, ink: Color, size: Size, density: Float): TextGlow? {
+    if (geometry.headline.isEmpty() || size.width <= 0f || size.height <= 0f) return null
+    val lines = geometry.eyebrow.map { ScrimLine(it, WelcomePalette.Eyebrow, WelcomePalette.SMALL_TEXT) } +
+        geometry.headline.map { ScrimLine(it, ink, WelcomePalette.LARGE_TEXT) } +
+        geometry.subtitle.map { ScrimLine(it, WelcomePalette.Subtitle, WelcomePalette.SMALL_TEXT) }
+    val profile = WelcomePalette.scrimProfile(colors, lines, size.width, size.height, density) ?: return null
+    val cell = GLOW_CELL_DP * density
+    val top = profile.top.coerceAtLeast(0f)
+    val bottom = profile.bottom.coerceAtMost(size.height)
+    if (bottom <= top) return null
+    val columns = ceil(size.width / cell).toInt().coerceAtLeast(2)
+    val rows = ceil((bottom - top) / cell).toInt().coerceAtLeast(2)
+    val rgb = profile.color.toArgb() and 0x00FFFFFF
+    val pixels = IntArray(columns * rows)
+    for (row in 0 until rows) {
+        val y = top + (row + 0.5f) * (bottom - top) / rows
+        for (column in 0 until columns) {
+            val x = (column + 0.5f) * size.width / columns
+            val a = (profile.alphaAt(x, y) * 255f).roundToInt().coerceIn(0, 255)
+            pixels[row * columns + column] = (a shl 24) or rgb
+        }
+    }
+    val bitmap = android.graphics.Bitmap.createBitmap(pixels, columns, rows, android.graphics.Bitmap.Config.ARGB_8888)
+    return TextGlow(bitmap.asImageBitmap(), IntOffset(0, top.roundToInt()), IntSize(size.width.roundToInt(), (bottom - top).roundToInt()))
 }
+
+private const val GLOW_CELL_DP = 2f
 
 /** The band the bubbles live in, and what they keep clear of. */
 private fun layOut(field: BubbleField, geometry: SceneGeometry, keepOut: FloatArray, density: Float, intro: Boolean) {
     val margin = 14f * density
     val text = geometry.text
     val controls = geometry.controls
+    // Only the text is kept clear: the bubbles may pass behind the buttons (rising in from below
+    // the screen), though none makes its home there.
     keepOut[0] = text.left - margin
     keepOut[1] = text.top - margin
     keepOut[2] = text.right + margin
     keepOut[3] = text.bottom + margin
-    keepOut[4] = 0f
-    keepOut[5] = controls.top - margin * 0.5f
-    keepOut[6] = geometry.width
-    keepOut[7] = geometry.height
     val top = if (text == Rect.Zero) geometry.height * 0.3f else text.bottom + margin
     val bottom = controls.top - margin
     field.layout(geometry.width, geometry.height, top, bottom, keepOut, startIntro = intro)

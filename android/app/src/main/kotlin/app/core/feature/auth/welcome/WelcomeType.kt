@@ -35,10 +35,10 @@ object WelcomeType {
     val PersianDisplay = FontFamily(Font(R.font.lalezar_regular, FontWeight.Normal))
 
     /** Where the Persian emphasis fill ends: its least bright colour, which the scrim is measured against. */
-    val WarmEnd = Color(0xFFFFD2B0)
+    val WarmEnd = Color(0xFFFFC9A0)
 
-    /** The Persian emphasis fill: white into a warm peach. */
-    private val warmFill = Brush.linearGradient(listOf(Color(0xFFFFFFFF), Color(0xFFFFE7C7), WarmEnd))
+    /** The Persian emphasis fill: a warm white down into peach. */
+    private val warmFill = Brush.verticalGradient(listOf(Color(0xFFFFF6EC), WarmEnd))
 
     fun emphasis(persian: Boolean, size: TextUnit): SpanStyle =
         if (persian) {

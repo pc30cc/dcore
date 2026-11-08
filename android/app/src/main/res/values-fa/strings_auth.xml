@@ -16,6 +16,7 @@
     <string name="auth_sheet_signup_body">کمتر از یک دقیقه طول می‌کشد. یک کد به شماره‌تان پیامک می‌کنیم.</string>
     <string name="auth_sheet_signin_body">شماره‌تان را وارد کنید تا کد ورود را برایتان پیامک کنیم.</string>
     <string name="auth_sheet_continue">ادامه</string>
+    <string name="auth_sheet_privacy_title">حریم *خصوصی* شما</string>
     <string name="auth_phone_placeholder">شماره موبایل</string>
     <string name="auth_google_no_account">هیچ حساب گوگلی روی این گوشی نیست. یکی در تنظیمات اضافه کنید یا با شماره موبایل ادامه دهید.</string>
     <string name="auth_google_unavailable">ورود با گوگل الان در دسترس نیست. با شماره موبایل ادامه دهید.</string>

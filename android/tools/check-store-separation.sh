@@ -10,7 +10,9 @@
 #     (Cafe Bazaar's Poolakey and the Bazaar app's own packages), or
 #   - the Cafe Bazaar APK holds any class under com/android/billingclient/ or
 #     com/google/android/play/ (Play Billing and Play Core: review, updates,
-#     integrity).
+#     integrity), or Google sign-in (com/google/android/libraries/identity/googleid/,
+#     androidx/credentials/, app/core/store/GoogleSignIn). R8 renames classes, so
+#     the sign-in check bites on debug APKs; a release build keeps few names.
 # Each store reviews for the other's billing: Play rejects an app with another
 # store's payment SDK, Cafe Bazaar one with Google's.
 #
@@ -100,10 +102,12 @@ require() {
 
 bazaar_sdk='^(ir/cafebazaar/|com/farsitel/)'
 play_sdk='^(com/android/billingclient/|com/google/android/play/)'
+google_sign_in='^(com/google/android/libraries/identity/googleid/|androidx/credentials/|app/core/store/GoogleSignIn)'
 
 echo "Cafe Bazaar APK: $bazaar_apk ($(wc -l <<<"$bazaar_classes") classes)"
 require bazaar "$bazaar_classes" '^ir/cafebazaar/poolakey/' "Poolakey"
 forbid bazaar "$bazaar_classes" "$play_sdk" "Google Play (com.android.billingclient, com.google.android.play)"
+forbid bazaar "$bazaar_classes" "$google_sign_in" "Google sign-in (googleid, androidx.credentials)"
 
 echo "Google Play APK: $play_apk ($(wc -l <<<"$play_classes") classes)"
 require play "$play_classes" '^com/android/billingclient/' "Play Billing"
