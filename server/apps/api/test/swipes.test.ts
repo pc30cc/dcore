@@ -330,13 +330,16 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
       await likeOf(open, me);
       await swipe(superLiker, [{ target: me.publicUid, action: 'superlike', item: { kind: 'prompt', ref: '3' }, comment: 'Great answer' }]);
       await likeOf(hidden, me);
-      await db.sql.query(`UPDATE users SET status = 6 WHERE id = $1`, [hidden.id]);
-      // The like event reached me, with the super liker named.
+      // The like writer tells me once the likes are durable: one event each, the super liker named, one push for all.
+      await until(() => eventsOf(realtime, me.publicUid, 'like').length === 4);
       const likeEvents = eventsOf(realtime, me.publicUid, 'like');
-      expect(likeEvents.map((e) => (e.d as { kind: string }).kind)).toEqual(['like', 'like', 'superlike', 'like']);
-      expect((likeEvents[2]!.d as { from?: { name: string } }).from?.name).toBe('Tom');
-      expect((likeEvents[0]!.d as { from?: unknown }).from).toBeUndefined();
-      expect(jobs.jobs.filter((j) => j.queue === 'push' && j.data['userId'] === me.id)).toHaveLength(1);
+      expect(likeEvents.map((e) => (e.d as { kind: string }).kind).sort()).toEqual(['like', 'like', 'like', 'superlike']);
+      const superEvent = likeEvents.find((e) => (e.d as { kind: string }).kind === 'superlike')!;
+      expect((superEvent.d as { from?: { name: string } }).from?.name).toBe('Tom');
+      expect(likeEvents.filter((e) => e !== superEvent).every((e) => (e.d as { from?: unknown }).from === undefined)).toBe(true);
+      expect(await h.redis.exists(`${h.prefix}bull:push:send.like.${me.id}`)).toBe(1);
+      expect(jobs.jobs.filter((j) => j.queue === 'push')).toHaveLength(0);
+      await db.sql.query(`UPDATE users SET status = 6 WHERE id = $1`, [hidden.id]);
       await warm(me);
 
       const page = await call(h, '/v1/likes', { token: me.token });
@@ -352,7 +355,11 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
       const blurred = body.items.filter((i) => i.kind === 'like' && !i.liker);
       expect(opened).toHaveLength(1);
       expect(blurred).toHaveLength(1);
-      expect(blurred[0]!.blurhash).toMatch(/^L/);
+      // A placeholder, never the liker's own blurhash (their card in the deck carries it, which would name them).
+      expect(blurred[0]!.blurhash).toHaveLength(6);
+      for (const hash of ['LKO2?U%2Tw=w]~RBVZRi};RPxuwH', 'L6PZfSi_.AyE_3t7t7R**0o#DgR4']) expect(blurred[0]!.blurhash).not.toBe(hash);
+      const shownHashes = [...opened, body.items[0]!].flatMap((i) => i.liker?.photos.map((p) => p.blurhash) ?? []);
+      expect(shownHashes).not.toContain(blurred[0]!.blurhash);
       // The reveal stays the same for the day.
       const again = likesPageSchema.parse((await call(h, '/v1/likes', { token: me.token })).json());
       expect(again.items.find((i) => i.kind === 'like' && i.liker)?.liker?.id).toBe(opened[0]!.liker!.id);
@@ -388,6 +395,127 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
     });
   });
 
+  describe('who hears of a like', () => {
+    async function likesWritten(actor: SeededUser, target: SeededUser): Promise<number> {
+      return Number((await row<{ n: string }>(db, `SELECT count(*)::text AS n FROM likes WHERE actor_id = $1 AND target_id = $2`, [actor.id, target.id])).n);
+    }
+
+    async function quietFor(target: SeededUser): Promise<void> {
+      expect(eventsOf(realtime, target.publicUid, 'like'), target.publicUid).toHaveLength(0);
+      expect(await h.redis.exists(`${h.prefix}bull:push:send.like.${target.id}`)).toBe(0);
+    }
+
+    it('tells nobody of a like from someone they blocked, a shadowbanned or test account, or an ex, and names none of them', async () => {
+      const blocker = await person('Bora');
+      const blocked = await person('Bert');
+      expect((await call(h, '/v1/blocks', { method: 'POST', token: blocker.token, body: { target: blocked.publicUid } })).statusCode).toBe(204);
+      // The person blocked cannot tell: the answer is the one any like gets.
+      expect(resultOf(await swipe(blocked, [{ target: blocker.publicUid, action: 'superlike', comment: 'Why?' }])).result).toBe('liked');
+
+      const shadowTarget = await person('Sela');
+      const shadow = await person('Shade');
+      await db.sql.query(`UPDATE users SET is_shadowbanned = true WHERE id = $1`, [shadow.id]);
+      expect(resultOf(await swipe(shadow, [{ target: shadowTarget.publicUid, action: 'superlike' }])).result).toBe('liked');
+
+      const testTarget = await person('Real');
+      const tester = await person('Tester');
+      await db.sql.query(`UPDATE users SET flags = flags | 1 WHERE id = $1`, [tester.id]);
+      await h.redis.del(h.app.keys.meVersion(tester.id));
+      expect(resultOf(await swipe(tester, [{ target: testTarget.publicUid, action: 'superlike' }])).result).toBe('liked');
+
+      const exTarget = await person('Esma');
+      const ex = await person('Exa');
+      await likeOf(ex, exTarget);
+      const id = resultOf(await likeOf(exTarget, ex)).conversation!.id;
+      expect((await call(h, `/v1/conversations/${id}`, { method: 'DELETE', token: exTarget.token })).statusCode).toBe(204);
+      // More than a week later: the matched-pair marker is gone, the like reaches the stream.
+      await h.redis.del(h.app.keys.likesMatched(ex.id, exTarget.id));
+      expect(resultOf(await swipe(ex, [{ target: exTarget.publicUid, action: 'superlike' }])).result).toBe('liked');
+
+      // A like the writer does tell, written after the others: once it is told, the others were judged.
+      const control = await person('Cora');
+      const fan = await person('Fan');
+      await likeOf(fan, control);
+      await until(() => eventsOf(realtime, control.publicUid, 'like').length === 1);
+      for (const [actor, target, rows] of [
+        [shadow, shadowTarget, 1],
+        [tester, testTarget, 1],
+        [ex, exTarget, 2],
+      ] as const) {
+        await until(async () => (await likesWritten(actor, target)) === rows);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      for (const target of [blocker, shadowTarget, testTarget, exTarget]) await quietFor(target);
+      // The blocked person's like is nowhere: not in the blocker's bucket, not written.
+      expect(likesPageSchema.parse((await call(h, '/v1/likes', { token: blocker.token })).json()).total).toBe(0);
+      expect(await likesWritten(blocked, blocker)).toBe(0);
+      const published = JSON.stringify(realtime.published);
+      for (const name of ['Bert', 'Shade', 'Tester', 'Exa']) expect(published).not.toContain(`"name":"${name}"`);
+    });
+
+    it('charges a super like resent to a full bucket once, and two copies at the same moment once', async () => {
+      const buyer = await person('Buyer');
+      await db.sql.query(`INSERT INTO wallet_balances (user_id, item, store, balance) VALUES ($1, 1, 2, 5)`, [buyer.id]);
+      // The weekly super like goes elsewhere first.
+      expect(resultOf(await swipe(buyer, [{ target: h.app.publicIds.user.encode(h.app.ids.nextId()), action: 'superlike' }])).result).toBe('liked');
+      const balance = async () => (await row<{ balance: number }>(db, `SELECT balance FROM wallet_balances WHERE user_id = $1`, [buyer.id])).balance;
+      const week = Math.floor((Math.floor(Date.now() / 86_400_000) + 3) / 7);
+      const popular = await person('Popular');
+      await h.redis.set(h.app.keys.likesInFull(popular.id, week), '1');
+      expect(resultOf(await swipe(buyer, [{ target: popular.publicUid, action: 'superlike' }])).result).toBe('liked');
+      expect(await balance()).toBe(4);
+      const resent = await swipe(buyer, [{ target: popular.publicUid, action: 'superlike' }]);
+      expect(resultOf(resent).result).toBe('duplicate');
+      expect(statements(resent)).toBe(0);
+      expect(await balance()).toBe(4);
+
+      const other = await person('Other');
+      await h.redis.set(h.app.keys.likesInFull(other.id, week), '1');
+      const both = await Promise.all([0, 1].map(() => swipe(buyer, [{ target: other.publicUid, action: 'superlike' }])));
+      expect(both.map((r) => resultOf(r).result).sort()).toEqual(['duplicate', 'liked']);
+      expect(await balance()).toBe(3);
+      await until(async () => (await likesWritten(buyer, other)) === 1);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(await likesWritten(buyer, popular)).toBe(1);
+      expect(await likesWritten(buyer, other)).toBe(1);
+      expect(Number((await row<{ n: string }>(db, `SELECT count(*)::text AS n FROM wallet_ledger WHERE user_id = $1 AND reason = 2`, [buyer.id])).n)).toBe(2);
+    });
+
+    it('refuses a comment with a control character before anything happens', async () => {
+      const a = await person('Nul');
+      const b = await person('Target');
+      const refused = await likeOf(a, b, { comment: 'hi\u0000there' });
+      expect(refused.statusCode).toBe(400);
+      expect(json(refused)).toMatchObject({ code: 'validation_failed', errors: [{ pointer: '/swipes/0/comment' }] });
+      expect(await h.redis.get(h.app.keys.quota('likes', a.id, new Date().toISOString().slice(0, 10).replaceAll('-', '')))).toBeNull();
+      expect(resultOf(await likeOf(a, b, { comment: 'two\nlines' })).result).toBe('liked');
+    });
+  });
+
+  describe('incognito', () => {
+    it('shows a person in incognito only to those they liked, and takes them out of decks prepared before', async () => {
+      const shy = await person('Incognita');
+      const stranger = await person('Stranger');
+      const liked = await person('Chosen');
+      await warm(stranger);
+      expect((await call(h, `/v1/profiles/${shy.publicUid}`, { token: stranger.token })).statusCode).toBe(200);
+      await db.sql.query(`INSERT INTO subscriptions (user_id, started_at, expires_at, plan_id, store, status) VALUES ($1, now(), now() + interval '30 days', 2, 0, 4)`, [shy.id]);
+      await h.app.cache.del(h.app.keys.entitlements(shy.id, 2));
+      const on = await call(h, '/v1/me/settings', { method: 'PATCH', token: shy.token, body: { incognito: true } });
+      expect(on.statusCode, on.body).toBe(200);
+      expect(await h.redis.zscore(h.app.keys.accountsHidden(), shy.id)).not.toBeNull();
+
+      const hidden = await call(h, `/v1/profiles/${shy.publicUid}`, { token: stranger.token });
+      expect(hidden.statusCode).toBe(404);
+      expect(statements(hidden)).toBe(1);
+      // Someone they liked sees them (the like is in PostgreSQL once the writer ran).
+      await likeOf(shy, liked);
+      await until(async () => Number((await row<{ n: string }>(db, `SELECT count(*)::text AS n FROM likes WHERE actor_id = $1 AND target_id = $2`, [shy.id, liked.id])).n) === 1);
+      expect((await call(h, `/v1/profiles/${shy.publicUid}`, { token: liked.token })).statusCode).toBe(200);
+      expect((await call(h, `/v1/profiles/${shy.publicUid}`, { token: stranger.token })).statusCode).toBe(404);
+    });
+  });
+
   describe('a Valkey loss in the middle', () => {
     it('falls back to the PostgreSQL look-up until lk:ready is back, losing and duplicating no match', async () => {
       const [a1, b1, a2, b2, a3, b3] = await Promise.all(['A1', 'B1', 'A2', 'B2', 'A3', 'B3'].map((n) => person(n)));
@@ -417,9 +545,12 @@ describe.skipIf(!hasInfrastructure)('swipes, likes and conversations (PostgreSQL
     });
   });
 
-  it('never sends a raw user id in any answer of this suite', () => {
+  it('never sends a raw user id in any answer of this suite, the opaque cursors included', () => {
     expect(seeded.length).toBeGreaterThan(200);
-    const bodies = h.bodies.join('\n');
+    // Cursors are base64url JSON: decoded, they must not name anyone by raw id either.
+    const cursors = h.bodies.flatMap((body) => [...body.matchAll(/"nextCursor":"([A-Za-z0-9_-]+)"/g)].map((m) => Buffer.from(m[1]!, 'base64url').toString('utf8')));
+    expect(cursors.length).toBeGreaterThan(0);
+    const bodies = [...h.bodies, ...cursors].join('\n');
     for (const user of seeded) expect(bodies.includes(user.id), user.publicUid).toBe(false);
     const published = JSON.stringify(realtime.published);
     for (const user of seeded) expect(published.includes(user.id), user.publicUid).toBe(false);

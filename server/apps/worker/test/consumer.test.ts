@@ -127,8 +127,78 @@ describe.skipIf(!hasRedis)('Redis Streams consumer group (redis-server)', () => 
     await eventually(async () => (await admin.xlen(`${stream}:dead`)) === 1);
     expect(attempts).toBe(3);
     const [[, fields]] = (await admin.xrange(`${stream}:dead`, '-', '+')) as [[string, string[]]];
-    expect(fields).toEqual(['stream', stream, 'group', 'g', 'id', id, 'deliveries', '3', 'fields', '{"n":"0"}']);
+    expect(fields).toEqual(['stream', stream, 'group', 'g', 'id', id, 'deliveries', '3', 'reason', 'deliveries', 'fields', '{"n":"0"}']);
     await eventually(async () => (await pendingCount(stream, 'g')) === 0);
+  });
+
+  it('dead-letters a rejected entry at once, without the fields it must not keep, and never by count with maxDeliveries 0', async () => {
+    const stream = newStream();
+    let attempts = 0;
+    const alerts: Record<string, unknown>[] = [];
+    start({
+      stream,
+      group: 'g',
+      consumer: 'c1',
+      startId: '0',
+      claimIdleMs: 50,
+      claimIntervalMs: 50,
+      maxDeliveries: 0,
+      alertDeliveries: 2,
+      redactFields: ['c'],
+      log: { warn: () => undefined, error: (data, message) => message.includes('many deliveries') && alerts.push(data) },
+      classify: (error) => ((error as Error).message === 'bad data' ? 'rejected' : 'failed'),
+      handler: async (entry) => {
+        attempts += 1;
+        throw new Error(entry.fields['n'] === '0' ? 'bad data' : 'keeps failing');
+      },
+    });
+    await admin.xadd(stream, '*', 'n', '0', 'c', 'private words');
+    await admin.xadd(stream, '*', 'n', '1');
+    await eventually(async () => (await admin.xlen(`${stream}:dead`)) === 1);
+    const [[, fields]] = (await admin.xrange(`${stream}:dead`, '-', '+')) as [[string, string[]]];
+    expect(fields).toEqual(expect.arrayContaining(['reason', 'rejected', 'fields', '{"n":"0","c":"[redacted]"}']));
+    // The other keeps failing: it stays pending (never dead-lettered by count) and is reported.
+    await eventually(() => alerts.length >= 2);
+    expect(attempts).toBeGreaterThan(4);
+    expect(await admin.xlen(`${stream}:dead`)).toBe(1);
+    expect(await pendingCount(stream, 'g')).toBe(1);
+  });
+
+  it('waits out an unavailable database: no claims, no delivery counts burnt, nothing dead-lettered, then handles everything', async () => {
+    const stream = newStream();
+    let up = false;
+    let probes = 0;
+    const handled: string[] = [];
+    start({
+      stream,
+      group: 'g',
+      consumer: 'c1',
+      startId: '0',
+      claimIdleMs: 30,
+      claimIntervalMs: 30,
+      maxDeliveries: 2,
+      classify: (error) => ((error as Error).message === 'down' ? 'unavailable' : 'failed'),
+      probe: async () => {
+        probes += 1;
+        if (!up) throw new Error('still down');
+      },
+      handler: async (entry) => {
+        if (!up) throw new Error('down');
+        handled.push(entry.fields['n']!);
+      },
+    });
+    await publish(stream, 5);
+    // Ten times maxDeliveries × claimIdleMs: an outage this long dead-letters nothing.
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(await admin.xlen(`${stream}:dead`)).toBe(0);
+    expect(probes).toBeGreaterThan(0);
+    const counts = (await admin.xpending(stream, 'g', '-', '+', 10)) as [string, string, number, number][];
+    expect(counts.every(([, , , deliveries]) => deliveries <= 2)).toBe(true);
+    up = true;
+    await eventually(() => handled.length === 5, 10_000);
+    expect(handled.sort()).toEqual(['0', '1', '2', '3', '4']);
+    await eventually(async () => (await pendingCount(stream, 'g')) === 0);
+    expect(await admin.xlen(`${stream}:dead`)).toBe(0);
   });
 
   it('re-reads its own pending entries when it starts again under the same name', async () => {

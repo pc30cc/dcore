@@ -1,7 +1,18 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { idFloor } from '@app/shared';
 import type { Redis } from 'ioredis';
-import { DEAD_LETTER_MAXLEN, ensureGroup, type ConsumerLog, type EntrySource, type StreamDelivery, type StreamEntry } from './consumer.js';
+import {
+  DEAD_LETTER_MAXLEN,
+  UnavailableError,
+  deadLetterFields,
+  ensureGroup,
+  waitUntilAvailable,
+  type ConsumerLog,
+  type EntrySource,
+  type ErrorKind,
+  type StreamDelivery,
+  type StreamEntry,
+} from './consumer.js';
 
 /**
  * The batch mode of the stream consumer, for the write-behind streams
@@ -14,10 +25,21 @@ import { DEAD_LETTER_MAXLEN, ensureGroup, type ConsumerLog, type EntrySource, ty
  * - Hands the whole batch to the handler (one multi-row INSERT ... ON
  *   CONFLICT DO NOTHING), then acknowledges it with one XACK. A batch that
  *   fails is retried row by row once, to isolate the entry that cannot be
- *   written; that entry stays pending, is claimed again (XAUTOCLAIM) after
- *   `claimIdleMs`, and goes to the dead-letter stream (`MAXLEN ~ 100000`)
- *   after `maxDeliveries`. The handler may also name entries it can never
- *   write (malformed): those go to the dead letters at once.
+ *   written. What happens to a failure depends on its kind (`classify`):
+ *   - `unavailable` (the database is down or refuses connections): nothing
+ *     is split and nothing is given up; the consumer stops reading and
+ *     claiming, probes (`probe`) with a backoff until the database answers,
+ *     then takes its own pending entries again. Delivery counts do not
+ *     climb during an outage, so an outage never dead-letters anything;
+ *   - `rejected` (the entry itself can never be written: a data error on
+ *     its own row): to the dead-letter stream at once;
+ *   - `failed` (anything else): the entry stays pending, is claimed again
+ *     (XAUTOCLAIM) after `claimIdleMs`, and goes to the dead-letter stream
+ *     after `maxDeliveries` (0: never; past `alertDeliveries` it is logged
+ *     as an error on every delivery instead).
+ *   The handler may also name entries it can never write (malformed): those
+ *   go to the dead letters at once. Dead letters (`MAXLEN ~ 100000`) leave
+ *   out the fields named in `redactFields` (free text).
  * - After each acknowledgement it trims the stream with `XTRIM MINID m`, m =
  *   min(the oldest pending id, the group's last-delivered id + 1); never by
  *   length (an outage would drop unwritten entries), and not at all when
@@ -51,6 +73,14 @@ export interface BatchConsumerOptions {
   claimIntervalMs?: number | undefined;
   maxDeliveries?: number | undefined;
   deadLetterStream?: string | undefined;
+  /** What a handler failure means (default: every failure is `failed`). */
+  classify?: ((error: unknown) => ErrorKind) | undefined;
+  /** Resolves once the database answers again (after an `unavailable` failure); unset: the backoff alone. */
+  probe?: (() => Promise<unknown>) | undefined;
+  /** An entry delivered more often than this is logged as an error on each delivery (default: maxDeliveries, or 10). */
+  alertDeliveries?: number | undefined;
+  /** Fields left out of dead letters (free text a dead letter must not keep). */
+  redactFields?: readonly string[] | undefined;
   /** The flush watermark key (`wb:<name>:wm`); unset: none is kept. */
   watermarkKey?: string | undefined;
   watermarkMarginMs?: number | undefined;
@@ -170,6 +200,10 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
     claimIntervalMs = Math.max(1_000, Math.floor(claimIdleMs / 2)),
     maxDeliveries = 10,
     deadLetterStream = `${stream}:dead`,
+    classify = () => 'failed' as const,
+    probe,
+    alertDeliveries = maxDeliveries > 0 ? maxDeliveries : 10,
+    redactFields = [],
     watermarkKey,
     watermarkMarginMs = 5_000,
     log = silent,
@@ -184,7 +218,7 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
 
   async function deliveryCounts(entries: readonly StreamEntry[]): Promise<Map<string, number>> {
     const counts = new Map<string, number>();
-    if (entries.length === 0 || maxDeliveries <= 0) return counts;
+    if (entries.length === 0) return counts;
     const pipeline = redis.pipeline();
     for (const entry of entries) pipeline.xpending(stream, group, entry.id, entry.id, 1);
     const replies = (await pipeline.exec()) ?? [];
@@ -214,7 +248,7 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
       'reason',
       reason,
       'fields',
-      JSON.stringify(entry.fields),
+      deadLetterFields(entry.fields, redactFields),
     );
   }
 
@@ -247,6 +281,7 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
         deadLettered += 1;
         log.warn({ stream, group, id: entry.id, deliveries: deliveries - 1 }, 'stream entry moved to the dead-letter stream');
       } else {
+        if (deliveries > alertDeliveries) log.error({ stream, group, id: entry.id, deliveries }, 'stream entry still not written after many deliveries');
         live.push({ ...entry, source });
       }
     }
@@ -263,29 +298,45 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
         acked.push(entry.id);
       }
     };
-    if (live.length > 0) {
+    /** One entry on its own: rejected ones go to the dead letters, an outage stops the batch, the rest stay pending. */
+    const settleOne = async (entry: StreamDelivery): Promise<void> => {
       try {
-        await settle(live);
-      } catch (error) {
-        log.error({ err: error, stream, group, size: live.length, source }, 'stream batch failed; retrying it entry by entry');
-        if (live.length > 1) {
-          split = true;
-          for (const entry of live) {
-            try {
-              await settle([entry]);
-            } catch (rowError) {
-              // Left pending: claimed again after claimIdleMs, dead-lettered after maxDeliveries.
-              log.error({ err: rowError, stream, group, id: entry.id }, 'stream entry failed');
-            }
+        await settle([entry]);
+      } catch (rowError) {
+        const kind = classify(rowError);
+        if (kind === 'unavailable') throw new UnavailableError(rowError);
+        if (kind === 'rejected') {
+          await deadLetter(entry, counts.get(entry.id) ?? 1, 'rejected');
+          acked.push(entry.id);
+          deadLettered += 1;
+          log.error({ err: rowError, stream, group, id: entry.id }, 'stream entry refused by the database; moved to the dead-letter stream');
+          return;
+        }
+        // Left pending: claimed again after claimIdleMs.
+        log.error({ err: rowError, stream, group, id: entry.id }, 'stream entry failed');
+      }
+    };
+    try {
+      if (live.length > 0) {
+        try {
+          await settle(live);
+        } catch (error) {
+          // The database is unreachable: splitting would only fail every row; wait for it instead.
+          if (classify(error) === 'unavailable') throw new UnavailableError(error);
+          if (live.length > 1) {
+            log.error({ err: error, stream, group, size: live.length, source }, 'stream batch failed; retrying it entry by entry');
+            split = true;
           }
+          for (const entry of live) await settleOne(entry);
         }
       }
+    } finally {
+      if (acked.length > 0) {
+        await redis.xack(stream, group, ...acked);
+        await afterAck();
+      }
+      onBatch?.({ source, size: entries.length, acked: acked.length, deadLettered, split });
     }
-    if (acked.length > 0) {
-      await redis.xack(stream, group, ...acked);
-      await afterAck();
-    }
-    onBatch?.({ source, size: entries.length, acked: acked.length, deadLettered, split });
   }
 
   async function read(count: number, block: number | null, from: string): Promise<{ entries: StreamEntry[]; deleted: string[] }> {
@@ -338,10 +389,15 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
 
   async function loop(): Promise<void> {
     await ensureGroup(redis, stream, group, '0');
-    await readOwnPending();
+    // Own pending entries first (a restart), and again after every outage.
+    let ownPending = true;
     let failures = 0;
     while (running) {
       try {
+        if (ownPending) {
+          await readOwnPending();
+          ownPending = false;
+        }
         if (Date.now() >= nextClaimAt) {
           await claimAbandoned();
           nextClaimAt = Date.now() + claimIntervalMs;
@@ -350,6 +406,13 @@ export function startBatchConsumer(options: BatchConsumerOptions): BatchConsumer
         failures = 0;
       } catch (error) {
         if (!running) return;
+        if (error instanceof UnavailableError) {
+          // No reads and no claims until the database answers: nothing is delivered (or counted) in vain.
+          log.error({ err: error.cause, stream, group }, 'database unavailable; the stream waits for it');
+          await waitUntilAvailable({ probe, isRunning: () => running, log, stream });
+          ownPending = true;
+          continue;
+        }
         if (error instanceof Error && error.message.startsWith('NOGROUP')) {
           // The stream or the group was lost (Valkey emptied): recreate it from the start of the stream.
           log.warn({ stream, group }, 'consumer group missing; recreating it');

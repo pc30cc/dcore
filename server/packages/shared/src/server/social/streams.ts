@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis';
+import { isStorableText, LIKE_COMMENT_MAX } from '../../api/social.js';
 import type { KeyBuilder } from '../kv/keys.js';
 
 /**
@@ -42,6 +43,18 @@ function text(fields: Record<string, string>, name: string): string | null {
   return value === undefined || value === '' ? null : value;
 }
 
+/**
+ * A like's comment, or null. A comment PostgreSQL would refuse (a control
+ * character, more than 300 code points: entries made before the API refused
+ * them) is dropped, so the like or the match itself is still written and a
+ * batch never fails over it; `dropped` says so.
+ */
+function comment(fields: Record<string, string>, name: string): { comment: string | null; dropped: boolean } {
+  const value = text(fields, name);
+  if (value === null || isStorableText(value, LIKE_COMMENT_MAX)) return { comment: value, dropped: false };
+  return { comment: null, dropped: true };
+}
+
 /** One like as `wb:like` carries it. */
 export interface LikeEntry {
   id: string;
@@ -55,12 +68,17 @@ export interface LikeEntry {
   check: boolean;
   /** Already in PostgreSQL (paid from the wallet): the batch INSERT skips it by its key. */
   prepaid: boolean;
+  /** This like made a match (the like script's match branch): the match is announced, not the like. */
+  matched: boolean;
+  /** The entry's comment could not be stored and was left out. */
+  commentDropped: boolean;
 }
 
 export function parseLikeEntry(fields: Record<string, string>): LikeEntry {
   const itemKind = small('wb:like', fields, 'ik', [0, 1, 2]) as 0 | 1 | 2;
   const itemRef = optionalId('wb:like', fields, 'ir');
   if ((itemKind === 0) !== (itemRef === null)) throw new StreamEntryError('wb:like', 'ir');
+  const c = comment(fields, 'c');
   return {
     id: id('wb:like', fields, 'id'),
     targetId: id('wb:like', fields, 't'),
@@ -68,9 +86,11 @@ export function parseLikeEntry(fields: Record<string, string>): LikeEntry {
     kind: small('wb:like', fields, 'k', [1, 2]) as 1 | 2,
     itemKind,
     itemRef,
-    comment: text(fields, 'c'),
+    comment: c.comment,
     check: fields['x'] === '1',
     prepaid: fields['w'] === '1',
+    matched: fields['m'] === '1',
+    commentDropped: c.dropped,
   };
 }
 
@@ -102,7 +122,7 @@ export function parseMatchEntry(fields: Record<string, string>): MatchEntry {
     likeId: id('wb:match', fields, 'l'),
     itemKind,
     itemRef: optionalId('wb:match', fields, 'ir'),
-    comment: text(fields, 'c'),
+    comment: comment(fields, 'c').comment,
   };
 }
 

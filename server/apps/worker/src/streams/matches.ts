@@ -31,7 +31,8 @@ import type { StreamDelivery } from './consumer.js';
  *   wrote it. A pair that already had another match, or that may not match
  *   (a block, a hidden account), ends here: nothing is announced;
  * - the Valkey state of both lists (`mt:`, `cl:`, `cv:`), both people out of
- *   each other's like buckets;
+ *   each other's like buckets, unless the conversation ended since the row
+ *   was read (its tombstone): then nothing is announced or published;
  * - the `conversation` event (reason `matched`) to each person, with the
  *   match id as the event id: a replay, or the API's publish of the same
  *   match, is one event for Centrifugo and the apps;
@@ -71,7 +72,12 @@ export function matchEntryHandler(context: JobContext, options: { graceMs?: numb
     }
 
     const state = { id: row.id, lo: row.lo, hi: row.hi, state: row.state, flags: row.flags, source: row.source, createdMs: idTime(row.id).getTime() };
-    await announceMatch(context.redis, services.keys, state);
+    if (!(await announceMatch(context.redis, services.keys, state))) {
+      // Ended (an unmatch, a block, a ban) after the row above was read: its tombstone stopped the announcement.
+      if (options.stats) options.stats.skipped += 1;
+      log.info({ matchId: entry.matchId }, 'match entry: the conversation ended before it was announced');
+      return;
+    }
     await clearPairLikes(context.redis, services.keys, row.lo, row.hi);
 
     const cards = { [row.lo]: parseCardSource(row.loCard), [row.hi]: parseCardSource(row.hiCard) };

@@ -1,4 +1,4 @@
-import { blockUser, blockedPeople, fileReport, unblockUser, type BlockOutcome, type BlockedPerson, type PairMatch } from '@app/db';
+import { blockUser, blockedPeople, fileReport, unblockPair, type BlockOutcome, type BlockedPerson, type PairMatch } from '@app/db';
 import { decodeCursor, encodeCursor, realtimeEnvelope, reportContext, reportReason, userChannel, wireTime, type BlockList, type PeerSummary, type ReportRequest } from '@app/shared';
 import {
   ACCOUNT_QUEUE,
@@ -36,7 +36,8 @@ import { HttpProblem } from '../lib/problem.js';
 const ENDED_BY_BLOCK = 3;
 const DAY_MS = 86_400_000;
 
-const cursorSchema = z.object({ t: z.string().regex(/^-?[0-9]{1,20}$/), i: z.string().regex(/^[1-9][0-9]{0,18}$/) });
+/** `t` the block's time (µs), `i` the person's public id: raw ids never leave the server, a cursor included. */
+const cursorSchema = z.object({ t: z.string().regex(/^-?[0-9]{1,20}$/), i: z.string().min(1).max(64) });
 
 function budget(request: FastifyRequest, statements: number): void {
   if (request.pgTally?.budget !== undefined) request.pgTally.budget += statements;
@@ -108,11 +109,24 @@ export class SafetyService {
     }
   }
 
-  /** `DELETE /v1/blocks/:target`: idempotent; a target that names nobody removes nothing. */
+  /**
+   * `DELETE /v1/blocks/:target`: idempotent; a target that names nobody
+   * removes nothing. Once no side blocks the other, the pair's block marker
+   * goes, so their likes count again (a 503 when Valkey cannot take it: the
+   * retry finds the pair cleared and deletes the marker).
+   */
   async unblock(actorId: string, targetId: string | null): Promise<void> {
     if (targetId === null) return;
     budget(this.request, 1);
-    await scrubbed(() => unblockUser(this.app.pg, actorId, targetId));
+    const outcome = await scrubbed(() => unblockPair(this.app.pg, actorId, targetId));
+    // The other side still blocks: the marker stays.
+    if (!outcome.cleared) return;
+    try {
+      await this.app.redis.del(this.app.keys.likesBlocked(actorId, targetId));
+    } catch (error) {
+      this.log.error({ err: error }, 'unblock: the pair marker was not cleared; the client retries');
+      throw new HttpProblem('service_unavailable', { detail: 'Send the request again in a moment.', headers: { 'retry-after': '2' }, cause: error });
+    }
   }
 
   /** `GET /v1/blocks`: the people this account blocked, newest first. */
@@ -120,15 +134,16 @@ export class SafetyService {
     let after: { atUs: string; userId: string } | undefined;
     if (cursor !== undefined) {
       const decoded = decodeCursor(cursorSchema, cursor);
-      if (!decoded) throw new HttpProblem('bad_request', { detail: 'The cursor is not valid.' });
-      after = { atUs: decoded.t, userId: decoded.i };
+      const userId = decoded ? this.app.publicIds.user.decodeId(decoded.i) : null;
+      if (!decoded || userId === null) throw new HttpProblem('bad_request', { detail: 'The cursor is not valid.' });
+      after = { atUs: decoded.t, userId };
     }
     const rows = await scrubbed(() => blockedPeople(this.app.pg, viewerId, limit, after));
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
       items: page.map((p) => ({ user: this.peerOf(p), blockedAt: wireTime(Math.floor(Number(p.atUs) / 1_000)) })),
-      nextCursor: rows.length > limit && last ? encodeCursor({ t: last.atUs, i: last.userId }) : null,
+      nextCursor: rows.length > limit && last ? encodeCursor({ t: last.atUs, i: this.app.publicIds.user.encode(last.userId) }) : null,
     };
   }
 

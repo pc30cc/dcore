@@ -11,7 +11,6 @@
     <string name="update_required_body">This version of {appName} is no longer supported. Update it to keep using the app.</string>
     <string name="update_required_action">Update</string>
     <string name="auth_subtitle">Sign in or create an account to continue.</string>
-    <string name="auth_continue_phone">Continue with phone number</string>
     <string name="auth_continue_google">Continue with Google</string>
     <string name="legal_terms">Terms</string>
     <string name="legal_privacy">Privacy Policy</string>
@@ -77,6 +76,8 @@
     <string name="payments_error">Something went wrong with %1$s.</string>
     <string name="settings_licences">Open-source licences</string>
     <string name="licences_vazirmatn">Vazirmatn font</string>
+    <string name="licences_instrument_serif">Instrument Serif font</string>
+    <string name="licences_lalezar">Lalezar font</string>
     <string name="settings_version">Version %1$s (%2$d) · %3$s</string>
     <string name="store_bazaar">Cafe Bazaar</string>
     <string name="store_play">Google Play</string>

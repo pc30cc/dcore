@@ -7,6 +7,7 @@ import {
   accountJobNames,
   bumpVersion,
   deletionFanoutDataSchema,
+  MATCH_ENDED_TTL_SECONDS,
   photoUploadKey,
   photoVariantKeys,
   purgeDataSchema,
@@ -86,6 +87,8 @@ function lists(context: JobContext, userId: string, ended: readonly EndedConvers
   const { keys } = context.services;
   const pipeline = context.redis.pipeline();
   for (const { matchId, peerId } of ended) {
+    // The tombstone first: an announcement that read the match as active does nothing after it.
+    pipeline.set(keys.matchEnded(matchId), 1, 'EX', MATCH_ENDED_TTL_SECONDS);
     pipeline.del(keys.raw('mt', matchId), keys.raw('lm', matchId), keys.raw('rp', matchId), keys.raw('dl', matchId));
     pipeline.zrem(keys.raw('cl', peerId), matchId);
     pipeline.hdel(keys.raw('unr', peerId), matchId);

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import app.core.BuildConfig
 import app.core.LocalAppGraph
 import app.core.R
@@ -263,9 +264,15 @@ private fun LanguageDialog(chosen: AppLanguage?, onDismiss: () -> Unit, onChoose
 @Composable
 private fun LicencesDialog(onDismiss: () -> Unit) {
     val resources = LocalResources.current
-    val text by produceState(initialValue = "", resources) {
+    // Each bundled font with its licence text.
+    val fonts = listOf(
+        R.string.licences_vazirmatn to R.raw.license_vazirmatn,
+        R.string.licences_instrument_serif to R.raw.license_instrument_serif,
+        R.string.licences_lalezar to R.raw.license_lalezar,
+    )
+    val texts by produceState(initialValue = emptyList<String>(), resources) {
         value = withContext(Dispatchers.IO) {
-            resources.openRawResource(R.raw.license_vazirmatn).bufferedReader().use { it.readText() }
+            fonts.map { (_, raw) -> resources.openRawResource(raw).bufferedReader().use { it.readText() } }
         }
     }
     AlertDialog(
@@ -273,8 +280,14 @@ private fun LicencesDialog(onDismiss: () -> Unit) {
         title = { Text(brandString(R.string.settings_licences)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(brandString(R.string.licences_vazirmatn), style = MaterialTheme.typography.titleSmall)
-                Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm))
+                fonts.forEachIndexed { index, (name, _) ->
+                    Text(
+                        brandString(name),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = if (index == 0) 0.dp else Space.lg),
+                    )
+                    Text(texts.getOrElse(index) { "" }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm))
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(brandString(R.string.action_close)) } },

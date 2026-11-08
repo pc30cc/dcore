@@ -7,6 +7,7 @@ import {
   IdGenerator,
   createKeys,
   createPublicIds,
+  forgetMatch,
   readWatermark,
   runLikeScript,
   type LikeScriptInput,
@@ -17,9 +18,12 @@ import pino from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   closeSocialQueues,
+  classifyWriteBehindError,
+  defaultConsumers,
   likeBatchHandler,
   likeNotesJob,
   loadConfig,
+  probeDatabase,
   matchEntryHandler,
   nextStreamId,
   sendPushJob,
@@ -33,6 +37,7 @@ import {
   type LikeBatchStats,
   type MatchStats,
 } from '../src/index.js';
+import { deckSettingsOf } from '../src/deck/settings.js';
 import { FakePhotoModerator } from '../src/photos/moderation.js';
 import { unmatchPurgeJob } from '../src/queues/unmatch.js';
 import type { WorkerServices } from '../src/services.js';
@@ -156,7 +161,12 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
     };
   }
 
-  function likeConsumer(stream: string, stats: LikeBatchStats, options: { lingerMs?: number; claimIdleMs?: number; maxDeliveries?: number } = {}): BatchConsumer {
+  /** The like writer as the worker runs it (its failure handling included), on a stream of the test's choice. */
+  function likeConsumer(
+    stream: string,
+    stats: LikeBatchStats,
+    options: { lingerMs?: number; claimIdleMs?: number; maxDeliveries?: number; classify?: typeof classifyWriteBehindError } = {},
+  ): BatchConsumer {
     return startBatchConsumer({
       redis: connection(),
       stream,
@@ -165,16 +175,22 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       handler: likeBatchHandler(context, stats),
       blockMs: 100,
       watermarkKey: keys.streamWatermark('like'),
+      classify: classifyWriteBehindError,
+      probe: () => probeDatabase(context),
+      maxDeliveries: 0,
+      redactFields: ['c'],
       ...options,
     });
   }
 
-  const stats = (): LikeBatchStats => ({ batches: 0, rows: 0, inserted: 0, checked: 0, matched: 0 });
+  const stats = (): LikeBatchStats => ({ batches: 0, rows: 0, inserted: 0, checked: 0, matched: 0, told: 0 });
 
   describe('the batch mode and the wb:like writer', () => {
     it('writes 10,000 likes in at most 40 INSERT statements at the default linger, then trims the stream and moves the watermark past them', async () => {
       const stream = keys.stream('like');
       const s = stats();
+      // The settings the writer reads (the likes window) are loaded once per process, before the count starts.
+      await deckSettingsOf(services, redis, context.log).get();
       const tally = StatementCounter.tally();
       // Everything the consumer starts runs inside this tally (AsyncLocalStorage follows it).
       const consumer = statementCounter.run(tally, () => likeConsumer(stream, s));
@@ -202,9 +218,9 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       expect(s.rows).toBe(10_000);
       expect(s.inserted).toBe(10_000);
       expect(s.batches).toBeLessThanOrEqual(40);
-      // Every statement the writer sent was one batch INSERT.
+      // Every statement the writer sent was one batch INSERT with the check of who may be told (`WITH batch AS (... INSERT INTO likes ...)`; the tally keeps first lines).
       expect(tally.statements).toBe(s.batches);
-      expect(tally.texts.every((t) => t.startsWith('INSERT INTO likes'))).toBe(true);
+      expect(tally.texts.every((t) => t.startsWith('WITH batch AS ('))).toBe(true);
       expect(await redis.xlen(stream)).toBe(0);
       // Nothing is pending: the watermark is Valkey's clock minus the margin, past every like made more than 5 s ago.
       const watermark = await readWatermark(redis, keys, 'like');
@@ -232,22 +248,42 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       expect(dead).toEqual(expect.arrayContaining(['reason', 'malformed']));
     });
 
-    it('retries a failing batch entry by entry, writes the rest, and dead-letters the entry that cannot be written', async () => {
+    it('retries a failing batch entry by entry, writes the rest, and dead-letters at once the entry the database refuses, without its comment', async () => {
       const stream = `${prefix}wb:poison`;
       const s = stats();
       const [a, b, c] = [ids.nextId(), ids.nextId(), ids.nextId()];
-      const good = [ids.nextId(), ids.nextId()];
+      const good = [ids.nextId(), ids.nextId(), ids.nextId()];
       await redis.xadd(stream, '*', 'id', good[0]!, 't', b, 'a', a, 'k', '1', 'ik', '0', 'ir', '', 'c', '', 'x', '0', 'w', '0');
-      // A comment past the column's CHECK: the INSERT of any batch holding it fails.
-      await redis.xadd(stream, '*', 'id', ids.nextId(), 't', c, 'a', a, 'k', '1', 'ik', '0', 'ir', '', 'c', 'x'.repeat(301), 'x', '0', 'w', '0');
+      // A like of oneself breaks the table's CHECK (a data error): the INSERT of any batch holding it fails.
+      const refused = ids.nextId();
+      await redis.xadd(stream, '*', 'id', refused, 't', a, 'a', a, 'k', '1', 'ik', '0', 'ir', '', 'c', 'my secret words', 'x', '0', 'w', '0');
       await redis.xadd(stream, '*', 'id', good[1]!, 't', c, 'a', b, 'k', '1', 'ik', '0', 'ir', '', 'c', '', 'x', '0', 'w', '0');
-      const consumer = likeConsumer(stream, s, { lingerMs: 0, claimIdleMs: 200, maxDeliveries: 2 });
+      // A comment PostgreSQL would refuse (NUL, past 300 characters), from before the API refused them: the like is kept without it.
+      await redis.xadd(stream, '*', 'id', good[2]!, 't', c, 'a', a, 'k', '1', 'ik', '0', 'ir', '', 'c', 'hi\u0000there', 'x', '0', 'w', '0');
+      // No claim and no delivery count is needed for a refused entry.
+      const consumer = likeConsumer(stream, s, { lingerMs: 0, claimIdleMs: 60_000 });
+      await eventually(async () => (await redis.xlen(`${stream}:dead`)) === 1, 10_000);
+      await eventually(async () => ((await redis.xpending(stream, 'pg')) as [number])[0] === 0, 10_000);
+      await consumer.stop();
+      expect(await value<string>(`SELECT count(*)::text FROM likes WHERE id = ANY ($1::bigint[])`, [good])).toBe('3');
+      expect(await value<string | null>(`SELECT comment FROM likes WHERE id = $1`, [good[2]])).toBeNull();
+      const dead = ((await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][])[0]?.[1];
+      expect(dead).toEqual(expect.arrayContaining(['reason', 'rejected', 'id']));
+      // The dead letter keeps the entry, not what the person wrote.
+      expect(JSON.stringify(dead)).toContain(refused);
+      expect(JSON.stringify(dead)).not.toContain('my secret words');
+    });
+
+    it('still dead-letters by delivery count where a stream asks for it (no classification)', async () => {
+      const stream = `${prefix}wb:counted`;
+      const s = stats();
+      const a = ids.nextId();
+      await redis.xadd(stream, '*', 'id', ids.nextId(), 't', a, 'a', a, 'k', '1', 'ik', '0', 'ir', '', 'c', '', 'x', '0', 'w', '0');
+      const consumer = likeConsumer(stream, s, { lingerMs: 0, claimIdleMs: 200, maxDeliveries: 2, classify: () => 'failed' });
       await eventually(async () => (await redis.xlen(`${stream}:dead`)) === 1, 10_000);
       await consumer.stop();
-      expect(await value<string>(`SELECT count(*)::text FROM likes WHERE id = ANY ($1::bigint[])`, [good])).toBe('2');
       const dead = ((await redis.xrange(`${stream}:dead`, '-', '+')) as [string, string[]][])[0]?.[1];
       expect(dead).toEqual(expect.arrayContaining(['reason', 'deliveries']));
-      // Nothing is left pending.
       expect(((await redis.xpending(stream, 'pg')) as [number])[0]).toBe(0);
     });
 
@@ -302,6 +338,175 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       expect(entries.length).toBe(before + 1);
       const fields = entries.at(-1)![1];
       expect(fields).toEqual(expect.arrayContaining(['a', popular, 't', fan, 'l', back.likeId]));
+    });
+  });
+
+  describe('who hears of a like', () => {
+    async function pushJobsFor(userId: string): Promise<Job[]> {
+      const q = new Queue('push', { connection: redis, prefix: context.config.queuePrefix });
+      try {
+        return (await q.getJobs(['delayed', 'waiting', 'active', 'completed', 'failed'])).filter(
+          (j) => (j.data as { type?: string; userId?: string }).type === 'like' && (j.data as { userId?: string }).userId === userId,
+        );
+      } finally {
+        await q.close();
+      }
+    }
+
+    function likeEvents(userId: string): RealtimeEnvelope[] {
+      return realtime.on(userChannel(publicIds.user.encode(userId))).filter((e) => e.t === 'like');
+    }
+
+    it('tells the target of a like only when the pair is clear: not after a block, from a shadowbanned or test account, or an ex', async () => {
+      const stream = `${prefix}wb:tell`;
+      const scripts = { ...keys, stream: (name: 'like' | 'match' | 'msg') => (name === 'like' ? stream : keys.stream(name)) };
+      const s = stats();
+      const target = await person({ name: 'Tara Moon' });
+      const fan = await person({ name: 'Finn Gray' });
+      const superFan = await person({ name: 'Sami Reed' });
+      const blocked = await person({ name: 'Blake Doe' });
+      const shadow = await person({ name: 'Shay Low' });
+      const tester = await person({ name: 'Test Person' });
+      const ex = await person({ name: 'Ex Friend' });
+      const pair = (a: string, b: string) => (BigInt(a) < BigInt(b) ? [a, b] : [b, a]);
+      // The block's row only (as after a Valkey loss took its marker): the writer checks the pair itself.
+      await db.admin.query(`INSERT INTO blocks (user_lo, user_hi, blocked_by) VALUES ($1, $2, 3)`, pair(target, blocked));
+      await db.admin.query(`UPDATE users SET is_shadowbanned = true WHERE id = $1`, [shadow]);
+      await db.admin.query(`UPDATE users SET flags = flags | 1 WHERE id = $1`, [tester]);
+      await db.admin.query(`INSERT INTO matches (id, user_lo, user_hi, source, state, ended_at, ended_by) VALUES ($1, $2, $3, 1, 2, now(), 1)`, [
+        ids.nextId(),
+        ...pair(target, ex),
+      ]);
+      const plain = like(fan, target);
+      const loud = like(superFan, target, { kind: 2 });
+      expect(await runLikeScript(redis, scripts, plain)).toBe('liked');
+      expect(await runLikeScript(redis, scripts, loud)).toBe('liked');
+      for (const quiet of [blocked, shadow, tester, ex]) expect(await runLikeScript(redis, scripts, like(quiet, target, { kind: 2 }))).toBe('liked');
+      // Someone the people above liked, who hears nothing at all.
+      const other = await person();
+      for (const quiet of [shadow, tester]) expect(await runLikeScript(redis, scripts, like(quiet, other, { kind: 2 }))).toBe('liked');
+      await db.admin.query(`INSERT INTO blocks (user_lo, user_hi, blocked_by) VALUES ($1, $2, 1)`, pair(other, blocked));
+      expect(await runLikeScript(redis, scripts, like(blocked, other))).toBe('liked');
+
+      const consumer = likeConsumer(stream, s, { lingerMs: 50 });
+      await eventually(() => s.rows === 9);
+      await consumer.stop();
+      expect(s.inserted).toBe(9);
+      expect(s.told).toBe(2);
+      const events = likeEvents(target);
+      expect(events.map((e) => e.id).sort()).toEqual([plain.likeId, loud.likeId].sort());
+      const superEvent = events.find((e) => e.id === loud.likeId)!;
+      expect(superEvent.d).toMatchObject({ kind: 'superlike', from: { id: publicIds.user.encode(superFan), name: 'Sami Reed' } });
+      expect((events.find((e) => e.id === plain.likeId)!.d as { from?: unknown }).from).toBeUndefined();
+      // `total` counts the bucket, where the quiet likes still sit (never shown: the likes page applies the visibility rule).
+      expect((superEvent.d as { total: number }).total).toBeGreaterThanOrEqual(2);
+      expect(JSON.stringify(events)).not.toContain(target);
+      expect(await pushJobsFor(target)).toHaveLength(1);
+      expect(likeEvents(other)).toHaveLength(0);
+      expect(await pushJobsFor(other)).toHaveLength(0);
+    });
+
+    it('tells a like sent again once, and a like that made a match not at all', async () => {
+      const stream = `${prefix}wb:tell-once`;
+      const scripts = { ...keys, stream: (name: 'like' | 'match' | 'msg') => (name === 'like' ? stream : keys.stream(name)) };
+      const s = stats();
+      const target = await person();
+      const fan = await person();
+      const first = like(fan, target);
+      expect(await runLikeScript(redis, scripts, first)).toBe('liked');
+      const consumer = likeConsumer(stream, s, { lingerMs: 0 });
+      await eventually(() => s.rows === 1);
+      // The same pair again with a new id (the bucket missed it: a resend to a bucket at its cap, a pass in between).
+      const again = ids.nextId();
+      await redis.xadd(stream, '*', 'id', again, 't', target, 'a', fan, 'k', '1', 'ik', '0', 'ir', '', 'c', '', 'x', '0', 'w', '0', 'm', '0');
+      // A like that made a match: the match is announced, not the like.
+      const [a, b] = [await person(), await person()];
+      expect(await runLikeScript(redis, scripts, like(a, b))).toBe('liked');
+      const back = like(b, a);
+      expect(await runLikeScript(redis, scripts, back)).toBe('match');
+      await eventually(() => s.rows === 4);
+      await consumer.stop();
+      expect(likeEvents(target).map((e) => e.id)).toEqual([first.likeId]);
+      expect(likeEvents(a)).toHaveLength(0);
+      expect(likeEvents(b).map((e) => e.id)).toHaveLength(1);
+    });
+  });
+
+  describe('a PostgreSQL outage', () => {
+    it('loses nothing when the database refuses connections for longer than maxDeliveries × claimIdleMs: nothing is dead-lettered, every like and match is written once it is back', async () => {
+      const outPrefix = `t${randomBytes(4).toString('hex')}:`;
+      const outKeys = createKeys(outPrefix);
+      const outConfig = loadConfig({ ...env, DATABASE_URL: db.url, REDIS_URL: TEST_REDIS_URL ?? '', REDIS_KEY_PREFIX: outPrefix, WORKER_ID: 'wb-outage' });
+      const refusing = createPool({ connectionString: 'postgres://nobody:nothing@127.0.0.1:1/none', applicationName: 'wb-outage', max: 2, connectTimeoutMs: 200 });
+      const outServices: WorkerServices = { ...services, keys: outKeys, realtime: new FakeRealtimePublisher() };
+      const outContext: JobContext = { ...context, config: outConfig, services: outServices };
+      // The writer's settings are loaded while the database is up (they stay in memory).
+      await deckSettingsOf(outServices, redis, context.log).get();
+      await redis.set(outKeys.likesReady(), '1');
+      outServices.pg = refusing;
+      const consumers: { stop(): Promise<void> }[] = [];
+      try {
+        const people = await Promise.all(Array.from({ length: 6 }, () => person()));
+        const made: LikeScriptInput[] = [];
+        for (let i = 0; i < people.length; i += 2) {
+          const [x, y] = [people[i]!, people[i + 1]!];
+          const first = like(x, y);
+          const back = like(y, x);
+          expect(await runLikeScript(redis, outKeys, first)).toBe('liked');
+          expect(await runLikeScript(redis, outKeys, back)).toBe('match');
+          made.push(first, back);
+        }
+        for (let i = 0; i < 4; i += 1) {
+          const l = like(ids.nextId(), people[0]!);
+          expect(await runLikeScript(redis, outKeys, l)).toBe('liked');
+          made.push(l);
+        }
+        // The worker's own consumers, with short timings and a delivery limit that an outage would exhaust many times over.
+        const timings = { claimIdleMs: 100, claimIntervalMs: 100, maxDeliveries: 3, blockMs: 50, consumer: 'wb-outage' };
+        for (const definition of defaultConsumers(outConfig)) {
+          const probeOf = definition.probe;
+          const probe = probeOf ? () => probeOf(outContext) : undefined;
+          if (definition.kind === 'batch') {
+            consumers.push(
+              startBatchConsumer({ ...definition, ...timings, lingerMs: 0, redis: connection(), probe, handler: (entries) => definition.handler(entries, outContext) }),
+            );
+          } else {
+            consumers.push(startStreamConsumer({ ...definition, ...timings, redis: connection(), probe, handler: (entry) => definition.handler(entry, outContext) }));
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+        for (const name of ['like', 'match'] as const) expect(await redis.xlen(outKeys.streamDead(name))).toBe(0);
+        expect(await value<string>(`SELECT count(*)::text FROM likes WHERE id = ANY ($1::bigint[])`, [made.map((l) => l.likeId)])).toBe('0');
+
+        outServices.pg = pg;
+        await eventually(async () => Number(await value<string>(`SELECT count(*)::text FROM likes WHERE id = ANY ($1::bigint[])`, [made.map((l) => l.likeId)])) === made.length, 20_000);
+        const matchIds = made.filter((_, i) => i < 6 && i % 2 === 1).map((l) => l.matchId);
+        await eventually(async () => Number(await value<string>(`SELECT count(*)::text FROM matches WHERE id = ANY ($1::bigint[])`, [matchIds])) === 3, 20_000);
+        for (const name of ['like', 'match'] as const) {
+          expect(await redis.xlen(outKeys.streamDead(name))).toBe(0);
+          await eventually(async () => ((await redis.xpending(outKeys.stream(name), 'pg')) as [number])[0] === 0, 10_000);
+        }
+      } finally {
+        await Promise.allSettled(consumers.map((c) => c.stop()));
+        await refusing.end().catch(() => undefined);
+        const left = await redis.keys(`${outPrefix}*`);
+        if (left.length > 0) await redis.del(...left);
+      }
+    }, 60_000);
+
+    it('sorts failures: an unreachable database waits, a refused row is dead-lettered, anything else is retried', async () => {
+      const refusing = createPool({ connectionString: 'postgres://nobody:nothing@127.0.0.1:1/none', applicationName: 'wb-classify', max: 1, connectTimeoutMs: 200 });
+      try {
+        const down = await refusing.query('SELECT 1').catch((error: unknown) => error);
+        expect(classifyWriteBehindError(down)).toBe('unavailable');
+        const nul = await pg.query(`SELECT $1::text`, ['a\u0000b']).catch((error: unknown) => error);
+        expect(classifyWriteBehindError(nul)).toBe('rejected');
+        const check = await pg.query(`INSERT INTO likes (target_id, actor_id, id, kind) VALUES (1, 1, $1, 1)`, [ids.nextId()]).catch((error: unknown) => error);
+        expect(classifyWriteBehindError(check)).toBe('rejected');
+        expect(classifyWriteBehindError(new Error('something else'))).toBe('failed');
+      } finally {
+        await refusing.end().catch(() => undefined);
+      }
     });
   });
 
@@ -379,6 +584,27 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       await consumer.stop();
       expect(await value<string>(`SELECT count(*)::text FROM matches WHERE id = $1`, [back.matchId])).toBe('1');
       expect(conversationEvents(b)).toHaveLength(1);
+    });
+
+    it('announces nothing for a match whose conversation ended after its row was read (the end\'s tombstone)', async () => {
+      const a = await person();
+      const b = await person();
+      expect(await runLikeScript(redis, keys, like(a, b))).toBe('liked');
+      const back = like(b, a);
+      expect(await runLikeScript(redis, keys, back)).toBe('match');
+      // The match is in PostgreSQL and still active when the worker reads it; the unmatch's Valkey side ran just before the announcement.
+      expect(await createMatch(pg, { matchId: back.matchId, actorId: b, targetId: a, source: 1 })).toMatchObject({ created: true, state: 1 });
+      const [lo, hi] = BigInt(a) < BigInt(b) ? [a, b] : [b, a];
+      await forgetMatch(redis, keys, { id: back.matchId, lo, hi });
+      const s: MatchStats = { entries: 0, announced: 0, skipped: 0 };
+      const consumer = matchConsumer(s);
+      await eventually(() => s.skipped >= 1);
+      await consumer.stop();
+      expect(s.announced).toBe(0);
+      expect(conversationEvents(a)).toHaveLength(0);
+      expect(conversationEvents(b)).toHaveLength(0);
+      expect(await redis.zscore(keys.conversationList(a), back.matchId)).toBeNull();
+      expect(await redis.exists(keys.matchState(back.matchId))).toBe(0);
     });
 
     it('announces nothing for a pair that may not match (a block) or that matched before', async () => {
@@ -486,6 +712,23 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       // A replay writes and publishes nothing.
       expect(await likeNotesJob(fakeJob('like-notes', data), context)).toMatchObject({ notes: 0 });
       expect(realtime.on(userChannel(publicIds.user.encode(a))).filter((e) => e.t === 'message')).toHaveLength(2);
+    });
+
+    it('writes and publishes no like note once the conversation ended (an unmatch or a block before the job ran)', async () => {
+      const a = await person();
+      const b = await person();
+      const [lo, hi] = BigInt(a) < BigInt(b) ? [a, b] : [b, a];
+      const matchId = ids.nextId();
+      await db.admin.query(`INSERT INTO matches (id, user_lo, user_hi, source) VALUES ($1, $2, $3, 1)`, [matchId, lo, hi]);
+      await db.admin.query(`INSERT INTO likes (target_id, actor_id, id, kind, comment) VALUES ($1, $2, $3, 1, 'You again')`, [b, a, ids.nextId()]);
+      const second = ids.nextId();
+      // Ended by a block before the notes job ran.
+      await db.admin.query(`UPDATE matches SET state = 3, ended_at = now(), ended_by = 1 WHERE id = $1`, [matchId]);
+      await redis.set(keys.streamWatermark('like'), String(BigInt(second) + 1n));
+      const data = { matchId, lo, hi, actorId: b, targetId: a, noteIds: [ids.nextId(), ids.nextId()], likeId: second, itemRef: null, comment: 'Hey', queuedAtMs: Date.now() };
+      expect(await likeNotesJob(fakeJob('like-notes', data), context)).toMatchObject({ outcome: 'written', notes: 0 });
+      expect(await value<string>(`SELECT count(*)::text FROM messages WHERE match_id = $1`, [matchId])).toBe('0');
+      for (const u of [a, b]) expect(realtime.on(userChannel(publicIds.user.encode(u))).filter((e) => e.t === 'message')).toHaveLength(0);
     });
 
     it('purges an unmatched conversation\'s messages and calls, keeps the match, and waits while a hold names it', async () => {

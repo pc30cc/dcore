@@ -68,40 +68,27 @@ export interface CreateMatch {
 }
 
 /**
- * The match of a mutual like, in one statement: INSERT with the pre-minted
- * id unless the pair already has a match (`ON CONFLICT (user_lo, user_hi) DO
- * NOTHING`), only while each may see the other in discovery (no block,
- * both active, neither shadowbanned, the same test-account side). It returns
- * the row it created, or the pair's existing row (`created` false; its id is
- * the pre-minted one when the other writer was first), with both people's
- * cards. No row: the pair may not match (or a concurrent writer of the same
- * pair has not committed yet; {@link matchOfPair} reads it again).
- * New matches take the call bits from both profiles' accept_calls.
+ * The match of a mutual like, in one statement (`match_create()`, 0017):
+ * INSERT with the pre-minted id unless the pair already has a match (`ON
+ * CONFLICT (user_lo, user_hi) DO NOTHING`), only while each may see the
+ * other in discovery (no block, both active, neither shadowbanned, the same
+ * test-account side). It runs under the pair's advisory lock (the one
+ * `block_apply()` takes) and share locks on both accounts' rows, so a block,
+ * a ban or a deletion committing at the same moment is never passed: either
+ * it commits first and no match is made, or it waits and then ends the
+ * match. It returns the row it created, or the pair's existing row
+ * (`created` false; its id is the pre-minted one when the other writer was
+ * first), with both people's cards. No row: the pair may not match (or a
+ * concurrent writer of the same pair has not committed yet; {@link
+ * matchOfPair} reads it again). New matches take the call bits from both
+ * profiles' accept_calls.
  */
 export const createMatch = defineQuery({ name: 'social.createMatch', statements: 1 }, async (db, m: CreateMatch): Promise<MatchRow | null> => {
   const row = await maybeOne<MatchRecord>(
     db,
-    sql`WITH pair AS (
-          SELECT least(${m.actorId}::bigint, ${m.targetId}::bigint) AS lo, greatest(${m.actorId}::bigint, ${m.targetId}::bigint) AS hi
-        ), ins AS (
-          INSERT INTO matches (id, user_lo, user_hi, source, flags)
-          SELECT ${m.matchId}::bigint, p.lo, p.hi, ${m.source}::smallint,
-                 ((CASE WHEN coalesce((SELECT pl.accept_calls FROM profiles pl WHERE pl.user_id = p.lo), true) THEN 1 ELSE 0 END)
-                  | (CASE WHEN coalesce((SELECT ph.accept_calls FROM profiles ph WHERE ph.user_id = p.hi), true) THEN 2 ELSE 0 END))::smallint
-            FROM pair p
-           WHERE can_see(${m.actorId}::bigint, ${m.targetId}::bigint, 1) AND can_see(${m.targetId}::bigint, ${m.actorId}::bigint, 1)
-          ON CONFLICT (user_lo, user_hi) DO NOTHING
-          RETURNING id, user_lo, user_hi, state, flags, source
-        ), found AS (
-          SELECT i.id, i.user_lo, i.user_hi, i.state, i.flags, i.source, true AS created FROM ins i
-          UNION ALL
-          SELECT x.id, x.user_lo, x.user_hi, x.state, x.flags, x.source, false
-            FROM matches x, pair p
-           WHERE x.user_lo = p.lo AND x.user_hi = p.hi AND NOT EXISTS (SELECT 1 FROM ins)
-        )
-        SELECT f.id::text AS id, f.user_lo::text AS lo, f.user_hi::text AS hi, f.state, f.flags, f.source, f.created,
-               profile_card(f.user_lo) AS lo_card, profile_card(f.user_hi) AS hi_card
-          FROM found f`,
+    sql`SELECT c.o_id::text AS id, c.o_lo::text AS lo, c.o_hi::text AS hi, c.o_state AS state, c.o_flags AS flags, c.o_source AS source,
+               c.o_created AS created, c.o_lo_card AS lo_card, c.o_hi_card AS hi_card
+          FROM match_create(${m.matchId}::bigint, ${m.actorId}::bigint, ${m.targetId}::bigint, ${m.source}::smallint) AS c`,
   );
   return row ? matchRow(row) : null;
 });
@@ -219,24 +206,77 @@ export interface LikeRow {
   comment: string | null;
 }
 
+export interface BatchLike extends LikeRow {
+  /** Already in PostgreSQL (paid from the wallet): not inserted again, but still told. */
+  prepaid: boolean;
+}
+
+export interface WrittenLike {
+  id: string;
+  /** Inserted by this statement (false on a replay, and for a prepaid like). */
+  inserted: boolean;
+  /**
+   * The target may be told: the target may see the actor in a discovery
+   * list (`can_see(target, actor, 1)`: no block either way, the actor active
+   * and not shadowbanned, the same test-account side), the pair never
+   * matched (an ex after an unmatch is never told), and no earlier like of
+   * the target by the actor is in the window (a like sent again is told
+   * once).
+   */
+  tell: boolean;
+  /** The actor's `profile_card()`, only for a super like that is told and not from a test account (the event's `from`). */
+  actorCard: unknown;
+}
+
 /**
- * A batch of likes from `wb:like` in one statement, whatever its size (seven
- * array parameters, a stable plan): `ON CONFLICT DO NOTHING` on the primary
- * key, so a replayed batch, or a like the wallet transaction already wrote,
- * is a no-op. Returns the rows inserted.
+ * A batch of likes from `wb:like` in one statement, whatever its size (eight
+ * array parameters, a stable plan): the INSERT with `ON CONFLICT DO
+ * NOTHING` on the primary key, so a replayed batch is a no-op (and is told
+ * nothing again), and for every like inserted now or paid from the wallet
+ * whether its target may be told (see {@link WrittenLike}). The checks are
+ * primary-key probes (users, blocks, matches, and the pair's likes in the
+ * window) read in the statement's snapshot, so a like of this very batch
+ * does not count as an earlier one.
  */
-export const insertLikes = defineQuery({ name: 'social.insertLikes', statements: 1 }, async (db, likes: readonly LikeRow[]): Promise<number> => {
-  if (likes.length === 0) return 0;
-  return execute(
-    db,
-    sql`INSERT INTO likes (target_id, actor_id, id, item_ref, kind, item_kind, comment)
-        SELECT * FROM unnest(${likes.map((l) => l.targetId)}::bigint[], ${likes.map((l) => l.actorId)}::bigint[],
-                             ${likes.map((l) => l.id)}::bigint[], ${likes.map((l) => l.itemRef)}::bigint[],
-                             ${likes.map((l) => l.kind)}::smallint[], ${likes.map((l) => l.itemKind)}::smallint[],
-                             ${likes.map((l) => l.comment)}::text[])
-        ON CONFLICT (target_id, actor_id, id) DO NOTHING`,
-  );
-});
+export const insertLikes = defineQuery(
+  { name: 'social.insertLikes', statements: 1 },
+  async (db, likes: readonly BatchLike[], windowDays: number): Promise<WrittenLike[]> => {
+    if (likes.length === 0) return [];
+    const rows = await many<{ id: string; inserted: boolean; tell: boolean; card: unknown }>(
+      db,
+      sql`WITH batch AS (
+            SELECT * FROM unnest(${likes.map((l) => l.targetId)}::bigint[], ${likes.map((l) => l.actorId)}::bigint[],
+                                 ${likes.map((l) => l.id)}::bigint[], ${likes.map((l) => l.itemRef)}::bigint[],
+                                 ${likes.map((l) => l.kind)}::smallint[], ${likes.map((l) => l.itemKind)}::smallint[],
+                                 ${likes.map((l) => l.comment)}::text[], ${likes.map((l) => l.prepaid)}::boolean[])
+                   AS b(target_id, actor_id, id, item_ref, kind, item_kind, comment, prepaid)
+          ), ins AS (
+            INSERT INTO likes (target_id, actor_id, id, item_ref, kind, item_kind, comment)
+            SELECT b.target_id, b.actor_id, b.id, b.item_ref, b.kind, b.item_kind, b.comment FROM batch b WHERE NOT b.prepaid
+            ON CONFLICT (target_id, actor_id, id) DO NOTHING
+            RETURNING target_id, actor_id, id
+          ), written AS (
+            SELECT b.*, (i.id IS NOT NULL) AS inserted
+              FROM batch b LEFT JOIN ins i ON i.target_id = b.target_id AND i.actor_id = b.actor_id AND i.id = b.id
+             WHERE i.id IS NOT NULL OR b.prepaid
+          ), told AS (
+            SELECT w.id, w.inserted, w.kind, w.actor_id,
+                   (can_see(w.target_id, w.actor_id, 1)
+                    AND NOT EXISTS (SELECT 1 FROM matches m
+                                     WHERE m.user_lo = least(w.target_id, w.actor_id) AND m.user_hi = greatest(w.target_id, w.actor_id))
+                    AND NOT EXISTS (SELECT 1 FROM likes e
+                                     WHERE e.target_id = w.target_id AND e.actor_id = w.actor_id AND e.id < w.id
+                                       AND e.id >= id_floor(now() - make_interval(days => ${windowDays}::integer)))) AS tell
+              FROM written w
+          )
+          SELECT t.id::text AS id, t.inserted, t.tell,
+                 CASE WHEN t.tell AND t.kind = 2 AND EXISTS (SELECT 1 FROM users u WHERE u.id = t.actor_id AND (u.flags & 1) = 0)
+                      THEN profile_card(t.actor_id) END AS card
+            FROM told t`,
+    );
+    return rows.map((r) => ({ id: r.id, inserted: r.inserted === true, tell: r.tell === true, actorCard: r.card ?? null }));
+  },
+);
 
 export interface WalletSuperLike {
   userId: string;
@@ -289,6 +329,40 @@ export const spendSuperLike = defineQuery(
     return { store: Number(debit.store), balance: Number(debit.balance) };
   },
 );
+
+export interface SuperLikeRefund {
+  userId: string;
+  /** The balance the wallet super like was paid from (`spendSuperLike`'s answer). */
+  store: number;
+  ledgerId: string;
+  likeId: string;
+  targetId: string;
+}
+
+/**
+ * Gives back a wallet super like that turned out to change nothing (the
+ * like script answered `duplicate` after the payment): its like row goes,
+ * the balance it came from gets one back, with a ledger row (reason 9,
+ * restored, ref = the like). One statement, so all or nothing; a second
+ * call finds no like row and changes nothing. True when it gave one back.
+ */
+export const refundSuperLike = defineQuery({ name: 'social.refundSuperLike', statements: 1 }, async (db, r: SuperLikeRefund): Promise<boolean> => {
+  const restored = await execute(
+    db,
+    sql`WITH gone AS (
+          DELETE FROM likes l
+           WHERE l.target_id = ${r.targetId}::bigint AND l.actor_id = ${r.userId}::bigint AND l.id = ${r.likeId}::bigint AND l.kind = 2
+          RETURNING l.id
+        ), back AS (
+          UPDATE wallet_balances b SET balance = b.balance + 1, updated_at = now()
+           WHERE b.user_id = ${r.userId}::bigint AND b.item = 1 AND b.store = ${r.store}::smallint AND EXISTS (SELECT 1 FROM gone)
+          RETURNING b.balance
+        )
+        INSERT INTO wallet_ledger (id, user_id, ref_id, delta, balance_after, item, store, reason)
+        SELECT ${r.ledgerId}::bigint, ${r.userId}::bigint, ${r.likeId}::bigint, 1, back.balance, 1, ${r.store}::smallint, 9 FROM back`,
+  );
+  return restored === 1;
+});
 
 export interface VisibleLiker {
   id: string;
@@ -361,23 +435,37 @@ export interface ProfileView {
  * A profile opened from chat, likes or requests: the visibility rule and the
  * card, in one statement. A pair whose conversation ended (an unmatch, a
  * block, a ban) no longer sees each other's profile, so a block reads
- * exactly like an unmatch to the person blocked.
+ * exactly like an unmatch to the person blocked. Outside an active
+ * conversation, a person in incognito is seen only by the people they
+ * reached out to: whom they liked within the window (a primary-key probe of
+ * `likes`) or sent a request that is still pending.
  */
-export const profileFor = defineQuery({ name: 'social.profileFor', statements: 1 }, async (db, viewerId: string, targetId: string): Promise<ProfileView> => {
-  const row = await maybeOne<{ visible: boolean; card: unknown }>(
-    db,
-    sql`WITH pair AS (
-          SELECT m.state FROM matches m
-           WHERE m.user_lo = least(${viewerId}::bigint, ${targetId}::bigint)
-             AND m.user_hi = greatest(${viewerId}::bigint, ${targetId}::bigint)
-        )
-        SELECT NOT EXISTS (SELECT 1 FROM pair WHERE pair.state <> 1)
-               AND can_see(${viewerId}::bigint, ${targetId}::bigint,
-                           CASE WHEN EXISTS (SELECT 1 FROM pair WHERE pair.state = 1) THEN 2 ELSE 1 END) AS visible,
-               profile_card(${targetId}::bigint) AS card`,
-  );
-  return { visible: row?.visible === true, card: row?.card ?? null };
-});
+export const profileFor = defineQuery(
+  { name: 'social.profileFor', statements: 1 },
+  async (db, viewerId: string, targetId: string, windowDays: number): Promise<ProfileView> => {
+    const row = await maybeOne<{ visible: boolean; card: unknown }>(
+      db,
+      sql`WITH pair AS (
+            SELECT m.state FROM matches m
+             WHERE m.user_lo = least(${viewerId}::bigint, ${targetId}::bigint)
+               AND m.user_hi = greatest(${viewerId}::bigint, ${targetId}::bigint)
+          ), active AS (
+            SELECT EXISTS (SELECT 1 FROM pair WHERE pair.state = 1) AS yes
+          )
+          SELECT NOT EXISTS (SELECT 1 FROM pair WHERE pair.state <> 1)
+                 AND can_see(${viewerId}::bigint, ${targetId}::bigint, CASE WHEN (SELECT yes FROM active) THEN 2 ELSE 1 END)
+                 AND ((SELECT yes FROM active)
+                      OR NOT coalesce((SELECT p.incognito FROM profiles p WHERE p.user_id = ${targetId}::bigint), false)
+                      OR EXISTS (SELECT 1 FROM likes l
+                                  WHERE l.target_id = ${viewerId}::bigint AND l.actor_id = ${targetId}::bigint
+                                    AND l.id >= id_floor(now() - make_interval(days => ${windowDays}::integer)))
+                      OR EXISTS (SELECT 1 FROM message_requests r
+                                  WHERE r.from_id = ${targetId}::bigint AND r.to_id = ${viewerId}::bigint AND r.status = 1)) AS visible,
+                 profile_card(${targetId}::bigint) AS card`,
+    );
+    return { visible: row?.visible === true, card: row?.card ?? null };
+  },
+);
 
 export interface ConversationRow {
   id: string;
@@ -481,7 +569,9 @@ export interface LikeNote {
  * statement: the earlier like is read from `likes` (a primary-key point
  * look-up; the caller waits until `wb:like` is durable past the second like),
  * the second comes from the match entry. Returns the notes inserted: none on
- * a replay (the ids exist), so they are announced once.
+ * a replay (the ids exist), so they are announced once, and none once the
+ * conversation has ended (an unmatch or a block before the job ran: nothing
+ * is written, so nothing is published).
  */
 export const writeLikeNotes = defineQuery({ name: 'social.writeLikeNotes', statements: 1 }, async (db, n: LikeNotesInput): Promise<LikeNote[]> => {
   const rows = await many<{ id: string; sender: string; ref: string | null; body: string }>(
@@ -502,6 +592,7 @@ export const writeLikeNotes = defineQuery({ name: 'social.writeLikeNotes', state
         )
         INSERT INTO messages (match_id, id, sender_id, ref_id, kind, flags, body)
         SELECT ${n.matchId}::bigint, x.id, x.sender, x.ref, 6, 0, x.body FROM notes x
+         WHERE EXISTS (SELECT 1 FROM matches m WHERE m.id = ${n.matchId}::bigint AND m.state = 1)
         ON CONFLICT (match_id, id) DO NOTHING
         RETURNING id::text AS id, sender_id::text AS sender, ref_id::text AS ref, body`,
   );

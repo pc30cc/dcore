@@ -1,6 +1,6 @@
 import { likeDetails, profileFor, visibleLikers } from '@app/db';
 import { decodeCursor, encodeCursor, likeItemKind, type LikeItem, type LikesPage, type ProfileCard } from '@app/shared';
-import { parseCardSource, readPendingLikes, utcDay, type PendingLikes } from '@app/shared/server';
+import { likePlaceholder, parseCardSource, readPendingLikes, utcDay, type PendingLikes } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpProblem } from '../lib/problem.js';
@@ -17,14 +17,26 @@ import { planFeature, sessionPlan } from './plans.js';
  * first, then the newest week first); one statement applies the visibility
  * rule to the page (context 1, and no match yet) and returns the cards; with
  * see-likes, a second one reads the liked items and comments. On the free
- * plan a like shows only its blurhash, except super likes and the day's one
- * open like (chosen once a day and kept in `lkr:<uid>:<day>`).
+ * plan a like shows only a blurred placeholder (one soft tone near the
+ * photo's average colour, never the liker's own blurhash, which their card
+ * carries in the deck), except super likes and the day's one open like
+ * (chosen once a day and kept in `lkr:<uid>:<day>`).
+ *
+ * The page cursor names the last liker by public id (raw ids never leave
+ * the server, a cursor included).
  */
 
 /** Likes a free plan sees open each day, besides super likes. */
 export const DAILY_REVEALS = 1;
 
-const cursorSchema = z.object({ s: z.union([z.literal(0), z.literal(1)]), w: z.number().int(), i: z.string().regex(/^[1-9][0-9]{0,18}$/) });
+const cursorSchema = z.object({ s: z.union([z.literal(0), z.literal(1)]), w: z.number().int(), i: z.string().min(1).max(64) });
+
+interface PageCursor {
+  s: 0 | 1;
+  w: number;
+  /** The last liker's raw id (the cursor on the wire carries their public id). */
+  i: string;
+}
 
 interface Entry {
   id: string;
@@ -52,7 +64,7 @@ export function orderedLikers(pending: PendingLikes): Entry[] {
   return entries.sort((a, b) => Number(b.superlike) - Number(a.superlike) || b.week - a.week || compareIds(a.id, b.id));
 }
 
-function after(entry: Entry, cursor: z.infer<typeof cursorSchema>): boolean {
+function after(entry: Entry, cursor: PageCursor): boolean {
   const s = entry.superlike ? 1 : 0;
   if (s !== cursor.s) return s < cursor.s;
   if (entry.week !== cursor.w) return entry.week < cursor.w;
@@ -80,11 +92,12 @@ export class LikesService {
   async page(limit: number, cursor: string | undefined): Promise<LikesPage> {
     const { app } = this;
     const me = this.account.session.userId;
-    let from: z.infer<typeof cursorSchema> | undefined;
+    let from: PageCursor | undefined;
     if (cursor !== undefined) {
       const decoded = decodeCursor(cursorSchema, cursor);
-      if (!decoded) throw new HttpProblem('bad_request', { detail: 'The cursor is not valid.' });
-      from = decoded;
+      const liker = decoded ? app.publicIds.user.decodeId(decoded.i) : null;
+      if (!decoded || liker === null) throw new HttpProblem('bad_request', { detail: 'The cursor is not valid.' });
+      from = { s: decoded.s, w: decoded.w, i: liker };
     }
     const now = Date.now();
     const pending = await readPendingLikes(app.redis, app.keys, me, now);
@@ -113,8 +126,7 @@ export class LikesService {
       const kind = entry.superlike ? 'superlike' : 'like';
       const open = seeLikes || entry.superlike || entry.id === reveal;
       if (!open) {
-        const blurhash = card.photos[0]?.bh;
-        items.push({ kind, ...(blurhash && blurhash.length <= 64 ? { blurhash } : {}) });
+        items.push({ kind, blurhash: likePlaceholder(card.photos[0]?.bh) });
         continue;
       }
       const liker: ProfileCard = renderCard(this.cardDeps(), entry.id, card, { likesYou: seeLikes || entry.superlike, superliked: entry.superlike }, this.request.locale);
@@ -131,7 +143,7 @@ export class LikesService {
       total: pending.total,
       ...(pending.capped ? { totalPlus: true as const } : {}),
       items,
-      nextCursor: more && last ? encodeCursor({ s: last.superlike ? 1 : 0, w: last.week, i: last.id }) : null,
+      nextCursor: more && last ? encodeCursor({ s: last.superlike ? 1 : 0, w: last.week, i: app.publicIds.user.encode(last.id) }) : null,
     };
   }
 
@@ -162,7 +174,7 @@ export class LikesService {
     const me = this.account.session.userId;
     if (targetId === me) throw new HttpProblem('not_found');
     budget(this.request, 1);
-    const view = await profileFor(app.pg, me, targetId);
+    const view = await profileFor(app.pg, me, targetId, this.cfg.app['likes.window_days']);
     const card = view.visible ? parseCardSource(view.card) : null;
     if (!card) throw new HttpProblem('not_found');
     const pending = await readPendingLikes(app.redis, app.keys, me);

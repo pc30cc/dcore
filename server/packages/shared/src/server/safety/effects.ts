@@ -11,6 +11,7 @@ import type { PublicIds } from '../ids/publicId.js';
 import type { KeyBuilder } from '../kv/keys.js';
 import { bumpVersion } from '../kv/versions.js';
 import { clearPairLikes } from '../social/likes.js';
+import { MATCH_ENDED_TTL_SECONDS } from '../social/matches.js';
 
 /**
  * The Valkey and realtime side of the visibility rule, applied when the
@@ -57,7 +58,8 @@ function check(replies: [Error | null, unknown][] | null): void {
 }
 
 /**
- * Conversations that ended (a block, a ban): out of both people's lists,
+ * Conversations that ended (a block, a ban): their tombstones (a late
+ * announcement of the match does nothing), out of both people's lists,
  * their eligibility state and chat pointers dropped, both list versions
  * bumped. The same keys the deletion fan-out clears.
  */
@@ -65,6 +67,7 @@ export async function endConversations(kv: SafetyKv, ended: readonly EndedConver
   if (ended.length === 0) return;
   const { keys } = kv;
   const pipeline = kv.redis.pipeline();
+  for (const { matchId } of ended) pipeline.set(keys.matchEnded(matchId), 1, 'EX', MATCH_ENDED_TTL_SECONDS);
   for (const { matchId, lo, hi } of ended) {
     pipeline.del(keys.matchState(matchId), keys.raw('lm', matchId), keys.raw('rp', matchId), keys.raw('dl', matchId));
     pipeline.zrem(keys.conversationList(lo), matchId);
@@ -110,8 +113,13 @@ export async function dropPairFromDecks(kv: SafetyKv, a: string, b: string): Pro
   return { refilling: Number(replies?.[4]?.[1] ?? 0) > 0 };
 }
 
-/** The Valkey side of a block: likes both ways, both deck queues, the conversation it ended. */
+/**
+ * The Valkey side of a block: the pair's block marker (a like between them
+ * from now on enters no bucket), likes both ways, both deck queues, the
+ * conversation it ended.
+ */
 export async function applyBlockKv(kv: SafetyKv, actorId: string, targetId: string, ended: EndedConversationRef | null): Promise<BlockKvResult> {
+  await kv.redis.set(kv.keys.likesBlocked(actorId, targetId), 1);
   await clearPairLikes(kv.redis, kv.keys, actorId, targetId);
   const decks = await dropPairFromDecks(kv, actorId, targetId);
   if (ended) await endConversations(kv, [ended]);

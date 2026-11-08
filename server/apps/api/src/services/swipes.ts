@@ -1,30 +1,17 @@
-import { createMatch, matchOfPair, mutualLikeExists, spendSuperLike, withTransaction, type MatchRow } from '@app/db';
-import {
-  idTime,
-  realtimeEnvelope,
-  userChannel,
-  wireTime,
-  type Conversation,
-  type PeerSummary,
-  type Swipe,
-  type SwipeResult,
-  type SwipesResponse,
-} from '@app/shared';
+import { createMatch, matchOfPair, mutualLikeExists, refundSuperLike, spendSuperLike, withTransaction, type MatchRow } from '@app/db';
+import { idTime, wireTime, type Conversation, type PeerSummary, type Swipe, type SwipeResult, type SwipesResponse } from '@app/shared';
 import {
   addSeen,
   announceMatch,
   appendMatch,
   clearPairLikes,
   conversationOf,
-  countPendingLikes,
   dropFromDeck,
   dropPendingLikers,
   isLikeAnswered,
-  jobId,
   matchSourceOf,
   parseCardSource,
   peerSummaryOf,
-  photoVariantUrl,
   quotaPeriod,
   readQuotas,
   runLikeScript,
@@ -60,12 +47,15 @@ import { planLimit, sessionPlan } from './plans.js';
  *   answer can carry the conversation. The worker repeats it (a no-op),
  *   writes the like notes and publishes the event and the pushes.
  *
- * The target of a like is told (`like` event, and a push collapsed per
- * person) once the like is in the stream.
+ * Nobody is told about a like here: the `wb:like` writer tells the target
+ * (`like` event, a push collapsed per person) after its batch statement
+ * checked the pair (no block either way, the actor visible to the target,
+ * never matched), so a blocked, hidden or test account, or an ex, can like
+ * any public id and its target hears nothing.
  */
 
-/** A like push waits this long, so the likes of a burst become one push (the job id is per person). */
-export const LIKE_PUSH_DELAY_MS = 30_000;
+/** A super like paid from the wallet holds `slp:<actor>:<target>` this long, so a resend in flight cannot pay twice. */
+const WALLET_LIKE_LOCK_SECONDS = 60;
 
 interface Target {
   swipe: Swipe;
@@ -85,18 +75,9 @@ function budget(request: FastifyRequest, statements: number): void {
   if (request.pgTally?.budget !== undefined) request.pgTally.budget += statements;
 }
 
-/** How the actor appears to the target of a super like (their own first approved photo). */
-function actorSummary(app: FastifyInstance, account: ActiveAccount): PeerSummary | undefined {
-  const view = account.view;
-  const name = view.profile?.name;
-  if (!name) return undefined;
-  const first = [...view.photos].filter((p) => p.status === 3).sort((a, b) => a.position - b.position)[0];
-  let photo: PeerSummary['photo'] = null;
-  if (first && app.media && first.w && first.h) {
-    const url = photoVariantUrl(app.media, first.id, first.blobVer, 320);
-    if (url) photo = { id: first.id, w: first.w, h: first.h, blurhash: first.blurhash ?? '', url };
-  }
-  return { id: account.session.publicUid, name, photo, verified: view.verified };
+interface WalletPayment {
+  store: number;
+  ledgerId: string;
 }
 
 export class SwipeService {
@@ -201,19 +182,34 @@ export class SwipeService {
     const noteIds: [string, string] = [nextId(app), nextId(app)];
 
     let counted = false;
-    let prepaid = false;
+    let payment: WalletPayment | null = null;
     const use = await useQuota(app.redis, app.keys, quota, me, limit, 1, this.now);
     if (use.allowed) {
       counted = true;
     } else if (kind === 2) {
-      // Beyond the weekly super likes: the wallet, unless the like would change nothing (pending, or the pair matched).
-      if (await isLikeAnswered(app.redis, app.keys, me, targetId, this.now)) return { target: swipe.target, result: 'duplicate' };
-      const paid = await this.payFromWallet(likeId, targetId, itemKind, itemRef, comment);
-      if (!paid) return { target: swipe.target, result: 'quota' };
-      prepaid = true;
+      // Beyond the weekly super likes: the wallet, unless the like would change nothing (pending, or the pair
+      // matched), or the same super like is being paid right now (a resend while the first is in flight).
+      const lock = app.keys.superLikePaying(me, targetId);
+      if ((await app.redis.set(lock, likeId, 'EX', WALLET_LIKE_LOCK_SECONDS, 'NX')) !== 'OK') return { target: swipe.target, result: 'duplicate' };
+      try {
+        if (await isLikeAnswered(app.redis, app.keys, me, targetId, this.now)) {
+          await this.release(lock);
+          return { target: swipe.target, result: 'duplicate' };
+        }
+        payment = await this.payFromWallet(likeId, targetId, itemKind, itemRef, comment);
+      } catch (error) {
+        await this.release(lock);
+        throw error;
+      }
+      if (!payment) {
+        await this.release(lock);
+        return { target: swipe.target, result: 'quota' };
+      }
+      // Paid: the lock stays until it expires, past the script's answer, so a resend is answered by the buckets.
     } else {
       return { target: swipe.target, result: 'quota' };
     }
+    const prepaid = payment !== null;
 
     let outcome: LikeScriptOutcome;
     try {
@@ -239,15 +235,14 @@ export class SwipeService {
 
     if (outcome === 'duplicate') {
       if (counted) await this.giveBack(quota);
+      // Paid, and changed nothing after all (the pair matched, or the same like landed meanwhile): the payment goes back.
+      if (payment) await this.refund(payment, likeId, targetId);
       return { target: swipe.target, result: 'duplicate' };
     }
     if (outcome === 'check') {
       budget(this.request, 1);
       const mutual = await mutualLikeExists(app.pg, me, targetId, this.cfg.app['likes.window_days']);
-      if (!mutual) {
-        await this.announceLike(targetId, likeId, kind);
-        return { target: swipe.target, result: 'liked' };
-      }
+      if (!mutual) return { target: swipe.target, result: 'liked' };
       // The other like is in PostgreSQL: the match becomes durable in wb:match first, as the script does it.
       const entry: MatchEntry = { matchId, actorId: me, targetId, kind, noteIds, likeId, itemKind, itemRef: itemRef ?? null, comment: comment ?? null };
       await appendMatch(app.redis, app.keys, entry);
@@ -259,8 +254,18 @@ export class SwipeService {
       // The pair may not match (one side is hidden, or they matched before): the like stands, nothing is revealed.
       return { target: swipe.target, result: conversation === null ? 'liked' : 'skipped' };
     }
-    await this.announceLike(targetId, likeId, kind);
     return { target: swipe.target, result: 'liked' };
+  }
+
+  private async release(lock: string): Promise<void> {
+    await this.app.redis.del(lock).catch((error: unknown) => this.log.warn({ err: error }, 'swipes: wallet lock not released (it expires)'));
+  }
+
+  /** One statement: the paid like row goes and the balance gets one back, with its ledger row. */
+  private async refund(payment: WalletPayment, likeId: string, targetId: string): Promise<void> {
+    budget(this.request, 1);
+    const restored = await refundSuperLike(this.app.pg, { userId: this.me, store: payment.store, ledgerId: payment.ledgerId, likeId, targetId });
+    if (!restored) this.log.error({ likeId }, 'swipes: a duplicate wallet super like found nothing to give back');
   }
 
   private async giveBack(quota: 'likes' | 'superlikes'): Promise<void> {
@@ -269,12 +274,15 @@ export class SwipeService {
     );
   }
 
-  private async payFromWallet(likeId: string, targetId: string, itemKind: 0 | 1 | 2, itemRef: string | undefined, comment: string | undefined) {
+  /** The wallet's part of a super like (three statements in one transaction); null when there was nothing to spend. */
+  private async payFromWallet(likeId: string, targetId: string, itemKind: 0 | 1 | 2, itemRef: string | undefined, comment: string | undefined): Promise<WalletPayment | null> {
     const { app, me } = this;
     const store = this.account.session.storeCode ?? 0;
     const ledgerId = nextId(app);
+    // Minted now: a refund needs no lease later.
+    const refundLedgerId = nextId(app);
     budget(this.request, 3);
-    return withTransaction(app.pg, (tx) =>
+    const spent = await withTransaction(app.pg, (tx) =>
       spendSuperLike(tx, {
         userId: me,
         store,
@@ -283,6 +291,7 @@ export class SwipeService {
         like: { id: likeId, targetId, actorId: me, kind: 2, itemKind, itemRef: itemRef ?? null, comment: comment ?? null },
       }),
     );
+    return spent ? { store: spent.store, ledgerId: refundLedgerId } : null;
   }
 
   /**
@@ -305,7 +314,8 @@ export class SwipeService {
     if (row.state !== 1) return undefined;
     const state = { id: row.id, lo: row.lo, hi: row.hi, state: row.state, flags: row.flags, source: row.source, createdMs: idTime(row.id).getTime() };
     try {
-      await announceMatch(app.redis, app.keys, state);
+      // False: the conversation ended in the moment since the INSERT (an unmatch, a block): it is not shown.
+      if (!(await announceMatch(app.redis, app.keys, state))) return undefined;
       await clearPairLikes(app.redis, app.keys, me, targetId, this.now);
     } catch (error) {
       // The worker announces it again from wb:match.
@@ -316,25 +326,5 @@ export class SwipeService {
       ? peerSummaryOf({ publicIds: app.publicIds, media: app.media }, targetId, card)
       : { id: app.publicIds.user.encode(targetId), name: '', photo: null, verified: false };
     return conversationOf({ match: row, viewerId: me, peer });
-  }
-
-  /** Tells the target: the `like` event (with the liker only for a super like) and a push collapsed per person. */
-  private async announceLike(targetId: string, likeId: string, kind: 1 | 2): Promise<void> {
-    const { app } = this;
-    try {
-      if (app.realtime) {
-        const { total } = await countPendingLikes(app.redis, app.keys, targetId, this.now);
-        const from = kind === 2 && !this.account.test ? actorSummary(app, this.account) : undefined;
-        const envelope = realtimeEnvelope('like', likeId, this.now, { total, kind: kind === 2 ? 'superlike' : 'like', ...(from ? { from } : {}) });
-        await app.realtime.publish(userChannel(app.publicIds.user.encode(targetId)), envelope);
-      }
-    } catch (error) {
-      this.log.warn({ err: error }, 'swipes: like event not published');
-    }
-    try {
-      await app.jobs.add('push', 'send', jobId('send', 'like', targetId), { type: 'like', userId: targetId }, { delayMs: LIKE_PUSH_DELAY_MS, attempts: 3, backoffMs: 5_000 });
-    } catch (error) {
-      this.log.warn({ err: error }, 'swipes: like push not queued');
-    }
   }
 }

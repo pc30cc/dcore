@@ -19,6 +19,9 @@ import {
   likeWeeks,
   loadCards,
   markHiddenFromDecks,
+  markProfilesChanged,
+  cardChangedSince,
+  PROFILE_CHANGE_SLACK_MS,
   readDeck,
   readDeckHead,
   releaseDeckLock,
@@ -79,8 +82,25 @@ describe('deck metadata and card encoding', () => {
     expect(encodeDeckMeta(entry)).toBe('7:1.4:3');
     expect(decodeDeckMeta('42', '7:1.4:3')).toEqual({ userId: '42', version: 7, km: 1.4, flags: 3 });
     expect(decodeDeckMeta('42', encodeDeckMeta({ version: 3, km: null, flags: 0 }))).toEqual({ userId: '42', version: 3, km: null, flags: 0 });
-    for (const bad of ['', '7', '7:x:1', '0:1:1', '7:1:1:1']) expect(decodeDeckMeta('42', bad), bad).toBeNull();
+    for (const bad of ['', '7', '7:x:1', '0:1:1', '7:1:1:x', '7:1:1:1:1', '7:1:1:']) expect(decodeDeckMeta('42', bad), bad).toBeNull();
     expect(decodeDeckMeta('0', '7:1:0')).toBeNull();
+    // The stamp a reader checked the version against comes back; entries without one read as before.
+    const checked = { version: 8, km: 2, flags: 0, checkedAt: 1_762_430_400_123 };
+    expect(encodeDeckMeta(checked)).toBe('8:2:0:1762430400123');
+    expect(decodeDeckMeta('42', '8:2:0:1762430400123')).toEqual({ userId: '42', ...checked });
+  });
+
+  it('says a queued card changed only when the person\'s stamp is newer than what the entry was checked against', () => {
+    const builtAt = 1_000_000;
+    const entry = { userId: '1', version: 3, km: null, flags: 0 };
+    expect(cardChangedSince(entry, builtAt, null)).toBe(false);
+    expect(cardChangedSince(entry, builtAt, builtAt - PROFILE_CHANGE_SLACK_MS - 1)).toBe(false);
+    // Within the clock slack before the build, or after it: checked.
+    expect(cardChangedSince(entry, builtAt, builtAt - PROFILE_CHANGE_SLACK_MS + 1)).toBe(true);
+    expect(cardChangedSince(entry, builtAt, builtAt + 5)).toBe(true);
+    // Rebuilt by a reader against stamp 2_000_000: only a later stamp counts.
+    expect(cardChangedSince({ ...entry, checkedAt: 2_000_000 }, builtAt, 2_000_000)).toBe(false);
+    expect(cardChangedSince({ ...entry, checkedAt: 2_000_000 }, builtAt, 2_000_001)).toBe(true);
   });
 
   it('round-trips a card and refuses what is not one', () => {
@@ -202,6 +222,21 @@ describe.skipIf(!hasRedis)('deck state in Valkey (prefixed keys)', () => {
     await markHiddenFromDecks(redis, keys, ['11', '12'], now);
     expect(await redis.zrange(keys.accountsHidden(), '0', '-1', 'WITHSCORES')).toEqual(['11', String(now), '12', String(now)]);
     await markHiddenFromDecks(redis, keys, [], now);
+  });
+
+  it('stamps changed cards with a value that only grows, and keeps them for the life of a queue', async () => {
+    const now = Date.now();
+    await redis.zadd(keys.profilesChanged(), String(now - HIDDEN_WINDOW_MS - 1_000), 'old');
+    await markProfilesChanged(redis, keys, ['31', '32'], now);
+    expect(await redis.zscore(keys.profilesChanged(), 'old')).toBeNull();
+    const first = Number(await redis.zscore(keys.profilesChanged(), '31'));
+    expect(first).toBe(now);
+    // A writer whose clock is behind still moves the stamp forward.
+    await markProfilesChanged(redis, keys, ['31'], now - 5_000);
+    expect(Number(await redis.zscore(keys.profilesChanged(), '31'))).toBe(first + 1);
+    await markProfilesChanged(redis, keys, ['31'], now + 10);
+    expect(Number(await redis.zscore(keys.profilesChanged(), '31'))).toBe(now + 10);
+    await markProfilesChanged(redis, keys, [], now);
   });
 
   it('moves queued entries to newer card versions', async () => {

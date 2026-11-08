@@ -29,6 +29,33 @@ data class Config(
     val strings: Map<String, String> = emptyMap(),
     /** Push for the store in the query; used only by a build that has no Firebase project of its own. */
     val push: PushOptions = PushOptions(),
+    /** The signed-out welcome's copy, colours and pictures, when the admin panel sets them; the brand's own otherwise. */
+    val welcome: WelcomeConfig? = null,
+)
+
+/**
+ * The welcome screen's overrides, for the requested locale only (like
+ * [Config.strings]). Every field is optional: what is missing comes from the
+ * brand (`brand.json`'s `welcome`), then from the app's defaults.
+ */
+@Serializable
+data class WelcomeConfig(
+    /** The small line above the headline. */
+    val eyebrow: String? = null,
+    /** The headline; the words between asterisks are set in the emphasis face. */
+    val headline: String? = null,
+    val subtitle: String? = null,
+    val gradient: WelcomeGradient? = null,
+    /** Picture URLs for the bubbles (brand pictures, never a member's photo); cached like photos. */
+    val images: List<String> = emptyList(),
+)
+
+/** Three `#RRGGBB` colours, top to bottom. */
+@Serializable
+data class WelcomeGradient(
+    val top: String,
+    val middle: String,
+    val bottom: String,
 )
 
 @Serializable

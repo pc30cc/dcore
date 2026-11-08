@@ -13,15 +13,19 @@ import { defaultConsumers } from './streams/index.js';
 
 /** A Redis Streams consumer this process runs, one entry at a time (new matches, chat fan-out). */
 export interface StreamConsumerDefinition
-  extends Omit<StreamConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log'> {
+  extends Omit<StreamConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log' | 'probe'> {
   kind?: 'entry' | undefined;
   handler(entry: StreamDelivery, context: JobContext): Promise<void>;
+  /** Resolves once the database answers again, after a failure classified `unavailable`. */
+  probe?: ((context: JobContext) => Promise<unknown>) | undefined;
 }
 
 /** A write-behind stream consumer in batch mode (one statement per batch). */
-export interface BatchConsumerDefinition extends Omit<BatchConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log'> {
+export interface BatchConsumerDefinition extends Omit<BatchConsumerOptions, 'redis' | 'consumer' | 'handler' | 'log' | 'probe'> {
   kind: 'batch';
   handler(entries: readonly StreamDelivery[], context: JobContext): Promise<BatchResult | void>;
+  /** Resolves once the database answers again, after a failure classified `unavailable`. */
+  probe?: ((context: JobContext) => Promise<unknown>) | undefined;
 }
 
 export type ConsumerDefinition = StreamConsumerDefinition | BatchConsumerDefinition;
@@ -104,6 +108,8 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
     const connection = shared.duplicate({ connectionName: `stream:${definition.stream}:${config.workerId}` });
     consumerConnections.push(connection);
     const log = logger.child({ stream: definition.stream, group: definition.group });
+    const probeOf = definition.probe;
+    const probe = probeOf ? () => probeOf({ ...context, log }) : undefined;
     if (definition.kind === 'batch') {
       consumers.push(
         startBatchConsumer({
@@ -112,6 +118,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
           consumer: config.workerId,
           log,
           handler: (entries) => definition.handler(entries, { ...context, log }),
+          probe,
         }),
       );
     } else {
@@ -122,6 +129,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
           consumer: config.workerId,
           log,
           handler: (entry) => definition.handler(entry, { ...context, log }),
+          probe,
         }),
       );
     }

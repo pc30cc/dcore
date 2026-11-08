@@ -1,5 +1,6 @@
 import type { Redis } from 'ioredis';
 import type { KeyBuilder } from '../kv/keys.js';
+import { luaScript, runScript } from '../kv/scripts.js';
 import { bumpVersion } from '../kv/versions.js';
 import { MATCHED_PAIR_TTL_SECONDS } from './likes.js';
 
@@ -17,9 +18,17 @@ import { MATCHED_PAIR_TTL_SECONDS } from './likes.js';
  *   trusts the list only with the marker (else it rebuilds it from
  *   `matches`), so a list that lost its key is never taken for a short one.
  * - `cv:<uid>` (kv-core): the list's version, its ETag; bumped on every change.
+ * - `mte:<matchId>` (kv-core, 1 h): the conversation ended. Every end path
+ *   leaves it before it clears the state, and an announcement does nothing
+ *   while it exists, so an announcement that read the match as active just
+ *   before an unmatch or a block cannot put it back into the lists.
  */
 
 export const MATCH_STATE_TTL_SECONDS = 3_600;
+/** How long an ended conversation's tombstone stops late announcements (well past any announcement's read). */
+export const MATCH_ENDED_TTL_SECONDS = 3_600;
+
+const announceScript = luaScript(new URL('./matchAnnounce.lua', import.meta.url), 'match-announce', 5);
 export const CONVERSATION_LIST_TTL_SECONDS = 30 * 86_400;
 /** The member that marks a complete conversation list. */
 export const LIST_COMPLETE = '0';
@@ -82,26 +91,44 @@ export async function readMatchStates(core: Redis, keys: KeyBuilder, matchIds: r
  * A new match is in PostgreSQL: cache its state, add it to both people's
  * lists, mark the pair as matched for the like script (a match made from a
  * `check` or by the stream writer did not pass through its match branch) and
- * bump both list versions. Idempotent (the API's fast path and the stream
- * worker both call it).
+ * bump both list versions, in one script, unless the conversation has ended
+ * since (its tombstone). Idempotent (the API's fast path and the stream
+ * worker both call it). Returns false when nothing was announced: the
+ * caller then tells nobody about the match.
  */
-export async function announceMatch(core: Redis, keys: KeyBuilder, match: MatchState): Promise<void> {
-  await cacheMatchState(core, keys, match);
-  const pipeline = core.pipeline().set(keys.likesMatched(match.lo, match.hi), 1, 'EX', MATCHED_PAIR_TTL_SECONDS);
-  for (const uid of [match.lo, match.hi]) {
-    const list = keys.conversationList(uid);
-    pipeline.zadd(list, match.createdMs, match.id);
-    pipeline.expire(list, CONVERSATION_LIST_TTL_SECONDS);
-  }
-  check(await pipeline.exec());
+export async function announceMatch(core: Redis, keys: KeyBuilder, match: MatchState): Promise<boolean> {
+  const reply = await runScript(
+    core,
+    announceScript,
+    [keys.matchState(match.id), keys.matchEnded(match.id), keys.likesMatched(match.lo, match.hi), keys.conversationList(match.lo), keys.conversationList(match.hi)],
+    [
+      match.lo,
+      match.hi,
+      match.state,
+      match.flags,
+      match.source,
+      match.createdMs,
+      match.id,
+      MATCH_STATE_TTL_SECONDS,
+      MATCHED_PAIR_TTL_SECONDS,
+      CONVERSATION_LIST_TTL_SECONDS,
+    ],
+  );
+  if (Number(reply) !== 1) return false;
   await Promise.all([bumpVersion(core, keys.conversationVersion(match.lo)), bumpVersion(core, keys.conversationVersion(match.hi))]);
+  return true;
 }
 
-/** A conversation ended (unmatch, block, ban, deletion): out of both lists, its state dropped, both versions bumped. */
+/**
+ * A conversation ended (unmatch, block, ban, deletion): its tombstone first,
+ * then out of both lists and its state dropped (one transaction), both
+ * versions bumped.
+ */
 export async function forgetMatch(core: Redis, keys: KeyBuilder, match: { id: string; lo: string; hi: string }): Promise<void> {
   check(
     await core
-      .pipeline()
+      .multi()
+      .set(keys.matchEnded(match.id), 1, 'EX', MATCH_ENDED_TTL_SECONDS)
       .zrem(keys.conversationList(match.lo), match.id)
       .zrem(keys.conversationList(match.hi), match.id)
       .del(keys.matchState(match.id))

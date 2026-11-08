@@ -5,12 +5,23 @@
     <string name="auth_closed_title">Account closed</string>
     <string name="auth_closed_body">{appName} is only for adults aged 18 and over, so we\'ve closed this account.</string>
     <string name="auth_legal_notice_links">By continuing you agree to our %1$s and %2$s.</string>
+    <string name="welcome_sign_in">Sign in</string>
+    <string name="welcome_sign_up">Sign up</string>
+    <string name="welcome_eyebrow">Welcome to</string>
+    <string name="welcome_bubble_like">Like</string>
+    <string name="welcome_bubble_match">Match</string>
+    <string name="welcome_bubble_chat">Chat</string>
+    <!-- The words between asterisks are set in the emphasis face. -->
+    <string name="auth_sheet_signup_title">Create your *{appName}*</string>
+    <string name="auth_sheet_signin_title">Welcome back to *{appName}*</string>
+    <string name="auth_sheet_signup_body">It takes less than a minute. We\'ll text a code to your number.</string>
+    <string name="auth_sheet_signin_body">Enter your number and we\'ll text you a code to sign in.</string>
+    <string name="auth_sheet_continue">Continue</string>
+    <string name="auth_phone_placeholder">Enter phone number</string>
     <string name="auth_google_no_account">There\'s no Google account on this phone. Add one in Settings, or continue with your phone number.</string>
     <string name="auth_google_unavailable">Signing in with Google isn\'t available right now. Continue with your phone number.</string>
     <string name="auth_google_failed">Google sign-in didn\'t work. Try again, or continue with your phone number.</string>
     <string name="auth_error_banned">This number or phone can\'t be used with {appName}.</string>
-    <string name="auth_phone_title">What\'s your phone number?</string>
-    <string name="auth_phone_body">We\'ll text you a code to confirm it\'s yours.</string>
     <string name="auth_phone_label">Phone number</string>
     <string name="auth_phone_note">Your number is never shown on your profile or to other people.</string>
     <string name="auth_phone_invalid_local">That doesn\'t look like a complete number for this country.</string>
@@ -18,7 +29,6 @@
     <string name="auth_country_search">Search by name or code</string>
     <string name="auth_country_none">No country matches that.</string>
     <string name="auth_country_choose">Country: %1$s. Change</string>
-    <string name="auth_send_code">Send code</string>
     <string name="auth_sending">Sending…</string>
     <string name="auth_wait">Try again in %1$d:%2$02d</string>
     <string name="auth_error_phone_invalid">That number isn\'t valid. Check it and try again.</string>

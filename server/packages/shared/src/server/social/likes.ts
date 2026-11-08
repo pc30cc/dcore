@@ -55,9 +55,10 @@ export interface LikeScriptInput {
   now?: number | undefined;
 }
 
-const likeScript = luaScript(new URL('./like.lua', import.meta.url), 'like', 26);
+const likeScript = luaScript(new URL('./like.lua', import.meta.url), 'like', 32);
+const countScript = luaScript(new URL('./likeCount.lua', import.meta.url), 'like-count', 15);
 
-/** The 26 keys of the like script, in its order. */
+/** The 32 keys of the like script, in its order. */
 export function likeScriptKeys(keys: KeyBuilder, actorId: string, targetId: string, now: number): string[] {
   const weeks = likeWeeks(now);
   const current = likeWeek(now);
@@ -72,6 +73,8 @@ export function likeScriptKeys(keys: KeyBuilder, actorId: string, targetId: stri
     keys.likesInSuper(targetId, current),
     keys.likesReady(),
     keys.likesMatched(actorId, targetId),
+    ...weeks.map((w) => keys.likesInSuper(targetId, w)),
+    keys.likesBlocked(actorId, targetId),
   ];
 }
 
@@ -103,10 +106,14 @@ export async function runLikeScript(redis: Redis, keys: KeyBuilder, input: LikeS
   return outcome;
 }
 
-/** Whether `actorId` is among the pending likers of `targetId` (a read: no change). */
+/**
+ * Whether `actorId` is among the pending likers of `targetId`: in a bucket,
+ * or among the super likers (a super like to a bucket at its cap is kept
+ * only there). A read: no change.
+ */
 export async function isLikePending(redis: Redis, keys: KeyBuilder, actorId: string, targetId: string, now: number = Date.now()): Promise<boolean> {
   const pipeline = redis.pipeline();
-  for (const w of likeWeeks(now)) pipeline.sismember(keys.likesIn(targetId, w), actorId);
+  for (const w of likeWeeks(now)) pipeline.sismember(keys.likesIn(targetId, w), actorId).sismember(keys.likesInSuper(targetId, w), actorId);
   const replies = (await pipeline.exec()) ?? [];
   return replies.some(([error, value]) => {
     if (error) throw error;
@@ -204,8 +211,20 @@ export async function readPendingLikes(redis: Redis, keys: KeyBuilder, userId: s
   };
 }
 
-/** How many people liked `userId` and wait for an answer (for the `like` event and push). */
+/**
+ * How many people liked `userId` and wait for an answer (for the `like`
+ * event and push), counted in Valkey without reading the members: per week
+ * the bucket's size plus the super likers kept apart from it. A liker found
+ * in two weeks' buckets (a bucket rebuild after a loss can do that) counts
+ * twice; the likes page ({@link readPendingLikes}) counts each person once.
+ */
 export async function countPendingLikes(redis: Redis, keys: KeyBuilder, userId: string, now: number = Date.now()): Promise<{ total: number; capped: boolean }> {
-  const pending = await readPendingLikes(redis, keys, userId, now);
-  return { total: pending.total, capped: pending.capped };
+  const weeks = likeWeeks(now);
+  const reply = await runScript(redis, countScript, [
+    ...weeks.map((w) => keys.likesIn(userId, w)),
+    ...weeks.map((w) => keys.likesInSuper(userId, w)),
+    ...weeks.map((w) => keys.likesInFull(userId, w)),
+  ], []);
+  if (!Array.isArray(reply) || reply.length !== 2) throw new TypeError('like-count returned an unexpected reply');
+  return { total: Number(reply[0]), capped: Number(reply[1]) === 1 };
 }

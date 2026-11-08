@@ -2,10 +2,13 @@ import { createPool, instrumentPool, statementCounter, type Pool } from '@app/db
 import { userChannel, type RealtimeEnvelope } from '@app/shared';
 import { FakePushSender, type FakeRealtimePublisher } from '@app/shared/server';
 import {
+  WRITE_BEHIND_ALERT_DELIVERIES,
+  classifyWriteBehindError,
   closeSocialQueues,
   likeBatchHandler,
   loadConfig,
   matchEntryHandler,
+  probeDatabase,
   startBatchConsumer,
   startStreamConsumer,
   type JobContext,
@@ -63,9 +66,17 @@ export async function startPipeline(h: Harness, realtime: FakeRealtimePublisher,
       push,
     },
   };
-  const likes: LikeBatchStats = { batches: 0, rows: 0, inserted: 0, checked: 0, matched: 0 };
+  const likes: LikeBatchStats = { batches: 0, rows: 0, inserted: 0, checked: 0, matched: 0, told: 0 };
   const matches: MatchStats = { entries: 0, announced: 0, skipped: 0 };
   const connections = [new Redis(redisUrl, { maxRetriesPerRequest: null }), new Redis(redisUrl, { maxRetriesPerRequest: null })];
+  // The worker's own failure handling (defaultConsumers), with test timings.
+  const failures = {
+    classify: classifyWriteBehindError,
+    probe: () => probeDatabase(context),
+    maxDeliveries: 0,
+    alertDeliveries: WRITE_BEHIND_ALERT_DELIVERIES,
+    redactFields: ['c'],
+  };
   const likeConsumer = startBatchConsumer({
     redis: connections[0]!,
     stream: h.app.keys.stream('like'),
@@ -74,6 +85,7 @@ export async function startPipeline(h: Harness, realtime: FakeRealtimePublisher,
     blockMs: 100,
     claimIdleMs: 1_000,
     watermarkKey: h.app.keys.streamWatermark('like'),
+    ...failures,
     handler: likeBatchHandler(context, likes),
   });
   const matchConsumer = startStreamConsumer({
@@ -85,6 +97,7 @@ export async function startPipeline(h: Harness, realtime: FakeRealtimePublisher,
     blockMs: 100,
     claimIdleMs: 1_000,
     concurrency: 8,
+    ...failures,
     handler: matchEntryHandler(context, { graceMs: options.graceMs ?? 200, stats: matches }),
   });
   return {

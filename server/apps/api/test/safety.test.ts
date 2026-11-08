@@ -53,7 +53,9 @@ describe.skipIf(!hasInfrastructure)('safety (PostgreSQL, Valkey)', () => {
     await h.redis.set(h.app.keys.likesReady(), '1');
   }, 90_000);
   afterAll(async () => {
-    for (const id of rawIds) for (const body of h?.bodies ?? []) expect(body.includes(`"${id}"`), `raw id ${id} in a response`).toBe(false);
+    // Cursors are base64url JSON: decoded, they must not carry a raw id either.
+    const cursors = (h?.bodies ?? []).flatMap((body) => [...body.matchAll(/"nextCursor":"([A-Za-z0-9_-]+)"/g)].map((m) => Buffer.from(m[1]!, 'base64url').toString('utf8')));
+    for (const id of rawIds) for (const body of [...(h?.bodies ?? []), ...cursors]) expect(body.includes(`"${id}"`), `raw id ${id} in a response`).toBe(false);
     await h?.close();
     await db?.drop();
   });
@@ -279,6 +281,12 @@ describe.skipIf(!hasInfrastructure)('safety (PostgreSQL, Valkey)', () => {
       const third = blockListSchema.parse((await call(h, `/v1/blocks?limit=2&cursor=${second.nextCursor}`, { token: me.token })).json());
       expect([...second.items, ...third.items].map((i) => i.user.name)).toEqual(['B2', 'B1', 'B0']);
       expect(third.nextCursor).toBeNull();
+      // The cursor names the last person by public id, never by raw id.
+      for (const cursor of [first.nextCursor!, second.nextCursor!]) {
+        const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+        for (const p of people) expect(decoded).not.toContain(p.id);
+        expect(people.some((p) => decoded.includes(p.publicUid))).toBe(true);
+      }
       expect((await call(h, '/v1/blocks?cursor=nonsense', { token: me.token })).statusCode).toBe(400);
     });
 

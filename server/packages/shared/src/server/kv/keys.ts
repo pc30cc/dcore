@@ -77,6 +77,8 @@ export function createKeys(prefix: string) {
     lastSeen: (uid: string | bigint) => k('ls', uid),
     presence: (uid: string | bigint) => k('pres', uid),
     accountsHidden: () => k('vis', 'out'),
+    /** People whose card changed lately (zset uid → a per-person increasing stamp, about the time in ms). */
+    profilesChanged: () => k('vis', 'chg'),
 
     // Deck (kv-cache): the prepared queue (ids only), its metadata, the refill guard, cards, boosts, seen filters
     deckQueue: (uid: string | bigint) => k('deck', uid),
@@ -99,6 +101,10 @@ export function createKeys(prefix: string) {
     likesReveal: (uid: string | bigint, day: string) => k('lkr', uid, day),
     /** Set when two people matched: a like between them sent again later (a resend, a stale card) changes nothing. */
     likesMatched: (a: string | bigint, b: string | bigint) => (BigInt(a) < BigInt(b) ? k('lkm', a, b) : k('lkm', b, a)),
+    /** Set while one of the two blocks the other: a like between them enters no bucket and tells nobody. */
+    likesBlocked: (a: string | bigint, b: string | bigint) => (BigInt(a) < BigInt(b) ? k('lkb', a, b) : k('lkb', b, a)),
+    /** Held for a minute while a super like of `target` by `actor` is paid from the wallet, so a resend cannot pay twice. */
+    superLikePaying: (actor: string | bigint, target: string | bigint) => k('slp', actor, target),
 
     // Swipes (kv-core): daily, weekly and monthly quotas (`q:likes:<uid>:<yyyymmdd>`, `q:sl:<uid>:<yyyyww>`)
     quota: (feature: string, uid: string | bigint, period: string) => k('q', feature, uid, period),
@@ -111,6 +117,8 @@ export function createKeys(prefix: string) {
 
     // Conversations (matches): eligibility cache (kv-cache), lists and their versions (kv-core)
     matchState: (matchId: string | bigint) => k('mt', matchId),
+    /** Set for an hour when a conversation ends, so an announcement that read the match before the end does nothing. */
+    matchEnded: (matchId: string | bigint) => k('mte', matchId),
     conversationList: (uid: string | bigint) => k('cl', uid),
     conversationVersion: (uid: string | bigint) => k('cv', uid),
     /** Set while a conversation list's peers were checked against the visibility rule less than a minute ago. */

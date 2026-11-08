@@ -345,6 +345,94 @@ android {
     }
 }
 
+// MARK: - The signed-out welcome: copy, colours and pictures from brand.json
+//
+// `welcome` in brand.json is optional: per-locale `eyebrow`, `headline` (the
+// emphasised words between asterisks) and `subtitle`, an optional `gradient`
+// (`top`, `middle`, `bottom`, #RRGGBB) and optional `images` (file names in
+// brands/<id>/welcome/). It is checked here and written, with the pictures it
+// names, to the generated assets folder `brand/` (welcome.json and welcome/*),
+// which the app reads at run time (feature/auth/welcome/BrandWelcome).
+
+val welcomeImagePattern = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*\\.(png|jpg|jpeg|webp)")
+val brandWelcomeFolder = rootProject.layout.projectDirectory.dir("../brands/$brandId/welcome")
+
+/** The welcome block as the app reads it, checked; `{}` when the brand has none. */
+fun brandWelcomeJson(): String {
+    val block = brand("welcome") ?: return "{}"
+    if (block !is Map<*, *>) throw GradleException("brands/$brandId/brand.json: 'welcome' must be an object")
+    val out = linkedMapOf<String, Any?>("defaultLocale" to (brandString("defaultLocale") ?: "en"))
+    for (key in listOf("eyebrow", "headline", "subtitle")) {
+        val texts = block[key] ?: continue
+        if (texts !is Map<*, *> || texts.values.any { it !is String }) {
+            throw GradleException("brands/$brandId/brand.json: 'welcome.$key' must map locales to strings")
+        }
+        if (key == "headline") {
+            texts.forEach { (locale, text) ->
+                if ((text as String).count { it == '*' } % 2 != 0) {
+                    throw GradleException("brands/$brandId/brand.json: 'welcome.headline.$locale' has an unpaired '*'")
+                }
+            }
+        }
+        out[key] = texts
+    }
+    (block["gradient"] as? Map<*, *>)?.let { gradient ->
+        val colours = listOf("top", "middle", "bottom").map { stop ->
+            val hex = (gradient[stop] as? String)?.trim()
+            if (hex == null || !hexColourPattern.matches(hex)) {
+                throw GradleException("brands/$brandId/brand.json: 'welcome.gradient.$stop' must be #RRGGBB")
+            }
+            stop to hex
+        }
+        out["gradient"] = colours.toMap()
+    }
+    val images = (block["images"] as? List<*>).orEmpty().map { it as? String ?: "" }
+    images.forEach { name ->
+        if (!welcomeImagePattern.matches(name)) {
+            throw GradleException("brands/$brandId/brand.json: welcome image '$name' must be a .png, .jpg or .webp file name")
+        }
+        if (!brandWelcomeFolder.file(name).asFile.isFile) {
+            throw GradleException("brands/$brandId/brand.json: welcome image '$name' is not in brands/$brandId/welcome/")
+        }
+    }
+    out["images"] = images
+    return groovy.json.JsonOutput.toJson(out)
+}
+
+/** Writes `brand/welcome.json` and the pictures it names into a generated assets folder. */
+abstract class BrandWelcomeAssets : DefaultTask() {
+    @get:Input abstract val welcome: Property<String>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val images: ConfigurableFileCollection
+
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun write() {
+        val root = outputDir.get().asFile.resolve("brand")
+        root.deleteRecursively()
+        root.resolve("welcome").mkdirs()
+        root.resolve("welcome.json").writeText(welcome.get())
+        images.files.forEach { it.copyTo(root.resolve("welcome/${it.name}"), overwrite = true) }
+    }
+}
+
+val welcomeJson = brandWelcomeJson()
+@Suppress("UNCHECKED_CAST")
+val welcomeImages = ((groovy.json.JsonSlurper().parseText(welcomeJson) as Map<String, Any?>)["images"] as? List<String>).orEmpty()
+val brandWelcomeAssets = tasks.register<BrandWelcomeAssets>("brandWelcomeAssets") {
+    welcome.set(welcomeJson)
+    images.from(welcomeImages.map { brandWelcomeFolder.file(it) })
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(brandWelcomeAssets, BrandWelcomeAssets::outputDir)
+    }
+}
+
 /** The database schema, one JSON file per version, committed. */
 room {
     schemaDirectory("$projectDir/schemas")

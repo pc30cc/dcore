@@ -64,6 +64,7 @@ import app.core.feature.call.CallActivityHooks
 import app.core.feature.call.CallHost
 import app.core.feature.call.CallPhase
 import app.core.feature.call.ProvideCallsToChat
+import app.core.feature.auth.welcome.Headline
 import app.core.brand.AppBrand
 import app.core.i18n.AppLanguage
 import app.core.i18n.Digits
@@ -148,21 +149,21 @@ class ScreenTourTest {
         flow = "a"
         start(signedIn = false)
 
-        waitFor(hasText(str(R.string.auth_continue_phone)))
+        waitFor(hasText(str(R.string.welcome_sign_up)))
         capture("welcome")
-        compose.onNodeWithText(str(R.string.auth_continue_phone)).performClick()
+        compose.onNodeWithText(str(R.string.welcome_sign_up)).performClick()
 
         waitFor(hasText(str(R.string.privacy_title)))
         capture("privacy")
         compose.onNodeWithText(str(R.string.privacy_accept)).performClick()
 
-        waitFor(hasText(str(R.string.auth_phone_title)))
+        waitFor(hasText(Headline.plain(str(R.string.auth_sheet_signup_title))))
         // The bazaar build's default dial code is +98; the play build follows the SIM (GB here, in English).
         val national = if (BuildConfig.STORE == "play" && language == "en") "7700900123" else "9127654321"
-        compose.onNodeWithText(str(R.string.auth_phone_label)).performTextInput(national)
-        waitFor(hasText(str(R.string.auth_send_code)) and isEnabled())
+        compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.auth_phone_label))).performTextInput(national)
+        waitFor(hasText(str(R.string.auth_sheet_continue)) and isEnabled())
         capture("phone")
-        compose.onNodeWithText(str(R.string.auth_send_code)).performClick()
+        compose.onNodeWithText(str(R.string.auth_sheet_continue)).performClick()
 
         waitFor(hasText(str(R.string.auth_code_title)))
         val codeField = compose.onNodeWithContentDescription(str(R.string.auth_code_label, 6))

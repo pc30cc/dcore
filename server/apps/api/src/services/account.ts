@@ -1,6 +1,6 @@
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import { accountView, accountViewSchema, type AccountView, type AccountViewResult, type Pool, type Queryable } from '@app/db';
-import { bumpVersion, bumpVersionFrom, readVersion, type KeyBuilder } from '@app/shared/server';
+import { bumpVersion, bumpVersionFrom, markProfilesChanged, readVersion, type KeyBuilder } from '@app/shared/server';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
@@ -134,6 +134,10 @@ export class AccountStore {
       this.log.error({ err: error }, 'account: version not bumped; the cached view is stale until it expires');
       return null;
     }
+    // Prepared decks holding this person's card at an older version build it again.
+    await markProfilesChanged(this.redis, this.keys, [userId]).catch((error: unknown) =>
+      this.log.warn({ err: error }, 'account: card change not noted; prepared decks may show the old card until their next refill'),
+    );
     if (fresh && store) await this.store(userId, version, fresh.result);
     return version;
   }

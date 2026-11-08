@@ -6,7 +6,6 @@
     <string name="update_required_body">{appName} uygulamasının bu sürümü artık desteklenmiyor. Kullanmaya devam etmek için güncelleyin.</string>
     <string name="update_required_action">Güncelle</string>
     <string name="auth_subtitle">Devam etmek için giriş yapın veya hesap oluşturun.</string>
-    <string name="auth_continue_phone">Telefon numarasıyla devam et</string>
     <string name="auth_continue_google">Google ile devam et</string>
     <string name="legal_terms">Koşullar</string>
     <string name="legal_privacy">Gizlilik Politikası</string>
@@ -72,6 +71,8 @@
     <string name="payments_error">%1$s ile ilgili bir sorun oluştu.</string>
     <string name="settings_licences">Açık kaynak lisansları</string>
     <string name="licences_vazirmatn">Vazirmatn yazı tipi</string>
+    <string name="licences_instrument_serif">Instrument Serif yazı tipi</string>
+    <string name="licences_lalezar">Lalezar yazı tipi</string>
     <string name="settings_version">Sürüm %1$s (%2$d) · %3$s</string>
     <string name="store_bazaar">Cafe Bazaar</string>
     <string name="store_play">Google Play</string>

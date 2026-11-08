@@ -184,6 +184,32 @@ describe.skipIf(!hasInfrastructure)('GET /v1/deck', () => {
     expect(deckPageSchema.parse(second.json()).cards[0]!.name).toBe('After edit');
   });
 
+  it('shows a privacy change made after the queue was built on the next page, though the old card is still cached', async () => {
+    const me = await viewer();
+    const shy = await person({ name: 'Turns shy' });
+    await queue(me.id, [{ userId: shy.id, version: shy.version, km: 7, flags: 0 }]);
+    const before = deckPageSchema.parse((await call(h, '/v1/deck', { token: me.token })).json()).cards[0]!;
+    expect(before).toMatchObject({ name: 'Turns shy', distance: { km: 7 } });
+    expect(before.age).toBeGreaterThanOrEqual(18);
+    // The card at the old version stays in the cache (24 h): the change itself must reach the queue.
+    expect(await h.app.cache.exists(h.app.keys.card(shy.id, shy.version, 0))).toBe(1);
+
+    const changed = await call(h, '/v1/me/settings', { method: 'PATCH', token: shy.token, body: { hideDistance: true, hideAge: true } });
+    expect(changed.statusCode).toBe(200);
+    const after = await call(h, '/v1/deck', { token: me.token });
+    expect(statements(after)).toBe(1);
+    const card = deckPageSchema.parse(after.json()).cards[0]!;
+    expect(card.name).toBe('Turns shy');
+    expect(card.distance).toBeUndefined();
+    expect(card.age).toBeUndefined();
+    expect(card.v).toBeGreaterThan(shy.version);
+    // The entry now names the new version and the change it was checked against: no statement, still hidden.
+    await expect.poll(async () => (await readDeckHead(h.app.cache, h.app.keys, me.id, 5)).entries[0]?.checkedAt).toBeDefined();
+    const again = await call(h, '/v1/deck', { token: me.token });
+    expect(statements(again)).toBe(0);
+    expect(deckPageSchema.parse(again.json()).cards[0]!).not.toHaveProperty('distance');
+  });
+
   it('skips and drops people hidden since the queue was built and people who left the pool', async () => {
     const me = await viewer();
     const stays = await person({ name: 'Stays' });

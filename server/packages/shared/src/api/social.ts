@@ -15,6 +15,22 @@ import {
 export const LIKE_COMMENT_MAX = 300;
 export const SWIPES_PER_REQUEST = 20;
 
+/**
+ * Characters a free text that is stored never holds: NUL (PostgreSQL's
+ * `text` cannot hold it, so one such text would fail a whole write-behind
+ * batch) and the other C0 controls and DEL, except tab, line feed and
+ * carriage return.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+export const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
+/** Whether a text may be stored as it is: no {@link CONTROL_CHARACTERS}, at most `max` code points. */
+export function isStorableText(text: string, max: number): boolean {
+  if (CONTROL_CHARACTERS.test(text)) return false;
+  // UTF-16 units are never fewer than code points: count them only when the units are over.
+  return text.length <= max || [...text].length <= max;
+}
+
 export const swipeActionSchema = z.enum(['like', 'pass', 'superlike']);
 export type SwipeAction = z.infer<typeof swipeActionSchema>;
 
@@ -30,7 +46,13 @@ export const swipeSchema = z
     target: publicUidSchema,
     action: swipeActionSchema,
     item: likedItemSchema.optional(),
-    comment: z.string().trim().min(1).max(LIKE_COMMENT_MAX).optional(),
+    comment: z
+      .string()
+      .trim()
+      .min(1)
+      .max(LIKE_COMMENT_MAX)
+      .refine((text) => !CONTROL_CHARACTERS.test(text), { message: 'a comment holds no control characters' })
+      .optional(),
   })
   .refine((swipe) => swipe.action !== 'pass' || (swipe.item === undefined && swipe.comment === undefined), {
     message: 'a pass carries no item and no comment',

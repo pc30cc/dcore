@@ -525,12 +525,14 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       const pipeline = app.redis.pipeline();
       // Call placement reads the match flags from their cache: drop the copies that changed.
       for (const matchId of row.matches) pipeline.del(app.keys.raw('mt', matchId));
-      if (snooze === true) {
+      // Incognito turned on: out of every deck prepared before (the next refill of the people this account liked brings it back).
+      const hide = snooze === true || (row.incognito && !view.profile.incognito);
+      if (hide) {
         const now = Date.now();
         pipeline.zadd(app.keys.accountsHidden(), now, session.userId);
         pipeline.zremrangebyscore(app.keys.accountsHidden(), '-inf', now - 3 * 3_600_000);
       }
-      if (row.matches.length > 0 || snooze === true) {
+      if (row.matches.length > 0 || hide) {
         await pipeline.exec().catch((error: unknown) => request.log.warn({ err: error }, 'settings: Valkey follow-up failed'));
       }
       return {

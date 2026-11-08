@@ -39,14 +39,22 @@ export const blockUser = defineQuery({ name: 'safety.block', statements: 1 }, as
   return blockOutcomeSchema.parse(row.out);
 });
 
+export interface UnblockOutcome {
+  /** The actor's block was lifted. */
+  changed: boolean;
+  /** No side blocks the other after this call (no row left: lifted now, or before). */
+  cleared: boolean;
+}
+
 /**
  * `actorId` lifts their block of `targetId`: their bit leaves the pair's row
  * (the row goes when no side blocks any more). A pair that had matched stays
- * apart through its match row. True when something changed.
+ * apart through its match row. Says whether something changed and whether
+ * the pair is free of blocks now.
  */
-export const unblockUser = defineQuery({ name: 'safety.unblock', statements: 1 }, async (db, actorId: string, targetId: string): Promise<boolean> => {
-  if (actorId === targetId) return false;
-  const row = await one<{ changed: boolean }>(
+export const unblockPair = defineQuery({ name: 'safety.unblockPair', statements: 1 }, async (db, actorId: string, targetId: string): Promise<UnblockOutcome> => {
+  if (actorId === targetId) return { changed: false, cleared: false };
+  const row = await one<{ changed: boolean; cleared: boolean }>(
     db,
     sql`WITH pair AS (
           SELECT least(${actorId}::bigint, ${targetId}::bigint) AS lo, greatest(${actorId}::bigint, ${targetId}::bigint) AS hi,
@@ -61,10 +69,19 @@ export const unblockUser = defineQuery({ name: 'safety.unblock', statements: 1 }
            WHERE b.user_lo = p.lo AND b.user_hi = p.hi AND b.blocked_by = 3
           RETURNING 1
         )
-        SELECT EXISTS (SELECT 1 FROM gone) OR EXISTS (SELECT 1 FROM kept) AS changed`,
+        SELECT EXISTS (SELECT 1 FROM gone) OR EXISTS (SELECT 1 FROM kept) AS changed,
+               -- The statement's own DELETE is not visible here: a row seen and not deleted is a block that stays.
+               EXISTS (SELECT 1 FROM gone)
+                 OR NOT EXISTS (SELECT 1 FROM blocks b, pair p WHERE b.user_lo = p.lo AND b.user_hi = p.hi) AS cleared`,
   );
-  return row.changed === true;
+  return { changed: row.changed === true, cleared: row.cleared === true };
 });
+
+/** {@link unblockPair}, answering only whether something changed. */
+export const unblockUser = defineQuery(
+  { name: 'safety.unblock', statements: 1 },
+  async (db, actorId: string, targetId: string): Promise<boolean> => (await unblockPair(db, actorId, targetId)).changed,
+);
 
 export interface BlockedPerson {
   userId: string;

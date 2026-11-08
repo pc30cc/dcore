@@ -56,42 +56,58 @@ fun PrivacyNoticeScreen(
     onAccept: () -> Unit,
     busy: Boolean = false,
 ) {
-    val graph = LocalAppGraph.current
-    val config by graph.config.config.collectAsStateWithLifecycle()
-    val uri = LocalUriHandler.current
-    val privacyUrl = config?.legal?.privacyUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.privacyUrl
-    val termsUrl = config?.legal?.termsUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.termsUrl
-
     FlowScaffold(
         title = brandString(R.string.privacy_title),
         subtitle = brandString(R.string.privacy_intro),
         onBack = onBack,
         actions = {
             PrimaryButton(brandString(R.string.privacy_accept), onClick = onAccept, busy = busy)
-            Text(
-                brandString(R.string.privacy_accept_note, versions.terms, versions.privacy),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+            PrivacyAcceptNote(versions)
         },
     ) {
-        Section(Icons.Filled.Info, R.string.privacy_collect_title, R.string.privacy_collect_body)
-        Section(Icons.Filled.LocationOn, R.string.privacy_location_title, R.string.privacy_location_body)
-        Section(Icons.Filled.Face, R.string.privacy_photos_title, R.string.privacy_photos_body)
-        Section(Icons.Filled.Lock, R.string.privacy_visible_title, R.string.privacy_visible_body)
-        Section(Icons.Filled.DateRange, R.string.privacy_keep_title, R.string.privacy_keep_body)
-        Section(Icons.Filled.Delete, R.string.privacy_choices_title, R.string.privacy_choices_body)
-        NoteCard {
-            Text(brandString(R.string.privacy_adults), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        PrivacyNoticeBody()
+    }
+}
+
+/** "By continuing you accept the terms (version n) and the privacy policy (version m)", under the accept button. */
+@Composable
+fun PrivacyAcceptNote(versions: LegalVersions) {
+    Text(
+        brandString(R.string.privacy_accept_note, versions.terms, versions.privacy),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+}
+
+/**
+ * The notice itself (what is kept and why, who sees what, for how long, the
+ * person's choices, the age line and the links to the full texts), in the
+ * current Material colours: the onboarding step and the sign-in sheet frame
+ * it each their own way.
+ */
+@Composable
+fun PrivacyNoticeBody() {
+    val graph = LocalAppGraph.current
+    val config by graph.config.config.collectAsStateWithLifecycle()
+    val uri = LocalUriHandler.current
+    val privacyUrl = config?.legal?.privacyUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.privacyUrl
+    val termsUrl = config?.legal?.termsUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.termsUrl
+    Section(Icons.Filled.Info, R.string.privacy_collect_title, R.string.privacy_collect_body)
+    Section(Icons.Filled.LocationOn, R.string.privacy_location_title, R.string.privacy_location_body)
+    Section(Icons.Filled.Face, R.string.privacy_photos_title, R.string.privacy_photos_body)
+    Section(Icons.Filled.Lock, R.string.privacy_visible_title, R.string.privacy_visible_body)
+    Section(Icons.Filled.DateRange, R.string.privacy_keep_title, R.string.privacy_keep_body)
+    Section(Icons.Filled.Delete, R.string.privacy_choices_title, R.string.privacy_choices_body)
+    NoteCard {
+        Text(brandString(R.string.privacy_adults), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+    }
+    Column {
+        if (privacyUrl.isNotBlank()) {
+            TextButton(onClick = { uri.openUri(privacyUrl) }) { Text(brandString(R.string.privacy_read_full)) }
         }
-        Column {
-            if (privacyUrl.isNotBlank()) {
-                TextButton(onClick = { uri.openUri(privacyUrl) }) { Text(brandString(R.string.privacy_read_full)) }
-            }
-            if (termsUrl.isNotBlank()) {
-                TextButton(onClick = { uri.openUri(termsUrl) }) { Text(brandString(R.string.terms_read_full)) }
-            }
+        if (termsUrl.isNotBlank()) {
+            TextButton(onClick = { uri.openUri(termsUrl) }) { Text(brandString(R.string.terms_read_full)) }
         }
     }
 }

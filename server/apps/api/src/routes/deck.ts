@@ -1,6 +1,6 @@
 import { profileCards } from '@app/db';
 import { deckPageSchema, deckQuerySchema, preferenceFlags, type DeckSuggestion, type ProfileCard } from '@app/shared';
-import { DeckFlag, dropFromDeck, jobId, loadCards, readDeckHead, updateDeckEntries, type DeckEntry } from '@app/shared/server';
+import { cardChangedSince, DeckFlag, dropFromDeck, jobId, loadCards, readDeckHead, updateDeckEntries, type DeckEntry } from '@app/shared/server';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { HttpProblem } from '../lib/problem.js';
 import { activeAccount } from '../services/active.js';
@@ -18,8 +18,12 @@ import { requireScope } from '../services/session.js';
  * - Cards come from `card:<uid>:<ver>:<catv>` in one MGET; the misses of the
  *   page are built in one statement (`profile_cards()`), the only statement
  *   this route may send (besides the own-account view on a cold cache). A
- *   card built at a newer version (an edit since the queue was built) moves
- *   the queue's entry to it, so it is not built again.
+ *   person whose card changed after their entry's version was taken (an
+ *   edit, a privacy switch, a photo deleted or refused: their `vis:chg`
+ *   stamp, read with `vis:out`) is built again with the misses, whatever
+ *   card the cache holds for the old version. A card built at a newer
+ *   version moves the queue's entry to it (with the stamp it was checked
+ *   against), so it is not built again.
  * - When the queue runs low (`deck.refill.refill_below`) or is gone, a
  *   refill is queued for the worker (one per person per 30 seconds). An
  *   empty page while a refill is due says `exhausted: false`; `exhausted:
@@ -70,10 +74,16 @@ export const deckRoutes: FastifyPluginAsyncZod = async (app) => {
       ]);
       const entries = head.entries;
       const hiddenSince = new Map<string, number>();
+      const changedAt = new Map<string, number>();
       if (entries.length > 0) {
-        const scores = await app.redis.zmscore(keys.accountsHidden(), ...entries.map((e) => e.userId));
-        scores.forEach((score, i) => {
-          if (score !== null) hiddenSince.set(entries[i]!.userId, Number(score));
+        const ids = entries.map((e) => e.userId);
+        const replies = await app.redis.pipeline().zmscore(keys.accountsHidden(), ...ids).zmscore(keys.profilesChanged(), ...ids).exec();
+        const failed = replies?.find(([error]) => error !== null)?.[0];
+        if (!replies || failed) throw failed ?? new Error('deck: Valkey pipeline aborted');
+        const [hidden, changed] = [replies[0]![1] as (string | null)[], replies[1]![1] as (string | null)[]];
+        ids.forEach((id, i) => {
+          if (hidden[i] !== null && hidden[i] !== undefined) hiddenSince.set(id, Number(hidden[i]));
+          if (changed[i] !== null && changed[i] !== undefined) changedAt.set(id, Number(changed[i]));
         });
       }
       const builtAt = head.builtAt ?? 0;
@@ -91,10 +101,12 @@ export const deckRoutes: FastifyPluginAsyncZod = async (app) => {
       let consumed = head.broken.length + (entries.length - visible.length);
       if (visible.length > 0) {
         const wanted = visible;
+        // A card that changed since its version was taken is asked for at version 0, which is never cached: it is built.
+        const stale = new Set(wanted.filter((e) => cardChangedSince(e, builtAt, changedAt.get(e.userId) ?? null)).map((e) => e.userId));
         const loaded = await loadCards(
           app.cache,
           keys,
-          wanted.map((e) => ({ userId: e.userId, version: e.version })),
+          wanted.map((e) => ({ userId: e.userId, version: stale.has(e.userId) ? 0 : e.version })),
           catalogue ?? '0',
           (ids) => profileCards(app.pg, ids),
           (error) => request.log.warn({ err: error }, 'deck: cards not cached'),
@@ -107,7 +119,9 @@ export const deckRoutes: FastifyPluginAsyncZod = async (app) => {
             drop.push(entry.userId);
             continue;
           }
-          if (card.v !== entry.version) newer.push({ ...entry, version: card.v });
+          // The stamp read before the build: a change after it has a larger one, so it is noticed next time.
+          if (stale.has(entry.userId)) newer.push({ ...entry, version: card.v, checkedAt: changedAt.get(entry.userId) });
+          else if (card.v !== entry.version) newer.push({ ...entry, version: card.v });
           cards.push(
             renderCard(
               app,

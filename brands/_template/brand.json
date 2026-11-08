@@ -84,6 +84,21 @@
     "logo": "logo.svg",
     "logoMark": "mark.svg"
   },
+  "welcome": {
+    "eyebrow": { "en": "Welcome to", "fa": "خوش آمدید به", "tr": "Hoş geldiniz" },
+    "headline": {
+      "en": "{appName}, your headline *goes here*",
+      "fa": "{appName}، تیتر شما *اینجا می‌نشیند*",
+      "tr": "{appName}, başlığınız *burada yer alır*"
+    },
+    "subtitle": {
+      "en": "A line or two under the headline, in the brand's own words.",
+      "fa": "یک یا دو خط زیر تیتر، با کلمات خود برند.",
+      "tr": "Başlığın altında, markanın kendi sözleriyle bir iki satır."
+    },
+    "gradient": { "top": "#A9C2EE", "middle": "#F06A3C", "bottom": "#2B0A0E" },
+    "images": []
+  },
   "colors": {
     "brand": { "light": "#E8466A", "dark": "#FF6B8A" },
     "onBrand": { "light": "#FFFFFF", "dark": "#1A0A0F" }

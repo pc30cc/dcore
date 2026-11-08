@@ -306,11 +306,14 @@ describe.skipIf(!hasInfrastructure)('W3 acceptance (PostgreSQL, Valkey, the work
     expect(firstBack.result).toBe('matched');
     await until(() => eventsOf(realtime, b.publicUid, 'conversation').length === 1);
     const likeEvents = () => [a, b].map((p) => eventsOf(realtime, p.publicUid, 'like').length);
-    const likePushes = () => [a, b].map((p) => jobs.jobs.filter((j) => j.queue === 'push' && j.data['userId'] === p.id).length);
+    // Both likes are durable and the writer has judged them before the resends.
+    await until(async () => (await likesDurable(a, b)) + (await likesDurable(b, a)) === 2);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const eventsBefore = likeEvents();
-    const pushesBefore = likePushes();
-    // B's like told A; A's like back made the match and told nobody about a like.
-    expect(eventsBefore).toEqual([1, 0]);
+    const toldBefore = pipeline.likes.told;
+    // A's like back made the match and told nobody about a like (B's like was told to A only if its batch came before the match).
+    expect(eventsBefore[1]).toBe(0);
+    expect(eventsBefore[0]).toBeLessThanOrEqual(1);
 
     // Both people send their like again, as an outbox does when the first answer was lost.
     const again = await swipe(a, [{ target: b.publicUid, action: 'like' }]);
@@ -319,10 +322,10 @@ describe.skipIf(!hasInfrastructure)('W3 acceptance (PostgreSQL, Valkey, the work
     expect(['duplicate', 'skipped']).toContain(resultOf(againB).result);
 
     // Nobody is told about a new like, nothing waits in a bucket, and no further like row is written.
-    expect(likeEvents()).toEqual(eventsBefore);
-    expect(likePushes()).toEqual(pushesBefore);
     for (const p of [a, b]) expect(likesPageSchema.parse((await call(h, '/v1/likes', { token: p.token })).json()).total).toBe(0);
     await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(likeEvents()).toEqual(eventsBefore);
+    expect(pipeline.likes.told).toBe(toldBefore);
     expect((await likesDurable(a, b)) + (await likesDurable(b, a))).toBe(2);
     expect(await matchesOf(a, b)).toHaveLength(1);
   });
@@ -367,7 +370,7 @@ describe.skipIf(!hasInfrastructure)('W3 acceptance (PostgreSQL, Valkey, the work
     pool.query = function (this: unknown, ...args: unknown[]) {
       const first = args[0];
       const text = typeof first === 'string' ? first : (first as { text?: string } | undefined)?.text ?? '';
-      if (text.includes('INSERT INTO matches')) {
+      if (text.includes('match_create(')) {
         refused += 1;
         return Promise.reject(new Error('Connection terminated unexpectedly'));
       }

@@ -12,6 +12,8 @@
 -- KEYS[24]     lkin:<target>:<w>:s           super likers of the target, this week
 -- KEYS[25]     lk:ready                      the buckets are complete (absent after a loss)
 -- KEYS[26]     lkm:<lo>:<hi>                 the pair matched (set here on a match, and by every announcement)
+-- KEYS[27..31] lkin:<target>:<w-4..w>:s      super likers of the target, by week
+-- KEYS[32]     lkb:<lo>:<hi>                 one of the two blocks the other
 --
 -- ARGV[1] target, ARGV[2] actor, ARGV[3] like id, ARGV[4] kind (1 like, 2 super
 -- like), ARGV[5] item kind (0 profile, 1 photo, 2 prompt), ARGV[6] item ref (''
@@ -22,19 +24,26 @@
 --
 -- Returns 'match' (the target liked the actor: the match is appended to
 -- wb:match with the pre-minted ids), 'duplicate' (the actor's like of the
--- target is still pending, or the pair has matched: a like sent again after
--- the match, by a resend or from a card shown before it; nothing written),
--- 'check' (the actor's own buckets
--- are incomplete, at their cap or after a loss: the caller looks the mutual
--- like up in PostgreSQL, and the stream entry asks the writer to look again
--- once the batch is durable) or 'liked'.
+-- target is still pending, in the target's buckets or among their super
+-- likers when a bucket was at its cap, or the pair has matched: a like sent
+-- again after the match, by a resend or from a card shown before it;
+-- nothing written), 'check' (the actor's own buckets are incomplete, at
+-- their cap or after a loss: the caller looks the mutual like up in
+-- PostgreSQL, and the stream entry asks the writer to look again once the
+-- batch is durable) or 'liked'. A like within a blocked pair answers
+-- 'liked' like any other and writes nothing: it enters no bucket and no
+-- stream, so nobody hears of it and a block is not revealed.
+--
+-- The stream entry's `m` is '1' for the like that made the match (its
+-- writer announces nothing for it: the match is announced instead).
 
-local function append_like(check)
+local function append_like(check, matched)
   redis.call('XADD', KEYS[11], '*', 'id', ARGV[3], 't', ARGV[1], 'a', ARGV[2], 'k', ARGV[4],
-             'ik', ARGV[5], 'ir', ARGV[6], 'c', ARGV[7], 'x', check, 'w', ARGV[13])
+             'ik', ARGV[5], 'ir', ARGV[6], 'c', ARGV[7], 'x', check, 'w', ARGV[13], 'm', matched)
 end
 
 if redis.call('EXISTS', KEYS[26]) == 1 then return 'duplicate' end
+if redis.call('EXISTS', KEYS[32]) == 1 then return 'liked' end
 
 for i = 1, 5 do
   if redis.call('SISMEMBER', KEYS[i], ARGV[1]) == 1 then
@@ -45,7 +54,7 @@ for i = 1, 5 do
       redis.call('SREM', KEYS[j], ARGV[1])
       redis.call('SREM', KEYS[18 + j], ARGV[1])
     end
-    append_like('0')
+    append_like('0', '1')
     redis.call('SET', KEYS[26], 1, 'EX', tonumber(ARGV[14]))
     redis.call('XADD', KEYS[12], '*', 'm', ARGV[10], 'a', ARGV[2], 't', ARGV[1], 's', ARGV[4],
                'n1', ARGV[11], 'n2', ARGV[12], 'l', ARGV[3], 'ik', ARGV[5], 'ir', ARGV[6], 'c', ARGV[7])
@@ -56,13 +65,17 @@ end
 for i = 6, 10 do
   if redis.call('SISMEMBER', KEYS[i], ARGV[2]) == 1 then return 'duplicate' end
 end
+-- A super like to a bucket at its cap is kept only among the super likers.
+for i = 27, 31 do
+  if redis.call('SISMEMBER', KEYS[i], ARGV[2]) == 1 then return 'duplicate' end
+end
 
 local check = redis.call('EXISTS', KEYS[25]) == 0
 for i = 14, 18 do
   if redis.call('EXISTS', KEYS[i]) == 1 then check = true end
 end
 
-append_like(check and '1' or '0')
+append_like(check and '1' or '0', '0')
 local ttl = tonumber(ARGV[8])
 if redis.call('EXISTS', KEYS[13]) == 0 then
   if redis.call('SCARD', KEYS[10]) >= tonumber(ARGV[9]) then

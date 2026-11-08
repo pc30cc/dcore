@@ -9,9 +9,11 @@ import { luaScript, runScript } from '../kv/scripts.js';
  * - `deck:<uid>`: a list of user ids, best first (≤ `deck.refill.queue_size`).
  *   `GET /v1/deck` reads its head without taking anything; a swipe removes
  *   its target with one `LREM deck:<uid> 0 <target>`.
- * - `deckm:<uid>`: a hash id → `"<ver>:<km>:<flags>"` (the card version, the
- *   rounded distance between cell centres with one decimal, empty when the
- *   viewer searches the whole country, and {@link DeckFlag} bits), plus
+ * - `deckm:<uid>`: a hash id → `"<ver>:<km>:<flags>[:<stamp>]"` (the card
+ *   version, the rounded distance between cell centres with one decimal,
+ *   empty when the viewer searches the whole country, {@link DeckFlag} bits,
+ *   and the person's `vis:chg` stamp the version was checked against when
+ *   the reader rebuilt that card; without it, the queue's build time), plus
  *   three fields of the queue itself: `@at` (when the queue was last built,
  *   ms: people in `vis:out` since then are skipped), `@x` (when a refill
  *   last found nobody new, ms) and `@c` (the candidate cursor the next
@@ -44,20 +46,29 @@ export interface DeckEntry {
   /** Distance between cell centres in km (one decimal), null when not shown (whole country). */
   km: number | null;
   flags: number;
+  /**
+   * The person's `vis:chg` stamp the version was checked against (set when a
+   * reader rebuilt the card after a change); absent: the version is the one
+   * the refill read, as of the queue's build time.
+   */
+  checkedAt?: number | undefined;
 }
 
-const META = /^([1-9][0-9]{0,9}):([0-9]{1,5}(?:\.[0-9])?)?:([0-9]{1,3})$/;
+const META = /^([1-9][0-9]{0,9}):([0-9]{1,5}(?:\.[0-9])?)?:([0-9]{1,3})(?::([0-9]{1,16}))?$/;
 const UID = /^[1-9][0-9]{0,18}$/;
 
 export function encodeDeckMeta(entry: Omit<DeckEntry, 'userId'>): string {
   const km = entry.km === null ? '' : String(Math.round(entry.km * 10) / 10);
-  return `${entry.version}:${km}:${entry.flags}`;
+  const base = `${entry.version}:${km}:${entry.flags}`;
+  return entry.checkedAt === undefined ? base : `${base}:${Math.max(0, Math.floor(entry.checkedAt))}`;
 }
 
 export function decodeDeckMeta(userId: string, meta: string): DeckEntry | null {
   const m = META.exec(meta);
   if (!m || !UID.test(userId)) return null;
-  return { userId, version: Number(m[1]), km: m[2] === undefined ? null : Number(m[2]), flags: Number(m[3]) };
+  const entry: DeckEntry = { userId, version: Number(m[1]), km: m[2] === undefined ? null : Number(m[2]), flags: Number(m[3]) };
+  if (m[4] !== undefined) entry.checkedAt = Number(m[4]);
+  return entry;
 }
 
 export interface DeckHead {
@@ -180,6 +191,40 @@ export async function updateDeckEntries(cache: Redis, keys: KeyBuilder, userId: 
 
 /** How long `vis:out` remembers a hide: the life of a queue, after which every queue was built since. */
 export const HIDDEN_WINDOW_MS = DECK_TTL_SECONDS * 1_000;
+
+/**
+ * Clock slack between the writer of a change (its stamp is its own clock)
+ * and the refill that built a queue (its build time is the worker's clock):
+ * a change stamped up to this long before the build may not be in the
+ * queue's versions, so the reader checks it.
+ */
+export const PROFILE_CHANGE_SLACK_MS = 60_000;
+
+const profileChangedScript = luaScript(new URL('./profileChanged.lua', import.meta.url), 'profile-changed', 1);
+
+/**
+ * Notes that people's cards changed (an edit, a photo processed, deleted
+ * or moderated, a privacy switch), after the change is durable, so queues
+ * built before stop serving the card at the version they hold: each gets a
+ * stamp in `vis:chg` (kv-core) that only grows, the set trimmed to the life
+ * of a queue in the same call. `GET /v1/deck` compares the stamps of the
+ * page with the version each entry was checked at and builds the cards
+ * that changed (one statement for the page's misses, as before).
+ */
+export async function markProfilesChanged(redis: Redis, keys: KeyBuilder, userIds: readonly string[], now: number = Date.now()): Promise<void> {
+  if (userIds.length === 0) return;
+  await runScript(redis, profileChangedScript, [keys.profilesChanged()], [now, HIDDEN_WINDOW_MS, ...userIds]);
+}
+
+/**
+ * Whether a queued entry's card may be older than the person's last change:
+ * the change's stamp is newer than what the entry was checked against (its
+ * own stamp, else the queue's build time minus the clock slack).
+ */
+export function cardChangedSince(entry: DeckEntry, builtAt: number, changedStamp: number | null): boolean {
+  if (changedStamp === null) return false;
+  return changedStamp > (entry.checkedAt ?? builtAt - PROFILE_CHANGE_SLACK_MS);
+}
 
 /**
  * Puts people in `vis:out` (kv-core) after a change that hides them from

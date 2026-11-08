@@ -2,6 +2,7 @@ import { finishPhoto, photoDeletionState, photoExists, photoToProcess, type Phot
 import { photoStatus, realtimeEnvelope, userChannel } from '@app/shared';
 import {
   bumpVersion,
+  markProfilesChanged,
   IdGeneratorUnavailableError,
   PHOTO_VARIANT_CACHE_CONTROL,
   PHOTO_VARIANT_MIME,
@@ -113,6 +114,10 @@ async function announce(context: JobContext, userId: string, photoId: string, st
   } catch (error) {
     log.error({ err: error }, 'photo: own-account version not bumped; the cached view is stale until it expires');
   }
+  // Prepared decks holding the card at an older version build it again (a photo approved, refused or gone).
+  await markProfilesChanged(redis, services.keys, [userId]).catch((error: unknown) =>
+    log.warn({ err: error }, 'photo: card change not noted; prepared decks may show the old card until their next refill'),
+  );
   if (!services.realtime) return;
   try {
     const name = photoStatus.name(status);

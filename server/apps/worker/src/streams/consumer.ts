@@ -12,9 +12,17 @@ import type { Redis } from 'ioredis';
  *   longer than `claimIdleMs` (their consumer crashed, or their handler
  *   failed) with XAUTOCLAIM, and runs them again.
  * - An entry delivered `maxDeliveries` times is copied to a dead-letter stream
- *   and acknowledged instead of being retried forever.
+ *   and acknowledged instead of being retried forever (0: never; past
+ *   `alertDeliveries` each delivery is logged as an error instead).
+ * - A handler failure is sorted by `classify`: `rejected` (the entry can
+ *   never be handled: malformed, or refused by the database for its data)
+ *   goes to the dead-letter stream at once; `unavailable` (the database is
+ *   down) stops reading and claiming until `probe` succeeds, so an outage
+ *   neither burns deliveries nor dead-letters anything; `failed` stays
+ *   pending and is claimed again.
  * - On start it first re-reads its own pending entries (ID 0), which a
- *   previous run of the same consumer name left unacknowledged.
+ *   previous run of the same consumer name left unacknowledged, and again
+ *   after an outage.
  *
  * Handlers must be idempotent: a crash between the handler and the XACK
  * delivers the entry again.
@@ -39,6 +47,55 @@ export interface ConsumerLog {
   error(data: Record<string, unknown>, message: string): void;
 }
 
+/**
+ * What a handler's failure means: `unavailable` (the database cannot take
+ * work: wait for it, give nothing up), `rejected` (this entry can never be
+ * handled: dead-letter it now) or `failed` (anything else: retry later).
+ */
+export type ErrorKind = 'unavailable' | 'rejected' | 'failed';
+
+/** Thrown out of a batch when the database is unavailable: the consumer's loop waits for it. */
+export class UnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('the database is unavailable', { cause });
+    this.name = 'UnavailableError';
+  }
+}
+
+/** An entry's fields as a dead letter keeps them: those named in `redact` (free text) are left out. */
+export function deadLetterFields(fields: Readonly<Record<string, string>>, redact: readonly string[]): string {
+  if (redact.length === 0) return JSON.stringify(fields);
+  const kept: Record<string, string> = {};
+  for (const [name, value] of Object.entries(fields)) kept[name] = redact.includes(name) && value !== '' ? '[redacted]' : value;
+  return JSON.stringify(kept);
+}
+
+/**
+ * Waits until `probe` resolves (the database answers), with a backoff from
+ * 200 ms to 5 s; without a probe, one backoff step. Returns early when the
+ * consumer stops.
+ */
+export async function waitUntilAvailable(options: {
+  probe?: (() => Promise<unknown>) | undefined;
+  isRunning: () => boolean;
+  log: ConsumerLog;
+  stream: string;
+}): Promise<void> {
+  let attempt = 0;
+  while (options.isRunning()) {
+    await sleep(Math.min(5_000, 200 * 2 ** Math.min(attempt, 5)));
+    attempt += 1;
+    if (!options.probe) return;
+    try {
+      await options.probe();
+      options.log.warn({ stream: options.stream, probes: attempt }, 'database available again; the stream resumes');
+      return;
+    } catch (error) {
+      if (attempt === 1 || attempt % 10 === 0) options.log.error({ err: error, stream: options.stream, probes: attempt }, 'database still unavailable');
+    }
+  }
+}
+
 export interface StreamConsumerOptions {
   /** A dedicated connection: the blocking read occupies it. */
   redis: Redis;
@@ -59,6 +116,14 @@ export interface StreamConsumerOptions {
   maxDeliveries?: number | undefined;
   /** Defaults to `<stream>:dead`. */
   deadLetterStream?: string | undefined;
+  /** What a handler failure means (default: every failure is `failed`). */
+  classify?: ((error: unknown) => ErrorKind) | undefined;
+  /** Resolves once the database answers again (after an `unavailable` failure); unset: the backoff alone. */
+  probe?: (() => Promise<unknown>) | undefined;
+  /** An entry delivered more often than this is logged as an error on each delivery (default: maxDeliveries, or 10). */
+  alertDeliveries?: number | undefined;
+  /** Fields left out of dead letters (free text a dead letter must not keep). */
+  redactFields?: readonly string[] | undefined;
   /** Where a new group starts reading: `$` (only new entries, the default) or `0` (everything). */
   startId?: '$' | '0' | undefined;
   /** Handlers run at once within a batch; 1 keeps the stream's order. */
@@ -134,6 +199,10 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
     claimIntervalMs = Math.max(1_000, Math.floor(claimIdleMs / 2)),
     maxDeliveries = 10,
     deadLetterStream = `${stream}:dead`,
+    classify = () => 'failed' as const,
+    probe,
+    alertDeliveries = maxDeliveries > 0 ? maxDeliveries : 10,
+    redactFields = [],
     startId = '$',
     concurrency = 1,
     log = silent,
@@ -150,7 +219,7 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
   /** Delivery counts of the given entries, from the pending list, in one round trip. */
   async function deliveryCounts(entries: readonly StreamEntry[]): Promise<Map<string, number>> {
     const counts = new Map<string, number>();
-    if (entries.length === 0 || maxDeliveries <= 0) return counts;
+    if (entries.length === 0) return counts;
     const pipeline = redis.pipeline();
     for (const entry of entries) pipeline.xpending(stream, group, entry.id, entry.id, 1);
     const replies = (await pipeline.exec()) ?? [];
@@ -162,7 +231,7 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
     return counts;
   }
 
-  async function deadLetter(entry: StreamEntry, deliveries: number): Promise<void> {
+  async function deadLetter(entry: StreamEntry, deliveries: number, reason: string): Promise<void> {
     await redis.xadd(
       deadLetterStream,
       'MAXLEN',
@@ -177,8 +246,10 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
       entry.id,
       'deliveries',
       String(deliveries),
+      'reason',
+      reason,
       'fields',
-      JSON.stringify(entry.fields),
+      deadLetterFields(entry.fields, redactFields),
     );
   }
 
@@ -187,25 +258,42 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
     const counts = source === 'new' ? new Map<string, number>() : await deliveryCounts(entries);
     const acked: string[] = [];
     let deadLettered = 0;
+    let unavailable: unknown = null;
     await runLimited(entries, concurrency, async (entry) => {
       const deliveries = counts.get(entry.id) ?? 1;
       if (maxDeliveries > 0 && deliveries > maxDeliveries) {
-        await deadLetter(entry, deliveries - 1);
+        await deadLetter(entry, deliveries - 1, 'deliveries');
         acked.push(entry.id);
         deadLettered += 1;
         log.warn({ stream, group, id: entry.id, deliveries: deliveries - 1 }, 'stream entry moved to the dead-letter stream');
         return;
       }
+      if (deliveries > alertDeliveries) log.error({ stream, group, id: entry.id, deliveries }, 'stream entry still not handled after many deliveries');
+      // The database went away during this batch: the rest waits for it untried.
+      if (unavailable !== null) return;
       try {
         await handler({ ...entry, source });
         acked.push(entry.id);
       } catch (error) {
+        const kind = classify(error);
+        if (kind === 'unavailable') {
+          unavailable ??= error;
+          return;
+        }
+        if (kind === 'rejected') {
+          await deadLetter(entry, deliveries, 'rejected');
+          acked.push(entry.id);
+          deadLettered += 1;
+          log.error({ err: error, stream, group, id: entry.id, source }, 'stream entry cannot be handled; moved to the dead-letter stream');
+          return;
+        }
         // Left pending: claimed again after claimIdleMs.
         log.error({ err: error, stream, group, id: entry.id, source }, 'stream handler failed');
       }
     });
     if (acked.length > 0) await redis.xack(stream, group, ...acked);
     onBatch?.({ source, size: entries.length, acked: acked.length, deadLettered });
+    if (unavailable !== null) throw new UnavailableError(unavailable);
   }
 
   async function readOwnPending(): Promise<void> {
@@ -267,10 +355,15 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
 
   async function loop(): Promise<void> {
     await ensureGroup(redis, stream, group, startId);
-    await readOwnPending();
+    // Own pending entries first (a restart), and again after every outage.
+    let ownPending = true;
     let failures = 0;
     while (running) {
       try {
+        if (ownPending) {
+          await readOwnPending();
+          ownPending = false;
+        }
         if (Date.now() >= nextClaimAt) {
           await claimAbandoned();
           nextClaimAt = Date.now() + claimIntervalMs;
@@ -279,6 +372,13 @@ export function startStreamConsumer(options: StreamConsumerOptions): StreamConsu
         failures = 0;
       } catch (error) {
         if (!running) return;
+        if (error instanceof UnavailableError) {
+          // No reads and no claims until the database answers: nothing is delivered (or counted) in vain.
+          log.error({ err: error.cause, stream, group }, 'database unavailable; the stream waits for it');
+          await waitUntilAvailable({ probe, isRunning: () => running, log, stream });
+          ownPending = true;
+          continue;
+        }
         if (isNoGroup(error)) {
           // The stream or group was deleted under us: recreate and carry on.
           log.warn({ stream, group }, 'consumer group missing; recreating it');

@@ -16,6 +16,8 @@ import {
   likeWeeks,
   parseLikeEntry,
   parseMatchEntry,
+  countPendingLikes,
+  MATCH_ENDED_TTL_SECONDS,
   quotaPeriod,
   readConversationList,
   readMatchStates,
@@ -26,6 +28,7 @@ import {
   useQuota,
   type LikeScriptInput,
 } from '../../src/server/index.js';
+import { isStorableText, swipeSchema } from '../../src/api/social.js';
 import { dropPrefix, hasRedis, testPrefix, testRedis } from './support.js';
 
 describe('quota periods', () => {
@@ -50,12 +53,51 @@ describe('quota periods', () => {
 describe('stream entries', () => {
   it('read what the like script writes and refuse a malformed one', () => {
     const like = parseLikeEntry({ id: '12', t: '3', a: '4', k: '2', ik: '1', ir: '99', c: 'hi', x: '1', w: '0' });
-    expect(like).toEqual({ id: '12', targetId: '3', actorId: '4', kind: 2, itemKind: 1, itemRef: '99', comment: 'hi', check: true, prepaid: false });
+    expect(like).toEqual({
+      id: '12',
+      targetId: '3',
+      actorId: '4',
+      kind: 2,
+      itemKind: 1,
+      itemRef: '99',
+      comment: 'hi',
+      check: true,
+      prepaid: false,
+      matched: false,
+      commentDropped: false,
+    });
+    expect(parseLikeEntry({ id: '12', t: '3', a: '4', k: '1', ik: '0', ir: '', c: '', x: '0', w: '0', m: '1' }).matched).toBe(true);
     expect(parseLikeEntry({ id: '12', t: '3', a: '4', k: '1', ik: '0', ir: '', c: '', x: '0', w: '1' })).toMatchObject({ itemRef: null, comment: null, prepaid: true });
     expect(() => parseLikeEntry({ id: 'x', t: '3', a: '4', k: '1', ik: '0' })).toThrow(/id/);
     expect(() => parseLikeEntry({ id: '1', t: '3', a: '4', k: '3', ik: '0' })).toThrow(/k/);
     expect(() => parseLikeEntry({ id: '1', t: '3', a: '4', k: '1', ik: '1', ir: '' })).toThrow(/ir/);
     expect(() => parseMatchEntry({ m: '1', a: '2', t: '3', s: '1', n1: '4', l: '6', ik: '0' })).toThrow(/n2/);
+  });
+
+  it('drops a comment PostgreSQL would refuse (NUL, control characters, over 300 code points) and keeps the like and the match', () => {
+    const base = { id: '12', t: '3', a: '4', k: '1', ik: '0', ir: '', x: '0', w: '0' };
+    for (const bad of ['hi\u0000there', 'bell\u0007', 'x'.repeat(301), '\u{1F600}'.repeat(301)]) {
+      expect(parseLikeEntry({ ...base, c: bad })).toMatchObject({ id: '12', comment: null, commentDropped: true });
+      const match = parseMatchEntry({ m: '1', a: '2', t: '3', s: '1', n1: '4', n2: '5', l: '6', ik: '0', ir: '', c: bad });
+      expect(match).toMatchObject({ matchId: '1', comment: null });
+    }
+    // 300 code points that are 600 UTF-16 units, tabs and line breaks are fine.
+    for (const good of ['\u{1F600}'.repeat(300), 'a\tb\nc\r\nd']) {
+      expect(parseLikeEntry({ ...base, c: good })).toMatchObject({ comment: good, commentDropped: false });
+    }
+  });
+});
+
+describe('like comments', () => {
+  it('are refused with a control character before anything happens', () => {
+    const swipe = (comment: string) => swipeSchema.safeParse({ target: 'aaaaaaaaaaaaa', action: 'like', comment });
+    expect(swipe('hi\u0000there').success).toBe(false);
+    expect(swipe('esc\u001b[2J').success).toBe(false);
+    expect(swipe('del\u007f').success).toBe(false);
+    expect(swipe('two\nlines\tand a tab').success).toBe(true);
+    expect(isStorableText('a\u0000', 300)).toBe(false);
+    expect(isStorableText('\u{1F600}'.repeat(300), 300)).toBe(true);
+    expect(isStorableText('\u{1F600}'.repeat(301), 300)).toBe(false);
   });
 });
 
@@ -99,7 +141,7 @@ describe.skipIf(!hasRedis)('likes, matches and quotas in Valkey (Lua, prefixed k
 
   it('gives every key to the script under the deployment prefix', () => {
     const list = likeScriptKeys(keys, '1', '2', now);
-    expect(list).toHaveLength(26);
+    expect(list).toHaveLength(32);
     expect(list.every((k) => k.startsWith(prefix))).toBe(true);
   });
 
@@ -149,6 +191,85 @@ describe.skipIf(!hasRedis)('likes, matches and quotas in Valkey (Lua, prefixed k
     expect(await isLikeAnswered(redis, keys, c, d, now)).toBe(false);
     await announceMatch(redis, keys, { id: id(), lo: c, hi: d, state: 1, flags: 3, source: 1, createdMs: now });
     expect(await runLikeScript(redis, keys, like(d, c))).toBe('duplicate');
+  });
+
+  it('answers liked to a like within a blocked pair, and writes nothing: no bucket, no stream entry', async () => {
+    const [a, b] = [id(), id()];
+    await redis.set(keys.likesBlocked(b, a), 1);
+    const before = await Promise.all([redis.xlen(keys.stream('like')), redis.xlen(keys.stream('match'))]);
+    expect(await runLikeScript(redis, keys, like(a, b, { kind: 2 }))).toBe('liked');
+    expect(await runLikeScript(redis, keys, like(b, a))).toBe('liked');
+    expect(await Promise.all([redis.xlen(keys.stream('like')), redis.xlen(keys.stream('match'))])).toEqual(before);
+    expect(await isLikePending(redis, keys, a, b, now)).toBe(false);
+    expect((await countPendingLikes(redis, keys, b, now)).total).toBe(0);
+    // A pair that matched stays a duplicate, block or not (a block reads like an unmatch).
+    const [c, d] = [id(), id()];
+    expect(await runLikeScript(redis, keys, like(c, d))).toBe('liked');
+    expect(await runLikeScript(redis, keys, like(d, c))).toBe('match');
+    await redis.set(keys.likesBlocked(c, d), 1);
+    expect(await runLikeScript(redis, keys, like(c, d))).toBe('duplicate');
+  });
+
+  it('answers duplicate to a super like sent again to a bucket at its cap, and to a like after it', async () => {
+    const popular = id();
+    const [fan, superFan] = [id(), id()];
+    expect(await runLikeScript(redis, keys, like(fan, popular, { bucketCap: 1 }))).toBe('liked');
+    // The bucket is full: the super like is kept only among the super likers.
+    expect(await runLikeScript(redis, keys, like(superFan, popular, { kind: 2, bucketCap: 1 }))).toBe('liked');
+    expect(await redis.sismember(keys.likesIn(popular, likeWeek(now)), superFan)).toBe(0);
+    expect(await isLikePending(redis, keys, superFan, popular, now)).toBe(true);
+    expect(await isLikeAnswered(redis, keys, superFan, popular, now)).toBe(true);
+    const before = await redis.xlen(keys.stream('like'));
+    expect(await runLikeScript(redis, keys, like(superFan, popular, { kind: 2, bucketCap: 1 }))).toBe('duplicate');
+    expect(await runLikeScript(redis, keys, like(superFan, popular, { bucketCap: 1 }))).toBe('duplicate');
+    expect(await redis.xlen(keys.stream('like'))).toBe(before);
+    // The same in a later week: last week's super likers still count.
+    const nextWeek = now + 7 * 86_400_000;
+    expect(await runLikeScript(redis, keys, like(superFan, popular, { kind: 2, bucketCap: 1, now: nextWeek }))).toBe('duplicate');
+  });
+
+  it('marks the like that made the match, so its writer tells nobody about it', async () => {
+    const [a, b] = [id(), id()];
+    const first = like(a, b);
+    const back = like(b, a);
+    expect(await runLikeScript(redis, keys, first)).toBe('liked');
+    expect(await runLikeScript(redis, keys, back)).toBe('match');
+    const entries = (await streamFields('like')).filter((e) => e['id'] === first.likeId || e['id'] === back.likeId).map((e) => parseLikeEntry(e));
+    expect(entries.find((e) => e.id === first.likeId)?.matched).toBe(false);
+    expect(entries.find((e) => e.id === back.likeId)?.matched).toBe(true);
+  });
+
+  it('counts the pending likes of a person without reading them, as the likes page does', async () => {
+    const person = id();
+    const likers = [id(), id(), id(), id()];
+    expect(await runLikeScript(redis, keys, like(likers[0]!, person, { bucketCap: 3 }))).toBe('liked');
+    expect(await runLikeScript(redis, keys, like(likers[1]!, person, { kind: 2, bucketCap: 3 }))).toBe('liked');
+    expect(await runLikeScript(redis, keys, like(likers[2]!, person, { bucketCap: 3, now: now - 7 * 86_400_000 }))).toBe('liked');
+    expect(await countPendingLikes(redis, keys, person, now)).toEqual({ total: 3, capped: false });
+    expect((await readPendingLikes(redis, keys, person, now)).total).toBe(3);
+    // The current bucket reaches its cap (2 of 3 here) and a super like beyond it is kept apart: still counted once.
+    expect(await runLikeScript(redis, keys, like(likers[3]!, person, { bucketCap: 2 }))).toBe('liked');
+    const superFan = id();
+    expect(await runLikeScript(redis, keys, like(superFan, person, { kind: 2, bucketCap: 2 }))).toBe('liked');
+    const counted = await countPendingLikes(redis, keys, person, now);
+    const read = await readPendingLikes(redis, keys, person, now);
+    expect(counted).toEqual({ total: read.total, capped: true });
+    expect(counted.total).toBe(4);
+  });
+
+  it('does not put back a match whose conversation ended before its announcement', async () => {
+    const [lo, hi] = [id(), id()];
+    const match = { id: id(), lo, hi, state: 1, flags: 3, source: 1, createdMs: now };
+    await storeConversationList(redis, keys, lo, []);
+    await forgetMatch(redis, keys, match);
+    expect(await redis.ttl(keys.matchEnded(match.id))).toBeGreaterThan(MATCH_ENDED_TTL_SECONDS - 10);
+    expect(await announceMatch(redis, keys, match)).toBe(false);
+    expect(await redis.exists(keys.matchState(match.id))).toBe(0);
+    expect((await readConversationList(redis, keys, lo, 10)).items.map((i) => i.id)).not.toContain(match.id);
+    // Another match is announced as usual.
+    const other = { ...match, id: id() };
+    expect(await announceMatch(redis, keys, other)).toBe(true);
+    expect((await readConversationList(redis, keys, lo, 10)).items.map((i) => i.id)).toContain(other.id);
   });
 
   it('keeps super likers apart and drops a passed liker', async () => {

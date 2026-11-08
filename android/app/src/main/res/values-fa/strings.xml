@@ -6,7 +6,6 @@
     <string name="update_required_body">این نسخه از {appName} دیگر پشتیبانی نمی‌شود. برای ادامه، برنامه را به‌روز کنید.</string>
     <string name="update_required_action">به‌روزرسانی</string>
     <string name="auth_subtitle">برای ادامه وارد شوید یا حساب بسازید.</string>
-    <string name="auth_continue_phone">ادامه با شماره موبایل</string>
     <string name="auth_continue_google">ادامه با گوگل</string>
     <string name="legal_terms">قوانین</string>
     <string name="legal_privacy">حریم خصوصی</string>
@@ -72,6 +71,8 @@
     <string name="payments_error">در ارتباط با %1$s مشکلی پیش آمد.</string>
     <string name="settings_licences">مجوزهای متن‌باز</string>
     <string name="licences_vazirmatn">فونت وزیرمتن</string>
+    <string name="licences_instrument_serif">فونت Instrument Serif</string>
+    <string name="licences_lalezar">فونت لاله‌زار</string>
     <string name="settings_version">نسخه‌ی %1$s (%2$d) · %3$s</string>
     <string name="store_bazaar">کافه‌بازار</string>
     <string name="store_play">گوگل‌پلی</string>
