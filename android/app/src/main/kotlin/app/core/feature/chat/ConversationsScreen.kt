@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -145,9 +145,16 @@ private fun ListHeader(state: ConversationsUiState, actions: ConversationsAction
         )
         val number = rememberNumbers()
         val description = if (state.requests > 0) brandString(R.string.chat_requests_count, number(state.requests)) else brandString(R.string.chat_requests)
-        IconButton(onClick = actions::openRequests, modifier = Modifier.semantics { contentDescription = description }) {
-            BadgedBox(badge = { if (state.requests > 0) Badge { Text(number(state.requests)) } }) {
+        // The count sits over the button, not inside it: the button clips to its
+        // circle, which cut the count off with large text.
+        Box {
+            IconButton(onClick = actions::openRequests, modifier = Modifier.semantics { contentDescription = description }) {
                 Icon(painterResource(R.drawable.ic_chat_requests), contentDescription = null)
+            }
+            if (state.requests > 0) {
+                Badge(Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 6.dp).clearAndSetSemantics {}) {
+                    Text(number(state.requests))
+                }
             }
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import app.core.LocalAppGraph
 import app.core.R
@@ -89,6 +91,7 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                 },
                 enabled = !sending && !sent,
                 placeholder = { Text(brandString(R.string.request_send_hint)) },
+                textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
                 minLines = 3,
                 maxLines = 6,
                 supportingText = if (text.length > max - 100) {

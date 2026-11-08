@@ -31,6 +31,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -61,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -391,6 +393,8 @@ private fun Composer(text: String, max: Int, onText: (String) -> Unit, onSend: (
                     value = text,
                     onValueChange = { onText(it.take(max)) },
                     placeholder = { Text(brandString(R.string.chat_composer_hint)) },
+                    // The draft follows the direction of what is typed, not the app's.
+                    textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
                     maxLines = 6,
                     shape = RoundedCornerShape(24.dp),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),

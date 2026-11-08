@@ -4,9 +4,15 @@ import android.Manifest
 import android.app.LocaleManager
 import android.app.NotificationManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.os.Handler
 import android.os.LocaleList
 import android.os.Looper
 import android.telephony.TelephonyManager
+import android.view.PixelCopy
+import android.view.View
+import android.view.ViewGroup
+import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -26,7 +32,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -44,6 +49,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -82,6 +88,8 @@ import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.time.LocalDate
 import java.util.Locale
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /**
  * The whole app on the sample backend, driven as a person would, in Persian
@@ -123,6 +131,8 @@ class ScreenTourTest {
     @After
     fun tearDown() {
         hooks?.let { compose.runOnUiThread { app.graph.calls.controller.dismiss(); it.onDestroy() } }
+        // The process lifecycle is one per JVM: back to the background for whatever runs next.
+        if (foreground) compose.runOnUiThread { (ProcessLifecycleOwner.get().lifecycle as LifecycleRegistry).currentState = Lifecycle.State.CREATED }
         System.clearProperty(Backend.SAMPLE_PROPERTY)
     }
 
@@ -332,8 +342,9 @@ class ScreenTourTest {
         hangUp()
 
         // The thread: what was there, the call's line, a message sent and one the server refused.
+        // The hang-up reaches the server from the call's own (main thread) timers: the looper's clock moves too.
         val calledLine = hasLabel(str(R.string.chat_line_call_audio_length, ""), substring = true)
-        waitFor(calledLine, timeoutMs = 20_000)
+        pump(20_000) { compose.onAllNodes(calledLine, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         val sentText = if (language == "fa") "فردا عصر کافه؟" else "Coffee tomorrow evening?"
         send(sentText)
         waitFor(ownBubble(sentText, listOf(R.string.chat_status_sent, R.string.chat_status_delivered, R.string.chat_status_read)), timeoutMs = 20_000)
@@ -370,8 +381,8 @@ class ScreenTourTest {
         capture("requests")
         compose.onNodeWithContentDescription(str(R.string.action_back)).performClick()
 
-        // A thread in another script than the app's, with the other person's call and a note on a like,
-        // and a draft in a third direction in the composer.
+        // A thread written in another script than the app's (the other person's call, a note on a like),
+        // with a draft in the app's own script in the composer.
         val elif = hasLabel("Elif", substring = true) and hasClickAction()
         waitFor(elif, timeoutMs = 20_000, unmerged = false)
         compose.onAllNodes(elif)[0].performClick()
@@ -395,14 +406,11 @@ class ScreenTourTest {
         waitFor(write, unmerged = false)
         compose.onNode(write).performClick()
         waitFor(hasText(str(R.string.request_send_hint)), timeoutMs = 10_000)
-        compose.onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
-            .fetchSemanticsNodes().lastIndex.let { last ->
-                compose.onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))[last]
-                    .performTextInput(if (language == "fa") "سلام! عکس کوهت عالیه" else "Hi! Love the mountain photo")
-            }
+        // The sheet's field: the last one on screen.
+        val fields = compose.onAllNodes(hasSetTextAction() and hasAnyAncestor(isDialog()))
+        fields[fields.fetchSemanticsNodes().lastIndex].performTextInput(if (language == "fa") "سلام! عکس کوهت عالیه" else "Hi! Love the mountain photo")
         compose.waitForIdle()
-        // The sheet is a window of its own.
-        capture("request-write", compose.onNode(isRoot() and hasAnyDescendant(hasText(str(R.string.request_send_body)))))
+        captureWithSheet("request-write")
     }
 
     private fun send(text: String) {
@@ -485,6 +493,7 @@ class ScreenTourTest {
 
     /** The app as [app.core.MainActivity] draws it, on the sample backend, in the configuration's language. */
     private var hooks: CallActivityHooks? = null
+    private var foreground = false
 
     private fun start(signedIn: Boolean, chat: Boolean = false, calls: Boolean = false) {
         System.setProperty(Backend.SAMPLE_PROPERTY, "true")
@@ -507,6 +516,7 @@ class ScreenTourTest {
             // The app in front, as a phone's process lifecycle reports it (the
             // test's activity does not drive it here): the realtime socket connects.
             compose.runOnUiThread { (ProcessLifecycleOwner.get().lifecycle as LifecycleRegistry).currentState = Lifecycle.State.RESUMED }
+            foreground = true
         }
         if (calls) {
             // What a call asks for, already allowed; the ring may post and go full screen.
@@ -559,9 +569,46 @@ class ScreenTourTest {
     }
 
     private fun capture(name: String, node: SemanticsNodeInteraction = compose.onAllNodes(isRoot())[0]) {
-        val dir = outDir ?: return
+        if (outDir == null) return
         compose.waitForIdle()
-        val bitmap = node.captureToImage().asAndroidBitmap()
+        write(name, node.captureToImage().asAndroidBitmap())
+    }
+
+    /**
+     * Every window on screen, stacked in order: the activity, then each dialog
+     * or sheet over it. A bottom sheet is a window of its own that does not say
+     * it is a dialog, so [captureToImage] would copy the activity's window instead.
+     */
+    private fun captureWithSheet(name: String) {
+        if (outDir == null) return
+        compose.waitForIdle()
+        val views = Shadow.extract<ShadowWindowManagerImpl>(compose.activity.windowManager).views
+        val windows = views.mapNotNull { windowProvider(it)?.window }.distinct()
+        check(windows.isNotEmpty()) { "no sheet window" }
+        val screen = copy(compose.activity.window)
+        val canvas = Canvas(screen)
+        windows.forEach { canvas.drawBitmap(copy(it), 0f, 0f, null) }
+        write(name, screen)
+    }
+
+    private fun windowProvider(view: View): DialogWindowProvider? = when (view) {
+        is DialogWindowProvider -> view
+        is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { windowProvider(view.getChildAt(it)) }
+        else -> null
+    }
+
+    private fun copy(window: Window): Bitmap {
+        val decor = window.decorView
+        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+        var result = -1
+        PixelCopy.request(window, bitmap, { result = it }, Handler(Looper.getMainLooper()))
+        shadowOf(Looper.getMainLooper()).idle()
+        check(result == PixelCopy.SUCCESS) { "copying a window failed: $result" }
+        return bitmap
+    }
+
+    private fun write(name: String, bitmap: Bitmap) {
+        val dir = outDir ?: return
         dir.mkdirs()
         val scale = app.resources.configuration.fontScale
         val theme = (if (dark) "dark" else "light") + (if (scale > 1f) String.format(Locale.ROOT, "-text%.1f", scale) else "")

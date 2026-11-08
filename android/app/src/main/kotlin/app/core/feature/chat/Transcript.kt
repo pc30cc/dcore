@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.core.R
@@ -307,7 +308,8 @@ private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) 
         item.unsent == Unsent.Removed -> Placeholder(brandString(R.string.chat_removed), content)
         item.unsent == Unsent.BySender -> Placeholder(brandString(if (mine) R.string.chat_unsent_mine else R.string.chat_unsent_theirs), content)
         else -> when (message.kind) {
-            MessageKind.Text -> Text(message.body.orEmpty(), style = MaterialTheme.typography.bodyLarge, color = content)
+            // What people write takes its own direction: English in a Persian thread reads left to right, and the other way round.
+            MessageKind.Text -> Text(message.body.orEmpty(), style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content), color = content)
             MessageKind.LikeNote -> Column(verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = if (mine) content else AppTheme.colors.like, modifier = Modifier.size(14.dp))
@@ -317,7 +319,9 @@ private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) 
                         color = content.copy(alpha = 0.85f),
                     )
                 }
-                message.body?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = content) }
+                message.body?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content), color = content)
+                }
             }
             MessageKind.Image, MessageKind.Gif -> {
                 val media = message.media

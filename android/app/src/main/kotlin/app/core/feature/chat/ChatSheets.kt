@@ -23,6 +23,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -44,6 +45,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.core.R
@@ -282,6 +284,7 @@ fun ReportSheet(
                 value = details,
                 onValueChange = { details = it.take(DETAILS_MAX) },
                 label = { Text(brandString(R.string.report_details_hint)) },
+                textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
                 minLines = 2,
                 maxLines = 5,
                 modifier = Modifier.fillMaxWidth(),

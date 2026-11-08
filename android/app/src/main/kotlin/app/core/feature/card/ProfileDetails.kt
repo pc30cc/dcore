@@ -125,6 +125,7 @@ fun ProfileDetails(
     val enter = remember(card.id) { Animatable(if (reduced) 1f else 0f) }
     LaunchedEffect(card.id) { if (!reduced) enter.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 420f)) }
     val pane = nameAndAge(card, number)
+    val writeTo = onMessage?.takeIf { source != DetailsSource.Match }
 
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -145,8 +146,15 @@ fun ProfileDetails(
                 item(key = "top-inset") { Spacer(Modifier.statusBarsPadding()) }
                 items(sections, key = { it.key }) { section ->
                     when (section) {
-                        is ProfileSection.PhotoBlock -> PhotoSection(card, section) {
-                            likeItem(LikeTarget(card, LikedItem(ItemKind.Photo, section.photo.id), photoIndex = section.index))
+                        is ProfileSection.PhotoBlock -> Box {
+                            PhotoSection(card, section) {
+                                likeItem(LikeTarget(card, LikedItem(ItemKind.Photo, section.photo.id), photoIndex = section.index))
+                            }
+                            // On the first photo, so it scrolls away with it: fixed over the list,
+                            // it covered the hearts of the photos passing under it.
+                            if (writeTo != null && section.index == 0) {
+                                WriteToButton(writeTo, Modifier.align(Alignment.TopEnd).padding(end = Space.xl))
+                            }
                         }
                         ProfileSection.Header -> HeaderSection(card, catalog, number)
                         is ProfileSection.About -> TextBlock(brandString(R.string.profile_view_about), section.text)
@@ -182,23 +190,9 @@ fun ProfileDetails(
                 }
             }
 
-            if (onMessage != null && source != DetailsSource.Match) {
-                // Write to them, at the top end, over the first photo.
-                Surface(
-                    onClick = onMessage,
-                    shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.45f),
-                    contentColor = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .statusBarsPadding()
-                        .padding(Space.xl)
-                        .size(Space.minTouch),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(painterResource(R.drawable.ic_deck_chat), contentDescription = brandString(R.string.request_write_to), modifier = Modifier.size(24.dp))
-                    }
-                }
+            // A profile without photos has no first photo to carry it: at the top end, over the list.
+            if (writeTo != null && sections.none { it is ProfileSection.PhotoBlock }) {
+                WriteToButton(writeTo, Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(Space.xl))
             }
 
             if (source != DetailsSource.Match) DetailsActions(
@@ -237,6 +231,22 @@ private fun PhotoSection(card: ProfileCard, section: ProfileSection.PhotoBlock, 
                 .semantics { contentDescription = description },
         )
         ItemLikeButton(brandString(R.string.like_photo), onLike, Modifier.align(Alignment.BottomEnd).padding(Space.md))
+    }
+}
+
+/** "Write to them", over the top end of the first photo. */
+@Composable
+private fun WriteToButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.45f),
+        contentColor = Color.White,
+        modifier = modifier.size(Space.minTouch),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_deck_chat), contentDescription = brandString(R.string.request_write_to), modifier = Modifier.size(24.dp))
+        }
     }
 }
 
