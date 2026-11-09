@@ -1,10 +1,20 @@
 package app.core.screens
 
 import android.Manifest
+import android.app.Activity
 import android.app.LocaleManager
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
+import android.location.Location
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Handler
 import android.os.LocaleList
 import android.os.Looper
@@ -13,6 +23,7 @@ import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -44,10 +55,13 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
@@ -91,6 +105,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.LocalDate
 import java.util.Locale
@@ -101,10 +116,11 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  * The whole app on the sample backend, driven as a person would, in Persian
  * (right to left) and English, light and dark, and with large text, on a
  * phone-sized screen:
- * sign-in (the phone number and its code), the first sign-up steps, the
+ * sign-in (the phone number and its code), every sign-up step to the
  * deck, a card's full profile, the match moment and the likes list; the
  * chats, a thread with every kind of line, a voice and a video call placed
- * from it, a ring, and message requests from both sides.
+ * from it, a ring, and message requests from both sides; the Profile tab
+ * and its dialogs.
  *
  * Each step waits for its screen, so a screen that no longer appears, or a
  * flow the sample backend no longer carries, fails here. With the
@@ -194,6 +210,325 @@ class ScreenTourTest {
         pick(str(R.string.onboarding_birthday_year), Digits.localize(year.toString(), ui))
         waitFor(hasText(str(R.string.action_next)) and isEnabled())
         capture("signup-birthday-filled")
+
+        // The age, read back once before it is kept.
+        next()
+        confirmDialog("signup-birthday-confirm")
+
+        waitFor(hasText(str(R.string.onboarding_gender_title)), timeoutMs = 20_000)
+        capture("signup-gender")
+        compose.onNodeWithText(str(R.string.gender_woman)).performClick()
+        waitForNext()
+        capture("signup-gender-filled")
+        // Birth date and gender go to the server together, after one more read-back.
+        next()
+        confirmDialog("signup-basics-confirm")
+
+        waitFor(hasText(str(R.string.onboarding_interest_title)), timeoutMs = 20_000)
+        capture("signup-interested")
+        compose.onNodeWithText(str(R.string.interest_men)).performClick()
+        waitForNext()
+        capture("signup-interested-filled")
+        next()
+
+        val catalog = checkNotNull(app.graph.config.config.value?.catalog) { "no catalogue" }
+        waitFor(hasText(str(R.string.onboarding_goal_title)), timeoutMs = 20_000)
+        capture("signup-intention")
+        val serious = catalog.intentions.firstOrNull { it.key == "serious" }?.label?.takeIf { it.isNotBlank() } ?: str(R.string.intention_serious)
+        compose.onNodeWithText(serious).performClick()
+        waitForNext()
+        capture("signup-intention-filled")
+        next()
+
+        // Photos: three pictures from the system picker, each framed, uploaded and approved by the sample.
+        waitFor(hasText(str(R.string.onboarding_photos_title)), timeoutMs = 20_000)
+        capture("signup-photos-empty")
+        val looks = listOf(
+            Portrait(sky = 0xFF8EC5FC.toInt(), ground = 0xFFE0C3FC.toInt(), shirt = 0xFF2E7D6B.toInt(), hair = 0xFF3B2416.toInt()),
+            Portrait(sky = 0xFFFFD3A5.toInt(), ground = 0xFFFD6585.toInt(), shirt = 0xFF283593.toInt(), hair = 0xFF1B1B1B.toInt()),
+            Portrait(sky = 0xFFA8E6CF.toInt(), ground = 0xFF3D84A8.toInt(), shirt = 0xFFF9A825.toInt(), hair = 0xFF5D4037.toInt()),
+        )
+        pickPhotos(looks.map { it.jpeg() })
+        val use = hasText(str(R.string.onboarding_crop_use)) and hasAnyAncestor(isDialog())
+        val area = hasContentDescription(str(R.string.onboarding_crop_area)) and hasAnyAncestor(isDialog())
+        repeat(looks.size) { index ->
+            waitFor(use, timeoutMs = 20_000)
+            // The frame keeps the previous picture until the next one is decoded: wait for this turn's own.
+            pump(10_000) {
+                val image = compose.onNode(area, useUnmergedTree = true).captureToImage().asAndroidBitmap()
+                Portrait.closest(looks, image.getPixel(image.width / 2, image.height / 12)) == index
+            }
+            if (index == 0) capture("signup-photos-crop", compose.onNode(isDialog()))
+            compose.onNode(use).performClick()
+            compose.waitForIdle()
+        }
+        compose.waitUntil(20_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+        if (compose.onAllNodes(hasLabel(str(R.string.photo_uploading)), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+            capture("signup-photos-uploading")
+        }
+        val approved = hasLabel(str(R.string.photo_status_approved), substring = true)
+        pump(30_000) { compose.onAllNodes(approved, useUnmergedTree = true).fetchSemanticsNodes().size == 3 }
+        waitForNext()
+        capture("signup-photos-filled")
+        next()
+
+        // Prompts: two picked from the catalogue's sheet and answered.
+        waitFor(hasText(str(R.string.onboarding_prompts_title)), timeoutMs = 20_000)
+        capture("signup-prompts")
+        val prompts = catalog.prompts.filter { it.category != "voice" }
+        val answers = if (persian) {
+            listOf("یه هفته کوه‌پیمایی دور ماسوله، با یه کوله و یه دفترچهٔ طراحی", "صبح زود دوچرخه، عصر کتاب‌فروشی، شب شام با دوستام")
+        } else {
+            listOf("A week of hiking around Masuleh with one backpack and a sketchbook", "An early bike ride, an afternoon in a bookshop, dinner with friends")
+        }
+        answers.forEachIndexed { index, answer ->
+            compose.onNodeWithText(str(R.string.onboarding_prompts_add)).performScrollTo().performClick()
+            waitFor(hasText(str(R.string.onboarding_prompts_pick)), timeoutMs = 10_000)
+            compose.waitForIdle()
+            if (index == 0) captureWithSheet("signup-prompts-pick")
+            compose.onNodeWithText(prompts[index].text).performClick()
+            waitFor(hasSetTextAction(), timeoutMs = 10_000)
+            val fields = compose.onAllNodes(hasSetTextAction())
+            fields[fields.fetchSemanticsNodes().lastIndex].performTextInput(answer)
+        }
+        waitForNext()
+        capture("signup-prompts-filled")
+        captureRest("signup-prompts-filled-end")
+        next()
+
+        // The catalogue's fields: height on the slider, smoking, languages.
+        waitFor(hasText(str(R.string.onboarding_fields_title)), timeoutMs = 20_000)
+        capture("signup-fields")
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(168f) }
+        fun option(id: Int): String = catalog.fields.flatMap { it.options }.first { it.id == id }.label
+        listOf(21, 31, 33).forEach { compose.onNodeWithText(option(it)).performScrollTo().performClick() }
+        compose.waitForIdle()
+        scrollToTop()
+        capture("signup-fields-filled")
+        captureRest("signup-fields-filled-end")
+        next()
+
+        // Location: the phone's approximate position (allowed), then the city list a person may pick from instead.
+        waitFor(hasText(str(R.string.onboarding_location_title)), timeoutMs = 20_000)
+        capture("signup-location")
+        val elsewhere = BuildConfig.STORE == "play" && !persian
+        allowCoarseLocation(if (elsewhere) 51.51 to -0.12 else 35.70 to 51.40)
+        compose.onNodeWithText(str(R.string.onboarding_location_use)).performClick()
+        waitFor(hasText(str(R.string.onboarding_location_shown)), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("signup-location-set")
+        compose.onNodeWithText(str(R.string.action_change)).performClick()
+        waitFor(hasSetTextAction(), timeoutMs = 10_000)
+        val query = if (persian) "اصف" else "Lon"
+        compose.onNode(hasSetTextAction()).performTextInput(query)
+        val city = if (persian) "اصفهان" else "London"
+        pump(10_000) { compose.onAllNodes(hasText(city) and hasClickAction()).fetchSemanticsNodes().isNotEmpty() }
+        capture("signup-location-city")
+        captureRest("signup-location-city-end")
+        next()
+
+        // Notifications (Android 13+ asks): the reasons, then the system's question, answered yes.
+        val notifications = hasText(str(R.string.onboarding_notifications_title))
+        val guidelines = hasText(str(R.string.onboarding_rules_title))
+        waitFor(notifications or guidelines, timeoutMs = 20_000)
+        if (compose.onAllNodes(notifications, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+            compose.waitForIdle()
+            capture("signup-notifications")
+            shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            compose.onNodeWithText(str(R.string.onboarding_notifications_allow)).performClick()
+        }
+
+        waitFor(guidelines, timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("signup-guidelines")
+        captureRest("signup-guidelines-end")
+        compose.onNodeWithText(str(R.string.onboarding_rules_agree)).performClick()
+
+        // Signed up: the deck.
+        val like = str(R.string.deck_action_like)
+        waitFor(hasContentDescription(like) and isEnabled() and !hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        val details = str(R.string.deck_action_details)
+        waitFor(SemanticsMatcher("the top card") { node ->
+            node.config.getOrElseNullable(SemanticsActions.CustomActions) { null }?.any { action -> action.label == details } == true
+        }, timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("signup-done-deck")
+    }
+
+    /** The sign-up step's "Next", once it can be tapped. */
+    private fun waitForNext() = waitFor(hasText(str(R.string.action_next)) and isEnabled() and hasClickAction(), timeoutMs = 20_000, unmerged = false)
+
+    private fun next() {
+        waitForNext()
+        compose.onNode(hasText(str(R.string.action_next)) and isEnabled() and hasClickAction()).performClick()
+    }
+
+    /** A read-back dialog over the step, captured as [name], then confirmed. */
+    private fun confirmDialog(name: String) {
+        waitFor(isDialog())
+        compose.waitForIdle()
+        captureWithDialog(name)
+        compose.onNode(hasText(str(R.string.action_confirm)) and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+    }
+
+    /**
+     * The system photo picker, answered: [pictures] are written as files and
+     * handed back as its result (the sandbox's media provider serves no
+     * picker URIs).
+     */
+    private fun pickPhotos(pictures: List<ByteArray>) {
+        val dir = File(app.cacheDir, "picked").apply { mkdirs() }
+        val uris = pictures.mapIndexed { index, bytes -> Uri.fromFile(File(dir, "IMG_${1000 + index}.jpg").apply { writeBytes(bytes) }) }
+        compose.onAllNodes(hasContentDescription(str(R.string.onboarding_photos_add)) and hasClickAction())[0].performClick()
+        compose.waitForIdle()
+        val activity = shadowOf(compose.activity)
+        val request = checkNotNull(activity.nextStartedActivityForResult) { "the photo picker was not opened" }
+        val result = Intent().apply {
+            clipData = ClipData.newRawUri(null, uris.first()).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
+        }
+        compose.runOnUiThread { activity.receiveResult(request.intent, Activity.RESULT_OK, result) }
+        compose.waitForIdle()
+    }
+
+    /** A made-up portrait (a figure against a sky), 4:5 and larger than the upload size. */
+    private class Portrait(val sky: Int, val ground: Int, val shirt: Int, val hair: Int) {
+
+        /** As the JPEG a gallery would hold. */
+        fun jpeg(): ByteArray {
+            val w = 1440f
+            val h = 1800f
+            val bitmap = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.shader = LinearGradient(0f, 0f, 0f, h, sky, ground, Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, 0f, w, h, paint)
+            paint.shader = null
+            paint.color = shirt
+            canvas.drawOval(RectF(w * 0.14f, h * 0.66f, w * 0.86f, h * 1.25f), paint)
+            paint.color = 0xFFE8B996.toInt()
+            canvas.drawRect(w * 0.44f, h * 0.5f, w * 0.56f, h * 0.7f, paint)
+            canvas.drawOval(RectF(w * 0.35f, h * 0.24f, w * 0.65f, h * 0.56f), paint)
+            paint.color = hair
+            canvas.drawArc(RectF(w * 0.33f, h * 0.2f, w * 0.67f, h * 0.5f), 180f, 180f, true, paint)
+            val out = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            return out.toByteArray()
+        }
+
+        companion object {
+            /** The index of the portrait in [looks] whose sky is nearest to [pixel]. */
+            fun closest(looks: List<Portrait>, pixel: Int): Int = looks.indices.minBy { i ->
+                val sky = looks[i].sky
+                val dr = android.graphics.Color.red(sky) - android.graphics.Color.red(pixel)
+                val dg = android.graphics.Color.green(sky) - android.graphics.Color.green(pixel)
+                val db = android.graphics.Color.blue(sky) - android.graphics.Color.blue(pixel)
+                dr * dr + dg * dg + db * db
+            }
+        }
+    }
+
+    /** The coarse permission granted and the network provider holding a fresh fix at [at] (lat, lng). */
+    private fun allowCoarseLocation(at: Pair<Double, Double>) {
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION)
+        val manager = shadowOf(app.getSystemService(LocationManager::class.java))
+        manager.setProviderEnabled(LocationManager.NETWORK_PROVIDER, true)
+        manager.setLastKnownLocation(
+            LocationManager.NETWORK_PROVIDER,
+            Location(LocationManager.NETWORK_PROVIDER).apply {
+                latitude = at.first
+                longitude = at.second
+                accuracy = 2_000f
+                time = System.currentTimeMillis()
+            },
+        )
+    }
+
+    // MARK: - The Profile tab
+
+    @Test @Config(qualifiers = "+en") fun profileTabEnglishLight() = profileTab()
+    @Test @Config(qualifiers = "+en-night") fun profileTabEnglishDark() = profileTab()
+    @Test @Config(qualifiers = "+fa") fun profileTabPersianLight() = profileTab()
+    @Test @Config(qualifiers = "+fa-night") fun profileTabPersianDark() = profileTab()
+    @Test @Config(qualifiers = "+fa", fontScale = 1.5f) fun profileTabPersianLargeText() = profileTab()
+
+    /** The signed-in account's own tab, a screen at a time, and the dialogs its rows open. */
+    private fun profileTab() {
+        flow = "p"
+        start(signedIn = true)
+
+        val like = str(R.string.deck_action_like)
+        waitFor(hasContentDescription(like) and isEnabled() and !hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.onNodeWithText(str(R.string.tab_profile)).performClick()
+        waitFor(hasText(str(R.string.profile_empty_title)), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("profile")
+        val list = hasScrollAction() and !hasAnyAncestor(isDialog())
+        var page = 1
+        while (canScrollFurther(list) && page < 6) {
+            compose.onNode(list).performTouchInput { swipeUp() }
+            compose.waitForIdle()
+            capture("profile-${++page}")
+        }
+
+        openRow(list, str(R.string.settings_language))
+        captureWithDialog("profile-language")
+        closeDialog(str(R.string.action_close))
+
+        // The licence texts are read from the app's resources off the main thread; in this sandbox the
+        // first read after another tour sometimes never lands, so the dialog is opened again.
+        val licence = hasText("Open Font License", substring = true) and hasAnyAncestor(isDialog())
+        fun licenceShown() = compose.onAllNodes(licence, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        for (attempt in 1..3) {
+            if (attempt > 1) closeDialog(str(R.string.action_close))
+            openRow(list, str(R.string.settings_licences))
+            pump(4_000) { licenceShown() }
+            if (licenceShown()) break
+        }
+        check(licenceShown()) { "the licence texts never showed" }
+        captureWithDialog("profile-licences")
+        closeDialog(str(R.string.action_close))
+
+        openRow(list, str(R.string.action_sign_out))
+        captureWithDialog("profile-sign-out")
+        closeDialog(str(R.string.action_cancel))
+    }
+
+    /** Scrolls the tab's list to the row titled [title] and opens its dialog. */
+    private fun openRow(list: SemanticsMatcher, title: String) {
+        compose.onNode(list).performScrollToNode(hasText(title))
+        compose.onNode(hasText(title) and !hasAnyAncestor(isDialog())).performClick()
+        waitFor(isDialog())
+        compose.waitForIdle()
+    }
+
+    private fun closeDialog(button: String) {
+        compose.onNode(hasText(button) and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+    }
+
+    /** The screen's scrollable content has more below what is shown. */
+    private fun canScrollFurther(matcher: SemanticsMatcher): Boolean {
+        val node = compose.onAllNodes(matcher).fetchSemanticsNodes().firstOrNull() ?: return false
+        val range = node.config.getOrElseNullable(SemanticsProperties.VerticalScrollAxisRange) { null } ?: return false
+        return range.value() < range.maxValue()
+    }
+
+    /** What a step holds below the screen, scrolled to its end and captured as [name]; nothing when it fits. */
+    private fun captureRest(name: String) {
+        val content = hasScrollAction() and !hasAnyAncestor(isDialog())
+        if (!canScrollFurther(content)) return
+        compose.onNode(content).performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        capture(name)
+    }
+
+    private fun scrollToTop() {
+        val content = hasScrollAction() and !hasAnyAncestor(isDialog())
+        if (compose.onAllNodes(content).fetchSemanticsNodes().isEmpty()) return
+        compose.onNode(content).performTouchInput { swipeDown() }
+        compose.waitForIdle()
     }
 
     // MARK: - Deck, profile, match, likes
@@ -775,6 +1110,30 @@ class ScreenTourTest {
         val screen = copy(compose.activity.window)
         val canvas = Canvas(screen)
         windows.forEach { canvas.drawBitmap(copy(it), 0f, 0f, null) }
+        write(name, screen)
+    }
+
+    /**
+     * The activity with each dialog window over it where the platform puts
+     * it: centred, behind it the dim its window asks for (the compositor's
+     * part, which no window's own pixels carry).
+     */
+    private fun captureWithDialog(name: String) {
+        if (outDir == null) return
+        compose.waitForIdle()
+        val views = Shadow.extract<ShadowWindowManagerImpl>(compose.activity.windowManager).views
+        val windows = views.mapNotNull { windowProvider(it)?.window }.distinct()
+        check(windows.isNotEmpty()) { "no dialog window" }
+        val screen = copy(compose.activity.window)
+        val canvas = Canvas(screen)
+        windows.forEach { window ->
+            val attributes = window.attributes
+            if (attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0) {
+                canvas.drawColor(android.graphics.Color.argb((attributes.dimAmount * 255).toInt(), 0, 0, 0))
+            }
+            val layer = copy(window)
+            canvas.drawBitmap(layer, (screen.width - layer.width) / 2f, (screen.height - layer.height) / 2f, null)
+        }
         write(name, screen)
     }
 
