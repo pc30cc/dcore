@@ -72,7 +72,6 @@ import app.core.i18n.brandText
 import app.core.model.DeviceInfo
 import app.core.store.IntegrityResult
 import app.core.store.Store
-import app.core.ui.theme.DarkSemantic
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.LocalSemanticColors
 import kotlinx.coroutines.withTimeoutOrNull
@@ -228,7 +227,7 @@ private fun WelcomeFooter(state: AuthUiState) {
     val legal = config?.legal
     val termsUrl = legal?.termsUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.termsUrl
     val privacyUrl = legal?.privacyUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.privacyUrl
-    CompositionLocalProvider(LocalSemanticColors provides DarkSemantic) {
+    CompositionLocalProvider(LocalSemanticColors provides WelcomePalette.SheetColors) {
         InlineMessage(state.googleError?.takeIf { state.stage == AuthStage.Welcome }?.let { googleErrorText(it) })
     }
     LegalLine(termsUrl = termsUrl, privacyUrl = privacyUrl)

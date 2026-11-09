@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the shared components say to TalkBack (ui/components). -->
+<resources>
+    <string name="ui_back">Back</string>
+    <string name="ui_clear">Clear</string>
+    <string name="ui_rewind">Rewind</string>
+    <string name="ui_pass">Pass</string>
+    <string name="ui_super_like">Super like</string>
+    <string name="ui_like">Like</string>
+    <string name="ui_boost">Boost</string>
+    <string name="ui_verified">Verified</string>
+    <string name="ui_online">Online</string>
+    <string name="ui_new_match">New match</string>
+    <string name="ui_like_answer">Like this answer</string>
+    <string name="ui_country_code">Country code %1$s</string>
+    <string name="ui_step_of">%1$s of %2$s</string>
+    <string name="ui_loading">Loading</string>
+    <string name="ui_unread">%1$s unread</string>
+    <string name="ui_logo">Logo</string>
+</resources>

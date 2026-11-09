@@ -151,7 +151,7 @@ class ConversationsScreenTest {
         )
         val shown = mutableMapOf<String, String?>()
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 shown["declined"] = previewText(call(CallOutcome.Declined, ME, 0), ME)
                 shown["noAnswer"] = previewText(call(CallOutcome.Missed, ME, 0, CallKind.Video), ME)
                 shown["failed"] = previewText(call(CallOutcome.Failed, NEGAR, 0), ME)
@@ -179,7 +179,7 @@ class ConversationsScreenTest {
         var shown: String? = null
         var spoken: String? = null
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 shown = previewText(declined, ME)
                 spoken = previewText(declined, ME, spoken = true)
             }

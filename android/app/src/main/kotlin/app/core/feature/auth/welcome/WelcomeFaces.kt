@@ -128,7 +128,7 @@ fun rememberBubbleArt(pictures: List<WelcomePicture>, labels: List<String>, pers
     val remote = LocalRemoteImages.current && !LocalInspectionMode.current
     val art = remember(labels, persian) {
         val typeface = if (persian) {
-            runCatching { ResourcesCompat.getFont(context, R.font.vazirmatn_bold) }.getOrNull() ?: Typeface.DEFAULT_BOLD
+            runCatching { ResourcesCompat.getFont(context, R.font.brand_fa_bold) }.getOrNull() ?: Typeface.DEFAULT_BOLD
         } else {
             Typeface.create("sans-serif", Typeface.BOLD)
         }

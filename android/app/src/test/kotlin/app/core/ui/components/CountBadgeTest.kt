@@ -48,8 +48,8 @@ class CountBadgeTest {
     fun latinCountsShareOneHeight() {
         val sizes = sizes("3", "4", "12", "9+", "99+")
         assertOneHeight(sizes, "3")
-        // 16 dp at the 11 sp label, at 1x text.
-        assertEquals(16f * compose.density.density, sizes.getValue("3").height, 1f)
+        // 1.45 em of the 12 sp label (never under 16 dp), at 1x text.
+        assertEquals(12f * 1.45f * compose.density.density, sizes.getValue("3").height, 1f)
         assertTrue("two figures are a pill a little wider than a circle", sizes.getValue("12").width < sizes.getValue("99+").width)
     }
 

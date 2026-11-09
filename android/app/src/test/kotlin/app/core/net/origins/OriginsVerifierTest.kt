@@ -94,9 +94,15 @@ class OriginsVerifierTest {
         assertEquals(payload["bootstrap"]!!.jsonArray.map { it.jsonPrimitive.content }, list.bootstrap)
 
         // The same key as Gradle compiles it (BuildConfig.ORIGINS_PUBLIC_KEYS, `kid:key`)
-        // and the build's brand id, read the way the app reads its own.
+        // and the build's brand id, read the way the app reads its own. The fixture is the
+        // template's: a build of another brand must refuse it as another brand's list.
         val compiled = OriginsTrust.parse(BuildConfig.BRAND_ID, "$kid:${key["key"]!!.jsonPrimitive.content}")
-        assertEquals(list, valid(OriginsVerifier(compiled).verify(OriginsKit.fixture("document.json"), verifyAt)))
+        val own = OriginsVerifier(compiled).verify(OriginsKit.fixture("document.json"), verifyAt)
+        if (BuildConfig.BRAND_ID == trust["brand"]!!.jsonPrimitive.content) {
+            assertEquals(list, valid(own))
+        } else {
+            assertEquals(OriginsRefusal.WRONG_BRAND, refusal(own))
+        }
     }
 
     @Test

@@ -6,7 +6,6 @@ import androidx.compose.ui.graphics.compositeOver
 import app.core.BuildConfig
 import app.core.model.WelcomeGradient
 import app.core.ui.theme.Contrast
-import app.core.ui.theme.DarkSemantic
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -146,8 +145,8 @@ class WelcomeContrastTest {
             assertRatio("title at $f", WelcomePalette.SheetText, sheet, Contrast.AA)
             assertRatio("secondary at $f", WelcomePalette.SheetTextSecondary, sheet, Contrast.AA)
             assertRatio("link at $f", WelcomePalette.SheetLink, sheet, Contrast.AA)
-            assertRatio("error at $f", DarkSemantic.danger, sheet, Contrast.AA)
-            assertRatio("success at $f", DarkSemantic.success, sheet, Contrast.AA)
+            assertRatio("error at $f", WelcomePalette.SheetError, sheet, Contrast.AA)
+            assertRatio("success at $f", WelcomePalette.SheetSuccess, sheet, Contrast.AA)
             val field = WelcomePalette.SheetField.compositeOver(sheet)
             assertRatio("number at $f", WelcomePalette.SheetText, field, Contrast.AA)
             assertRatio("placeholder at $f", WelcomePalette.SheetPlaceholder, field, Contrast.AA)

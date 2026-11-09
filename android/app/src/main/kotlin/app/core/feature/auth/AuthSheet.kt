@@ -106,7 +106,6 @@ import app.core.i18n.AppLanguage
 import app.core.i18n.Digits
 import app.core.i18n.brandString
 import app.core.model.OtpChannel
-import app.core.ui.theme.DarkSemantic
 import app.core.ui.theme.LocalSemanticColors
 import app.core.ui.theme.Motion
 import app.core.ui.theme.Radius
@@ -194,7 +193,7 @@ fun AuthSheet(
 @Composable
 private fun SheetTheme(content: @Composable () -> Unit) {
     val scheme = remember { WelcomePalette.sheetScheme() }
-    CompositionLocalProvider(LocalSemanticColors provides DarkSemantic) {
+    CompositionLocalProvider(LocalSemanticColors provides WelcomePalette.SheetColors) {
         MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
     }
 }
@@ -455,7 +454,7 @@ private fun PhoneRow(
                 .heightIn(min = 52.dp)
                 .clip(pill)
                 .background(WelcomePalette.SheetField)
-                .then(if (isError) Modifier.border(1.dp, DarkSemantic.danger, pill) else Modifier)
+                .then(if (isError) Modifier.border(1.dp, WelcomePalette.SheetError, pill) else Modifier)
                 .padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -585,7 +584,7 @@ private fun CodeStep(state: AuthUiState, model: AuthViewModel, language: AppLang
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = WelcomePalette.SheetText)
                     Text(brandString(R.string.auth_checking), style = MaterialTheme.typography.bodyMedium, color = WelcomePalette.SheetTextSecondary)
                 }
-                state.success -> Text(brandString(R.string.auth_signed_in), style = MaterialTheme.typography.bodyMedium, color = DarkSemantic.success)
+                state.success -> Text(brandString(R.string.auth_signed_in), style = MaterialTheme.typography.bodyMedium, color = WelcomePalette.SheetSuccess)
                 !otp.expired && otp.codeError == null -> Text(
                     brandString(R.string.auth_code_expires, otp.expiresInSeconds / 60, otp.expiresInSeconds % 60),
                     style = MaterialTheme.typography.bodySmall,

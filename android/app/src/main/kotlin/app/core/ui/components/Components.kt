@@ -1,98 +1,62 @@
 package app.core.ui.components
 
-import androidx.annotation.DrawableRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import app.core.R
-import app.core.ui.theme.Space
+import app.core.ui.theme.AppTheme
 
 /**
- * The app's neutral mark: what stands where the brand's logo will (brand
- * logos are not wired into the build yet). Tinted with the brand colour.
+ * The logo mark: two overlapping circles (violet and pink, from the brand's
+ * gradient) with a white lens where they meet. 24 / 34 / 40 / 44 / 56 dp;
+ * keep a quarter of its size clear around it. [mono] is for the gradient or
+ * a photo behind it: white circles at 55 % and a solid lens. Never shown
+ * with a name or a placeholder label. Decorative unless [contentDescription]
+ * is given.
  */
 @Composable
-fun BrandMark(size: Dp, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
-    Icon(
-        painter = painterResource(R.drawable.ic_brand_mark),
-        contentDescription = null,
-        tint = tint,
-        modifier = modifier.size(size),
-    )
+fun LogoMark(size: Dp, modifier: Modifier = Modifier, mono: Boolean = false, contentDescription: String? = null) {
+    val stops = AppTheme.colors.gradientStops
+    val described = if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier
+    Canvas(modifier.size(size).then(described)) {
+        val w = this.size.width
+        val r = w * 0.30f
+        val cy = this.size.height / 2
+        val left = Offset(w / 2 - r * 0.5f, cy)
+        val right = Offset(w / 2 + r * 0.5f, cy)
+        val a = Path().apply { addOval(androidx.compose.ui.geometry.Rect(left, r)) }
+        val b = Path().apply { addOval(androidx.compose.ui.geometry.Rect(right, r)) }
+        val lens = Path().apply { op(a, b, PathOperation.Intersect) }
+        if (mono) {
+            drawPath(a, Color.White.copy(alpha = 0.55f))
+            drawPath(b, Color.White.copy(alpha = 0.55f))
+        } else {
+            drawPath(a, Brush.linearGradient(listOf(lerp(stops.start, Color.White, 0.25f), lerp(stops.start, Color.Black, 0.1f)), start = Offset(left.x, cy - r), end = Offset(left.x, cy + r)))
+            drawPath(b, Brush.linearGradient(listOf(lerp(stops.end, Color.White, 0.25f), lerp(stops.end, Color.Black, 0.05f)), start = Offset(right.x, cy - r), end = Offset(right.x, cy + r)))
+        }
+        drawPath(lens, Color.White)
+    }
 }
 
-/**
- * A screen with nothing to show yet: a mark, what this place is for, and what
- * will fill it. Never a bare blank screen: every screen has an empty state.
- */
+/** Older name of [LogoMark], for the screens not yet restyled. */
 @Composable
-fun EmptyState(
-    @DrawableRes icon: Int,
-    title: String,
-    body: String,
-    modifier: Modifier = Modifier,
-    action: (@Composable () -> Unit)? = null,
-) {
-    Box(modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.xxl), contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Space.md),
-            modifier = Modifier.widthIn(max = 420.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(icon),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            if (action != null) {
-                Spacer(Modifier.height(Space.sm))
-                action()
-            }
-        }
-    }
+fun BrandMark(size: Dp, modifier: Modifier = Modifier) {
+    LogoMark(size, modifier)
+}
+
+/** The mark with TalkBack's «نشانه», where it stands alone at the top of a screen. */
+@Composable
+fun LogoMarkLabelled(size: Dp, modifier: Modifier = Modifier, mono: Boolean = false) {
+    LogoMark(size, modifier, mono, stringResource(R.string.ui_logo))
 }

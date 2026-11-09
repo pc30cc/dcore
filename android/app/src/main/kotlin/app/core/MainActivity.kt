@@ -8,7 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -26,6 +25,7 @@ import app.core.i18n.LocalAppName
 import app.core.push.OpenTargets
 import app.core.ui.nav.AppNavHost
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.appearanceIsDark
 
 /**
  * The one activity. Compose draws everything, edge to edge, with predictive
@@ -57,7 +57,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) openFrom(intent)
 
         setContent {
-            val dark = isSystemInDarkTheme()
+            // Dark unless the person picked light or "follow the phone".
+            val dark = appearanceIsDark()
             // The bar icons follow the theme every time it changes, not only
             // the shade the phone had at launch.
             DisposableEffect(dark) {

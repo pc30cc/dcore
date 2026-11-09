@@ -190,7 +190,7 @@ fun WelcomeLayout(
                     Text(
                         texts.subtitle,
                         style = TextStyle(
-                            fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
+                            fontFamily = if (persian) app.core.ui.theme.PersianFamily else null,
                             fontSize = if (persian) 13.sp else 14.sp,
                             lineHeight = if (persian) 1.7.em else 1.4.em,
                             color = WelcomePalette.Subtitle,
@@ -276,7 +276,7 @@ private fun Eyebrow(text: String, persian: Boolean, language: String, modifier: 
     Text(
         if (persian) text else text.uppercase(Locale.forLanguageTag(language)),
         style = TextStyle(
-            fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
+            fontFamily = if (persian) app.core.ui.theme.PersianFamily else null,
             fontSize = if (persian) 12.sp else 11.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = if (persian) 0.em else 0.22.em,
@@ -304,7 +304,7 @@ private fun HeadlineText(source: String, persian: Boolean, modifier: Modifier, o
     Text(
         text,
         style = TextStyle(
-            fontFamily = if (persian) app.core.ui.theme.Vazirmatn else null,
+            fontFamily = if (persian) app.core.ui.theme.PersianFamily else null,
             fontSize = size,
             fontWeight = FontWeight.Bold,
             lineHeight = if (persian) 1.5.em else 1.1.em,

@@ -31,7 +31,9 @@ import app.core.LocalAppGraph
 import app.core.R
 import app.core.brand.AppBrand
 import app.core.feature.auth.AuthRoute
+import app.core.feature.auth.welcome.BrandWelcome
 import app.core.feature.auth.welcome.Headline
+import app.core.i18n.brandText
 import app.core.i18n.LocalAppName
 import app.core.media.LocalRemoteImages
 import app.core.net.Backend
@@ -124,7 +126,9 @@ class WelcomeTourTest {
         val terms = compose.onAllNodes(hasText(str(R.string.legal_terms), substring = true)).fetchSemanticsNodes().single().boundsInRoot
         assertTrue("the terms line is off screen: $terms in $root", terms.bottom <= root.bottom)
         // The bubbles are decoration: nothing in the tree but the texts and buttons.
-        val headline = Headline.plain(str(R.string.welcome_eyebrow))
+        // The brand's own eyebrow when it has one for this language, else the app's.
+        val eyebrow = BrandWelcome.load(app).eyebrow[language]?.let { brandText(it) } ?: str(R.string.welcome_eyebrow)
+        val headline = Headline.plain(eyebrow)
         assertTrue(compose.onAllNodes(hasText(headline, substring = true, ignoreCase = true)).fetchSemanticsNodes().isNotEmpty())
         assertEquals(0, compose.onAllNodes(hasContentDescription("bubble", substring = true, ignoreCase = true)).fetchSemanticsNodes().size)
     }

@@ -70,7 +70,7 @@
     <string name="payments_service_unavailable">Şu anda %1$s hizmetine ulaşılamıyor.</string>
     <string name="payments_error">%1$s ile ilgili bir sorun oluştu.</string>
     <string name="settings_licences">Açık kaynak lisansları</string>
-    <string name="licences_vazirmatn">Vazirmatn yazı tipi</string>
+    <string name="licences_font">%1$s yazı tipi</string>
     <string name="licences_instrument_serif">Instrument Serif yazı tipi</string>
     <string name="licences_lalezar">Lalezar yazı tipi</string>
     <string name="settings_version">Sürüm %1$s (%2$d) · %3$s</string>

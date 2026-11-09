@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The launcher mark inside the adaptive icon's 66dp safe zone, white on the
-     brand colour (brand_primary, generated from brand.json). A brand's own
-     icon art is not wired into the build yet. -->
+<!-- The logo mark, mono (for the gradient behind it): two overlapping
+     circles in white at 55 % with a solid white lens where they meet, inside
+     the adaptive icon's 66dp safe zone. Never a name. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -9,9 +9,13 @@
     android:viewportHeight="108">
     <path
         android:fillColor="@color/launch_mark"
-        android:fillAlpha="0.6"
+        android:fillAlpha="0.55"
         android:pathData="M46,38a16,16 0 1,0 0,32a16,16 0 1,0 0,-32z" />
     <path
         android:fillColor="@color/launch_mark"
+        android:fillAlpha="0.55"
         android:pathData="M62,38a16,16 0 1,0 0,32a16,16 0 1,0 0,-32z" />
+    <path
+        android:fillColor="@color/launch_mark"
+        android:pathData="M54,40.144A16,16 0 0,1 54,67.856A16,16 0 0,1 54,40.144z" />
 </vector>

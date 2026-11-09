@@ -70,7 +70,7 @@
     <string name="payments_service_unavailable">الان دسترسی به %1$s ممکن نیست.</string>
     <string name="payments_error">در ارتباط با %1$s مشکلی پیش آمد.</string>
     <string name="settings_licences">مجوزهای متن‌باز</string>
-    <string name="licences_vazirmatn">فونت وزیرمتن</string>
+    <string name="licences_font">فونت %1$s</string>
     <string name="licences_instrument_serif">فونت Instrument Serif</string>
     <string name="licences_lalezar">فونت لاله‌زار</string>
     <string name="settings_version">نسخه‌ی %1$s (%2$d) · %3$s</string>

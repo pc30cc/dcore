@@ -183,7 +183,7 @@ class ChatScreenTest {
         }
         var state by mutableStateOf(thread(yesterday))
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
                 }
@@ -427,7 +427,7 @@ class ChatScreenTest {
         val rows = listOf(row(92, mine = false, kind = MessageKind.Call, body = null, sender = NEGAR, call = callLine(92, NEGAR, CallOutcome.Missed, kind = CallKind.Video)))
         var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 CompositionLocalProvider(
                     LocalRemoteImages provides false,
                     LocalChatCallBack provides { conversation, kind -> back += "${conversation.id}:${kind.wire}" },
@@ -451,7 +451,7 @@ class ChatScreenTest {
         val rows = listOf(row(93, mine = true, kind = MessageKind.Call, body = null, call = callLine(93, ME, CallOutcome.Completed, seconds = 65)))
         var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 CompositionLocalProvider(LocalRemoteImages provides false, LocalChatCallBack provides { _, _ -> }) {
                     ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
                 }

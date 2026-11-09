@@ -4,15 +4,14 @@ import java.util.UUID
 
 /**
  * The choices and markers that must survive a restart. Plain values, not
- * credentials. The language is not here: it must be known before the first
- * frame (see `AppLocales`).
+ * credentials. The language and the theme are not here: they must be known
+ * before the first frame (see `AppLocales` and [AppearanceStore]).
  *
  * Key names are fixed neutral constants, never derived from the brand.
  */
 class Preferences(private val store: SecretStore) {
     private companion object {
         const val INSTALL_ID = "prefs.installId"
-        const val APPEARANCE = "prefs.appearance"
         const val PENDING_SIGN_OUT = "session.pendingSignOut"
     }
 
@@ -28,12 +27,6 @@ class Preferences(private val store: SecretStore) {
         return fresh
     }
 
-    suspend fun appearance(): Appearance = Appearance.from(store.read(APPEARANCE)) ?: Appearance.SYSTEM
-
-    suspend fun setAppearance(appearance: Appearance) {
-        store.write(APPEARANCE, appearance.key)
-    }
-
     /**
      * A sign-out whose clean-up has not finished: written before the clean-up
      * starts and removed when it is done, so a process that ends half-way
@@ -44,17 +37,5 @@ class Preferences(private val store: SecretStore) {
 
     suspend fun setPendingSignOut(pending: Boolean) {
         if (pending) store.write(PENDING_SIGN_OUT, "1") else store.remove(PENDING_SIGN_OUT)
-    }
-}
-
-/** Light, dark, or whatever the phone is doing (the default). */
-enum class Appearance(val key: String) {
-    SYSTEM("system"),
-    LIGHT("light"),
-    DARK("dark"),
-    ;
-
-    companion object {
-        fun from(key: String?): Appearance? = entries.firstOrNull { it.key == key }
     }
 }

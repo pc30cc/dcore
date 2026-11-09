@@ -40,7 +40,18 @@ val brandId: String = providers.gradleProperty("brand").orNull?.takeIf { it.isNo
 if (!Regex("[A-Za-z0-9_-]+").matches(brandId)) {
     throw GradleException("-Pbrand must be a folder name under brands/ (letters, digits, '_' or '-'), got '$brandId'")
 }
-val brandFile = rootProject.layout.projectDirectory.file("../brands/$brandId/brand.json")
+
+/**
+ * The folder that holds the brands: `-PbrandsDir=<path>` (absolute, or
+ * relative to the Android project), else the repository's `brands/`. A brand
+ * whose files may not be published (licensed fonts, say) lives outside the
+ * repository and is built with `-PbrandsDir=... -Pbrand=<id>`.
+ */
+val brandsRoot: Directory = providers.gradleProperty("brandsDir").orNull?.takeIf { it.isNotBlank() }
+    ?.let { rootProject.layout.projectDirectory.dir(it) }
+    ?: rootProject.layout.projectDirectory.dir("../brands")
+val brandDir: Directory = brandsRoot.dir(brandId)
+val brandFile = brandDir.file("brand.json")
 val brandText: String = providers.fileContents(brandFile).asText.orNull
     ?: throw GradleException("Brand '$brandId' not found: expected ${brandFile.asFile.normalize()}")
 
@@ -79,6 +90,23 @@ fun brandColour(path: String): String {
     }
     return "0xFF${hex.substring(1).uppercase()}L"
 }
+
+/**
+ * An optional `#RRGGBB` colour: the Long for `Color(...)`, or `0L` when
+ * brand.json leaves it out (the app then uses the design's own value; an
+ * opaque colour is never 0, so 0 cannot be mistaken for one).
+ */
+fun brandColourOrUnset(path: String): String =
+    if (brandString(path) == null) "0L" else brandColour(path)
+
+/** The design roles a brand may recolour, each `{ light, dark }` under `colors` (all optional). */
+val brandColourRoles = listOf(
+    "gradientStart" to "GRADIENT_START",
+    "gradientMid" to "GRADIENT_MID",
+    "gradientEnd" to "GRADIENT_END",
+    "alive" to "ALIVE",
+    "aliveText" to "ALIVE_TEXT",
+)
 
 fun brandHost(path: String): String {
     val host = requireBrandString(path).lowercase()
@@ -217,9 +245,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // The name under the icon, and the colour behind the launcher mark.
+        // The name under the icon, and the colours behind the launcher mark
+        // (the "yes" gradient; the brand colour when the brand names none).
         resValue("string", "app_name", androidString(requireBrandString("appName")))
         resValue("color", "brand_primary", requireBrandString("colors.brand.light"))
+        resValue("color", "brand_gradient_start", brandString("colors.gradientStart.light") ?: requireBrandString("colors.brand.light"))
+        resValue("color", "brand_gradient_end", brandString("colors.gradientEnd.light") ?: requireBrandString("colors.brand.light"))
 
         buildConfigField("String", "BRAND_ID", literal(brandJsonId))
         // The signed origins list (net/origins): the keys it may be signed
@@ -234,6 +265,10 @@ android {
         buildConfigField("long", "BRAND_PRIMARY_DARK", brandColour("colors.brand.dark"))
         buildConfigField("long", "BRAND_ON_PRIMARY_LIGHT", brandColour("colors.onBrand.light"))
         buildConfigField("long", "BRAND_ON_PRIMARY_DARK", brandColour("colors.onBrand.dark"))
+        for ((role, field) in brandColourRoles) {
+            buildConfigField("long", "BRAND_${field}_LIGHT", brandColourOrUnset("colors.$role.light"))
+            buildConfigField("long", "BRAND_${field}_DARK", brandColourOrUnset("colors.$role.dark"))
+        }
         buildConfigField("String", "PRIVACY_URL", literal(brandString("legal.privacyUrl") ?: ""))
         buildConfigField("String", "TERMS_URL", literal(brandString("legal.termsUrl") ?: ""))
         buildConfigField("String", "GUIDELINES_URL", literal(brandString("legal.guidelinesUrl") ?: ""))
@@ -418,6 +453,8 @@ android {
                 // inputs a changed server fixture, problem catalogue or brand
                 // file leaves the test task up to date (or served from the
                 // build cache) and the contract tests never see the change.
+                // Where the tests read this build's brand.json (brands/ or -PbrandsDir).
+                test.systemProperty("app.brandsDir", brandsRoot.asFile.absolutePath)
                 test.inputs.files(
                     fileTree(rootProject.layout.projectDirectory.dir("../server/packages/shared")) {
                         include("fixtures/**", "src/problem.ts")
@@ -472,7 +509,7 @@ for (store in listOf("bazaar", "play")) {
 // which the app reads at run time (feature/auth/welcome/BrandWelcome).
 
 val welcomeImagePattern = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]*\\.(png|jpg|jpeg|webp)")
-val brandWelcomeFolder = rootProject.layout.projectDirectory.dir("../brands/$brandId/welcome")
+val brandWelcomeFolder = brandDir.dir("welcome")
 
 /** The welcome block as the app reads it, checked; `{}` when the brand has none. */
 fun brandWelcomeJson(): String {
@@ -544,9 +581,151 @@ val brandWelcomeAssets = tasks.register<BrandWelcomeAssets>("brandWelcomeAssets"
     images.from(welcomeImages.map { brandWelcomeFolder.file(it) })
 }
 
+// MARK: - Fonts: the brand's own files, else the bundled open ones
+//
+// `fonts.persianFiles` ({ regular, medium, bold }) and `fonts.latinFiles`
+// ({ regular, medium, semibold?, bold }) in brand.json name font files in the
+// brand's folder (TrueType or OpenType); either may also name a `license`
+// text, which the app lists under its open-source licences. A licensed font
+// never enters the repository: such a brand lives outside it (`brandsDir`).
+// Without files the bundled open fonts are used: Vazirmatn (Persian) and
+// Be Vietnam Pro (Latin), both SIL OFL 1.1, in `src/main/bundled-fonts/`.
+// Either way the files are copied under fixed resource names
+// (`brand_fa_regular`, ..., `brand_latin_bold`) into a generated res folder,
+// so the code names one set of fonts whatever the brand.
+
+val fontFilePattern = Regex("(?i)[A-Za-z0-9_][A-Za-z0-9_./-]*\\.(ttf|otf)")
+val licenseFilePattern = Regex("[A-Za-z0-9_][A-Za-z0-9_./-]*\\.txt")
+val bundledFonts: Directory = layout.projectDirectory.dir("src/main/bundled-fonts")
+
+/** A file named by brand.json, checked: inside the brand's folder, the right kind, and there. */
+fun brandFontFile(path: String, value: Any?, pattern: Regex, what: String): File {
+    val name = (value as? String)?.trim().orEmpty()
+    val where = "brands/$brandId/brand.json: '$path'"
+    if (!pattern.matches(name) || name.split('/').any { it == ".." || it == "." }) {
+        throw GradleException("$where must be a $what in the brand's folder, got '$name'")
+    }
+    val file = brandDir.file(name).asFile
+    if (!file.canonicalPath.startsWith(brandDir.asFile.canonicalPath + File.separator)) {
+        throw GradleException("$where points outside the brand's folder")
+    }
+    if (!file.isFile) throw GradleException("$where: ${file.path} does not exist")
+    if (pattern == fontFilePattern) {
+        // TrueType (00 01 00 00, 'true') or OpenType ('OTTO'); a WOFF or WOFF2 file is not a font Android reads.
+        val head = file.inputStream().use { input -> ByteArray(4).also { input.read(it) } }
+        val tag = String(head, Charsets.ISO_8859_1)
+        if (!(head.contentEquals(byteArrayOf(0, 1, 0, 0)) || tag == "OTTO" || tag == "true")) {
+            throw GradleException("$where: ${file.name} is not a TrueType or OpenType font")
+        }
+    }
+    return file
+}
+
+/** One script's font files by weight (`regular`, `medium`, `semibold`, `bold`), plus its licence, or null for the bundled set. */
+class FontSet(val name: String, val weights: Map<String, File>, val license: File?)
+
+fun brandFontSet(key: String, required: List<String>, optional: List<String>): FontSet? {
+    val block = brand("fonts.$key") ?: return null
+    if (block !is Map<*, *>) throw GradleException("brands/$brandId/brand.json: 'fonts.$key' must be an object")
+    val unknown = block.keys.map { it.toString() } - (required + optional + "license").toSet()
+    if (unknown.isNotEmpty()) throw GradleException("brands/$brandId/brand.json: 'fonts.$key' has unknown keys $unknown")
+    val weights = linkedMapOf<String, File>()
+    for (weight in required) {
+        weights[weight] = brandFontFile("fonts.$key.$weight", block[weight], fontFilePattern, ".ttf or .otf file")
+    }
+    for (weight in optional) {
+        if (block[weight] != null) weights[weight] = brandFontFile("fonts.$key.$weight", block[weight], fontFilePattern, ".ttf or .otf file")
+    }
+    val license = block["license"]?.let { brandFontFile("fonts.$key.license", it, licenseFilePattern, ".txt file") }
+    val family = if (key == "persianFiles") brandString("fonts.persian") else brandString("fonts.latin")
+    return FontSet(family ?: "", weights, license)
+}
+
+val persianFonts: FontSet = brandFontSet("persianFiles", listOf("regular", "medium", "bold"), emptyList())
+    ?: FontSet(
+        "Vazirmatn",
+        listOf("regular", "medium", "bold").associateWith { bundledFonts.file("persian/vazirmatn_$it.ttf").asFile },
+        bundledFonts.file("persian/OFL.txt").asFile,
+    )
+val latinFonts: FontSet = brandFontSet("latinFiles", listOf("regular", "medium", "bold"), listOf("semibold"))
+    ?: FontSet(
+        "Be Vietnam Pro",
+        listOf("regular", "medium", "semibold", "bold").associateWith { bundledFonts.file("latin/bevietnampro_$it.ttf").asFile },
+        bundledFonts.file("latin/OFL.txt").asFile,
+    )
+
+/**
+ * Copies the two font sets into `font/` under fixed names, their licences
+ * into `raw/` (empty when there is none to show) and their family names into
+ * `values/brand_fonts.xml`. Latin `semibold` falls back to `bold`.
+ */
+abstract class BrandFonts : DefaultTask() {
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val faRegular: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val faMedium: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val faBold: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val latinRegular: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val latinMedium: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val latinSemibold: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val latinBold: RegularFileProperty
+    @get:InputFile @get:Optional @get:PathSensitive(PathSensitivity.NONE) abstract val faLicense: RegularFileProperty
+    @get:InputFile @get:Optional @get:PathSensitive(PathSensitivity.NONE) abstract val latinLicense: RegularFileProperty
+    @get:Input abstract val faName: Property<String>
+    @get:Input abstract val latinName: Property<String>
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    private fun xml(value: String): String =
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"")
+            .let { if (it.startsWith("@") || it.startsWith("?")) "\\$it" else it }
+
+    @TaskAction
+    fun write() {
+        val root = outputDir.get().asFile
+        root.deleteRecursively()
+        val fonts = root.resolve("font").apply { mkdirs() }
+        val copies = listOf(
+            "brand_fa_regular" to faRegular, "brand_fa_medium" to faMedium, "brand_fa_bold" to faBold,
+            "brand_latin_regular" to latinRegular, "brand_latin_medium" to latinMedium,
+            "brand_latin_semibold" to latinSemibold, "brand_latin_bold" to latinBold,
+        )
+        for ((name, source) in copies) {
+            val file = source.get().asFile
+            file.copyTo(fonts.resolve("$name.${file.extension.lowercase()}"), overwrite = true)
+        }
+        val raw = root.resolve("raw").apply { mkdirs() }
+        raw.resolve("license_brand_fa.txt").writeText(faLicense.orNull?.asFile?.readText().orEmpty())
+        raw.resolve("license_brand_latin.txt").writeText(latinLicense.orNull?.asFile?.readText().orEmpty())
+        root.resolve("values").apply { mkdirs() }.resolve("brand_fonts.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="utf-8"?>
+            |<resources>
+            |    <string name="brand_font_fa_name" translatable="false">${xml(faName.get())}</string>
+            |    <string name="brand_font_latin_name" translatable="false">${xml(latinName.get())}</string>
+            |</resources>
+            |""".trimMargin(),
+        )
+    }
+}
+
+val brandFonts = tasks.register<BrandFonts>("brandFonts") {
+    faRegular.set(persianFonts.weights.getValue("regular"))
+    faMedium.set(persianFonts.weights.getValue("medium"))
+    faBold.set(persianFonts.weights.getValue("bold"))
+    latinRegular.set(latinFonts.weights.getValue("regular"))
+    latinMedium.set(latinFonts.weights.getValue("medium"))
+    latinSemibold.set(latinFonts.weights["semibold"] ?: latinFonts.weights.getValue("bold"))
+    latinBold.set(latinFonts.weights.getValue("bold"))
+    persianFonts.license?.let { faLicense.set(it) }
+    latinFonts.license?.let { latinLicense.set(it) }
+    faName.set(persianFonts.name)
+    latinName.set(latinFonts.name)
+    outputDir.set(layout.buildDirectory.dir("generated/brandFonts"))
+}
+
 androidComponents {
     onVariants { variant ->
         variant.sources.assets?.addGeneratedSourceDirectory(brandWelcomeAssets, BrandWelcomeAssets::outputDir)
+        variant.sources.res?.addGeneratedSourceDirectory(brandFonts, BrandFonts::outputDir)
     }
 }
 

@@ -29,7 +29,7 @@ class OtpCodeFieldTest {
     fun typedDigitsFromAnyScriptReachTheFlowAsAscii() {
         val received = mutableListOf<String>()
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 var code by remember { mutableStateOf("") }
                 OtpCodeField(
                     code = code,
@@ -54,7 +54,7 @@ class OtpCodeFieldTest {
     @Test
     fun persianShowsPersianDigitsInTheBoxes() {
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 OtpCodeField(code = "12", length = 6, onCodeChange = {}, language = AppLanguage.FA, label = "code")
             }
         }

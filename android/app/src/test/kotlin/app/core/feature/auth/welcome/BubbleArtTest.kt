@@ -49,7 +49,7 @@ class BubbleArtTest {
     private val turkish = listOf("BEĞEN", "EŞLEŞ", "SOHBET")
     private val english = listOf("LIKE", "MATCH", "CHAT")
 
-    private fun vazirmatn(): Typeface = ResourcesCompat.getFont(context, R.font.vazirmatn_bold)!!
+    private fun persianFace(): Typeface = ResourcesCompat.getFont(context, R.font.brand_fa_bold)!!
     private fun sans(): Typeface = Typeface.create("sans-serif", Typeface.BOLD)
 
     @Before fun firstLaunch() = WelcomeFaces.forgetForTest()
@@ -143,7 +143,7 @@ class BubbleArtTest {
     }
 
     @Test
-    fun persianWordsAreAtLeast13SpAndInsideTheirBubble() = checkReadableAndInside(persian, vazirmatn(), 0f, BubbleArt.PERSIAN_LABEL_SHARE)
+    fun persianWordsAreAtLeast13SpAndInsideTheirBubble() = checkReadableAndInside(persian, persianFace(), 0f, BubbleArt.PERSIAN_LABEL_SHARE)
 
     @Test
     fun longTurkishWordsGrowTheBubbleRatherThanShrinkBelow13Sp() {
@@ -158,14 +158,14 @@ class BubbleArtTest {
     @Test
     fun theWordIsMuchLargerThanBefore() {
         // It was 0.135 of the diameter (about 8 sp in the 31 dp bubble); Persian is now 16 sp there.
-        val share = BubbleArt(persian, vazirmatn(), 0f, labelSize = BubbleArt.PERSIAN_LABEL_SHARE).labelShare
+        val share = BubbleArt(persian, persianFace(), 0f, labelSize = BubbleArt.PERSIAN_LABEL_SHARE).labelShare
         assertEquals("the short Persian words fit at their full size", BubbleArt.PERSIAN_LABEL_SHARE, share, 0.0001f)
         assertTrue(share * 62f >= 16f)
     }
 
     @Test
     fun aFrameAllocatesNothing() {
-        val art = BubbleArt(persian, vazirmatn(), 0f, WelcomeFaces.generated())
+        val art = BubbleArt(persian, persianFace(), 0f, WelcomeFaces.generated())
         val dp = 2f
         val field = BubbleField(dp).apply { layout(411 * dp, 891 * dp, 260 * dp, 700 * dp, floatArrayOf(0f, 0f, 1f, 1f), startIntro = true) }
         val canvas = Canvas(Bitmap.createBitmap(411, 891, Bitmap.Config.ARGB_8888))

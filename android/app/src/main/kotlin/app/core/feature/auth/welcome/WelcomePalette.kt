@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.lerp
 import app.core.ui.theme.Contrast
+import app.core.ui.theme.AppColors
 import app.core.ui.theme.DarkSemantic
 import kotlin.math.PI
 import kotlin.math.abs
@@ -276,6 +277,13 @@ object WelcomePalette {
     val SheetChip = Color.Black.copy(alpha = 0.22f)
     val SheetPlaceholder = Color.White.copy(alpha = 0.82f)
 
+    /** Messages on the warm sheet: lighter than the app's ink-theme error and success, which it is not. */
+    val SheetError = Color(0xFFFFB4AB)
+    val SheetSuccess = Color(0xFF4ADE9B)
+
+    /** The app's colours inside the sheet: the dark set with the sheet's own error and success. */
+    val SheetColors: AppColors by lazy { DarkSemantic.copy(danger = SheetError, success = SheetSuccess) }
+
     /** Material's roles inside the sheet, so the code boxes, messages and pickers fit it. */
     fun sheetScheme(): ColorScheme = darkColorScheme(
         primary = SheetLink,
@@ -297,7 +305,7 @@ object WelcomePalette {
         surfaceContainerHighest = Color(0xFF66372A),
         outline = Color(0xFFC9A79C),
         outlineVariant = Color(0xFF7A5245),
-        error = DarkSemantic.danger,
+        error = SheetError,
         onError = Color(0xFF690005),
         inverseSurface = Color(0xFFFFF6F3),
         inverseOnSurface = SheetBottom,

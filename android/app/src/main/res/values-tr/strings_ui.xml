@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_back">Geri</string>
+    <string name="ui_clear">Temizle</string>
+    <string name="ui_rewind">Geri al</string>
+    <string name="ui_pass">Geç</string>
+    <string name="ui_super_like">Süper beğeni</string>
+    <string name="ui_like">Beğen</string>
+    <string name="ui_boost">Öne çıkar</string>
+    <string name="ui_verified">Doğrulanmış</string>
+    <string name="ui_online">Çevrimiçi</string>
+    <string name="ui_new_match">Yeni eşleşme</string>
+    <string name="ui_like_answer">Bu yanıtı beğen</string>
+    <string name="ui_country_code">Ülke kodu %1$s</string>
+    <string name="ui_step_of">%1$s / %2$s</string>
+    <string name="ui_loading">Yükleniyor</string>
+    <string name="ui_unread">%1$s okunmamış</string>
+    <string name="ui_logo">Logo</string>
+</resources>

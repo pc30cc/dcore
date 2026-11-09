@@ -265,15 +265,19 @@ private fun LanguageDialog(chosen: AppLanguage?, onDismiss: () -> Unit, onChoose
 @Composable
 private fun LicencesDialog(onDismiss: () -> Unit) {
     val resources = LocalResources.current
-    // Each bundled font with its licence text.
+    // Each bundled font with its licence text: the brand's two fonts (the
+    // build's choice, see brandFonts in build.gradle.kts; a licence that is
+    // empty, a commercial font's, is not listed) and the welcome's two faces.
     val fonts = listOf(
-        R.string.licences_vazirmatn to R.raw.license_vazirmatn,
-        R.string.licences_instrument_serif to R.raw.license_instrument_serif,
-        R.string.licences_lalezar to R.raw.license_lalezar,
+        resources.getString(R.string.licences_font, resources.getString(R.string.brand_font_fa_name)) to R.raw.license_brand_fa,
+        resources.getString(R.string.licences_font, resources.getString(R.string.brand_font_latin_name)) to R.raw.license_brand_latin,
+        resources.getString(R.string.licences_instrument_serif) to R.raw.license_instrument_serif,
+        resources.getString(R.string.licences_lalezar) to R.raw.license_lalezar,
     )
-    val texts by produceState(initialValue = emptyList<String>(), resources) {
+    val texts by produceState(initialValue = emptyList<Pair<String, String>>(), resources) {
         value = withContext(Dispatchers.IO) {
-            fonts.map { (_, raw) -> resources.openRawResource(raw).bufferedReader().use { it.readText() } }
+            fonts.map { (name, raw) -> name to resources.openRawResource(raw).bufferedReader().use { it.readText() } }
+                .filter { (_, text) -> text.isNotBlank() }
         }
     }
     AlertDialog(
@@ -281,13 +285,13 @@ private fun LicencesDialog(onDismiss: () -> Unit) {
         title = { Text(brandString(R.string.settings_licences)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                fonts.forEachIndexed { index, (name, _) ->
+                texts.forEachIndexed { index, (name, text) ->
                     Text(
-                        brandString(name),
+                        name,
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(top = if (index == 0) 0.dp else Space.lg),
                     )
-                    Text(texts.getOrElse(index) { "" }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm))
+                    Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = Space.sm))
                 }
             }
         },

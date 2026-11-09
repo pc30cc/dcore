@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Palette.Dark.background. -->
-    <color name="launch_background">#121013</color>
-    <color name="launch_mark">#FFFFFF</color>
-</resources>

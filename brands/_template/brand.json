@@ -105,11 +105,18 @@
     "images": []
   },
   "colors": {
-    "brand": { "light": "#E8466A", "dark": "#FF6B8A" },
-    "onBrand": { "light": "#FFFFFF", "dark": "#1A0A0F" }
+    "$comment": "brand/onBrand: the accent (text buttons, links, focus) and the text on it. gradientStart/Mid/End: the one \"yes\" colour (primary buttons, like, match). alive: live signals (online, super-like, shared interests); aliveText: its text form on the theme's own background. Everything but brand/onBrand is optional; left out, the design's own value is used.",
+    "brand": { "light": "#6A1FF0", "dark": "#B48CFF" },
+    "onBrand": { "light": "#FFFFFF", "dark": "#21003F" },
+    "gradientStart": { "light": "#7B2BFF", "dark": "#7B2BFF" },
+    "gradientMid": { "light": "#C21FD0", "dark": "#C21FD0" },
+    "gradientEnd": { "light": "#E0157A", "dark": "#E0157A" },
+    "alive": { "light": "#C6FF33", "dark": "#C6FF33" },
+    "aliveText": { "light": "#4F6B00", "dark": "#C6FF33" }
   },
   "fonts": {
-    "latin": "Inter",
+    "$comment": "latin/persian: the family names (the website, the licences list). persianFiles {regular, medium, bold} and latinFiles {regular, medium, semibold?, bold, license?} name font files (.ttf/.otf) in this folder; without them the app bundles Vazirmatn and Be Vietnam Pro. A licensed font never goes in the repository: keep such a brand in its own folder and build with -PbrandsDir.",
+    "latin": "Be Vietnam Pro",
     "persian": "Vazirmatn"
   },
   "planNames": {

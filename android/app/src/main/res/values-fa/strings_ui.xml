@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_back">برگشت</string>
+    <string name="ui_clear">پاک کردن</string>
+    <string name="ui_rewind">برگشت</string>
+    <string name="ui_pass">رد</string>
+    <string name="ui_super_like">سوپرلایک</string>
+    <string name="ui_like">لایک</string>
+    <string name="ui_boost">بوست</string>
+    <string name="ui_verified">تأییدشده</string>
+    <string name="ui_online">آنلاین</string>
+    <string name="ui_new_match">مچ تازه</string>
+    <string name="ui_like_answer">لایک همین جواب</string>
+    <string name="ui_country_code">پیش‌شماره‌ی %1$s</string>
+    <string name="ui_step_of">%1$s از %2$s</string>
+    <string name="ui_loading">در حال بارگذاری</string>
+    <string name="ui_unread">%1$s پیام نخونده</string>
+    <string name="ui_logo">نشانه</string>
+</resources>

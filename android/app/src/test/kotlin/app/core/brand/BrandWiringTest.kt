@@ -5,10 +5,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import app.core.testing.BrandFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * What the build read from brands/<id>/brand.json is what the app runs with:
@@ -17,8 +17,7 @@ import java.io.File
 class BrandWiringTest {
 
     private val brand: JsonObject by lazy {
-        // The module's directory is the working directory; brands/ is two up.
-        val file = File("../../brands/${BuildConfig.BRAND_ID}/brand.json")
+        val file = BrandFile.json
         assertTrue("brand file not found at ${file.canonicalPath}", file.isFile)
         Json.parseToJsonElement(file.readText()).jsonObject
     }
@@ -47,6 +46,18 @@ class BrandWiringTest {
         assertEquals(hex("colors.brand.dark"), BuildConfig.BRAND_PRIMARY_DARK)
         assertEquals(hex("colors.onBrand.light"), BuildConfig.BRAND_ON_PRIMARY_LIGHT)
         assertEquals(hex("colors.onBrand.dark"), BuildConfig.BRAND_ON_PRIMARY_DARK)
+    }
+
+    @Test
+    fun `the optional colour roles are the brand's, or unset for the design's own`() {
+        val roles = listOf("gradientStart" to "GRADIENT_START", "gradientMid" to "GRADIENT_MID", "gradientEnd" to "GRADIENT_END", "alive" to "ALIVE", "aliveText" to "ALIVE_TEXT")
+        for ((role, field) in roles) {
+            for (theme in listOf("light", "dark")) {
+                val built = BuildConfig::class.java.getField("BRAND_${field}_${theme.uppercase()}").getLong(null)
+                val expected = string("colors.$role.$theme")?.let { hex("colors.$role.$theme") } ?: 0L
+                assertEquals("colors.$role.$theme", expected, built)
+            }
+        }
     }
 
     @Test

@@ -81,7 +81,7 @@ class OnboardingStepsScreenTest {
     fun theNameStepWaitsForAValidNameThenMovesOn() {
         val model = model()
         compose.setContent {
-            AppTheme {
+            AppTheme(dark = false) {
                 val state by model.state.collectAsStateWithLifecycle()
                 NameStep(state, model, chrome)
             }
@@ -109,7 +109,7 @@ class OnboardingStepsScreenTest {
                 LocalConfiguration provides persian,
                 LocalLayoutDirection provides LayoutDirection.Rtl,
             ) {
-                AppTheme {
+                AppTheme(dark = false) {
                     val state by model.state.collectAsStateWithLifecycle()
                     BirthDateStep(state, model, chrome)
                 }

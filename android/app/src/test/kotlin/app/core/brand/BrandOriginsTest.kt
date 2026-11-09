@@ -7,10 +7,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import app.core.testing.BrandFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * What Gradle compiled in for the signed origins list is brand.json's:
@@ -19,7 +19,7 @@ import java.io.File
 class BrandOriginsTest {
 
     private val brand: JsonObject by lazy {
-        val file = File("../../brands/${BuildConfig.BRAND_ID}/brand.json")
+        val file = BrandFile.json
         assertTrue("brand file not found at ${file.canonicalPath}", file.isFile)
         Json.parseToJsonElement(file.readText()).jsonObject
     }

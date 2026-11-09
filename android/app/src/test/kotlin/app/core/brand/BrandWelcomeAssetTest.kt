@@ -12,12 +12,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import app.core.testing.BrandFile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 /**
  * The welcome's copy, colours and pictures the app reads (the build's
@@ -30,7 +30,7 @@ class BrandWelcomeAssetTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     private val block: JsonObject? by lazy {
-        val file = File("../../brands/${BuildConfig.BRAND_ID}/brand.json")
+        val file = BrandFile.json
         assertTrue("brand file not found at ${file.canonicalPath}", file.isFile)
         Json.parseToJsonElement(file.readText()).jsonObject["welcome"] as? JsonObject
     }
