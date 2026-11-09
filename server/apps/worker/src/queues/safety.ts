@@ -14,7 +14,16 @@ import {
   type ModerationEndData,
 } from '@app/shared/server';
 import { Queue, type Job } from 'bullmq';
+import { endCallsOf } from '../calls/queue.js';
 import { takeLease } from '../lease.js';
+import {
+  reportEvidenceJob,
+  reportFileJob,
+  requestsSweepJob,
+  type ReportEvidenceResult,
+  type ReportFileResult,
+  type RequestsSweepResult,
+} from './evidence.js';
 import type { JobContext, QueueDefinition } from './types.js';
 
 /**
@@ -70,6 +79,8 @@ export async function moderationEndJob(job: Job<ModerationEndData>, context: Job
     outcome,
     { eventIds },
   );
+  // A call in a conversation the change ended ends with it.
+  await endCallsOf(context, outcome.ended);
   log.info({ actionId: data.actionId, status: outcome.after.status, published: effects.published }, 'moderation end: settled');
   return { outcome: 'settled', changed: true, published: effects.published };
 }
@@ -105,11 +116,21 @@ export async function blockDeckJob(job: Job<BlockDeckData>, context: JobContext)
   return dropPairFromDecks({ redis: context.redis, cache: context.services.cache, keys: context.services.keys }, a, b);
 }
 
-export const safetyQueue: QueueDefinition<ModerationEndData | BlockDeckData | Record<string, never>, ModerationEndResult | ModerationSweepResult | { refilling: boolean }> = {
+export const safetyQueue: QueueDefinition<
+  ModerationEndData | BlockDeckData | Record<string, never>,
+  ModerationEndResult | ModerationSweepResult | { refilling: boolean } | ReportEvidenceResult | ReportFileResult | RequestsSweepResult
+> = {
   name: SAFETY_QUEUE,
   concurrency: 4,
-  schedules: [{ id: safetyJobNames.moderationSweep, name: safetyJobNames.moderationSweep, repeat: { every: MODERATION_SWEEP_EVERY_MS } }],
+  schedules: [
+    { id: safetyJobNames.moderationSweep, name: safetyJobNames.moderationSweep, repeat: { every: MODERATION_SWEEP_EVERY_MS } },
+    // Message requests: expiry and retention (the chat's evidence jobs below are queued per report).
+    { id: 'requests-sweep', name: 'requests-sweep', repeat: { pattern: '37 2 * * *', tz: 'UTC' }, opts: { attempts: 3, backoff: { type: 'exponential', delay: 10 * 60_000 } } },
+  ],
   async process(job, context) {
+    if (job.name === 'report-evidence') return reportEvidenceJob(job, context);
+    if (job.name === 'report-file') return reportFileJob(job, context);
+    if (job.name === 'requests-sweep') return requestsSweepJob(context);
     if (job.name === safetyJobNames.moderationEnd) return moderationEndJob(job as Job<ModerationEndData>, context);
     if (job.name === safetyJobNames.moderationSweep) return moderationSweepJob(context);
     if (job.name === safetyJobNames.blockDeck) return blockDeckJob(job as Job<BlockDeckData>, context);

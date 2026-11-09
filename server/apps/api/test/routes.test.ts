@@ -55,6 +55,17 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   // §3.8 (the list and the unmatch; messages are W4)
   ['GET', '/v1/conversations', '200', true],
   ['DELETE', '/v1/conversations/{id}', '204', false],
+  ['GET', '/v1/conversations/{id}/messages', '200', true],
+  ['POST', '/v1/conversations/{id}/messages', '201', true],
+  ['POST', '/v1/conversations/{id}/receipts', '204', false],
+  ['POST', '/v1/conversations/{id}/typing', '204', false],
+  ['PATCH', '/v1/conversations/{id}', '200', true],
+  // §3.9
+  ['POST', '/v1/message-requests', '201', true],
+  ['GET', '/v1/message-requests', '200', true],
+  ['POST', '/v1/message-requests/{id}/accept', '201', true],
+  ['POST', '/v1/message-requests/{id}/decline', '204', false],
+  ['DELETE', '/v1/message-requests/{id}', '204', false],
   // §3.11 (reads and appeals; the API name of the actions is "moderation")
   ['GET', '/v1/me/moderation', '200', true],
   ['POST', '/v1/appeals', '201', true],
@@ -72,6 +83,24 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['POST', '/v1/public/account-deletion/start', '202', true],
   ['POST', '/v1/public/account-deletion/confirm', '202', true],
   ['POST', '/v1/public/account-deletion/google', '202', true],
+  // §3.15 (the data export)
+  ['POST', '/v1/me/export', '202', true],
+  // §3.10 (calls), §3.16 (the LiveKit webhook), §3.17 (the admin RTC settings)
+  ['POST', '/v1/calls', '201', true],
+  ['GET', '/v1/calls/{id}', '200', true],
+  ['POST', '/v1/calls/{id}/rang', '204', false],
+  ['POST', '/v1/calls/{id}/accept', '200', true],
+  ['POST', '/v1/calls/{id}/decline', '200', true],
+  ['POST', '/v1/calls/{id}/cancel', '200', true],
+  ['POST', '/v1/calls/{id}/end', '200', true],
+  ['POST', '/v1/calls/{id}/token', '200', true],
+  ['POST', '/v1/webhooks/livekit', '200', true],
+  ['GET', '/v1/admin/providers/rtc', '200', true],
+  ['PUT', '/v1/admin/providers/rtc', '200', true],
+  // The signed origins document and its hosts in the admin panel
+  ['GET', '/v1/origins', '200', true],
+  ['GET', '/v1/admin/origins', '200', true],
+  ['PUT', '/v1/admin/origins', '200', true],
 ];
 
 describe('the route registry', () => {

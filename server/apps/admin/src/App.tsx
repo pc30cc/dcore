@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { RequireAdmin } from '@/components/layout/RequireAdmin';
 import { sections } from '@/lib/sections';
+import { HostsPage } from '@/pages/HostsPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { SectionPage } from '@/pages/SectionPage';
@@ -19,7 +20,7 @@ const router = createBrowserRouter([
       ...sections.map((section) =>
         section.path === ''
           ? { index: true, element: <SectionPage section={section} /> }
-          : { path: section.path, element: <SectionPage section={section} /> },
+          : { path: section.path, element: section.path === 'hosts' ? <HostsPage /> : <SectionPage section={section} /> },
       ),
       { path: '*', element: <NotFoundPage /> },
     ],

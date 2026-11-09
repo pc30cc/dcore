@@ -43,7 +43,7 @@ import {
   type LegalConsentKind,
   type ProfilePatch,
 } from '@app/shared';
-import { utcDay } from '@app/shared/server';
+import { dropMatchState, utcDay } from '@app/shared/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { refuseUnderAge } from '../auth/underAge.js';
@@ -523,8 +523,9 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!row) throw fieldInvalid('Set the name first.', '');
       await app.account.changed(session.userId);
       const pipeline = app.redis.pipeline();
-      // Call placement reads the match flags from their cache: drop the copies that changed.
-      for (const matchId of row.matches) pipeline.del(app.keys.raw('mt', matchId));
+      // Call placement reads the match flags from their cache: drop the copies that changed (and, for a moment,
+      // keep a request that read them before this change from caching them again).
+      for (const matchId of row.matches) dropMatchState(pipeline, app.keys, matchId);
       // Incognito turned on: out of every deck prepared before (the next refill of the people this account liked brings it back).
       const hide = snooze === true || (row.incognito && !view.profile.incognito);
       if (hide) {

@@ -12,6 +12,7 @@ import {
 import {
   SAFETY_QUEUE,
   applyModerationEffects,
+  endCallsWithConversations,
   safetyJobAttempts,
   safetyJobIds,
   safetyJobNames,
@@ -42,7 +43,9 @@ export interface ModerationResult<O> {
 
 /** What the actions use of the app (the API's instance, or any holder of the same clients). */
 export type ModerationApp = Pick<FastifyInstance, 'pg' | 'redis' | 'cache' | 'keys' | 'publicIds' | 'realtime' | 'denyList' | 'ids' | 'jobs'> & {
-  log: { warn(object: object, message: string): void };
+  log: { warn(object: object, message: string): void; error(object: object, message: string): void };
+  /** The calls queue and clock: a live call of a conversation the action ended ends with it. */
+  calls?: Pick<FastifyInstance['calls'], 'jobs' | 'now'> | undefined;
 };
 
 export class ModerationActions {
@@ -82,7 +85,7 @@ export class ModerationActions {
   /** The Valkey and realtime side of a moderation write (after its commit). */
   async effects(effect: ModerationEffect): Promise<ModerationEffectsResult> {
     const { app } = this;
-    return applyModerationEffects(
+    const result = await applyModerationEffects(
       {
         redis: app.redis,
         cache: app.cache,
@@ -95,6 +98,16 @@ export class ModerationActions {
       },
       effect,
     );
+    // A call in a conversation the action ended (a ban, a suspension) ends with it.
+    if (app.calls && effect.ended.length > 0) {
+      await endCallsWithConversations(
+        { redis: app.redis, keys: app.keys, mintId: () => app.ids.nextId() },
+        { realtime: app.realtime, publicIds: app.publicIds, nextId: () => app.ids.nextId(), jobs: app.calls.jobs, log: this.log },
+        effect.ended,
+        app.calls.now(),
+      );
+    }
+    return result;
   }
 
   /** Queues the end of a period (suspension, timed ban or shadowban). */

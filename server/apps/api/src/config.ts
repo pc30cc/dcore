@@ -109,6 +109,9 @@ const envSchema = z
     /** Centrifugo's server API, for the events the API publishes itself (likes, ended conversations); unset: none are published. */
     CENTRIFUGO_API_URL: envUrl(['http', 'https']).optional(),
     CENTRIFUGO_API_KEY: z.string().min(16).optional(),
+    /** Replicas a chat send waits for (`WAIT n`) once its stream entry is appended; 0 (no replica): no wait. */
+    WRITE_BEHIND_WAIT_REPLICAS: envInt(0, { min: 0, max: 5 }),
+    WRITE_BEHIND_WAIT_MS: envInt(50, { min: 1, max: 1_000 }),
 
     /** The OAuth web client id Google ID tokens must be issued for (play sign-in); unset: Google sign-in is off. */
     GOOGLE_WEB_CLIENT_ID: z.string().regex(/^[0-9A-Za-z._-]{10,200}$/).optional(),
@@ -125,6 +128,21 @@ const envSchema = z
     SMS_FAKE: z.enum(['off', 'log', 'memory']).optional(),
     /** The website's origin: where the deletion forms are sent back to, and the only CORS origin of those routes; default https://<domains.legal>. */
     SITE_ORIGIN: originSchema.optional(),
+    /** LiveKit's server API, reached directly (rooms, the room check); unset: calls answer 503. Clients get their signalling URL from the RTC settings. */
+    LIVEKIT_API_URL: envUrl(['http', 'https', 'ws', 'wss']).optional(),
+    LIVEKIT_API_KEY: z.string().regex(/^[A-Za-z0-9_-]{3,128}$/).optional(),
+    LIVEKIT_API_SECRET: z.string().min(32).optional(),
+    /** Keys the opaque per-call identities (`u:<hmac>`); the worker uses the same value. */
+    LIVEKIT_IDENTITY_SECRET: z.string().min(32).optional(),
+    /** Signs the origins document (Ed25519 seed, 32 bytes base64url; `origins:keygen` makes one); unset: GET /v1/origins answers 503. */
+    ORIGINS_SIGNING_KEY: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/, 'must be an Ed25519 seed: 32 bytes in base64url (43 characters)')
+      .optional(),
+    /** The id apps know the signing key by (brand.json `origins.publicKeys`). */
+    ORIGINS_SIGNING_KID: z.string().regex(/^[A-Za-z0-9._-]{1,32}$/).default('o1'),
+    /** How long a signed origins document stays valid. */
+    ORIGINS_TTL_DAYS: envInt(30, { min: 2, max: 365 }),
   })
   .superRefine((env, ctx) => {
     const need = (key: keyof typeof env, why: string): void => {
@@ -160,6 +178,13 @@ const envSchema = z
     if (env.SMS_TELNYX_API_KEY !== undefined) need('SMS_TELNYX_VERIFY_PROFILE_ID', 'with SMS_TELNYX_API_KEY');
     if (env.NODE_ENV === 'production' && env.SMS_FAKE !== undefined && env.SMS_FAKE !== 'off') {
       ctx.addIssue({ code: 'custom', path: ['SMS_FAKE'], message: 'the fake SMS provider is never used in production' });
+    }
+    const livekit = [env.LIVEKIT_API_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, env.LIVEKIT_IDENTITY_SECRET];
+    if (livekit.some((v) => v !== undefined) && livekit.some((v) => v === undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['LIVEKIT_API_URL'], message: 'LIVEKIT_API_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET and LIVEKIT_IDENTITY_SECRET come together' });
+    }
+    if (env.LIVEKIT_IDENTITY_SECRET !== undefined && env.LIVEKIT_IDENTITY_SECRET === env.LIVEKIT_API_SECRET) {
+      ctx.addIssue({ code: 'custom', path: ['LIVEKIT_IDENTITY_SECRET'], message: 'must differ from LIVEKIT_API_SECRET' });
     }
     if (env.NODE_ENV === 'production' && env.LOG_PRETTY) {
       ctx.addIssue({ code: 'custom', path: ['LOG_PRETTY'], message: 'must be off in production (logs are JSON lines)' });
@@ -225,6 +250,8 @@ export interface ApiConfig {
     /** Centrifugo's server API; undefined: the API publishes nothing. */
     api: { apiUrl: string; apiKey: string } | undefined;
   };
+  /** The chat send's wait for replicas after its stream append (0: none). */
+  writeBehind: { waitReplicas: number; waitTimeoutMs: number };
   google: { webClientId: string | undefined };
   sms: {
     kavenegar: { apiKey: string; template: string } | undefined;
@@ -237,6 +264,10 @@ export interface ApiConfig {
   storage: StorageConfig | undefined;
   /** The website's origin (account deletion without signing in); undefined: https://<the brand's domains.legal>. */
   siteOrigin: string | undefined;
+  /** LiveKit's server API and the identity key of calls; undefined: calls answer 503. */
+  livekit: { apiUrl: string; apiKey: string; apiSecret: string; identitySecret: string } | undefined;
+  /** The origins document's signing key (undefined: not served) and lifetime. */
+  origins: { signingKey: string | undefined; kid: string; ttlSeconds: number };
 }
 
 function parseTrustProxy(value: string): TrustProxy {
@@ -313,6 +344,7 @@ export function loadConfig(source: Env = process.env): ApiConfig {
       tokenTtlSeconds: env.REALTIME_TOKEN_TTL_SECONDS,
       api: env.CENTRIFUGO_API_URL && env.CENTRIFUGO_API_KEY ? { apiUrl: env.CENTRIFUGO_API_URL, apiKey: env.CENTRIFUGO_API_KEY } : undefined,
     },
+    writeBehind: { waitReplicas: env.WRITE_BEHIND_WAIT_REPLICAS, waitTimeoutMs: env.WRITE_BEHIND_WAIT_MS },
     google: { webClientId: env.GOOGLE_WEB_CLIENT_ID },
     sms: {
       kavenegar:
@@ -332,5 +364,10 @@ export function loadConfig(source: Env = process.env): ApiConfig {
     },
     storage: storageConfigOf(env),
     siteOrigin: env.SITE_ORIGIN,
+    livekit:
+      env.LIVEKIT_API_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_IDENTITY_SECRET
+        ? { apiUrl: env.LIVEKIT_API_URL, apiKey: env.LIVEKIT_API_KEY, apiSecret: env.LIVEKIT_API_SECRET, identitySecret: env.LIVEKIT_IDENTITY_SECRET }
+        : undefined,
+    origins: { signingKey: env.ORIGINS_SIGNING_KEY, kid: env.ORIGINS_SIGNING_KID, ttlSeconds: env.ORIGINS_TTL_DAYS * 86_400 },
   };
 }

@@ -172,3 +172,64 @@ export async function readWatermark(redis: Redis, keys: KeyBuilder, name: 'like'
   if (value === null || !/^[0-9]{1,19}$/.test(value)) return null;
   return BigInt(value);
 }
+
+// ─── Messages written to PostgreSQL directly ──────────────────────────────
+
+/**
+ * How long a message written to PostgreSQL directly (not through `wb:msg`:
+ * a like note, a call line) holds the history's sync cursor below its id
+ * while its write is in flight. Far longer than any statement may run; a
+ * writer that dies leaves its hold to run out.
+ */
+export const DIRECT_WRITE_HOLD_MS = 5 * 60_000;
+
+/**
+ * `wb:msg:direct` (kv-core zset): message id → until when (ms) it is held.
+ * The watermark covers the stream only; a writer that mints an id and then
+ * inserts it itself lists the id here first, so no client is handed a sync
+ * cursor above it before it is durable.
+ */
+export function directWritesKey(keys: KeyBuilder): string {
+  return keys.raw('wb', 'msg', 'direct');
+}
+
+/** Lists ids about to be written directly (and drops holds that ran out). */
+export async function holdDirectWrites(redis: Redis, keys: KeyBuilder, ids: readonly string[], now = Date.now()): Promise<void> {
+  if (ids.length === 0) return;
+  const key = directWritesKey(keys);
+  const until = now + DIRECT_WRITE_HOLD_MS;
+  const replies = await redis
+    .multi()
+    .zremrangebyscore(key, '-inf', now)
+    .zadd(key, ...ids.flatMap((id) => [until, id]))
+    .pexpire(key, DIRECT_WRITE_HOLD_MS * 2)
+    .exec();
+  const failed = replies?.find(([error]) => error !== null)?.[0];
+  if (failed) throw failed;
+}
+
+/** The ids are durable now, or their write failed for good (a retry mints new ones). */
+export async function releaseDirectWrites(redis: Redis, keys: KeyBuilder, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await redis.zrem(directWritesKey(keys), ...ids);
+}
+
+/**
+ * The bound below which every message id is durable: the stream's
+ * watermark, lowered to the smallest direct write still in flight. Null
+ * watermark: never written.
+ */
+export async function readMessageDurability(redis: Redis, keys: KeyBuilder, now = Date.now()): Promise<{ watermark: bigint | null; held: bigint | null }> {
+  const replies = await redis.pipeline().get(keys.streamWatermark('msg')).zrangebyscore(directWritesKey(keys), now, '+inf').exec();
+  const failed = replies?.find(([error]) => error !== null)?.[0];
+  if (failed) throw failed;
+  const raw = replies?.[0]?.[1];
+  const watermark = typeof raw === 'string' && /^[0-9]{1,19}$/.test(raw) ? BigInt(raw) : null;
+  let held: bigint | null = null;
+  for (const id of (replies?.[1]?.[1] ?? []) as string[]) {
+    if (!ID.test(id)) continue;
+    const n = BigInt(id);
+    if (held === null || n < held) held = n;
+  }
+  return { watermark, held };
+}

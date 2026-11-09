@@ -1,0 +1,28 @@
+{
+  "id": "1287390234923400001",
+  "peer": {
+    "id": "cn5wy6l3naf5b",
+    "name": "Negar",
+    "photo": null,
+    "verified": true,
+    "activeRecently": true
+  },
+  "state": "active",
+  "source": "like",
+  "createdAt": "2026-11-05T20:00:00.000Z",
+  "lastMessage": {
+    "id": "1287390234923417600",
+    "conversationId": "1287390234923400001",
+    "senderId": "cn5wy6l3naf5b",
+    "kind": "text",
+    "body": "Hello!",
+    "at": "2026-11-06T09:14:03.120Z"
+  },
+  "unread": 0,
+  "myReadId": "1287390234923417600",
+  "callsAllowed": {
+    "me": true,
+    "peer": true
+  },
+  "muted": true
+}

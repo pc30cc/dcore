@@ -180,5 +180,19 @@
   },
   "strings": {
     "deck.empty": "Nobody new nearby"
+  },
+  "welcome": {
+    "eyebrow": "Welcome to",
+    "headline": "{appName}, where good conversations *start*",
+    "subtitle": "Meet people nearby who want the same things you do.",
+    "gradient": {
+      "top": "#A9C2EE",
+      "middle": "#F06A3C",
+      "bottom": "#2B0A0E"
+    },
+    "images": [
+      "https://cdn.example.com/brand/welcome/w1.webp",
+      "https://cdn.example.com/brand/welcome/w2.webp"
+    ]
   }
 }

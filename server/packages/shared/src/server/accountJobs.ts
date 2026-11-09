@@ -50,8 +50,37 @@ export const accountJobIds = {
   purge: (userId: string, deletedAtMs: number) => jobId(accountJobNames.purge, userId, deletedAtMs),
 };
 
-/** Attempts of the deletion jobs: a fan-out retries for about an hour, a purge for about a day. */
+/** Attempts of the deletion jobs: a fan-out retries for about an hour, a purge for about a day; an export for about two hours. */
 export const accountJobAttempts = {
   fanout: { attempts: 8, backoffMs: 15_000 },
   purge: { attempts: 12, backoffMs: 60_000 },
+  export: { attempts: 8, backoffMs: 30_000 },
 } as const;
+
+/**
+ * `export` (`export.<exportId>`, at once): the account's data as a ZIP in the
+ * private bucket (`exports/<exportId>.zip`), announced to the person with a
+ * link valid {@link EXPORT_LINK_TTL_SECONDS}; the same job deletes the archive
+ * when the link has run out. One export a person per {@link EXPORT_EVERY_SECONDS}
+ * (`exp:<uid>`, set by the API).
+ */
+export const EXPORT_JOB = 'export' as const;
+export const EXPORT_LINK_TTL_SECONDS = 24 * 3_600;
+export const EXPORT_EVERY_SECONDS = 7 * 86_400;
+
+export const exportDataSchema = z.object({
+  userId: id,
+  exportId: id,
+  /** Kept by the job: the archive's key once stored, the event's id, and when the link runs out. */
+  stored: z.object({ key: z.string().regex(/^exports\/[1-9][0-9]{0,18}\.zip$/), eventId: id, expiresAtMs: epochMs }).optional(),
+  published: z.boolean().optional(),
+});
+export type ExportData = z.infer<typeof exportDataSchema>;
+
+export const exportJobId = (exportId: string): string => jobId(EXPORT_JOB, exportId);
+
+/** The archive's key in the private bucket: the export's id, never a person's. */
+export const exportObjectKey = (exportId: string): string => {
+  if (!/^[1-9][0-9]{0,18}$/.test(exportId)) throw new TypeError('not an export id');
+  return `exports/${exportId}.zip`;
+};

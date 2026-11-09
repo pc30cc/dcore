@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": "1287390234923417600",
+      "conversationId": "1287390234923400001",
+      "senderId": "cn5wy6l3naf5b",
+      "kind": "text",
+      "body": "Hello!",
+      "at": "2026-11-06T09:14:03.120Z"
+    },
+    {
+      "id": "1287390234923417700",
+      "conversationId": "1287390234923400001",
+      "senderId": "a7xq2m4kz3p5r",
+      "kind": "reaction",
+      "body": "❤️",
+      "refId": "1287390234923417600",
+      "at": "2026-11-06T09:14:09.002Z"
+    },
+    {
+      "id": "1287390234923417800",
+      "conversationId": "1287390234923400001",
+      "senderId": "a7xq2m4kz3p5r",
+      "kind": "call",
+      "refId": "1287390234923417750",
+      "call": {
+        "callId": "1287390234923417750",
+        "kind": "audio",
+        "outcome": "completed",
+        "placedAt": "2026-11-06T09:20:00.000Z",
+        "durationSeconds": 754,
+        "caller": "a7xq2m4kz3p5r"
+      },
+      "at": "2026-11-06T09:32:41.500Z"
+    }
+  ],
+  "hasMore": false,
+  "syncCursor": "1287390234923417800",
+  "readCursors": {
+    "me": "1287390234923417800",
+    "peer": "1287390234923417600"
+  },
+  "peerDeliveredId": "1287390234923417700"
+}

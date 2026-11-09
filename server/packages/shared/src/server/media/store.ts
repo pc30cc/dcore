@@ -18,6 +18,8 @@ export interface MediaStore {
 /** The settings a media store is made from (the apps' S3_* and CDN_* variables). */
 export interface MediaStoreSettings {
   endpoint: string;
+  /** The servers' own route to the store (internal network); undefined: `endpoint`. Presigned URLs name `endpoint`. */
+  internalEndpoint?: string | undefined;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
@@ -31,6 +33,7 @@ export function createMediaStore(settings: MediaStoreSettings, options: { timeou
   return {
     storage: new S3Storage({
       endpoint: settings.endpoint,
+      internalEndpoint: settings.internalEndpoint,
       region: settings.region,
       credentials: { accessKeyId: settings.accessKeyId, secretAccessKey: settings.secretAccessKey },
       pathStyle: settings.pathStyle,

@@ -1,6 +1,7 @@
 import {
   CreditCard,
   FileText,
+  Globe,
   LayoutDashboard,
   LifeBuoy,
   Palette,
@@ -32,4 +33,5 @@ export const sections: readonly Section[] = [
   { path: 'brand', label: 'nav.brand', icon: Palette, spec: 7 },
   { path: 'support', label: 'nav.support', icon: LifeBuoy, spec: 8 },
   { path: 'system', label: 'nav.system', icon: Server, spec: 9 },
+  { path: 'hosts', label: 'nav.hosts', icon: Globe, spec: 9 },
 ];

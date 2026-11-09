@@ -6,6 +6,7 @@ import type { ConsumerDefinition } from '../worker.js';
 import type { ErrorKind } from './consumer.js';
 import { likeBatchHandler } from './likes.js';
 import { matchEntryHandler } from './matches.js';
+import { messageBatchHandler } from './messages.js';
 
 /** The consumer group of the write-behind streams. */
 export const WRITE_BEHIND_GROUP = 'pg';
@@ -32,14 +33,16 @@ export async function probeDatabase(context: JobContext): Promise<void> {
 
 /**
  * The stream consumers every worker runs (unless STREAMS_ENABLED is off):
- * `wb:like` in batch mode (one INSERT per batch of up to 500, 250 ms
- * linger, its watermark kept) and `wb:match` one entry at a time (a few
- * handlers at once: matches are rare, and each waits out a short grace).
+ * `wb:like` and `wb:msg` in batch mode (one INSERT per batch of up to 500,
+ * 250 ms linger, their watermarks kept) and `wb:match` one entry at a time
+ * (a few handlers at once: matches are rare, and each waits out a short
+ * grace).
  *
- * Neither ever dead-letters an entry for its delivery count alone (a like
- * or a match is user data; one that keeps failing is logged as an error on
- * each delivery past {@link WRITE_BEHIND_ALERT_DELIVERIES}), and a database
- * outage only pauses them. Dead letters keep no like comment.
+ * None ever dead-letters an entry for its delivery count alone (a like, a
+ * message or a match is user data; one that keeps failing is logged as an
+ * error on each delivery past {@link WRITE_BEHIND_ALERT_DELIVERIES}), and a
+ * database outage only pauses them. Dead letters keep no like comment and
+ * no message body.
  */
 export function defaultConsumers(config: WorkerConfig): ConsumerDefinition[] {
   if (!config.streams.enabled) return [];
@@ -62,6 +65,17 @@ export function defaultConsumers(config: WorkerConfig): ConsumerDefinition[] {
       handler: (entries, context) => likeBatchHandler(context)(entries),
     },
     {
+      kind: 'batch',
+      stream: keys.stream('msg'),
+      group: WRITE_BEHIND_GROUP,
+      deadLetterStream: keys.streamDead('msg'),
+      watermarkKey: keys.streamWatermark('msg'),
+      ...failures,
+      // A dead letter keeps no message body.
+      redactFields: ['b'],
+      handler: (entries, context) => messageBatchHandler(context)(entries),
+    },
+    {
       stream: keys.stream('match'),
       group: WRITE_BEHIND_GROUP,
       deadLetterStream: keys.streamDead('match'),
@@ -77,3 +91,4 @@ export function defaultConsumers(config: WorkerConfig): ConsumerDefinition[] {
 export * from './batch.js';
 export * from './likes.js';
 export * from './matches.js';
+export * from './messages.js';

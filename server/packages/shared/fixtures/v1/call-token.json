@@ -1,0 +1,8 @@
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1OjAwMTEyMjMzNDQ1NTY2NzcifQ.c2lnbmF0dXJl",
+  "expiresAt": "2026-11-06T09:25:07.000Z",
+  "wsUrl": "wss://rtc.example.com",
+  "turn": null,
+  "icePolicy": "all",
+  "warnings": []
+}

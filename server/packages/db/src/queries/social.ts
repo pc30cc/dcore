@@ -548,7 +548,11 @@ export interface LikeNotesInput {
   actorId: string;
   /** Who liked first (their like is read from `likes`). */
   targetId: string;
-  /** Pre-minted: the first like's note, then the second's. */
+  /**
+   * The first like's note, then the second's: minted by the caller right
+   * before this write (an id minted earlier could fall below a sync cursor
+   * a client was handed meanwhile, and the client would never fetch it).
+   */
   noteIds: readonly [string, string];
   /** The second like's item and comment. */
   itemRef: string | null;
@@ -563,19 +567,29 @@ export interface LikeNote {
   body: string;
 }
 
+export interface LikeNotesWrite {
+  notes: LikeNote[];
+  /** True: written now. False: the notes the conversation already had (an earlier run wrote them), or none. */
+  written: boolean;
+}
+
 /**
  * The first lines of a new conversation: each like's comment as a like note
- * (messages kind 6, ref = the liked item), with the pre-minted ids, in one
- * statement: the earlier like is read from `likes` (a primary-key point
- * look-up; the caller waits until `wb:like` is durable past the second like),
- * the second comes from the match entry. Returns the notes inserted: none on
- * a replay (the ids exist), so they are announced once, and none once the
- * conversation has ended (an unmatch or a block before the job ran: nothing
- * is written, so nothing is published).
+ * (messages kind 6, ref = the liked item), run inside a transaction of two
+ * statements. The first takes the conversation's note lock, so a second run
+ * of the same job (a retry whose first try committed, a stalled job run
+ * again) waits for the first and then finds its notes: the notes are written
+ * once whatever ids each run minted. The second statement reads the earlier
+ * like from `likes` (a primary-key point look-up; the caller waits until
+ * `wb:like` is durable past the second like), takes the second from the
+ * match entry, and inserts both unless the conversation has like notes
+ * already; it returns the notes written now, else the ones it found. Nothing
+ * once the conversation has ended (an unmatch or a block before the job ran).
  */
-export const writeLikeNotes = defineQuery({ name: 'social.writeLikeNotes', statements: 1 }, async (db, n: LikeNotesInput): Promise<LikeNote[]> => {
-  const rows = await many<{ id: string; sender: string; ref: string | null; body: string }>(
-    db,
+export const writeLikeNotes = defineQuery({ name: 'social.writeLikeNotes', statements: 2 }, async (tx, n: LikeNotesInput): Promise<LikeNotesWrite> => {
+  await execute(tx, sql`SELECT pg_advisory_xact_lock(hashtextextended('like-notes:' || ${n.matchId}::text, 0))`);
+  const rows = await many<{ id: string; sender: string; ref: string | null; body: string; written: boolean }>(
+    tx,
     sql`WITH earlier AS (
           SELECT l.item_ref, l.comment
             FROM likes l
@@ -583,20 +597,33 @@ export const writeLikeNotes = defineQuery({ name: 'social.writeLikeNotes', state
              AND l.id >= id_floor(now() - make_interval(days => ${n.windowDays}::integer))
            ORDER BY l.id DESC
            LIMIT 1
+        ), kept AS (
+          -- Notes are written after the match: an hour before its id bounds the scan.
+          SELECT x.id, x.sender_id, x.ref_id, x.body
+            FROM messages x
+           WHERE x.match_id = ${n.matchId}::bigint AND x.kind = 6
+             AND x.id >= ${n.matchId}::bigint - (3600000::bigint << 22)
         ), notes AS (
           SELECT ${n.noteIds[0]}::bigint AS id, ${n.targetId}::bigint AS sender, e.item_ref AS ref, e.comment AS body
             FROM earlier e WHERE e.comment IS NOT NULL
           UNION ALL
           SELECT ${n.noteIds[1]}::bigint, ${n.actorId}::bigint, ${n.itemRef}::bigint, ${n.comment}::text
            WHERE ${n.comment}::text IS NOT NULL
+        ), ins AS (
+          INSERT INTO messages (match_id, id, sender_id, ref_id, kind, flags, body)
+          SELECT ${n.matchId}::bigint, x.id, x.sender, x.ref, 6, 0, x.body FROM notes x
+           WHERE EXISTS (SELECT 1 FROM matches m WHERE m.id = ${n.matchId}::bigint AND m.state = 1)
+             AND NOT EXISTS (SELECT 1 FROM kept)
+          ON CONFLICT (match_id, id) DO NOTHING
+          RETURNING id, sender_id, ref_id, body
         )
-        INSERT INTO messages (match_id, id, sender_id, ref_id, kind, flags, body)
-        SELECT ${n.matchId}::bigint, x.id, x.sender, x.ref, 6, 0, x.body FROM notes x
-         WHERE EXISTS (SELECT 1 FROM matches m WHERE m.id = ${n.matchId}::bigint AND m.state = 1)
-        ON CONFLICT (match_id, id) DO NOTHING
-        RETURNING id::text AS id, sender_id::text AS sender, ref_id::text AS ref, body`,
+        SELECT i.id::text AS id, i.sender_id::text AS sender, i.ref_id::text AS ref, i.body, true AS written FROM ins i
+        UNION ALL
+        SELECT k.id::text, k.sender_id::text, k.ref_id::text, k.body, false FROM kept k
+          WHERE EXISTS (SELECT 1 FROM matches m WHERE m.id = ${n.matchId}::bigint AND m.state = 1)`,
   );
-  return rows.map((r) => ({ id: r.id, senderId: r.sender, refId: r.ref, body: r.body }));
+  const notes = rows.map((r) => ({ id: r.id, senderId: r.sender, refId: r.ref, body: r.body }));
+  return { notes, written: rows.some((r) => r.written) };
 });
 
 export interface PushTarget {

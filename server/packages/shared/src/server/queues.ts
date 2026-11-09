@@ -36,13 +36,14 @@ export type QueueName = (typeof queueNames)[number];
  * nothing can be added to it.
  */
 export const queueJobs = {
-  system: ['heartbeat'],
+  system: ['heartbeat', 'origins-publish'],
   deck: ['refill'],
   photo: ['process', 'delete'],
-  account: ['deletion-fanout', 'purge', 'deletion-sweep', 'unmatch-purge'],
-  safety: ['moderation-end', 'moderation-sweep', 'block-deck'],
+  account: ['deletion-fanout', 'purge', 'deletion-sweep', 'unmatch-purge', 'export'],
+  safety: ['moderation-end', 'moderation-sweep', 'block-deck', 'report-evidence', 'report-file', 'requests-sweep'],
   push: ['send'],
-  chat: ['like-notes'],
+  calls: ['ring', 'room', 'finalize', 'ring-push', 'ring-stop'],
+  chat: ['like-notes', 'unsend-clear', 'read-flush'],
   maint: ['partitions', 'active-drain', 'sessions-cleanup', 'lk-rebuild'],
 } as const satisfies Partial<Record<QueueName, readonly string[]>>;
 

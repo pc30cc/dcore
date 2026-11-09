@@ -3,6 +3,7 @@ import { ACCOUNT_QUEUE, accountJobAttempts, accountJobIds, accountJobNames, endC
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
+import { endCallsOf } from './calls.js';
 import { deletionReasonLabels } from './labels.js';
 
 /**
@@ -71,15 +72,15 @@ async function hideAtOnce(
   deletedAtMs: number,
   ended: readonly { matchId: string; peerId: string }[],
 ): Promise<void> {
+  const pairs = ended.map(({ matchId, peerId }) => (BigInt(userId) < BigInt(peerId) ? { matchId, lo: userId, hi: peerId } : { matchId, lo: peerId, hi: userId }));
   try {
     await markHiddenFromDecks(app.redis, app.keys, [userId], deletedAtMs);
-    await endConversations(
-      app,
-      ended.map(({ matchId, peerId }) => (BigInt(userId) < BigInt(peerId) ? { matchId, lo: userId, hi: peerId } : { matchId, lo: peerId, hi: userId })),
-    );
+    await endConversations(app, pairs);
   } catch (error) {
     request.log.warn({ err: error }, 'deletion: lists not updated at once; the fan-out does it');
   }
+  // A call the person is in ends with the conversations.
+  await endCallsOf(app, request.log, pairs);
 }
 
 /** The steps after the database part; throws `service_unavailable` when Valkey cannot take them. */

@@ -5,6 +5,7 @@ import { accountStatus, moderationKind } from '../../codes.js';
 import { realtimeEnvelope } from '../../realtime.js';
 import { visibilityChange, type VisibilityChange } from '../../visibility.js';
 import type { DenyList } from '../auth/denyList.js';
+import { dropConversationVisibility } from '../chat/state.js';
 import type { RealtimePublisher } from '../clients/centrifugo.js';
 import { markHiddenFromDecks } from '../deck/queue.js';
 import type { PublicIds } from '../ids/publicId.js';
@@ -225,7 +226,11 @@ export async function applyModerationEffects(
   const hidden = change.leftDiscovery || change.leftRelationships;
   if (hidden) await markHiddenFromDecks(deps.redis, keys, [effect.userId], at);
   await endConversations(deps, effect.ended);
-  if (change.leftRelationships || change.joinedRelationships) await recheckConversationLists(deps, effect.peers);
+  if (change.leftRelationships || change.joinedRelationships) {
+    await recheckConversationLists(deps, effect.peers);
+    // Chat reads each side's visibility with the conversation's state: read again on the next message.
+    await dropConversationVisibility(deps.redis, keys, effect.userId);
+  }
 
   const entersRestriction = !RESTRICTED.has(effect.before.status) && RESTRICTED.has(effect.after.status);
   let revoked = false;

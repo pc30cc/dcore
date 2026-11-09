@@ -10,7 +10,9 @@ import {
   createPublicIds,
   photoUploadKey,
   photoVariantKeys,
+  placeCall,
   queuePrefix,
+  readCall,
   readVersion,
   type DeletionFanoutData,
   type MediaStore,
@@ -195,6 +197,29 @@ describe.skipIf(!hasDatabase || !hasRedis)('the account jobs (PostgreSQL, Valkey
       const firstIds = toB.map((e) => e.id);
       await deletionFanoutJob(job, context);
       expect(realtime.on(userChannel(publicIds.user.encode(b))).map((e) => e.id)).toEqual([...firstIds, ...firstIds]);
+    });
+
+    it('ends the call the person was in with the conversation, and queues its ring stop and finalize', async () => {
+      const a = await person();
+      const b = await person();
+      const ab = await match(a, b);
+      await listed(ab, a, b);
+      const callId = ids.nextId();
+      expect(await placeCall(redis, keys, { id: callId, matchId: ab, callerId: b, calleeId: a, kind: 'audio', now: Date.now(), maxLive: null, shadow: false, fakeRingMs: 10_000 })).toBe(
+        'placed',
+      );
+      const deletedAtMs = await deleted(a);
+      await deletionFanoutJob(fakeJob<DeletionFanoutData>('deletion-fanout', { userId: a, deletedAtMs }), context);
+      expect(await readCall(redis, keys, callId)).toMatchObject({ state: 'cancelled', endedBy: 'system' });
+      // The caller hears it end; the callee's phones stop ringing; the rows are written by the finalize.
+      expect(realtime.on(userChannel(publicIds.user.encode(b))).some((e) => e.t === 'call' && (e.d as { id: string }).id === callId)).toBe(true);
+      const calls = new Queue('calls', { connection: redis, prefix: queuePrefix(prefix) });
+      try {
+        expect((await calls.getJob(`ring-stop.${callId}`))?.name).toBe('ring-stop');
+        expect((await calls.getJob(`finalize.${callId}`))?.name).toBe('finalize');
+      } finally {
+        await calls.close();
+      }
     });
 
     it('drops the card and the deck queue from kv-cache when that is an instance of its own (REDIS_CACHE_URL)', async () => {

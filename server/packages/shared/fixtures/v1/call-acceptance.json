@@ -1,0 +1,25 @@
+{
+  "call": {
+    "id": "1287390234923430001",
+    "conversationId": "1287390234923400001",
+    "kind": "audio",
+    "role": "callee",
+    "state": "connecting",
+    "placedAt": "2026-11-06T09:15:00.000Z",
+    "ringExpiresAt": "2026-11-06T09:15:45.000Z",
+    "rangAt": "2026-11-06T09:15:01.250Z",
+    "answeredAt": "2026-11-06T09:15:06.400Z"
+  },
+  "token": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1OjcxM2YzOWQyNThhNGM0YTcifQ.c2lnbmF0dXJl",
+    "expiresAt": "2026-11-06T09:25:06.000Z",
+    "wsUrl": "wss://rtc.example.com",
+    "turn": {
+      "urls": ["turn:198.51.100.7:3478?transport=udp", "turn:198.51.100.7:3478?transport=tcp"],
+      "username": "1762434906:r0011223344556677",
+      "credential": "TNfuIzqxZM+AQh2hwC3EUc4gB9A="
+    },
+    "icePolicy": "all",
+    "warnings": []
+  }
+}

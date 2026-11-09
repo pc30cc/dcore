@@ -1,0 +1,28 @@
+{
+  "brand": "_template",
+  "version": 7,
+  "issuedAt": "2026-11-09T10:00:00.000Z",
+  "expiresAt": "2026-12-09T10:00:00.000Z",
+  "hosts": {
+    "api": [
+      "https://api.example.com",
+      "https://api2.example.net"
+    ],
+    "realtime": [
+      "https://rt.example.com"
+    ],
+    "rtc": [
+      "https://rtc.example.com"
+    ],
+    "cdn": [
+      "https://cdn.example.com"
+    ],
+    "web": [
+      "https://example.com"
+    ]
+  },
+  "bootstrap": [
+    "https://cdn.example.com/bootstrap/origins.json",
+    "https://mirror.example.org/o/origins.json"
+  ]
+}

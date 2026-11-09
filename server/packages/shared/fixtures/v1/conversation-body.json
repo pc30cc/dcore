@@ -1,0 +1,29 @@
+{
+  "conversation": {
+    "id": "1287390234923400002",
+    "peer": {
+      "id": "cn5wy6l3naf5b",
+      "name": "Negar",
+      "photo": null,
+      "verified": false
+    },
+    "state": "active",
+    "source": "request",
+    "createdAt": "2026-11-06T10:00:00.000Z",
+    "lastMessage": {
+      "id": "1287390234923440010",
+      "conversationId": "1287390234923400002",
+      "senderId": "cn5wy6l3naf5b",
+      "kind": "text",
+      "body": "Your photos from the north are great.",
+      "at": "2026-11-06T10:00:00.000Z"
+    },
+    "unread": 0,
+    "myReadId": "1287390234923440010",
+    "callsAllowed": {
+      "me": true,
+      "peer": true
+    },
+    "muted": false
+  }
+}

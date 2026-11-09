@@ -6,6 +6,7 @@ import {
   FakeRealtimePublisher,
   IdGenerator,
   createKeys,
+  directWritesKey,
   createPublicIds,
   forgetMatch,
   readWatermark,
@@ -697,21 +698,62 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       await expect(likeNotesJob(waiting, context)).rejects.toBeInstanceOf(DelayedError);
       expect(waiting.delayedUntil).toBeGreaterThan(Date.now());
       await redis.set(keys.streamWatermark('like'), String(BigInt(second) + 1n));
+      const mintedBefore = ids.nextId();
       const { result, tally } = await statementCounter.measure(() => likeNotesJob(fakeJob('like-notes', data), context));
       expect(result).toMatchObject({ outcome: 'written', notes: 2 });
-      // The settings (first use in this process) and the one statement of the notes.
-      expect(tally.statements).toBeLessThanOrEqual(2);
-      const notes = (await db.admin.query(`SELECT id::text, sender_id::text, ref_id::text, kind, body FROM messages WHERE match_id = $1 ORDER BY id`, [matchId])).rows;
-      expect(notes).toEqual([
-        { id: noteIds[0], sender_id: a, ref_id: '55', kind: 6, body: 'That view' },
-        { id: noteIds[1], sender_id: b, ref_id: null, kind: 6, body: 'Thanks!' },
+      // The settings (first use in this process), then the note lock and the notes, in one transaction.
+      expect(tally.statements).toBeLessThanOrEqual(3);
+      const notes = (await db.admin.query(`SELECT id::text, sender_id::text, ref_id::text, kind, body FROM messages WHERE match_id = $1 ORDER BY id`, [matchId])).rows as {
+        id: string;
+        sender_id: string;
+        ref_id: string | null;
+        kind: number;
+        body: string;
+      }[];
+      expect(notes.map(({ id: _id, ...rest }) => rest)).toEqual([
+        { sender_id: a, ref_id: '55', kind: 6, body: 'That view' },
+        { sender_id: b, ref_id: null, kind: 6, body: 'Thanks!' },
       ]);
+      // Minted by the job right before its write, not when the match was made.
+      for (const note of notes) expect(BigInt(note.id) > BigInt(mintedBefore)).toBe(true);
+      expect(await redis.zcard(directWritesKey(keys))).toBe(0);
       const toA = realtime.on(userChannel(publicIds.user.encode(a))).filter((e) => e.t === 'message');
-      expect(toA.map((e) => e.id)).toEqual(noteIds);
+      expect(toA.map((e) => e.id)).toEqual(notes.map((n) => n.id));
       expect(toA[0]!.d).toMatchObject({ kind: 'like_note', body: 'That view', refId: '55', senderId: publicIds.user.encode(a) });
-      // A replay writes and publishes nothing.
+      // A replay writes and publishes nothing, though it minted ids of its own.
       expect(await likeNotesJob(fakeJob('like-notes', data), context)).toMatchObject({ notes: 0 });
       expect(realtime.on(userChannel(publicIds.user.encode(a))).filter((e) => e.t === 'message')).toHaveLength(2);
+      expect(await value<string>(`SELECT count(*)::text FROM messages WHERE match_id = $1`, [matchId])).toBe('2');
+      // A retry whose earlier try committed and died before its publish: the same notes, published again.
+      const retry = Object.assign(fakeJob('like-notes', data), { attemptsMade: 1 });
+      expect(await likeNotesJob(retry, context)).toMatchObject({ notes: 2 });
+      expect(realtime.on(userChannel(publicIds.user.encode(a))).filter((e) => e.t === 'message').map((e) => e.id)).toEqual([...notes.map((n) => n.id), ...notes.map((n) => n.id)]);
+      expect(await value<string>(`SELECT count(*)::text FROM messages WHERE match_id = $1`, [matchId])).toBe('2');
+    });
+
+    it('writes like notes that come after a sync cursor handed out while the like stream lagged, and once when two tries race', async () => {
+      const a = await person();
+      const b = await person();
+      const [lo, hi] = BigInt(a) < BigInt(b) ? [a, b] : [b, a];
+      const matchId = ids.nextId();
+      await db.admin.query(`INSERT INTO matches (id, user_lo, user_hi, source) VALUES ($1, $2, $3, 1)`, [matchId, lo, hi]);
+      await db.admin.query(`INSERT INTO likes (target_id, actor_id, id, kind, comment) VALUES ($1, $2, $3, 1, 'Hi there')`, [b, a, ids.nextId()]);
+      const second = ids.nextId();
+      // The ids the match entry carried, minted at the swipe; the like stream then lagged while wb:msg moved on.
+      const staleIds = [ids.nextId(), ids.nextId()] as [string, string];
+      const data = { matchId, lo, hi, actorId: b, targetId: a, noteIds: staleIds, likeId: second, itemRef: null, comment: 'Hello!', queuedAtMs: Date.now() };
+      const cursor = ids.nextId();
+      await redis.set(keys.streamWatermark('like'), String(BigInt(second) + 1n));
+      // Two tries at once (a stalled job run again while the first still runs): the notes are written once.
+      const [one, two] = await Promise.all([likeNotesJob(fakeJob('like-notes', data), context), likeNotesJob(fakeJob('like-notes', data), context)]);
+      expect([one.notes, two.notes].sort()).toEqual([0, 2]);
+      const notes = (await db.admin.query(`SELECT id::text FROM messages WHERE match_id = $1 AND kind = 6 ORDER BY id`, [matchId])).rows as { id: string }[];
+      expect(notes).toHaveLength(2);
+      // Every note sorts after the cursor a client held before the job ran: its next after= read returns them.
+      for (const note of notes) {
+        expect(BigInt(note.id) > BigInt(cursor)).toBe(true);
+        expect(staleIds).not.toContain(note.id);
+      }
     });
 
     it('writes and publishes no like note once the conversation ended (an unmatch or a block before the job ran)', async () => {

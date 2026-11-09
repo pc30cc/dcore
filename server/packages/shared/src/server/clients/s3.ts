@@ -54,8 +54,13 @@ export interface S3Credentials {
 }
 
 export interface S3Options {
-  /** `https://s3.<region>.amazonaws.com` or a provider's endpoint. */
+  /** `https://s3.<region>.amazonaws.com` or a provider's endpoint: what presigned URLs name. */
   endpoint: string;
+  /**
+   * The same store as this server reaches it (an internal address such as `http://minio:9000`), for its own
+   * HEAD, GET, PUT and DELETE; undefined: `endpoint`. Each request is signed for the host it goes to.
+   */
+  internalEndpoint?: string | undefined;
   region: string;
   credentials: S3Credentials;
   /** `endpoint/bucket/key` (default) or `bucket.endpoint/key`. */
@@ -169,6 +174,7 @@ const KEY = /^[A-Za-z0-9!_.*'()/-]{1,1024}$/;
 
 export class S3Storage implements ObjectStorage {
   private readonly endpoint: URL;
+  private readonly internalEndpoint: URL;
   private readonly region: string;
   private readonly credentials: S3Credentials;
   private readonly pathStyle: boolean;
@@ -178,6 +184,7 @@ export class S3Storage implements ObjectStorage {
 
   constructor(options: S3Options) {
     this.endpoint = new URL(options.endpoint);
+    this.internalEndpoint = new URL(options.internalEndpoint ?? options.endpoint);
     this.region = options.region;
     this.credentials = options.credentials;
     this.pathStyle = options.pathStyle ?? true;
@@ -186,13 +193,13 @@ export class S3Storage implements ObjectStorage {
     this.now = options.now ?? (() => new Date());
   }
 
-  /** The object's URL; keys are limited to safe characters, so nothing in them needs escaping twice. */
-  objectUrl(bucket: string, key: string): URL {
+  /** The object's URL (on the internal endpoint with `internal`); keys are limited to safe characters, so nothing in them needs escaping twice. */
+  objectUrl(bucket: string, key: string, internal = false): URL {
     if (!BUCKET.test(bucket)) throw new TypeError('not a bucket name');
     // `.` and `..` segments would be resolved away by URL normalisation (and the signature would name another path).
     const dotSegment = key.split('/').some((segment) => segment === '.' || segment === '..');
     if (!KEY.test(key) || key.includes('//') || key.startsWith('/') || dotSegment) throw new TypeError('not an object key this client writes');
-    const url = new URL(this.endpoint.toString());
+    const url = new URL((internal ? this.internalEndpoint : this.endpoint).toString());
     const base = url.pathname.replace(/\/+$/, '');
     if (this.pathStyle) url.pathname = `${base}/${bucket}/${encode(key, true)}`;
     else {
@@ -226,7 +233,7 @@ export class S3Storage implements ObjectStorage {
   }
 
   private async request(method: string, bucket: string, key: string, body?: Uint8Array, extra: Record<string, string> = {}): Promise<Response> {
-    const url = this.objectUrl(bucket, key);
+    const url = this.objectUrl(bucket, key, true);
     const date = this.now();
     const payloadHash = hexSha256(body ?? new Uint8Array());
     const headers: Record<string, string> = { ...extra, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate(date).stamp };

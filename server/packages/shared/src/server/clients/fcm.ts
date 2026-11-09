@@ -205,10 +205,28 @@ export class FcmSender implements PushSender {
   }
 }
 
-/** 404 / UNREGISTERED, or a 400 that names the registration token, mean the token is dead. */
+/**
+ * The token is of no use any more: 404 / UNREGISTERED (the app was removed or
+ * the token rotated), SENDER_ID_MISMATCH (the token belongs to another
+ * Firebase project, so this sender can never reach it), or a 400 that names
+ * the registration token itself.
+ */
 function isDeadToken(status: number, body: string): boolean {
-  if (status === 404 || body.includes('UNREGISTERED')) return true;
+  const code = fcmErrorCode(body);
+  if (status === 404 || code === 'UNREGISTERED' || code === 'SENDER_ID_MISMATCH') return true;
   return status === 400 && body.includes('INVALID_ARGUMENT') && /registration token/i.test(body);
+}
+
+/** FCM's own error code (`error.details[].errorCode`), when the body says it. */
+function fcmErrorCode(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { error?: { details?: { errorCode?: unknown }[] } };
+    const code = parsed.error?.details?.find((d) => typeof d?.errorCode === 'string')?.errorCode;
+    if (typeof code === 'string') return code;
+  } catch {
+    // Not JSON (a proxy's page): only the status decides.
+  }
+  return body.includes('UNREGISTERED') ? 'UNREGISTERED' : undefined;
 }
 
 function errorText(error: unknown): string {
@@ -228,4 +246,82 @@ export class FakePushSender implements PushSender {
     this.sent.push({ token: deviceToken, payload });
     return { ok: true, unregistered: false, retryable: false, status: 200, messageId: `fake/${this.sent.length}` };
   }
+}
+
+/** How the FCM fake answers sends to one token. */
+export type FcmFakeAnswer = 'ok' | 'unregistered' | 'sender_mismatch' | 'unavailable' | 'invalid_token';
+
+export interface FcmFakeRequest {
+  token: string;
+  /** The FCM v1 request body as sent. */
+  body: { message: { token: string; data?: Record<string, string>; android?: Record<string, unknown> } };
+  /** Order of arrival and of completion (an answer held back finishes later). */
+  arrived: number;
+  answered?: number | undefined;
+}
+
+/**
+ * FCM's HTTP v1 endpoint and Google's token endpoint, in process, for an
+ * `FcmSender` built with its `fetch`: every send is recorded in arrival
+ * order, answered per token (`answers`, once or always), and may be held
+ * back (`hold`) to put a message in flight.
+ */
+export class FcmEndpointFake {
+  readonly requests: FcmFakeRequest[] = [];
+  /** Token exchanges seen. */
+  tokenExchanges = 0;
+  private readonly answers = new Map<string, FcmFakeAnswer[]>();
+  private readonly always = new Map<string, FcmFakeAnswer>();
+  private readonly held: { match: (r: FcmFakeRequest) => boolean; release: Promise<void> }[] = [];
+  private tick = 0;
+
+  /** The next sends to `token` answer these, in turn; then `ok` (or what `always` says). */
+  answer(token: string, ...answers: FcmFakeAnswer[]): void {
+    this.answers.set(token, [...(this.answers.get(token) ?? []), ...answers]);
+  }
+
+  /** Every send to `token` answers this. */
+  answerAlways(token: string, answer: FcmFakeAnswer): void {
+    this.always.set(token, answer);
+  }
+
+  /** Holds the answers of matching sends until the returned function is called. */
+  hold(match: (r: FcmFakeRequest) => boolean): () => void {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => (release = resolve));
+    this.held.push({ match, release: promise });
+    return release;
+  }
+
+  /** The sends of one push type (its `data.type`). */
+  ofType(type: string): FcmFakeRequest[] {
+    return this.requests.filter((r) => r.body.message.data?.['type'] === type);
+  }
+
+  readonly fetch: Fetch = async (input, init = {}) => {
+    const url = String(input);
+    if (!url.includes('/messages:send')) {
+      this.tokenExchanges += 1;
+      return Response.json({ access_token: 'fake-access-token', expires_in: 3_600 });
+    }
+    const body = JSON.parse(typeof init.body === 'string' ? init.body : '{}') as FcmFakeRequest['body'];
+    const request: FcmFakeRequest = { token: body.message.token, body, arrived: ++this.tick };
+    this.requests.push(request);
+    for (const h of this.held) if (h.match(request)) await h.release;
+    request.answered = ++this.tick;
+    const queued = this.answers.get(request.token);
+    const answer = queued?.shift() ?? this.always.get(request.token) ?? 'ok';
+    switch (answer) {
+      case 'ok':
+        return Response.json({ name: `projects/fake/messages/${request.arrived}` });
+      case 'unregistered':
+        return new Response('{"error":{"code":404,"status":"NOT_FOUND","details":[{"@type":"type.googleapis.com/google.firebase.fcm.v1.FcmError","errorCode":"UNREGISTERED"}]}}', { status: 404 });
+      case 'sender_mismatch':
+        return new Response('{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.firebase.fcm.v1.FcmError","errorCode":"SENDER_ID_MISMATCH"}]}}', { status: 403 });
+      case 'invalid_token':
+        return new Response(`{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"The registration token is not a valid FCM registration token"}}`, { status: 400 });
+      case 'unavailable':
+        return new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503, headers: { 'retry-after': '5' } });
+    }
+  };
 }

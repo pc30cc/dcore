@@ -14,9 +14,14 @@ export const realtimeRoutes: FastifyPluginAsyncZod = async (app) => {
   const fullOnly = requireScope(app, app.account, ['full']);
   const { tokenSecret, tokenTtlSeconds } = app.config.realtime;
   const secret = tokenSecret === undefined ? undefined : new TextEncoder().encode(tokenSecret);
-  const wsUrl =
+  const configuredWsUrl =
     app.config.realtime.wsUrl ?? (app.brand.domains.realtime ? `wss://${app.brand.domains.realtime}/connection/websocket` : undefined);
-  if (!secret || !wsUrl) app.log.warn('realtime: CENTRIFUGO_TOKEN_HMAC_SECRET or the realtime host is not set; POST /v1/realtime/token answers 503');
+  if (!secret || !configuredWsUrl) app.log.warn('realtime: CENTRIFUGO_TOKEN_HMAC_SECRET or the realtime host is not set; POST /v1/realtime/token answers 503');
+  // The panel's realtime host (the origins document), once it saved one, wins over the environment.
+  const currentWsUrl = (): string | undefined => {
+    const origin = app.origins.override('realtime');
+    return origin ? `wss://${new URL(origin).host}/connection/websocket` : configuredWsUrl;
+  };
 
   app.post(
     '/v1/realtime/token',
@@ -34,6 +39,7 @@ export const realtimeRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const session = sessionOf(app, request);
+      const wsUrl = currentWsUrl();
       if (!secret || !wsUrl) throw new HttpProblem('service_unavailable', { detail: 'Realtime is not configured.' });
       const now = Math.floor(Date.now() / 1_000);
       const exp = now + tokenTtlSeconds;

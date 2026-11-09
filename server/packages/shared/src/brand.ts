@@ -71,6 +71,72 @@ const brandAssetPath = z
   .string()
   .regex(/^(?!.*(^|\/)\.\.?(\/|$))[A-Za-z0-9_][A-Za-z0-9_./-]*\.(png|jpe?g|webp)$/, 'must be a relative .png, .jpg or .webp path in the brand folder');
 
+/** Every value of a headline marks its emphasised words with pairs of `*`. */
+const pairedAsterisks = (texts: Partial<Record<string, string>>) => Object.values(texts).every((text) => ((text ?? '').match(/\*/g)?.length ?? 0) % 2 === 0);
+
+/** The welcome screen's texts per locale (`{appName}` allowed; the headline's `*emphasis*` in pairs). */
+export const welcomeTextLimits = { eyebrow: 60, headline: 160, subtitle: 400 } as const;
+const welcomeTexts = (max: number) => z.partialRecord(localeSchema, z.string().min(1).max(max));
+const welcomeHeadline = welcomeTexts(welcomeTextLimits.headline).refine(pairedAsterisks, 'every headline needs its "*" in pairs');
+export const welcomeGradientSchema = z.object({ top: hexColor, middle: hexColor, bottom: hexColor });
+
+/**
+ * The signed-out welcome (`brand.json` `welcome`): the app ships these and
+ * the pictures named in `images` (files in `brands/<id>/welcome/`);
+ * `GET /v1/config` sends the texts and colours again, with the panel's
+ * overrides (app_config `brand.welcome`) on top.
+ */
+export const brandWelcomeSchema = z.looseObject({
+  eyebrow: welcomeTexts(welcomeTextLimits.eyebrow).optional(),
+  headline: welcomeHeadline.optional(),
+  subtitle: welcomeTexts(welcomeTextLimits.subtitle).optional(),
+  gradient: welcomeGradientSchema.optional(),
+  images: z
+    .array(z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]*\.(png|jpg|jpeg|webp)$/, 'must be a .png, .jpg or .webp file name in the brand\'s welcome folder'))
+    .max(16)
+    .default([]),
+});
+export type BrandWelcome = z.infer<typeof brandWelcomeSchema>;
+
+/**
+ * The panel's overrides of the welcome (app_config `brand.welcome`): any
+ * text per locale, the colours, and picture URLs (`https`, the brand's own
+ * licensed pictures on the CDN, never a member's photo). What is absent comes
+ * from brand.json.
+ */
+export const welcomeOverrideSchema = z.strictObject({
+  eyebrow: welcomeTexts(welcomeTextLimits.eyebrow).optional(),
+  headline: welcomeHeadline.optional(),
+  subtitle: welcomeTexts(welcomeTextLimits.subtitle).optional(),
+  gradient: welcomeGradientSchema.optional(),
+  images: z.array(httpsUrl.max(500)).max(16).optional(),
+});
+export type WelcomeOverride = z.infer<typeof welcomeOverrideSchema>;
+
+/**
+ * What the app needs to trust the signed origins document (`GET /v1/origins`
+ * and its published copies): the public keys it accepts, by id (two during a
+ * rotation), and the `https` URLs where copies are published, tried when the
+ * API cannot be reached. The private key is the API's `ORIGINS_SIGNING_KEY`.
+ */
+export const brandOriginsSchema = z
+  .looseObject({
+    publicKeys: z
+      .array(
+        z.strictObject({
+          kid: z.string().regex(/^[A-Za-z0-9._-]{1,32}$/),
+          /** Ed25519, 32 bytes in base64url. */
+          key: z.string().regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/, 'must be an Ed25519 public key (32 bytes, base64url)'),
+        }),
+      )
+      .max(2)
+      .default([])
+      .refine((keys) => new Set(keys.map((key) => key.kid)).size === keys.length, 'a key id is listed twice'),
+    bootstrap: z.array(httpsUrl.max(300)).max(8).default([]),
+  })
+  .default({ publicKeys: [], bootstrap: [] });
+export type BrandOrigins = z.infer<typeof brandOriginsSchema>;
+
 export const brandSchema = z
   .looseObject({
     id: z.string().regex(/^[a-z0-9_][a-z0-9_-]{0,39}$/),
@@ -122,6 +188,8 @@ export const brandSchema = z
         screenshots: z.array(z.looseObject({ file: brandAssetPath, alt: localizedText })).max(8).default([]),
       })
       .optional(),
+    welcome: brandWelcomeSchema.optional(),
+    origins: brandOriginsSchema,
     colors: z.looseObject({ brand: themedColor, onBrand: themedColor }),
     fonts: z.looseObject({ latin: z.string().min(1), persian: z.string().min(1) }),
     planNames: z.record(z.string(), z.partialRecord(localeSchema, z.string().min(1))).optional(),

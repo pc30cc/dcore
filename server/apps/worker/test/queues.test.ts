@@ -76,18 +76,21 @@ describe('the queues the worker runs', () => {
     }
     expect(scheduled.sort()).toEqual([
       'account/deletion-sweep',
+      'chat/read-flush',
       'maint/active-drain',
       'maint/lk-rebuild',
       'maint/partitions',
       'maint/sessions-cleanup',
       'safety/moderation-sweep',
+      'safety/requests-sweep',
       'system/heartbeat',
+      'system/origins-publish',
     ]);
   });
 
-  it('come with the write-behind consumers: wb:like in batch mode and wb:match, unless streams are turned off', () => {
+  it('come with the write-behind consumers: wb:like and wb:msg in batch mode and wb:match, unless streams are turned off', () => {
     const consumers = defaultConsumers(config).map((c) => `${c.stream} ${c.group} ${c.kind ?? 'entry'}`);
-    expect(consumers).toEqual([`${config.redis.keyPrefix}wb:like pg batch`, `${config.redis.keyPrefix}wb:match pg entry`]);
+    expect(consumers).toEqual([`${config.redis.keyPrefix}wb:like pg batch`, `${config.redis.keyPrefix}wb:msg pg batch`, `${config.redis.keyPrefix}wb:match pg entry`]);
     const queuesOnly = loadConfig({ ...baseEnv(), REDIS_URL: 'redis://127.0.0.1:1/0', STREAMS_ENABLED: 'false' });
     expect(defaultConsumers(queuesOnly)).toEqual([]);
   });
@@ -101,7 +104,7 @@ describe('the queues the worker runs', () => {
       expect(runtime.workers.map((w) => w.name).sort()).toEqual([...queues].sort());
       for (const worker of runtime.workers) expect(worker.isRunning(), worker.name).toBe(true);
       // The write-behind consumers run too: each stream has the pg group once its consumer started.
-      for (const stream of ['wb:like', 'wb:match']) {
+      for (const stream of ['wb:like', 'wb:msg', 'wb:match']) {
         let groups: unknown[] = [];
         for (let i = 0; i < 100 && groups.length === 0; i += 1) {
           groups = (await admin.xinfo('GROUPS', `${prefix}${stream}`).catch(() => [])) as unknown[];

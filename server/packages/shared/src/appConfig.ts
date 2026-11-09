@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { originsSettingsSchema } from './api/origins.js';
+import { welcomeOverrideSchema } from './brand.js';
 import { localeSchema } from './locale.js';
 
 /**
@@ -94,6 +96,10 @@ export const appConfigSchemas = {
   'safety.child_safety_contact': z.strictObject({ name: z.string().nullable(), email: z.email().nullable() }),
   'calls.enabled': z.strictObject({ audio: z.boolean(), video: z.boolean() }),
   'billing.cross_store_entitlements': z.boolean(),
+  /** The hosts of the signed origins document (`GET /v1/origins`); null until the panel saves them. */
+  'origins.hosts': originsSettingsSchema.nullable(),
+  /** The panel's overrides of brand.json's `welcome` (texts per locale, colours, picture URLs). */
+  'brand.welcome': welcomeOverrideSchema,
 } as const;
 
 export type AppConfigKey = keyof typeof appConfigSchemas;

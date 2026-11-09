@@ -1,4 +1,4 @@
-import { blockUser, blockedPeople, fileReport, unblockPair, type BlockOutcome, type BlockedPerson, type PairMatch } from '@app/db';
+import { blockUser, blockedPeople, fileReport, isTransientDatabaseError, unblockPair, type BlockOutcome, type BlockedPerson, type PairMatch } from '@app/db';
 import { decodeCursor, encodeCursor, realtimeEnvelope, reportContext, reportReason, userChannel, wireTime, type BlockList, type PeerSummary, type ReportRequest } from '@app/shared';
 import {
   ACCOUNT_QUEUE,
@@ -14,8 +14,10 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { nextId } from '../auth/sessions.js';
-import { scrubbed } from '../lib/dbErrors.js';
+import { scrubbed, withoutRowData } from '../lib/dbErrors.js';
+import { queueChatEvidence, deferReport } from './evidence.js';
 import { HttpProblem } from '../lib/problem.js';
+import { endCallsOf } from './calls.js';
 
 /**
  * Blocks and reports from the app (`/v1/blocks`, `/v1/reports`).
@@ -79,6 +81,8 @@ export class SafetyService {
     } catch (error) {
       failure = error;
     }
+    // A call the two are in ends with the conversation (also on a retry: nothing to end then).
+    if (ended) await endCallsOf(app, this.log, [ended]);
     if (ended && outcome.endedNow) {
       if (app.realtime) {
         const channels = [ended.lo, ended.hi].map((uid) => userChannel(app.publicIds.user.encode(uid)));
@@ -162,8 +166,9 @@ export class SafetyService {
     const { app } = this;
     const reportId = nextId(app);
     const eventId = body.block ? nextId(app) : null;
-    const outcome = await scrubbed(() =>
-      fileReport(app.pg, {
+    let outcome;
+    try {
+      outcome = await fileReport(app.pg, {
         reportId,
         reporterId,
         targetId,
@@ -175,11 +180,29 @@ export class SafetyService {
         photoId: body.photoId,
         callId: body.callId,
         block: body.block,
-      }),
-    );
+      });
+    } catch (error) {
+      // PostgreSQL cannot take it now: the report is accepted and filed by the worker once it can (its evidence then follows).
+      if (isTransientDatabaseError(error)) {
+        await deferReport(app, this.log, { filingId: reportId, reporterId, targetId, body, blockEventId: eventId });
+        return reportId;
+      }
+      throw withoutRowData(error);
+    }
     if (outcome.outcome === 'not_found') return null;
     this.log.info({ merged: outcome.merged, holds: outcome.holds, context: body.context }, 'report filed');
     if (outcome.block && outcome.block.found && eventId !== null) await this.afterBlock(reporterId, targetId, outcome.block, eventId);
+    // A chat report's messages are copied by a job once the write-behind stream is durable past it.
+    if (body.context === 'chat') {
+      await queueChatEvidence(app, this.log, {
+        reportId: outcome.reportId,
+        filingId: reportId,
+        reporterId,
+        targetId,
+        conversationId: body.conversationId ?? null,
+        messageIds: body.messageIds ?? [],
+      });
+    }
     return outcome.reportId;
   }
 }

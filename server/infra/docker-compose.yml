@@ -11,9 +11,15 @@
 #   5432  PostgreSQL 17 + PostGIS (direct: migrations, admin tasks)
 #   6432  PgBouncer, transaction mode (the API and the worker)
 #   6379  Valkey (Redis protocol: rate limits, BullMQ, streams)
-#   8000  Centrifugo (chat; placeholder configuration)
-#   7880  LiveKit (calls; placeholder configuration), 7881/tcp, 50000-50100/udp
+#   8000  Centrifugo client WebSocket, 8001 its server API (the API's and the
+#         worker's CENTRIFUGO_API_URL=http://localhost:8001)
+#   7880  LiveKit signalling and server API, 7891/tcp and 51000-51100/udp media
 #   9000  S3 API (MinIO), 9001 its console
+#
+# Centrifugo and LiveKit are the production images (deploy/docker/), with
+# their configuration written at start from the same templates and checks
+# (deploy/centrifugo/, deploy/livekit/). Centrifugo's engine is a Valkey of
+# its own (kv-rt), as in production.
 name: app-dev
 
 services:
@@ -80,30 +86,59 @@ services:
       timeout: 3s
       retries: 20
 
-  centrifugo:
-    image: centrifugo/centrifugo:v6.10
+  kv-rt:
+    image: valkey/valkey:8.1-alpine
     restart: unless-stopped
-    command: [centrifugo, --config=/centrifugo/config.yaml]
+    # History and presence only: may be lost, so no persistence.
+    command: [valkey-server, --requirepass, '${KV_RT_PASSWORD:?set KV_RT_PASSWORD in infra/.env}', --save, '', --appendonly, 'no', --maxmemory-policy, allkeys-lru]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$KV_RT_PASSWORD" valkey-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
     environment:
-      CENTRIFUGO_CLIENT_TOKEN_HMAC_SECRET_KEY: ${CENTRIFUGO_TOKEN_SECRET:?set CENTRIFUGO_TOKEN_SECRET in infra/.env}
-      CENTRIFUGO_HTTP_API_KEY: ${CENTRIFUGO_API_KEY:?set CENTRIFUGO_API_KEY in infra/.env}
+      KV_RT_PASSWORD: ${KV_RT_PASSWORD:?set KV_RT_PASSWORD in infra/.env}
+
+  centrifugo:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/centrifugo.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kv-rt:
+        condition: service_healthy
+    environment:
+      CENTRIFUGO_TOKEN_HMAC_SECRET: ${CENTRIFUGO_TOKEN_SECRET:?set CENTRIFUGO_TOKEN_SECRET in infra/.env}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:?set CENTRIFUGO_API_KEY in infra/.env}
+      KV_RT_PASSWORD: ${KV_RT_PASSWORD:?set KV_RT_PASSWORD in infra/.env}
+      KV_RT_ADDRESS: kv-rt:6379
+      CENTRIFUGO_ALLOWED_ORIGINS: ${CENTRIFUGO_ALLOWED_ORIGINS:-}
     ports:
       - 127.0.0.1:8000:8000
-    volumes:
-      - ./centrifugo/config.yaml:/centrifugo/config.yaml:ro
+      - 127.0.0.1:8001:9000
 
   livekit:
-    image: livekit/livekit-server:v1.13
+    build:
+      context: ../..
+      dockerfile: deploy/docker/livekit.Dockerfile
     restart: unless-stopped
-    command: [--config, /etc/livekit.yaml]
     environment:
-      LIVEKIT_KEYS: '${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/.env}: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/.env}'
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/.env}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/.env}
+      # The API runs on the host (pnpm dev:api, port 8080).
+      LIVEKIT_WEBHOOK_URL: http://host.docker.internal:8080/v1/webhooks/livekit
+      # The address phones on this network reach the machine at; a private one is fine here.
+      LIVEKIT_NODE_IP: ${LIVEKIT_NODE_IP:?set LIVEKIT_NODE_IP in infra/.env (this machine on the LAN)}
+      LIVEKIT_NODE_IP_PRIVATE_OK: '1'
+      LIVEKIT_RTC_TCP_PORT: '7891'
+      LIVEKIT_RTC_UDP_START: '51000'
+      LIVEKIT_RTC_UDP_END: '51100'
+    extra_hosts:
+      - host.docker.internal:host-gateway
     ports:
       - 127.0.0.1:7880:7880
-      - 127.0.0.1:7881:7881
-      - 127.0.0.1:50000-50100:50000-50100/udp
-    volumes:
-      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+      - 7891:7891
+      - 51000-51100:51000-51100/udp
 
   # Upstream MinIO stopped publishing community images (minio/minio no longer
   # resolves on Docker Hub, checked 2026-11-06); this is the community build

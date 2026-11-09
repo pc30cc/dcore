@@ -12,6 +12,9 @@
 #      of .env.example is used by the file.
 #   3. Only livekit publishes host ports; everything else is reached through
 #      Coolify's proxy or the stack's network.
+#   4. The configurations written at start (realtime server, media server)
+#      and the relay's render from their templates with sample values, with
+#      every placeholder filled.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -56,6 +59,23 @@ if [ "$published" = "livekit " ]; then
   echo "check: only livekit publishes host ports"
 else
   echo "check: services publishing host ports: ${published:-none} (expected: livekit)" >&2
+  status=1
+fi
+
+# The start scripts in their "write the file and stop" mode, with sample values.
+sample_secret=sample0123456789abcdefghijklmnopqrstuvwxyz
+if CENTRIFUGO_TOKEN_HMAC_SECRET="$sample_secret" CENTRIFUGO_API_KEY=sample-api-key-0123456789 KV_RT_PASSWORD=sample \
+   CENTRIFUGO_ALLOWED_ORIGINS=https://admin.example.com CENTRIFUGO_TEMPLATE="$root/deploy/centrifugo/config.json" \
+   CENTRIFUGO_CONFIG_OUT="$work/centrifugo.json" CENTRIFUGO_CONFIG_ONLY=1 sh "$root/deploy/centrifugo/start.sh" \
+   && LIVEKIT_API_KEY=sample LIVEKIT_API_SECRET="$sample_secret" LIVEKIT_WEBHOOK_URL=http://api:8080/v1/webhooks/livekit \
+   LIVEKIT_NODE_IP=203.0.113.10 LIVEKIT_TEMPLATE="$root/deploy/livekit/livekit.yaml" LIVEKIT_CONFIG_OUT="$work/livekit.yaml" \
+   LIVEKIT_CONFIG_ONLY=1 sh "$root/deploy/livekit/start.sh" \
+   && printf '%s\n' "$sample_secret" > "$work/relay-secret" \
+   && CONFIG_ONLY=1 CONF="$work/turnserver.conf" SECRET_FILE="$work/relay-secret" PUBLIC_IP=198.51.100.7 PEER_IPS=203.0.113.10 \
+   sh "$root/deploy/relay/configure.sh"; then
+  echo "check: realtime, media and relay configurations render"
+else
+  echo "check: a configuration template does NOT render" >&2
   status=1
 fi
 

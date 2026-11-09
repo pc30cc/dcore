@@ -11,8 +11,13 @@ import { ConfigError, envBoolean, envUrl, type ConfigIssue } from './env.js';
 const bucket = z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'must be an S3 bucket name');
 
 export const storageEnvShape = {
-  /** `https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, ... */
+  /** `https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, ...: what phones upload to (presigned URLs). */
   S3_ENDPOINT: envUrl(['https', 'http']).optional(),
+  /**
+   * The same store as the servers reach it on the internal network (`http://minio:9000`), for their own
+   * reads, writes and deletes; unset: S3_ENDPOINT. Presigned URLs always name S3_ENDPOINT.
+   */
+  S3_INTERNAL_ENDPOINT: envUrl(['https', 'http']).optional(),
   S3_REGION: z.string().regex(/^[a-z0-9-]{2,40}$/, 'must be a region name such as auto or eu-central-1').default('auto'),
   /** Uploads (`u/<photoId>`): never public, never behind the CDN. */
   S3_BUCKET_PRIVATE: bucket.optional(),
@@ -39,6 +44,7 @@ export const storageEnvShape = {
 type StorageEnv = {
   NODE_ENV: 'development' | 'test' | 'production';
   S3_ENDPOINT?: string | undefined;
+  S3_INTERNAL_ENDPOINT?: string | undefined;
   S3_REGION: string;
   S3_BUCKET_PRIVATE?: string | undefined;
   S3_BUCKET_MEDIA?: string | undefined;
@@ -52,7 +58,10 @@ type StorageEnv = {
 };
 
 export interface StorageConfig {
+  /** Public: presigned URLs name it. */
   endpoint: string;
+  /** The servers' own route to the store; undefined: `endpoint`. */
+  internalEndpoint: string | undefined;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
@@ -80,6 +89,9 @@ export function storageConfigOf(env: StorageEnv): StorageConfig | undefined {
     if (set.length === 0) for (const key of S3_KEYS) issues.push({ variable: key, message: 'required in production' });
     if (cdnSet === 0) issues.push({ variable: 'CDN_BASE_URL', message: 'required in production (with CDN_SIGNING_KEY)' });
   }
+  if (env.S3_INTERNAL_ENDPOINT !== undefined && set.length === 0) {
+    issues.push({ variable: 'S3_INTERNAL_ENDPOINT', message: 'needs the S3_* variables of the same store' });
+  }
   if (set.length === S3_KEYS.length && env.S3_BUCKET_PRIVATE === env.S3_BUCKET_MEDIA) {
     issues.push({ variable: 'S3_BUCKET_MEDIA', message: 'must differ from S3_BUCKET_PRIVATE (uploads are never public)' });
   }
@@ -87,6 +99,7 @@ export function storageConfigOf(env: StorageEnv): StorageConfig | undefined {
   if (set.length === 0) return undefined;
   return {
     endpoint: env.S3_ENDPOINT!,
+    internalEndpoint: env.S3_INTERNAL_ENDPOINT,
     region: env.S3_REGION,
     accessKeyId: env.S3_ACCESS_KEY_ID!,
     secretAccessKey: env.S3_SECRET_ACCESS_KEY!,

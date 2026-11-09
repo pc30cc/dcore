@@ -27,17 +27,25 @@ import type { ApiConfig } from './config.js';
 import { createReadinessProbe, type ReadinessProbe } from './lib/readiness.js';
 import { closeRedis, createRedis } from './lib/redis.js';
 import { accountServicesPlugin, type AccountServicesOptions } from './plugins/accountServices.js';
+import { callsPlugin, type CallsOptions } from './plugins/calls.js';
 import { authPlugin } from './plugins/auth.js';
 import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
 import { clientIpPlugin } from './plugins/clientIp.js';
 import { denyListPlugin } from './plugins/denyList.js';
 import { errorsPlugin } from './plugins/errors.js';
 import { openapiPlugin } from './plugins/openapi.js';
+import { originsPlugin, type OriginsOptions } from './plugins/origins.js';
 import { pgBudgetPlugin } from './plugins/pgBudget.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
 import { accountRoutes } from './routes/account.js';
+import { adminOriginsRoutes } from './routes/adminOrigins.js';
+import { adminRtcRoutes } from './routes/adminRtc.js';
+import { callRoutes } from './routes/calls.js';
+import { livekitWebhookRoutes } from './routes/livekitWebhook.js';
+import { originsRoutes } from './routes/origins.js';
 import { authRoutes } from './routes/auth.js';
+import { dataExportRoutes } from './routes/dataExport.js';
 import { deckRoutes } from './routes/deck.js';
 import { deletionRoutes } from './routes/deletion.js';
 import { healthRoutes } from './routes/health.js';
@@ -48,6 +56,9 @@ import { conversationRoutes } from './routes/conversations.js';
 import { likeRoutes } from './routes/likes.js';
 import { swipeRoutes } from './routes/swipes.js';
 import { BullJobProducer, type JobProducer } from './services/jobs.js';
+import { chatPlugin, type ChatOptions } from './plugins/chat.js';
+import { chatRoutes } from './routes/chat.js';
+import { requestRoutes } from './routes/requests.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -101,6 +112,12 @@ export interface AppDependencies {
   jobs?: JobProducer | undefined;
   /** A realtime publisher (tests pass a fake; null: none); otherwise Centrifugo when CENTRIFUGO_API_URL is set. */
   realtime?: RealtimePublisher | null | undefined;
+  /** The LiveKit client, clock and dice of the call routes (tests); otherwise from LIVEKIT_*. */
+  calls?: CallsOptions | undefined;
+  /** Chat (tests pass a fake presence reader). */
+  chat?: ChatOptions | undefined;
+  /** The origins document's clock (tests). */
+  origins?: OriginsOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -263,19 +280,30 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
     ...(media?.urls ? { ownPhotoUrl: (photo: { id: string; blobVer: number }) => photoVariantUrl(media, photo.id, photo.blobVer, 640) } : {}),
     ...deps.accountServices,
   });
+  await app.register(originsPlugin, deps.origins ?? {});
   await app.register(authServicesPlugin, deps.authServices ?? {});
+  await app.register(callsPlugin, deps.calls ?? {});
 
   await app.register(healthRoutes, { readiness });
   await app.register(accountRoutes);
   await app.register(deckRoutes);
   await app.register(swipeRoutes);
   await app.register(likeRoutes);
+  await app.register(chatPlugin, deps.chat ?? {});
   await app.register(conversationRoutes);
+  await app.register(chatRoutes);
+  await app.register(requestRoutes);
   await app.register(safetyRoutes);
   await app.register(authRoutes);
   await app.register(photoRoutes);
   await app.register(deletionRoutes);
+  await app.register(dataExportRoutes);
   await app.register(publicDeletionRoutes);
+  await app.register(callRoutes);
+  await app.register(livekitWebhookRoutes);
+  await app.register(adminRtcRoutes);
+  await app.register(originsRoutes);
+  await app.register(adminOriginsRoutes);
 
   if (config.openapi.enabled) {
     app.get('/openapi.json', { schema: { hide: true }, config: { rateLimit: false, pgBudget: 0 } }, async () => app.swagger());

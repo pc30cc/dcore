@@ -5,7 +5,8 @@
 # daemon is available. On a machine with Docker, use infra/docker-compose.yml.
 #
 #   infra/dev/native.sh install   add apt.postgresql.org, install PostgreSQL 17,
-#                                 PostGIS 3, pgvector, PgBouncer and redis-server (root)
+#                                 PostGIS 3, pgvector, PgBouncer, redis-server and coturn (root;
+#                                 coturn only for the relay tests, which start their own)
 #   infra/dev/native.sh start     create (once) and start the dev cluster, PgBouncer
 #                                 (transaction mode) and redis
 #   infra/dev/native.sh stop      stop both
@@ -82,14 +83,23 @@ cmd_install() {
       | as_root tee "$list" >/dev/null
   fi
   apt_get update -qq
-  log "installing PostgreSQL $PG_MAJOR, PostGIS 3, pgvector, PgBouncer and redis-server"
+  log "installing PostgreSQL $PG_MAJOR, PostGIS 3, pgvector, PgBouncer, redis-server and coturn"
+  # The relay tests run their own turnserver; the package's service must
+  # never run on a development machine with the package's open defaults.
+  if [ -d /run/systemd/system ] && [ ! -f /etc/systemd/system/coturn.service.d/10-dev-off.conf ]; then
+    as_root install -d -m 0755 /etc/systemd/system/coturn.service.d
+    printf '[Unit]\nConditionPathExists=/nonexistent/dev-machine-never-runs-the-relay\n' \
+      | as_root tee /etc/systemd/system/coturn.service.d/10-dev-off.conf >/dev/null
+    as_root systemctl daemon-reload || true
+  fi
   apt_get install -y -qq \
     "postgresql-$PG_MAJOR" \
     "postgresql-$PG_MAJOR-postgis-3" \
     "postgresql-$PG_MAJOR-pgvector" \
     "postgresql-client-$PG_MAJOR" \
     pgbouncer \
-    redis-server >/dev/null
+    redis-server \
+    coturn >/dev/null
   log "installed: $("$PG_BIN/postgres" --version), $(redis-server --version | cut -d' ' -f1-3)"
 }
 
@@ -287,6 +297,7 @@ EOF
 
 cmd_up() {
   if [ ! -x "$PG_BIN/postgres" ] || ! command -v redis-server >/dev/null || ! command -v pgbouncer >/dev/null \
+     || ! command -v turnserver >/dev/null \
      || [ ! -d "/usr/share/postgresql/$PG_MAJOR/extension" ] \
      || [ ! -f "/usr/share/postgresql/$PG_MAJOR/extension/postgis.control" ]; then
     cmd_install

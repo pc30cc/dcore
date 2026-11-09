@@ -1,0 +1,11 @@
+-- 0020 — the history hides a taken-back message's body before it is cleared.
+--
+-- A history page asks, for each of its messages, whether the sender took it
+-- back (an unsend row, kind 8, naming it), wherever in the conversation that
+-- row is: the body itself is cleared only retention.unsent_body_hours later
+-- (the window in which a report can still copy it), and until then no page
+-- may hand it to the other person. Unsend rows are a small share of the
+-- messages, so a partial index on (match_id, ref_id) makes each question one
+-- probe. Built on the partitioned table, so every partition, and every one
+-- made later, has it.
+CREATE INDEX messages_unsent_ref_idx ON messages (match_id, ref_id) WHERE kind = 8;

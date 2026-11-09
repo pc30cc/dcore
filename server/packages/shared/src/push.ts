@@ -75,6 +75,8 @@ export const pushTypes = {
     ttlSeconds: DAY,
     data: z.strictObject({ conversationId: idSchema }),
     tag: (d) => `m:${d['conversationId']}`,
+    // With previews on it names the other person: never on the lock screen.
+    visibility: 'private',
   },
   like: {
     kind: 'notification',
@@ -91,6 +93,7 @@ export const pushTypes = {
     ttlSeconds: DAY,
     data: z.strictObject({ requestId: idSchema }),
     tag: (d) => `r:${d['requestId']}`,
+    visibility: 'private',
   },
   call_missed: {
     kind: 'notification',
@@ -99,6 +102,7 @@ export const pushTypes = {
     ttlSeconds: DAY,
     data: z.strictObject({ callId: idSchema, conversationId: idSchema }),
     tag: (d) => `call:${d['callId']}`,
+    visibility: 'private',
   },
   account: {
     kind: 'notification',

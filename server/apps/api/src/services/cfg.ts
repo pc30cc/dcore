@@ -22,6 +22,7 @@ import { HttpProblem } from '../lib/problem.js';
 import { clientPolicyFromConfig, type ClientPolicyHolder } from '../plugins/client.js';
 import { BannedTerms } from './bannedTerms.js';
 import { deletionReasonLabels, intentionLabels, label, reportReasonLabels } from './labels.js';
+import { welcomeFor } from './welcome.js';
 
 /**
  * The run-time configuration in process memory. One statement
@@ -284,6 +285,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
     for (const locale of locales) {
       const own = strings.get(locale) ?? {};
       const message = app['app.maintenance'].message[locale];
+      const welcome = welcomeFor(brand.welcome, app['brand.welcome'], locale);
       const document: Config = {
         v: version,
         appName: effective.appName,
@@ -337,6 +339,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
         },
         calls: app['calls.enabled'],
         strings: appStrings(own),
+        ...(welcome ? { welcome } : {}),
       };
       // The document is what every client parses: refuse to serve one the contract does not accept.
       const checked = configSchema.parse(document);

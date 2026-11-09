@@ -13,12 +13,29 @@ rtc:
   port_range_start: @UDP_START@
   port_range_end: @UDP_END@
 @NODE_IP_LINES@
+  # Ramp-up on long, lossy paths: send-side bandwidth estimation moves a
+  # subscriber up a simulcast layer sooner than REMB, and video is never
+  # paused while the estimate is still low at the start of a call.
+  congestion_control:
+    enabled: true
+    allow_pause: false
+    use_send_side_bwe: true
+  # A layer switch waits for a keyframe: answer keyframe requests sooner.
+  pli_throttle:
+    low_quality: 200ms
+    mid_quality: 500ms
+    high_quality: 500ms
+  # A deeper video retransmit buffer for NACKs over a long path.
+  packet_buffer_size_video: 1000
 room:
-  # Rooms are created by the API when a call is answered, never by a client.
+  # Rooms are created by the API when a call is answered, never by a client:
+  # a token kept after its call cannot bring the room back.
   auto_create: false
   empty_timeout: 300
+  # A participant who dropped (a network change) has this long to come back.
   departure_timeout: 20
-  max_participants: 2
+  # Two people, and room for a reconnect replacing a connection.
+  max_participants: 4
 keys:
   "@API_KEY@": "@API_SECRET@"
 webhook:
@@ -26,5 +43,6 @@ webhook:
   urls:
     - "@WEBHOOK_URL@"
 turn:
-  # LiveKit's own TURN stays off; an in-country relay is a separate service.
+  # LiveKit's own TURN stays off; the in-country relay is a separate server
+  # (deploy/relay/), handed to the participants who need it by the API.
   enabled: false

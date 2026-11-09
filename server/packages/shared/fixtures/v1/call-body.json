@@ -1,0 +1,17 @@
+{
+  "call": {
+    "id": "1287390234923430001",
+    "conversationId": "1287390234923400001",
+    "kind": "video",
+    "role": "caller",
+    "state": "ended",
+    "outcome": "completed",
+    "placedAt": "2026-11-06T09:15:00.000Z",
+    "ringExpiresAt": "2026-11-06T09:15:45.000Z",
+    "rangAt": "2026-11-06T09:15:01.250Z",
+    "answeredAt": "2026-11-06T09:15:06.400Z",
+    "endedAt": "2026-11-06T09:21:11.400Z",
+    "durationSeconds": 365,
+    "endReason": "hangup"
+  }
+}

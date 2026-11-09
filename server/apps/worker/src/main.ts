@@ -2,6 +2,7 @@ import { ConfigError } from '@app/config';
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { startWorker } from './worker.js';
+import { takeWorkerSlot, type HeldWorkerSlot } from './workerSlot.js';
 
 /**
  * The worker process. On SIGTERM/SIGINT it stops taking jobs, lets running
@@ -18,7 +19,27 @@ async function main(): Promise<void> {
     }
     throw error;
   }
-  const logger = createLogger(config);
+  // Without WORKER_ID the process is named after a leased slot (w0, w1, ...): see workerSlot.ts.
+  let slot: HeldWorkerSlot | null = null;
+  let logger = createLogger(config);
+  if (config.workerIdSource === 'lease') {
+    const slotLog = (): typeof logger => logger;
+    slot = await takeWorkerSlot(
+      config,
+      {
+        onLost: () => {
+          // Two processes must not run under one name: exit, and start again with a free slot.
+          slotLog().fatal("worker slot: another process holds this worker's name now; exiting");
+          process.exit(1);
+        },
+        onExpired: () => slotLog().error('worker slot: not refreshed for a whole lease; another worker may take the name meanwhile'),
+        onRefreshFailed: (error) => slotLog().warn({ err: error }, 'worker slot: refresh failed'),
+      },
+      { onWait: (error) => slotLog().warn({ err: error }, 'worker slot: none taken yet; retrying') },
+    );
+    config = slot.config;
+    logger = createLogger(config);
+  }
   const runtime = await startWorker(config, { logger });
 
   let stopping = false;
@@ -32,6 +53,7 @@ async function main(): Promise<void> {
     }, config.shutdownTimeoutMs);
     try {
       await runtime.stop();
+      await slot?.release();
       process.exitCode = 0;
     } catch (error) {
       logger.error({ err: error }, 'error while stopping');

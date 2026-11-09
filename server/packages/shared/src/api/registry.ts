@@ -1,6 +1,14 @@
 import type { z } from 'zod';
 import { authResultSchema, googleNonceSchema, otpChallengeSchema, tokenPairSchema } from './auth.js';
-import { notificationPrefsSchema, ownProfileSchema, preferencesSchema, profileCardSchema, settingsSchema } from './common.js';
+import { callAcceptanceSchema, callBodySchema } from './calls.js';
+import {
+  conversationBodySchema,
+  messageRequestsPageSchema,
+  messagesPageSchema,
+  sentMessageSchema,
+  sentRequestBodySchema,
+} from './chat.js';
+import { callTokenSchema, conversationSchema, notificationPrefsSchema, ownProfileSchema, preferencesSchema, profileCardSchema, settingsSchema } from './common.js';
 import { configSchema } from './config.js';
 import { deckPageSchema } from './deck.js';
 import { deletionPreflightSchema, deletionScheduledSchema, publicDeletionChallengeSchema } from './deletion.js';
@@ -57,6 +65,15 @@ export const responseSchemas = {
   'conversations-page': conversationsPageSchema,
   blocks: blockListSchema,
   report: reportReceiptSchema,
+  'messages-page': messagesPageSchema,
+  'sent-message': sentMessageSchema,
+  conversation: conversationSchema,
+  'conversation-body': conversationBodySchema,
+  'message-request-sent': sentRequestBodySchema,
+  'message-requests-page': messageRequestsPageSchema,
+  'call-body': callBodySchema,
+  'call-acceptance': callAcceptanceSchema,
+  'call-token': callTokenSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ResponseFixtureName = keyof typeof responseSchemas;

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { findBrandsDir, loadBrand } from '@app/config';
 import { toPublicBrand, type Brand, type Locale, type PublicBrand } from '@app/shared';
+import { withPublicHosts } from './publicHosts';
 
 /**
  * The brand this site is built for (BRAND=<id>; the neutral template when
@@ -9,8 +10,11 @@ import { toPublicBrand, type Brand, type Locale, type PublicBrand } from '@app/s
  */
 const brandsDir = process.env['BRANDS_DIR'] ? path.resolve(process.env['BRANDS_DIR']) : findBrandsDir(process.cwd());
 
-/** The whole brand.json, for what only the build needs (store packages, signing certificates, site copy). */
-export const brandConfig: Brand = loadBrand({ brandsDir });
+/**
+ * The whole brand.json, for what only the build needs (store packages, signing certificates, site copy),
+ * with the site's public hosts from the build's environment (PUBLIC_SITE_URL, PUBLIC_LINKS_URL; publicHosts.ts).
+ */
+export const brandConfig: Brand = withPublicHosts(loadBrand({ brandsDir }), { ...(import.meta.env as Record<string, string | undefined>), ...process.env });
 
 /** What the pages show of the brand. */
 export const brand: PublicBrand = toPublicBrand(brandConfig);

@@ -14,6 +14,7 @@ import {
 } from '@app/config';
 import { parseServiceAccount, queuePrefix, type FcmServiceAccount } from '@app/shared/server';
 import { z } from 'zod';
+import { parsePublishTargets, type PublishTargetConfig } from './origins/targets.js';
 
 /** 32 bytes, base64url (43 characters, no padding). */
 const key32 = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'must be 32 bytes in base64url (43 characters)');
@@ -28,7 +29,11 @@ const envSchema = z
     DATABASE_STATEMENT_TIMEOUT_MS: envInt(30_000, { min: 0, max: 600_000 }),
     DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: envInt(30_000, { min: 0, max: 600_000 }),
     DATABASE_APPLICATION_NAME: z.string().min(1).max(63).default('worker'),
-    /** Names this process in Redis (stream consumer names, BullMQ worker names). Stable across restarts. */
+    /**
+     * Names this process in Redis (stream consumer names, BullMQ worker names). Unset (the default in a
+     * deployment): the process takes the lowest free slot of a Valkey lease (`w0`, `w1`, ...), so names stay the
+     * same across restarts and two running workers never share one. Set it only for a process run by hand.
+     */
     WORKER_ID: z
       .string()
       .regex(/^[A-Za-z0-9._-]{1,64}$/)
@@ -59,6 +64,31 @@ const envSchema = z
     FCM_PROJECT_ID: z.string().regex(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/).optional(),
     /** Runs the write-behind stream consumers (likes, matches) in this process. */
     STREAMS_ENABLED: envBoolean(true),
+    /** LiveKit's server API (the room check, deleting a finished call's room); the four come together, as on the API. */
+    LIVEKIT_API_URL: envUrl(['http', 'https', 'ws', 'wss']).optional(),
+    LIVEKIT_API_KEY: z.string().regex(/^[A-Za-z0-9_-]{3,128}$/).optional(),
+    LIVEKIT_API_SECRET: z.string().min(32).optional(),
+    /** The API's key of the per-call identities: the room check recognises the two people by it. */
+    LIVEKIT_IDENTITY_SECRET: z.string().min(32).optional(),
+    /** Publishes the signed origins document to the media bucket (`bootstrap/origins.json`, behind the CDN) when storage is configured. */
+    ORIGINS_PUBLISH_MEDIA: envBoolean(true),
+    /**
+     * More places the origins document is published to, on other hosts and providers (a JSON array): S3-compatible
+     * buckets `{"kind":"s3","id","endpoint","region","bucket","key","accessKeyId","secretAccessKey","pathStyle"}` and
+     * plain PUT endpoints `{"kind":"put","id","url","headers"}`. Holds credentials: a secret.
+     */
+    ORIGINS_PUBLISH_TARGETS: z
+      .string()
+      .optional()
+      .superRefine((value, ctx) => {
+        if (value === undefined) return;
+        try {
+          parsePublishTargets(value);
+        } catch (error) {
+          // The message names the problem, never a value.
+          ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'not a list of targets' });
+        }
+      }),
   })
   .superRefine((env, ctx) => {
     if (env.ID_PUBLIC_KEY === env.ID_BILLING_KEY) {
@@ -74,6 +104,10 @@ const envSchema = z
       }
       if (env.LOG_PRETTY) ctx.addIssue({ code: 'custom', path: ['LOG_PRETTY'], message: 'must be off in production (logs are JSON lines)' });
       if (env.FCM_SERVICE_ACCOUNT_JSON === undefined) ctx.addIssue({ code: 'custom', path: ['FCM_SERVICE_ACCOUNT_JSON'], message: 'required in production' });
+    }
+    const livekit = [env.LIVEKIT_API_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, env.LIVEKIT_IDENTITY_SECRET];
+    if (livekit.some((v) => v !== undefined) && livekit.some((v) => v === undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['LIVEKIT_API_URL'], message: 'LIVEKIT_API_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET and LIVEKIT_IDENTITY_SECRET come together' });
     }
     if (env.FCM_SERVICE_ACCOUNT_JSON !== undefined) {
       try {
@@ -93,6 +127,8 @@ export interface WorkerConfig {
   env: WorkerEnv['NODE_ENV'];
   log: { level: WorkerEnv['LOG_LEVEL']; pretty: boolean };
   workerId: string;
+  /** `env`: WORKER_ID names the process; `lease`: the process should take a slot (`w<n>`) before it starts, `workerId` is a stand-in until then. */
+  workerIdSource: 'env' | 'lease';
   /** kv-core, and kv-cache (`cacheUrl`, undefined: the same instance). */
   redis: { url: string; cacheUrl: string | undefined; keyPrefix: string };
   /** BullMQ's key prefix, derived from REDIS_KEY_PREFIX (`app:` gives `app:bull`). */
@@ -117,6 +153,10 @@ export interface WorkerConfig {
   /** Undefined without FCM_SERVICE_ACCOUNT_JSON: push jobs finish without sending. */
   push: { account: FcmServiceAccount } | undefined;
   streams: { enabled: boolean };
+  /** Undefined without LIVEKIT_*: room checks decide nothing but the connecting cap, rooms are not deleted. */
+  livekit: { apiUrl: string; apiKey: string; apiSecret: string; identitySecret: string } | undefined;
+  /** Where the signed origins document is published. */
+  origins: { media: boolean; targets: PublishTargetConfig[] };
 }
 
 export function loadConfig(source: Env = process.env): WorkerConfig {
@@ -125,6 +165,7 @@ export function loadConfig(source: Env = process.env): WorkerConfig {
     env: env.NODE_ENV,
     log: { level: env.LOG_LEVEL, pretty: env.LOG_PRETTY },
     workerId: env.WORKER_ID ?? `${hostname().replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 48)}-${process.pid}`,
+    workerIdSource: env.WORKER_ID === undefined ? 'lease' : 'env',
     redis: { url: env.REDIS_URL, cacheUrl: env.REDIS_CACHE_URL, keyPrefix: env.REDIS_KEY_PREFIX },
     queuePrefix: queuePrefix(env.REDIS_KEY_PREFIX),
     concurrency: env.WORKER_CONCURRENCY,
@@ -153,5 +194,10 @@ export function loadConfig(source: Env = process.env): WorkerConfig {
       return account ? { account } : undefined;
     })(),
     streams: { enabled: env.STREAMS_ENABLED },
+    livekit:
+      env.LIVEKIT_API_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET && env.LIVEKIT_IDENTITY_SECRET
+        ? { apiUrl: env.LIVEKIT_API_URL, apiKey: env.LIVEKIT_API_KEY, apiSecret: env.LIVEKIT_API_SECRET, identitySecret: env.LIVEKIT_IDENTITY_SECRET }
+        : undefined,
+    origins: { media: env.ORIGINS_PUBLISH_MEDIA, targets: env.ORIGINS_PUBLISH_TARGETS === undefined ? [] : parsePublishTargets(env.ORIGINS_PUBLISH_TARGETS) },
   };
 }

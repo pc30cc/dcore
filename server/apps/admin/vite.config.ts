@@ -7,10 +7,21 @@ import { defaultClientConditions, defineConfig, type Plugin } from 'vite';
 
 /**
  * The brand is read at build time (BRAND=<id>, default the neutral template)
- * and only its public part reaches the bundle. Names, colours and fonts come
- * from it; none is written in the code.
+ * and only its names, colours, fonts and languages reach the bundle; none is
+ * written in the code. No host is part of the build: the panel reads its API
+ * address at run time from /config.js, which the container writes when it
+ * starts (src/lib/runtimeConfig.ts).
  */
-const brand = toPublicBrand(loadBrand({ brandsDir: findBrandsDir(import.meta.dirname) }));
+const publicBrand = toPublicBrand(loadBrand({ brandsDir: findBrandsDir(import.meta.dirname) }));
+const brand = {
+  id: publicBrand.id,
+  appName: publicBrand.appName,
+  shortName: publicBrand.shortName,
+  colors: publicBrand.colors,
+  fonts: publicBrand.fonts,
+  defaultLocale: publicBrand.defaultLocale,
+  locales: publicBrand.locales,
+};
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

@@ -7,6 +7,7 @@ import {
   accountJobNames,
   bumpVersion,
   deletionFanoutDataSchema,
+  EXPORT_JOB,
   MATCH_ENDED_TTL_SECONDS,
   photoUploadKey,
   photoVariantKeys,
@@ -17,6 +18,8 @@ import {
   type PurgeData,
 } from '@app/shared/server';
 import { DelayedError, Queue, type Job } from 'bullmq';
+import { endCallsOf } from '../calls/queue.js';
+import { exportJob, type ExportResult } from '../export/job.js';
 import { takeLease } from '../lease.js';
 import { unmatchPurgeJob, type UnmatchPurgeResult } from './unmatch.js';
 import type { JobContext, QueueDefinition } from './types.js';
@@ -128,6 +131,11 @@ export async function deletionFanoutJob(job: Job<DeletionFanoutData>, context: J
   }
   // The peers' conversation lists changed: their list versions move (ETags).
   for (const peerId of new Set(target.ended.map((e) => e.peerId))) await bumpVersion(context.redis, services.keys.raw('cv', peerId));
+  // A call the person is in ends with the conversations (the API did it at once; a repeat finds nothing).
+  await endCallsOf(
+    context,
+    target.ended.map(({ matchId, peerId }) => (BigInt(data.userId) < BigInt(peerId) ? { matchId, lo: data.userId, hi: peerId } : { matchId, lo: peerId, hi: data.userId })),
+  );
 
   let published = 0;
   let disconnected = false;
@@ -265,7 +273,9 @@ export async function deletionSweepJob(context: JobContext, now: () => number): 
   return { leased: true, purges, fanouts };
 }
 
-export function accountQueue(options: AccountQueueOptions = {}): QueueDefinition<DeletionFanoutData | PurgeData | Record<string, never>, FanoutResult | PurgeResult | SweepResult | UnmatchPurgeResult> {
+export function accountQueue(
+  options: AccountQueueOptions = {},
+): QueueDefinition<DeletionFanoutData | PurgeData | Record<string, never>, FanoutResult | PurgeResult | SweepResult | UnmatchPurgeResult | ExportResult> {
   const now = options.now ?? Date.now;
   return {
     name: ACCOUNT_QUEUE,
@@ -276,6 +286,7 @@ export function accountQueue(options: AccountQueueOptions = {}): QueueDefinition
       if (job.name === accountJobNames.purge) return purgeJob(job as Job<PurgeData>, context, now);
       if (job.name === accountJobNames.sweep) return deletionSweepJob(context, now);
       if (job.name === 'unmatch-purge') return unmatchPurgeJob(job, context);
+      if (job.name === EXPORT_JOB) return exportJob(job, context);
       throw new Error(`the account queue has no job named "${job.name}"`);
     },
   };

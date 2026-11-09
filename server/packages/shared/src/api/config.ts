@@ -54,6 +54,22 @@ export const promptDefSchema = z.object({
 /** A labelled choice from a catalogue list (intentions, report reasons, deletion reasons). */
 export const catalogEntrySchema = z.object({ key: z.string().min(1), label: z.string() });
 
+/**
+ * The signed-out welcome, in the requested locale only: the panel's text
+ * when it set one, else brand.json's (`{appName}` and the headline's
+ * `*emphasis*` left for the app). A missing text falls back, in the app, to
+ * the brand's default locale and then to its own strings. `images` are the
+ * panel's picture URLs; empty: the pictures the app ships.
+ */
+export const welcomeConfigSchema = z.object({
+  eyebrow: z.string().min(1).max(60).optional(),
+  headline: z.string().min(1).max(160).optional(),
+  subtitle: z.string().min(1).max(400).optional(),
+  gradient: z.object({ top: hexColor, middle: hexColor, bottom: hexColor }).optional(),
+  images: z.array(z.url({ protocol: /^https$/ })).max(16),
+});
+export type WelcomeConfig = z.infer<typeof welcomeConfigSchema>;
+
 export const configSchema = z.object({
   /** The document's version counter (`cfg:v`). */
   v: z.number().int().nonnegative(),
@@ -96,5 +112,7 @@ export const configSchema = z.object({
   calls: z.object({ audio: z.boolean(), video: z.boolean() }),
   /** Text overrides from the admin panel, this locale only; the app ships its own strings. */
   strings: z.record(z.string(), z.string()),
+  /** Absent when neither brand.json nor the panel sets a welcome. */
+  welcome: welcomeConfigSchema.optional(),
 });
 export type Config = z.infer<typeof configSchema>;

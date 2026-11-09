@@ -51,7 +51,10 @@ set_default() {
 
 # storage_defaults: when S3_ENDPOINT is empty, points S3_* at the bundled
 # object store (BUNDLED_S3_URL, BUNDLED_S3_ACCESS_KEY_ID,
-# BUNDLED_S3_SECRET_ACCESS_KEY) and, when CDN_BASE_URL is empty too, CDN_* at
+# BUNDLED_S3_SECRET_ACCESS_KEY; S3_INTERNAL_ENDPOINT at BUNDLED_S3_INTERNAL_URL,
+# its address on the stack's network, so the servers' own traffic stays
+# there while presigned URLs name the public one) and, when CDN_BASE_URL is
+# empty too, CDN_* at
 # the bundled media service (BUNDLED_CDN_URL, BUNDLED_CDN_SIGNING_KEY). The
 # media service reads the bundled store only, so an external S3_ENDPOINT
 # never gets it as its CDN: that store needs its own CDN_BASE_URL and
@@ -66,6 +69,9 @@ storage_defaults() {
     export S3_SECRET_ACCESS_KEY="${BUNDLED_S3_SECRET_ACCESS_KEY:-}"
     export S3_REGION="${BUNDLED_S3_REGION:-us-east-1}"
     export S3_PATH_STYLE=true
+    if [ -z "${S3_INTERNAL_ENDPOINT:-}" ] && [ -n "${BUNDLED_S3_INTERNAL_URL:-}" ]; then
+      export S3_INTERNAL_ENDPOINT="$BUNDLED_S3_INTERNAL_URL"
+    fi
     _bundled_s3=1
   fi
   if [ -n "$_bundled_s3" ] && [ -z "${CDN_BASE_URL:-}" ] && [ -n "${BUNDLED_CDN_URL:-}" ]; then
