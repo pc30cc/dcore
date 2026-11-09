@@ -7,8 +7,9 @@
 // admin: scripts from the site itself plus the SHA-256 of every inline
 // <script> of index.html (the theme bootstrap), connections to the API only.
 // The API and CDN origins are not known at build time: the snippet carries
-// @API_ORIGIN@ and @CDN_ORIGIN@, which admin-runtime.sh fills in when the
-// container starts.
+// @API_ORIGIN@, @CDN_ORIGIN@ and @FONT_ORIGIN@ (the optional Persian font's
+// stylesheet and files), which admin-runtime.sh fills in when the container
+// starts.
 // web: the pages carry their own policy in a <meta> tag (per page, with
 // hashes); a <meta> policy cannot set frame-ancestors, so the header adds
 // only that, and nothing that could contradict the page's own policy.
@@ -35,9 +36,9 @@ export function adminPolicy(html) {
     "default-src 'self'",
     ["script-src 'self'", ...inlineScriptHashes(html)].join(' '),
     // React, Radix and Tailwind set inline styles; scripts stay hash-locked.
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' @FONT_ORIGIN@",
     "img-src 'self' data: blob: @CDN_ORIGIN@",
-    "font-src 'self' data:",
+    "font-src 'self' data: @FONT_ORIGIN@",
     "connect-src 'self' @API_ORIGIN@",
     "object-src 'none'",
     "base-uri 'none'",

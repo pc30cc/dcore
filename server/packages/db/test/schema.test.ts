@@ -180,6 +180,7 @@ describe.skipIf(!hasDatabase)('schema: the real migrations', () => {
       ['preferences', 'interested_in'], ['discovery', 'h3_r7'], ['discovery', 'geo'], ['discovery', 'attrs'],
       ['user_locations', 'home_h3'], ['user_locations', 'home_geo'], ['device_bans', 'value_hash'],
       ['auth_identities', 'subject_enc'], ['store_purchases', 'token'], ['blocks', 'user_lo'],
+      ['admin_users', 'password_hash'], ['admin_users', 'totp_secret_enc'], ['admin_users', 'totp_last_step'],
     ];
     for (const [table, name] of denied) expect(await column(table, name), `${table}.${name}`).toBe(false);
     for (const table of ['profile_field_values', 'legal_holds', 'report_filings', 'admin_sessions']) {

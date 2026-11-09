@@ -1,10 +1,10 @@
 /**
  * The panel's addresses, read at run time: the container writes `/config.js`
- * when it starts (`window.__APP_CONFIG__ = { apiOrigin, cdnOrigin }`, from the
- * deployment's environment), and index.html loads it before the app, so no
- * host is part of the build and one image serves any domain. A development
- * server has no `/config.js`: it uses `VITE_API_BASE_URL`, else the local
- * API on port 8080.
+ * when it starts (`window.__APP_CONFIG__ = { apiOrigin, cdnOrigin,
+ * persianFontCss, persianFontFamily }`, from the deployment's environment),
+ * and index.html loads it before the app, so no host is part of the build and
+ * one image serves any domain. A development server has no `/config.js`: it
+ * uses `VITE_API_BASE_URL`, else the local API on port 8080.
  */
 
 export interface RuntimeConfig {
@@ -12,6 +12,8 @@ export interface RuntimeConfig {
   apiOrigin: string;
   /** The CDN's origin (photos the panel shows); null when none is configured. */
   cdnOrigin: string | null;
+  /** A licensed Persian font kept outside the build: its stylesheet and the family it declares; null: the brand's font name and the system's. */
+  persianFont: { cssUrl: string; family: string } | null;
 }
 
 export type RuntimeConfigResult = { ok: true; config: RuntimeConfig } | { ok: false; reason: string };
@@ -32,17 +34,32 @@ export function originOf(value: unknown): string | null {
   return url.origin;
 }
 
+const FONT_FAMILY = /^[A-Za-z0-9 _-]{1,64}$/;
+
+/** The stylesheet of the run-time Persian font: an https URL (http on a local address) with a path and no query; else null. */
+export function fontOf(cssUrl: unknown, family: unknown): RuntimeConfig['persianFont'] {
+  if (typeof cssUrl !== 'string' || typeof family !== 'string' || !FONT_FAMILY.test(family.trim())) return null;
+  let url: URL;
+  try {
+    url = new URL(cssUrl.trim());
+  } catch {
+    return null;
+  }
+  if (originOf(url.origin) === null || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname.length < 2) return null;
+  return { cssUrl: url.href, family: family.trim() };
+}
+
 /** Reads the configuration the container wrote; `dev` and `devApiBaseUrl` describe a development server. */
 export function readRuntimeConfig(source: unknown, dev: boolean, devApiBaseUrl: string | undefined): RuntimeConfigResult {
   if (source !== undefined && source !== null) {
-    const record = source as { apiOrigin?: unknown; cdnOrigin?: unknown };
+    const record = source as { apiOrigin?: unknown; cdnOrigin?: unknown; persianFontCss?: unknown; persianFontFamily?: unknown };
     const apiOrigin = originOf(record.apiOrigin);
     if (!apiOrigin) return { ok: false, reason: '/config.js names no usable API origin' };
-    return { ok: true, config: { apiOrigin, cdnOrigin: originOf(record.cdnOrigin) } };
+    return { ok: true, config: { apiOrigin, cdnOrigin: originOf(record.cdnOrigin), persianFont: fontOf(record.persianFontCss, record.persianFontFamily) } };
   }
   if (dev) {
     const apiOrigin = originOf(devApiBaseUrl ?? 'http://localhost:8080');
-    if (apiOrigin) return { ok: true, config: { apiOrigin, cdnOrigin: null } };
+    if (apiOrigin) return { ok: true, config: { apiOrigin, cdnOrigin: null, persianFont: null } };
     return { ok: false, reason: 'VITE_API_BASE_URL is not an origin' };
   }
   return { ok: false, reason: '/config.js was not loaded' };
@@ -60,4 +77,9 @@ let cached: RuntimeConfigResult | null = null;
 export function runtimeConfig(): RuntimeConfigResult {
   cached ??= readRuntimeConfig(typeof window === 'undefined' ? undefined : window.__APP_CONFIG__, import.meta.env.DEV, import.meta.env.VITE_API_BASE_URL);
   return cached;
+}
+
+/** Tests read a configuration of their own. */
+export function setRuntimeConfigForTests(result: RuntimeConfigResult | null): void {
+  cached = result;
 }

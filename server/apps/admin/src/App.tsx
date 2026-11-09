@@ -1,32 +1,19 @@
+import { DirectionProvider } from '@radix-ui/react-direction';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, RouterProvider } from 'react-router';
-import { AppShell } from '@/components/layout/AppShell';
-import { RequireAdmin } from '@/components/layout/RequireAdmin';
-import { sections } from '@/lib/sections';
-import { HostsPage } from '@/pages/HostsPage';
-import { LoginPage } from '@/pages/LoginPage';
-import { NotFoundPage } from '@/pages/NotFoundPage';
-import { SectionPage } from '@/pages/SectionPage';
+import { useI18n } from '@/i18n/useI18n';
+import { queryClient } from '@/lib/queries';
+import { routes } from './routes';
 
-const router = createBrowserRouter([
-  { path: '/login', element: <LoginPage /> },
-  {
-    path: '/',
-    element: (
-      <RequireAdmin>
-        <AppShell />
-      </RequireAdmin>
-    ),
-    children: [
-      ...sections.map((section) =>
-        section.path === ''
-          ? { index: true, element: <SectionPage section={section} /> }
-          : { path: section.path, element: section.path === 'hosts' ? <HostsPage /> : <SectionPage section={section} /> },
-      ),
-      { path: '*', element: <NotFoundPage /> },
-    ],
-  },
-]);
+const router = createBrowserRouter(routes);
 
 export function App() {
-  return <RouterProvider router={router} />;
+  const { dir } = useI18n();
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DirectionProvider dir={dir}>
+        <RouterProvider router={router} />
+      </DirectionProvider>
+    </QueryClientProvider>
+  );
 }

@@ -9,8 +9,9 @@ import type { ConfigSnapshot } from '../services/cfg.js';
 import { EntitlementService } from '../services/entitlements.js';
 
 /**
- * The store services of the API: the catalogue (built from the configuration
- * snapshot, again after every `cfg:changed`), the store integrations
+ * The store services of the API: the catalogue (plans and products, built
+ * from the configuration snapshot, again after every `cfg:changed`, so a
+ * plan or product the panel edits reaches the paywall without a restart), the store integrations
  * (`StoreVerifier` per store; none for a store without credentials), the
  * purchase core shared with the worker, entitlements, purchases and boosts.
  */
@@ -47,7 +48,7 @@ export const storePlugin = fp<StoreOptions>(
       if (!snapshot) return empty;
       let built = catalogs.get(snapshot);
       if (!built) {
-        built = new StoreCatalog(snapshot.storeProducts, snapshot.plans);
+        built = new StoreCatalog(snapshot.storeProducts, snapshot.plans, { planNames: snapshot.brand.planNames });
         catalogs.set(snapshot, built);
       }
       return built;

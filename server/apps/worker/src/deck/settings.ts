@@ -10,11 +10,12 @@ import type { WorkerServices } from '../services.js';
  * scoring settings of app_config, the filterable fields (for advanced
  * filters), and the plans with their features (see-likes on the cards).
  * Loaded with the same one-statement snapshot the API uses, and loaded again
- * when `cfg:v` moved (looked at no more than every 30 seconds, by the next
- * job that needs it). A failed reload keeps the last good settings.
+ * when `cfg:v` moved (one GET, looked at no more than every 5 seconds, by
+ * the next job that needs it), so a plan edited in the panel reaches the
+ * deck within seconds. A failed reload keeps the last good settings.
  */
 
-export const SETTINGS_CHECK_MS = 30_000;
+export const SETTINGS_CHECK_MS = 5_000;
 
 /** The scoring weights of docs/10 (`deck.weights`); a missing key takes its default. */
 export interface DeckWeights {

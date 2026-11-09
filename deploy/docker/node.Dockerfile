@@ -57,12 +57,16 @@ COPY --chmod=0755 deploy/node/entrypoint.sh /usr/local/bin/service-entrypoint
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/service-entrypoint"]
 
 # ── API ──────────────────────────────────────────────────────────────────
+# UV_THREADPOOL_SIZE: admin password hashes (Argon2, at most 2 at once) share
+# libuv's thread pool with DNS lookups, file reads and SCRAM; 8 threads keep
+# room for them while hashes run.
 FROM node-service AS api
 COPY --from=build /out/api /app
 COPY brands /app/brands
 ENV BRANDS_DIR=/app/brands \
     HOST=0.0.0.0 \
-    PORT=8080
+    PORT=8080 \
+    UV_THREADPOOL_SIZE=8
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
   CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/healthz" || exit 1

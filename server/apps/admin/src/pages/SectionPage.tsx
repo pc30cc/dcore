@@ -21,7 +21,7 @@ export function SectionPage({ section }: { section: Section }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          {t('section.pending.body', { section: section.spec })}
+          {t('section.pending.body', { section: section.spec ?? 0 })}
         </CardContent>
       </Card>
     </div>

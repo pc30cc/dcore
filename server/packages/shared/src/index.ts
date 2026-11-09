@@ -7,6 +7,8 @@ export * from './health.js';
 export * from './ids.js';
 export * from './locale.js';
 export * from './pagination.js';
+export * from './permissions.js';
+export * from './plans.js';
 export * from './problem.js';
 export * from './push.js';
 export * from './realtime.js';

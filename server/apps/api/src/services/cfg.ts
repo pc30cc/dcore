@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
 import { configSnapshot, type ConfigSnapshotRows, type Pool } from '@app/db';
 import {
+  FREE_PLAN_KEY,
   appStores,
   configSchema,
   fieldType,
   intention,
   locales,
   parseAppConfig,
+  planDisplayName,
   reportReason,
   store as storeCodes,
   type AppConfig,
@@ -78,8 +80,14 @@ export interface PlanDefinition {
   id: number;
   key: string;
   rank: number;
+  sort: number;
+  /** On sale, unless archived. */
   active: boolean;
+  archivedAtMs: number | null;
+  /** plans.badge (planBadge codes). */
+  badge: number;
   names: Record<string, unknown>;
+  descriptions: Record<string, unknown>;
   features: Record<string, number | boolean>;
 }
 
@@ -293,10 +301,9 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
         appName: effective.appName,
         colors: effective.colors,
         legal: { ...effective.legal, versions: app['legal.versions'] },
+        // Every plan but free, also those off sale: a person may hold one, and the app names it.
         planNames: Object.fromEntries(
-          plans
-            .filter((plan) => plan.active && plan.key !== 'free')
-            .map((plan) => [plan.key, effective.planNames[plan.key]?.[locale] ?? text(plan.names, locale, plan.key)]),
+          plans.filter((plan) => plan.key !== FREE_PLAN_KEY).map((plan) => [plan.key, planDisplayName(plan.key, plan.names, effective.planNames, locale)]),
         ),
         minVersion: { required: versions.required, recommended: versions.recommended },
         maintenance: { enabled: app['app.maintenance'].enabled, ...(message ? { message } : {}) },

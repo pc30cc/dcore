@@ -485,6 +485,8 @@ services:
       - PUBLIC_API_URL=${SERVICE_URL_API}
       - CDN_BASE_URL=${CDN_BASE_URL:-}
       - BUNDLED_CDN_URL=${SERVICE_URL_MEDIA}
+      - ADMIN_PERSIAN_FONT_CSS_URL=${ADMIN_PERSIAN_FONT_CSS_URL:-}
+      - ADMIN_PERSIAN_FONT_FAMILY=${ADMIN_PERSIAN_FONT_FAMILY:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s

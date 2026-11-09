@@ -58,6 +58,8 @@ export interface IssueInput {
   deviceId?: string | undefined;
   storeCode?: number | undefined;
   scope?: SessionScope | undefined;
+  /** A lifetime shorter than the configured one (admin tokens); never longer. */
+  ttlSeconds?: number | undefined;
 }
 
 export interface IssuedToken {
@@ -133,7 +135,8 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
   return {
     async issue(input) {
       const now = Math.floor(Date.now() / 1_000);
-      const exp = now + accessTokenTtlSeconds;
+      const ttl = input.ttlSeconds === undefined ? accessTokenTtlSeconds : Math.min(accessTokenTtlSeconds, Math.max(1, Math.floor(input.ttlSeconds)));
+      const exp = now + ttl;
       const payload: Record<string, unknown> = { sid: input.sessionId };
       if (input.kind === 'admin') payload['roles'] = [...(input.roles ?? [])];
       if (input.kind === 'app') {

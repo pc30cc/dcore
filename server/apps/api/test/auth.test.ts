@@ -148,6 +148,13 @@ describe('auth plugin', () => {
     const moderator = (await instance.tokens.issue({ kind: 'admin', subject: 'a_2', sessionId: 's', roles: ['moderator'] })).token;
     const call = (url: string, token: string) => instance.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } });
 
+    // Valkey is unreachable here: the deny list cannot be read, so admin tokens are refused (they fail
+    // closed) while user tokens go on.
+    expect((await call('/test/admin', moderator)).statusCode).toBe(401);
+    expect((await call('/test/me', user)).statusCode).toBe(200);
+    // With a readable deny list that names neither session:
+    instance.denyList.check = async () => 'allowed';
+
     expect((await call('/test/admin', user)).statusCode).toBe(401);
     expect((await call('/test/me', moderator)).statusCode).toBe(401);
     const forbidden = await call('/test/admin', support);

@@ -14,20 +14,22 @@ import { queueJob } from '../social/jobs.js';
  * per state change, then the token record, the entitlements version, the
  * `entitlement` event and the next jobs), with the plans, the cross-store
  * flag and the store catalogue from the configuration snapshot, loaded
- * again when `cfg:v` moved (looked at no more than every 30 seconds).
+ * again when `cfg:v` moved (one GET, looked at no more than every 5 seconds
+ * while jobs run), so a plan or product edited in the panel reaches the
+ * worker within seconds.
  */
 
-export const BILLING_SETTINGS_CHECK_MS = 30_000;
+export const BILLING_SETTINGS_CHECK_MS = 5_000;
 
 export class BillingSettingsSource {
   private current: (BillingSettings & { version: number }) | null = null;
   private checkedAt = 0;
   private loading: Promise<BillingSettings> | null = null;
 
-  constructor(private readonly options: { pg: Pool; redis: Redis; keys: KeyBuilder; log: Logger }) {}
+  constructor(private readonly options: { pg: Pool; redis: Redis; keys: KeyBuilder; log: Logger; checkMs?: number | undefined }) {}
 
   async get(): Promise<BillingSettings> {
-    if (this.current && Date.now() - this.checkedAt < BILLING_SETTINGS_CHECK_MS) return this.current;
+    if (this.current && Date.now() - this.checkedAt < (this.options.checkMs ?? BILLING_SETTINGS_CHECK_MS)) return this.current;
     this.loading ??= this.refresh().finally(() => {
       this.loading = null;
     });

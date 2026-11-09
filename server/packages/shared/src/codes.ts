@@ -472,6 +472,40 @@ export const supportTicketStatus = codes('support_tickets', 'status', {
   closed: [3, 'closed'],
 });
 
+/** audit_log.target_type: what an audit row is about (`targetId` names the row of that kind). */
+export const auditTarget = codes('audit_log', 'target_type', {
+  none: [0, 'none'],
+  user: [1, 'user'],
+  photo: [2, 'photo'],
+  report: [3, 'report'],
+  appeal: [4, 'appeal'],
+  purchase: [5, 'purchase'],
+  config: [6, 'config'],
+  admin: [7, 'admin'],
+  campaign: [8, 'campaign'],
+  ticket: [9, 'ticket'],
+  verification: [10, 'verification'],
+  message: [11, 'message'],
+  feature_flag: [12, 'feature flag'],
+  i18n_string: [13, 'i18n string'],
+  product: [14, 'product'],
+  plan: [15, 'plan'],
+  legal_hold: [16, 'legal hold'],
+});
+export type AuditTarget = (typeof auditTarget.names)[number];
+
+/** admin_sessions.revoke_reason (0023). */
+export const adminRevokeReason = codes('admin_sessions', 'revoke_reason', {
+  logout: [1, 'logout'],
+  logout_all: [2, 'logout_all'],
+  reuse_detected: [3, 'reuse_detected'],
+  owner: [4, 'owner'],
+  disabled: [5, 'disabled'],
+  password_changed: [6, 'password_changed'],
+  totp_reset: [7, 'totp_reset'],
+});
+export type AdminRevokeReason = (typeof adminRevokeReason.names)[number];
+
 // ─── Billing (0007) ──────────────────────────────────────────────────────
 
 export const productKind = codes('store_products', 'kind', {
@@ -504,6 +538,19 @@ export const purchaseState = codes('store_purchases', 'state', {
 
 export const productBadge = codes(
   'store_products',
+  'badge',
+  {
+    none: [0, 'none'],
+    popular: [1, 'most popular'],
+    best_value: [2, 'best value'],
+    new: [3, 'new'],
+  },
+  ['none'],
+);
+
+/** plans.badge (0024): the same marks as a product's, shown with the plan on the paywall. */
+export const planBadge = codes(
+  'plans',
   'badge',
   {
     none: [0, 'none'],
@@ -622,10 +669,13 @@ export const codeTables: readonly CodeTable<string>[] = [
   deviceBanKind,
   legalHoldKind,
   supportTicketStatus,
+  auditTarget,
+  adminRevokeReason,
   productKind,
   walletItem,
   purchaseState,
   productBadge,
+  planBadge,
   storeEventKind,
   storeEventSource,
   subscriptionStatus,

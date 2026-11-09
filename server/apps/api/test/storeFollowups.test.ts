@@ -82,7 +82,7 @@ describe.skipIf(!hasInfrastructure)('store follow-ups: hidden catalogues, the pl
     const res = await products(u, 2);
     expect(res.statusCode).toBe(200);
     expect(statements(res)).toBe(0);
-    expect(storeProductsSchema.parse(res.json())).toEqual({ store: 'bazaar', billingRef: billingRef(u), subscriptions: [], consumables: [] });
+    expect(storeProductsSchema.parse(res.json())).toEqual({ store: 'bazaar', billingRef: billingRef(u), plans: [], subscriptions: [], consumables: [] });
     const etag = String(res.headers['etag']);
     expect(etag.startsWith('"p')).toBe(false);
     expect(res.headers['cache-control']).toBe('private, no-cache');

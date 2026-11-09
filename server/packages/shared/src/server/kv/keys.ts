@@ -53,6 +53,10 @@ export function createKeys(prefix: string) {
     otpReviewWrong: (phoneHash: string) => k('otp', 'rl', 'rv', phoneHash),
     signInIpLimit: (route: string, ip: string) => k('si', 'rl', route, ip),
     googleNonce: (nonceId: string) => k('gn', nonceId),
+    /** An admin's sign-in between the password and the TOTP code (kv-core, 5 min, single use), by the token's SHA-256. */
+    adminMfa: (tokenHash: string) => k('adm', 'mfa', tokenHash),
+    /** Admin logins from every address together (fixed window, kv-core). */
+    adminLoginLimit: () => k('adm', 'rl', 'login'),
     deletionRequest: (token: string) => k('delreq', token),
     deletionRequestByPhone: (phoneHash: string) => k('delreq', 'p', phoneHash),
     minorPhone: (phoneHash: string) => k('minor', phoneHash),

@@ -1,6 +1,50 @@
 {
   "store": "play",
   "billingRef": "k7wq2m4zx5p3a",
+  "plans": [
+    {
+      "key": "plus",
+      "rank": 1,
+      "sort": 1,
+      "name": "Plus",
+      "description": "See who likes you and send more likes.",
+      "badge": "popular",
+      "features": {
+        "see_likes": true,
+        "rewind": true,
+        "read_receipts": true,
+        "incognito": true,
+        "travel_mode": false,
+        "advanced_filters": true,
+        "profile_views": true,
+        "second_look": true,
+        "priority_likes": false,
+        "audio_calls": true,
+        "video_calls": true
+      },
+      "quotas": { "daily_likes": 100, "weekly_superlikes": 5, "daily_dm": 3, "weekly_dm_gift": 0, "monthly_boosts": 1 }
+    },
+    {
+      "key": "premium",
+      "rank": 2,
+      "sort": 2,
+      "name": "Premium",
+      "features": {
+        "see_likes": true,
+        "rewind": true,
+        "read_receipts": true,
+        "incognito": true,
+        "travel_mode": true,
+        "advanced_filters": true,
+        "profile_views": true,
+        "second_look": true,
+        "priority_likes": true,
+        "audio_calls": true,
+        "video_calls": true
+      },
+      "quotas": { "daily_likes": -1, "weekly_superlikes": -1, "daily_dm": -1, "weekly_dm_gift": 0, "monthly_boosts": 4 }
+    }
+  ],
   "subscriptions": [
     { "productId": "sub.plus", "basePlanId": "w1", "plan": "plus", "period": "P1W", "sort": 10 },
     { "productId": "sub.plus", "basePlanId": "m1", "plan": "plus", "period": "P1M", "badge": "popular", "sort": 11 },

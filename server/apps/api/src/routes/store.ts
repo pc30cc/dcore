@@ -10,12 +10,16 @@ import { notModified } from './me.js';
  * The store routes of every build (§3.12); the purchase routes of each store
  * are in storePurchases.ts.
  *
- * - `GET /v1/store/products`: the active products of the session's store
- *   and the session's `billingRef`, from memory (0 statements). A store this
- *   process cannot verify purchases of (no verifier: its credentials are
- *   not set) lists nothing, so no build sells what the server would refuse;
- *   its ETag differs from every ETag of a listing, so once the store is
- *   configured a client's stored ETag cannot keep the empty answer.
+ * - `GET /v1/store/products`: the plans on sale (names in the session's
+ *   language, switches, quotas, badge, order) and the active products of the
+ *   session's store, and the session's `billingRef`, from memory
+ *   (0 statements). The ETag carries the catalogue version (every plan and
+ *   product field) and the language, so a plan edited in the panel is never
+ *   hidden behind a stored 304. A store this process cannot verify purchases
+ *   of (no verifier: its credentials are not set) lists nothing, so no build
+ *   sells what the server would refuse; its ETag differs from every ETag of
+ *   a listing, so once the store is configured a client's stored ETag
+ *   cannot keep the empty answer.
  * - `GET /v1/me/entitlements`: 0 statements warm, one on a miss; 304 on its ETag.
  * - `POST /v1/store/restore`: up to 20 tokens; 0 statements for tokens the
  *   server has recorded, one read for a recorded token whose cache entry is
@@ -58,15 +62,17 @@ export const storeRoutes: FastifyPluginAsyncZod = async (app) => {
         reply.header('etag', etag);
         reply.header('cache-control', 'private, no-cache');
         if (ifNoneMatch(request, etag)) return notModified(reply);
-        return { store: session.store, billingRef, subscriptions: [], consumables: [] };
+        return { store: session.store, billingRef, plans: [], subscriptions: [], consumables: [] };
       }
       const catalog = app.store.catalog();
-      const etag = `"p${catalog.version}-${billingRef}"`;
+      const locale = request.locale;
+      const etag = `"p${catalog.version}.${locale}-${billingRef}"`;
       reply.header('etag', etag);
       reply.header('cache-control', 'private, no-cache');
+      reply.header('vary', 'accept-language');
       if (ifNoneMatch(request, etag)) return notModified(reply);
-      const listing = catalog.listing(session.store);
-      return { store: session.store, billingRef, subscriptions: listing.subscriptions, consumables: listing.consumables };
+      const listing = catalog.listing(session.store, locale);
+      return { store: session.store, billingRef, plans: listing.plans, subscriptions: listing.subscriptions, consumables: listing.consumables };
     },
   );
 

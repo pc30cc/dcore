@@ -14,6 +14,7 @@ import {
   retryPlan,
   stateCode,
   tokenHash,
+  type CatalogPlan,
   type EntitlementRowsLike,
   type PlanLike,
   type QuotaCounters,
@@ -104,11 +105,19 @@ describe('entitlements', () => {
     expect(free.source).toBeUndefined();
   });
 
-  it('shows a tier the contract does not name as the highest named tier it reaches', () => {
-    const gold: PlanLike[] = [...plans, { id: 4, key: 'gold', rank: 3, features: { see_likes: true } }];
+  it('names a plan made in the panel by its own key, with its own features and quotas', () => {
+    const gold: PlanLike[] = [...plans, { id: 4, key: 'gold', rank: 3, features: { see_likes: true, daily_likes: 500, monthly_boosts: 9 } }];
     const e = buildEntitlements({ base: entitlementBase({ subs: [{ ...sub(1, 4) }], wallet: [] }, 1, false, 0, 0, NOW), plans: gold, use, now: NOW });
-    expect(e.plan).toBe('premium');
+    expect(e.plan).toBe('gold');
+    expect(entitlementsSchema.parse(e).plan).toBe('gold');
     expect(e.features.see_likes).toBe(true);
+    expect(e.features.travel_mode).toBe(false);
+    expect(e.quotas).toMatchObject({ likes: { limit: 500 }, boosts: { limit: 9 }, superlikes: { limit: 0 } });
+    expect(e).toMatchObject({ source: 'play' });
+    // A lower-ranked new plan held beside premium: premium counts.
+    const low: PlanLike[] = [...plans, { id: 5, key: 'lite', rank: 1, features: {} }].map((p) => (p.key === 'plus' ? { ...p, rank: 4 } : p));
+    const both = buildEntitlements({ base: entitlementBase({ subs: [sub(1, 5), sub(1, 3)], wallet: [] }, 1, false, 0, 0, NOW), plans: low, use, now: NOW });
+    expect(both.plan).toBe('premium');
   });
 
   it('has an ETag that moves with the rows, the configuration and the counters, and only with them', () => {
@@ -128,6 +137,9 @@ describe('entitlements', () => {
 });
 
 describe('the catalogue in memory', () => {
+  const plan = (over: Partial<CatalogPlan> & { id: number; key: string }): CatalogPlan => ({
+    rank: 1, sort: 0, active: true, archivedAtMs: null, badge: 0, names: {}, descriptions: {}, features: {}, ...over,
+  });
   const row = (over: Partial<StoreProductRow>): StoreProductRow => ({
     id: 1, store: 1, kind: 1, planId: 2, period: 'P1M', item: null, quantity: null, productId: 'sub.plus', basePlanId: 'm1', badge: 0, sort: 10, active: true, listPriceMinor: null, listCurrency: null, ...over,
   });
@@ -138,9 +150,13 @@ describe('the catalogue in memory', () => {
       row({ id: 3, basePlanId: 'm3', period: 'P3M', active: false }),
       row({ id: 4, store: 2, productId: 'sub.plus.12m', basePlanId: null, period: 'P12M' }),
       row({ id: 5, store: 1, kind: 2, planId: null, period: null, item: 2, quantity: 5, productId: 'cons.boost.5', basePlanId: null, sort: 40, badge: 2 }),
-      row({ id: 6, store: 1, planId: 9, basePlanId: 'x1' }),
+      row({ id: 6, store: 1, planId: 9, productId: 'sub.gold', basePlanId: 'x1', sort: 20 }),
+      row({ id: 7, store: 1, planId: 7, productId: 'sub.old', basePlanId: 'm1', sort: 30 }),
     ],
-    [{ id: 2, key: 'plus' }, { id: 9, key: 'gold' }],
+    [plan({ id: 2, key: 'plus', rank: 1, sort: 2, names: { en: 'Plus', fa: 'پلاس' }, features: { see_likes: true, daily_likes: 100 } }),
+     plan({ id: 9, key: 'gold', rank: 3, sort: 1, badge: 1, names: { fa: 'طلایی' }, descriptions: { en: 'Everything', tr: 'Her şey' } }),
+     plan({ id: 7, key: 'old', rank: 4, active: false })],
+    { planNames: { plus: { tr: 'Artı', en: 'Brand plus' } } },
   );
 
   it('finds rows by product and base plan, inactive ones included', () => {
@@ -151,15 +167,52 @@ describe('the catalogue in memory', () => {
     expect(catalog.find(1, 'sub.nope', null)).toBeUndefined();
   });
 
-  it('lists the active products of one store in order, without prices, and skips tiers the wire does not name', () => {
-    const listing = catalog.listing('play');
+  it('lists the active products of one store in order, without prices, with any plan on sale and none off sale', () => {
+    const listing = catalog.listing('play', 'en');
     expect(listing.subscriptions).toEqual([
       { productId: 'sub.plus', basePlanId: 'w1', plan: 'plus', period: 'P1W', badge: 'popular', sort: 9 },
       { productId: 'sub.plus', basePlanId: 'm1', plan: 'plus', period: 'P1M', sort: 10 },
+      { productId: 'sub.gold', basePlanId: 'x1', plan: 'gold', period: 'P1M', sort: 20 },
     ]);
     expect(listing.consumables).toEqual([{ productId: 'cons.boost.5', item: 'boost', quantity: 5, badge: 'best_value', sort: 40 }]);
-    expect(catalog.listing('bazaar').subscriptions.map((s) => s.period)).toEqual(['P12M']);
-    expect(new StoreCatalog(catalog.rows, [{ id: 2, key: 'plus' }]).version).not.toBe(catalog.version);
+    expect(catalog.listing('bazaar', 'en').subscriptions.map((s) => s.period)).toEqual(['P12M']);
+    expect(catalog.listing('bazaar', 'en').plans.map((p) => p.key)).toEqual(['plus']);
+  });
+
+  it('describes each plan on sale in the asked language, then Persian, then English, with every switch and quota', () => {
+    const en = catalog.listing('play', 'en').plans;
+    expect(en.map((p) => p.key)).toEqual(['gold', 'plus']);
+    expect(en[0]).toMatchObject({ key: 'gold', rank: 3, sort: 1, name: 'طلایی', description: 'Everything', badge: 'popular' });
+    expect(en[1]).toMatchObject({ key: 'plus', name: 'Plus' });
+    expect(en[1]!.description).toBeUndefined();
+    expect(en[1]!.features).toMatchObject({ see_likes: true, travel_mode: false, audio_calls: true, video_calls: true });
+    expect(en[1]!.quotas).toEqual({ daily_likes: 100, weekly_superlikes: 0, daily_dm: 0, weekly_dm_gift: 0, monthly_boosts: 0 });
+    const tr = catalog.listing('play', 'tr').plans;
+    // The plan's own names win; the brand's names fill a locale the plan lacks.
+    expect(tr.find((p) => p.key === 'plus')?.name).toBe('Artı');
+    expect(tr.find((p) => p.key === 'gold')).toMatchObject({ name: 'طلایی', description: 'Her şey' });
+    expect(catalog.listing('play', 'fa').plans.find((p) => p.key === 'plus')?.name).toBe('پلاس');
+    expect(catalog.listing('play', 'en')).toBe(catalog.listing('play', 'en'));
+  });
+
+  it('moves its version with any plan field, product field or brand name', () => {
+    const plans = [plan({ id: 2, key: 'plus' }), plan({ id: 9, key: 'gold' })];
+    const base = new StoreCatalog(catalog.rows, plans);
+    expect(new StoreCatalog(catalog.rows, plans).version).toBe(base.version);
+    expect(new StoreCatalog(catalog.rows, [plan({ id: 2, key: 'plus' })]).version).not.toBe(base.version);
+    expect(new StoreCatalog(catalog.rows, [plan({ id: 2, key: 'plus', features: { daily_likes: 1 } }), plans[1]!]).version).not.toBe(base.version);
+    expect(new StoreCatalog(catalog.rows, [plan({ id: 2, key: 'plus', descriptions: { fa: 'x' } }), plans[1]!]).version).not.toBe(base.version);
+    expect(new StoreCatalog(catalog.rows, plans, { planNames: { plus: { en: 'P' } } }).version).not.toBe(base.version);
+    expect(new StoreCatalog(catalog.rows.map((r) => (r.id === 1 ? { ...r, sort: 99 } : r)), plans).version).not.toBe(base.version);
+  });
+
+  it('keeps an archived or inactive plan out of the listing, and its products findable', () => {
+    const archived = new StoreCatalog(catalog.rows, [plan({ id: 2, key: 'plus' }), plan({ id: 9, key: 'gold', active: false, archivedAtMs: NOW })]);
+    expect(archived.listing('play', 'en').plans.map((p) => p.key)).toEqual(['plus']);
+    expect(archived.listing('play', 'en').subscriptions.some((s) => s.plan === 'gold')).toBe(false);
+    expect(archived.find(1, 'sub.gold', 'x1')?.id).toBe(6);
+    expect(catalog.find(1, 'sub.old', 'm1')?.id).toBe(7);
+    expect(new StoreCatalog(catalog.rows, [plan({ id: 2, key: 'free' })]).listing('play', 'en').subscriptions).toEqual([]);
   });
 });
 

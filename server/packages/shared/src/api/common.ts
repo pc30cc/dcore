@@ -359,8 +359,13 @@ export const productIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._]{0,98}$/, 'm
 /** A Play subscription's base plan (`m1`); Cafe Bazaar has none. */
 export const basePlanIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'must be a base plan id');
 
+/** A plan key as `plans.key` holds it (its CHECK): `free`, `plus`, `premium` or any plan made in the panel. */
+export const PLAN_KEY = /^[a-z][a-z0-9_]{1,31}$/;
+export const planKeySchema = z.string().regex(PLAN_KEY, 'must be a plan key');
+
 export const entitlementsSchema = z.object({
-  plan: z.enum(['free', 'plus', 'premium']),
+  /** The key of the best plan the session counts (`free` when none); any plan key, not only the seeded ones. */
+  plan: planKeySchema,
   planExpiresAt: timeSchema.optional(),
   autoRenew: z.boolean().optional(),
   source: z.enum(['bazaar', 'play', 'grant']).optional(),

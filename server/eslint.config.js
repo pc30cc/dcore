@@ -66,7 +66,7 @@ export default defineConfig(
 
   // Tests may poke at values they just asserted on.
   {
-    files: ['**/test/**/*.ts'],
+    files: ['**/test/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/unbound-method': 'off',

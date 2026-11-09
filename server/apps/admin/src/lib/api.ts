@@ -1,71 +1,55 @@
-import type { FieldIssue } from '@app/shared';
-import { runtimeConfig } from './runtimeConfig';
-import { accessToken } from './session';
+import { refreshSession } from './auth';
+import { ApiError, send, type HttpMethod } from './http';
+import { accessToken, sessionState } from './session';
 
 /**
- * Calls to the admin API, at the origin `/config.js` names, with the admin's
- * access token. Errors come back as {@link ApiError}, read from the API's
- * problem documents (RFC 9457): the panel branches on `code`.
+ * Calls to the admin API with the signed-in admin's access token. A token
+ * about to run out is renewed first (one refresh for every caller at once);
+ * a 401 is retried once after a refresh, since the token may have been
+ * revoked or rotated meanwhile. When the refresh cookie is refused too, the
+ * session is over: the state turns `expired` and the panel asks to sign in.
  */
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly errors: readonly FieldIssue[];
-
-  constructor(status: number, code: string, message: string, errors: readonly FieldIssue[] = []) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-    this.errors = errors;
-  }
-}
-
-/** An error from a problem document's text (or a status alone when the body is not one). */
-export function problemError(status: number, text: string): ApiError {
-  try {
-    const body = JSON.parse(text) as { code?: unknown; detail?: unknown; title?: unknown; errors?: unknown };
-    const code = typeof body.code === 'string' ? body.code : `http_${status}`;
-    const message = typeof body.detail === 'string' ? body.detail : typeof body.title === 'string' ? body.title : `HTTP ${status}`;
-    const errors = Array.isArray(body.errors)
-      ? body.errors.filter((e): e is FieldIssue => typeof e === 'object' && e !== null && typeof (e as FieldIssue).pointer === 'string' && typeof (e as FieldIssue).message === 'string')
-      : [];
-    return new ApiError(status, code, message, errors);
-  } catch {
-    return new ApiError(status, `http_${status}`, `HTTP ${status}`);
-  }
-}
+export { ApiError, asApiError, isAbort, problemError } from './http';
 
 export interface RequestOptions {
-  method?: 'GET' | 'PUT' | 'POST' | 'PATCH' | 'DELETE';
+  method?: HttpMethod;
   body?: unknown;
   signal?: AbortSignal | undefined;
   /** Tests pass their own. */
   fetchFn?: typeof fetch;
 }
 
+function sessionOver(): ApiError {
+  return new ApiError(401, sessionState().status === 'expired' ? 'session_expired' : 'unauthorized', 'Sign in again.');
+}
+
+async function currentToken(): Promise<string> {
+  const held = accessToken();
+  if (held) return held;
+  if (!(await refreshSession())) throw sessionOver();
+  const renewed = accessToken();
+  if (!renewed) throw sessionOver();
+  return renewed;
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const config = runtimeConfig();
-  if (!config.ok) throw new ApiError(0, 'not_configured', config.reason);
-  const token = accessToken();
-  if (!token) throw new ApiError(401, 'unauthorized', 'Not signed in.');
-  const headers: Record<string, string> = { accept: 'application/json', authorization: `Bearer ${token}` };
-  if (options.body !== undefined) headers['content-type'] = 'application/json';
-  let response: Response;
-  try {
-    response = await (options.fetchFn ?? fetch)(`${config.config.apiOrigin}${path}`, {
-      method: options.method ?? 'GET',
-      headers,
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      credentials: 'omit',
+  const call = (token: string) =>
+    send<T>(path, {
+      token,
+      ...(options.method ? { method: options.method } : {}),
+      ...(options.body === undefined ? {} : { body: options.body }),
       ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
     });
+  const token = await currentToken();
+  try {
+    return await call(token);
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    throw new ApiError(0, 'unreachable', 'The API could not be reached.');
+    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    if (!(await refreshSession())) throw sessionOver();
+    const renewed = accessToken();
+    if (!renewed) throw sessionOver();
+    return call(renewed);
   }
-  const text = await response.text();
-  if (!response.ok) throw problemError(response.status, text);
-  return (text === '' ? undefined : JSON.parse(text)) as T;
 }

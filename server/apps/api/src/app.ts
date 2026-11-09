@@ -27,6 +27,7 @@ import type { ApiConfig } from './config.js';
 import { createReadinessProbe, type ReadinessProbe } from './lib/readiness.js';
 import { closeRedis, createRedis } from './lib/redis.js';
 import { accountServicesPlugin, type AccountServicesOptions } from './plugins/accountServices.js';
+import { adminAuthPlugin, type AdminAuthOptions } from './plugins/adminAuth.js';
 import { callsPlugin, type CallsOptions } from './plugins/calls.js';
 import { authPlugin } from './plugins/auth.js';
 import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
@@ -40,6 +41,9 @@ import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
 import { storePlugin, type StoreOptions } from './plugins/store.js';
 import { accountRoutes } from './routes/account.js';
+import { adminAccountRoutes } from './routes/adminAccounts.js';
+import { adminAuthRoutes } from './routes/adminAuth.js';
+import { adminCatalogRoutes } from './routes/adminCatalog.js';
 import { adminOriginsRoutes } from './routes/adminOrigins.js';
 import { adminRtcRoutes } from './routes/adminRtc.js';
 import { callRoutes } from './routes/calls.js';
@@ -126,6 +130,8 @@ export interface AppDependencies {
   store?: StoreOptions | undefined;
   /** The Pub/Sub push authenticator of Google Play's notifications (tests); otherwise from PLAY_RTDN_*. */
   playRtdn?: PlayRtdnOptions | undefined;
+  /** Password hashing and the TOTP clock of admin sign-in (tests). */
+  adminAuth?: AdminAuthOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -290,6 +296,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   });
   await app.register(originsPlugin, deps.origins ?? {});
   await app.register(authServicesPlugin, deps.authServices ?? {});
+  await app.register(adminAuthPlugin, deps.adminAuth ?? {});
   await app.register(callsPlugin, deps.calls ?? {});
   await app.register(storePlugin, deps.store ?? {});
 
@@ -310,6 +317,9 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(publicDeletionRoutes);
   await app.register(callRoutes);
   await app.register(livekitWebhookRoutes);
+  await app.register(adminAuthRoutes);
+  await app.register(adminAccountRoutes);
+  await app.register(adminCatalogRoutes);
   await app.register(adminRtcRoutes);
   await app.register(originsRoutes);
   await app.register(adminOriginsRoutes);

@@ -18,7 +18,8 @@
     "dev": "tsx watch --conditions=@app/source src/main.ts",
     "start": "node dist/main.js",
     "openapi": "tsx --conditions=@app/source src/scripts/print-openapi.ts",
-    "origins:keygen": "tsx --conditions=@app/source src/scripts/origins-keygen.ts"
+    "origins:keygen": "tsx --conditions=@app/source src/scripts/origins-keygen.ts",
+    "admin:create": "tsx --conditions=@app/source src/scripts/admin-create.ts"
   },
   "dependencies": {
     "@app/config": "workspace:*",

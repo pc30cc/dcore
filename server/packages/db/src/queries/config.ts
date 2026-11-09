@@ -44,13 +44,18 @@ export const configSnapshotSchema = z.object({
   prompts: z.array(
     z.object({ id: z.number().int().positive(), kind: z.number().int().min(1).max(2), sort: z.number().int(), active: z.boolean(), i18n }),
   ),
+  /** Every plan, archived ones too (a plan off sale still serves who holds it). */
   plans: z.array(
     z.object({
       id: z.number().int(),
       key: z.string(),
       rank: z.number().int(),
+      sort: z.number().int(),
       active: z.boolean(),
+      archivedAtMs: z.number().int().nullable(),
+      badge: z.number().int().min(0).max(3),
       names: i18n,
+      descriptions: i18n,
       features: z.record(z.string(), z.union([z.number(), z.boolean()])),
     }),
   ),
@@ -111,7 +116,9 @@ SELECT jsonb_build_object(
                 ORDER BY p.sort, p.id), '[]'::jsonb)
                 FROM prompt_defs p),
   'plans', (SELECT coalesce(jsonb_agg(jsonb_build_object(
-                 'id', p.id, 'key', p.key, 'rank', p.rank, 'active', p.is_active, 'names', p.names,
+                 'id', p.id, 'key', p.key, 'rank', p.rank, 'sort', p.sort, 'active', p.is_active,
+                 'archivedAtMs', (extract(epoch FROM p.archived_at) * 1000)::bigint, 'badge', p.badge,
+                 'names', p.names, 'descriptions', p.descriptions,
                  'features', (SELECT coalesce(jsonb_object_agg(f.feature, f.value), '{}'::jsonb) FROM plan_features f WHERE f.plan_id = p.id))
                ORDER BY p.rank), '[]'::jsonb)
               FROM plans p),

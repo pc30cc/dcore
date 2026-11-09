@@ -9,9 +9,11 @@ import { TokenError } from '../auth/tokens.js';
  * revoked token leaves the request without a principal, so `requireUser`
  * answers 401 and the app refreshes; a revoked session cannot refresh.
  *
- * When Valkey cannot be read the request goes on (logged): access tokens
- * live 15 minutes, and refusing everyone during a Valkey outage would take
- * the whole API down with it. `failClosed` turns that around.
+ * When Valkey cannot be read an app request goes on (logged): access
+ * tokens live 15 minutes, and refusing everyone during a Valkey outage would
+ * take the whole API down with it. `failClosed` turns that around; admin
+ * tokens always fail closed (a revoked admin session must never get through,
+ * and the panel cannot sign in without Valkey anyway).
  */
 
 export interface DenyListPluginOptions {
@@ -32,7 +34,7 @@ export const denyListPlugin = fp<DenyListPluginOptions>(
         verdict = await denyList.check(principal.sessionId, userId, principal.issuedAt);
       } catch (error) {
         request.log.warn({ err: error }, 'deny list unreadable');
-        if (!failClosed) return;
+        if (!failClosed && principal.kind !== 'admin') return;
         verdict = 'session_revoked';
       }
       if (verdict === 'allowed') return;

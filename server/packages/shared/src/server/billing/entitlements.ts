@@ -6,6 +6,7 @@ import { store as storeCodes, walletItem } from '../../codes.js';
 import { realtimeEnvelope, type RealtimeEnvelope } from '../../realtime.js';
 import { utcDay, type KeyBuilder } from '../kv/keys.js';
 import { isoWeek, quotaPeriod } from '../social/quota.js';
+import { FREE_PLAN_KEY } from '../../plans.js';
 
 /**
  * What a session may use: its plan (the best of its store's subscription
@@ -166,7 +167,7 @@ export function cachedPlanIds(raw: string | null): number[] | null {
 /** The best plan of a set of plan ids (free when none counts); a plan no longer sold still serves who holds it. */
 export function bestPlanOf<P extends PlanLike>(plans: readonly P[], planIds: readonly number[]): P | undefined {
   const ids = new Set(planIds);
-  return [...plans.filter((p) => ids.has(p.id) || p.key === 'free')].sort((a, b) => b.rank - a.rank)[0];
+  return [...plans.filter((p) => ids.has(p.id) || p.key === FREE_PLAN_KEY)].sort((a, b) => b.rank - a.rank)[0];
 }
 
 /** A numeric plan feature (a quota; -1 unlimited, missing 0). */
@@ -294,16 +295,6 @@ export async function walletChanged(redis: Redis, keys: KeyBuilder, userId: stri
 
 // ─── The wire object ──────────────────────────────────────────────────────
 
-const WIRE_PLANS = ['free', 'plus', 'premium'] as const;
-
-function wirePlan(plan: PlanLike | undefined, plans: readonly PlanLike[]): Entitlements['plan'] {
-  if (!plan) return 'free';
-  if ((WIRE_PLANS as readonly string[]).includes(plan.key)) return plan.key as Entitlements['plan'];
-  // A tier the contract does not name shows as the highest named tier it reaches.
-  const named = plans.filter((p) => (WIRE_PLANS as readonly string[]).includes(p.key) && p.rank <= plan.rank).sort((a, b) => b.rank - a.rank)[0];
-  return (named?.key as Entitlements['plan'] | undefined) ?? 'free';
-}
-
 /** The counted row that gives the plan: the session store's before a grant, then the later expiry. */
 export function sourceRow(base: EntitlementBase, planId: number | undefined): CountedSubscription | undefined {
   if (planId === undefined) return undefined;
@@ -323,8 +314,9 @@ export interface EntitlementsInput {
 
 export function buildEntitlements({ base, plans, use, manageUrl, now = Date.now() }: EntitlementsInput): Entitlements {
   const plan = bestPlanOf(plans, base.plans);
-  const key = wirePlan(plan, plans);
-  const row = key === 'free' ? undefined : sourceRow(base, plan?.id);
+  // Any plan key: a plan made in the panel is named as itself.
+  const key = plan?.key ?? FREE_PLAN_KEY;
+  const row = key === FREE_PLAN_KEY ? undefined : sourceRow(base, plan?.id);
   const source = row ? (row.store === 0 ? 'grant' : storeCodes.nameOrUndefined(row.store)) : undefined;
   const manage = row && row.store !== 0 ? manageUrl?.(row.store, row.productId) : undefined;
   // The plan's own product only for a row of this view's store: a build is never told another store's product.
@@ -351,7 +343,7 @@ export function buildEntitlements({ base, plans, use, manageUrl, now = Date.now(
 }
 
 /** Moves when the wire object gains or changes a field, so a 304 never keeps a body of an older shape. */
-const ENTITLEMENTS_WIRE_FORMAT = 2;
+const ENTITLEMENTS_WIRE_FORMAT = 3;
 
 /**
  * The ETag of the entitlements a base and the counters give, decided

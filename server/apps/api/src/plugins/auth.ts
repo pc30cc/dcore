@@ -24,7 +24,8 @@ declare module 'fastify' {
 
 const BEARER = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
-function unauthorized(failure: TokenError | null): HttpProblem {
+/** The 401 of a request without a usable token (`token_expired` when it only expired, so a client refreshes). */
+export function unauthorized(failure: TokenError | null): HttpProblem {
   if (failure?.reason === 'expired') {
     return new HttpProblem('token_expired', {
       headers: { 'www-authenticate': 'Bearer error="invalid_token", error_description="The access token expired"' },

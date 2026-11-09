@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { problemError } from '../src/lib/api';
 import { checkForm, formOf, problemsOf, requestOf } from '../src/lib/hosts';
-import { originOf, readRuntimeConfig } from '../src/lib/runtimeConfig';
+import { fontOf, originOf, readRuntimeConfig } from '../src/lib/runtimeConfig';
 
 describe('the run-time configuration (/config.js)', () => {
   it('takes the API and CDN origins the container wrote', () => {
     expect(readRuntimeConfig({ apiOrigin: 'https://api.example.com', cdnOrigin: 'https://cdn.example.com' }, false, undefined)).toEqual({
       ok: true,
-      config: { apiOrigin: 'https://api.example.com', cdnOrigin: 'https://cdn.example.com' },
+      config: { apiOrigin: 'https://api.example.com', cdnOrigin: 'https://cdn.example.com', persianFont: null },
     });
-    // admin-runtime.sh writes an empty CDN origin when none is configured.
-    expect(readRuntimeConfig({ apiOrigin: 'https://api.example.com', cdnOrigin: '' }, false, undefined)).toEqual({
+    // admin-runtime.sh writes empty values for what is not configured.
+    expect(readRuntimeConfig({ apiOrigin: 'https://api.example.com', cdnOrigin: '', persianFontCss: '', persianFontFamily: '' }, false, undefined)).toEqual({
       ok: true,
-      config: { apiOrigin: 'https://api.example.com', cdnOrigin: null },
+      config: { apiOrigin: 'https://api.example.com', cdnOrigin: null, persianFont: null },
     });
+  });
+
+  it('takes a run-time Persian font only as an https stylesheet with a family name', () => {
+    expect(
+      readRuntimeConfig({ apiOrigin: 'https://api.example.com', persianFontCss: 'https://fonts.example.com/kit/fa.css', persianFontFamily: 'Brand Sans' }, false, undefined),
+    ).toMatchObject({ ok: true, config: { persianFont: { cssUrl: 'https://fonts.example.com/kit/fa.css', family: 'Brand Sans' } } });
+    expect(fontOf('http://fonts.example.com/fa.css', 'Brand')).toBeNull();
+    expect(fontOf('https://fonts.example.com/fa.css?v=1', 'Brand')).toBeNull();
+    expect(fontOf('https://fonts.example.com/', 'Brand')).toBeNull();
+    expect(fontOf('https://fonts.example.com/fa.css', 'Brand"; x')).toBeNull();
+    expect(fontOf('https://fonts.example.com/fa.css', '')).toBeNull();
   });
 
   it('refuses a configuration without a usable API origin, and never falls back in a built panel', () => {
@@ -23,10 +34,10 @@ describe('the run-time configuration (/config.js)', () => {
   });
 
   it('uses VITE_API_BASE_URL, else the local API, on a development server', () => {
-    expect(readRuntimeConfig(undefined, true, undefined)).toEqual({ ok: true, config: { apiOrigin: 'http://localhost:8080', cdnOrigin: null } });
+    expect(readRuntimeConfig(undefined, true, undefined)).toEqual({ ok: true, config: { apiOrigin: 'http://localhost:8080', cdnOrigin: null, persianFont: null } });
     expect(readRuntimeConfig(undefined, true, 'https://staging-api.example.com')).toEqual({
       ok: true,
-      config: { apiOrigin: 'https://staging-api.example.com', cdnOrigin: null },
+      config: { apiOrigin: 'https://staging-api.example.com', cdnOrigin: null, persianFont: null },
     });
     // The file wins over the development default when a server provides one.
     expect(readRuntimeConfig({ apiOrigin: 'https://api.example.com' }, true, undefined)).toMatchObject({ ok: true, config: { apiOrigin: 'https://api.example.com' } });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { appStores, productBadge, purchaseState, walletItem } from '../codes.js';
-import { basePlanIdSchema, entitlementsSchema, idSchema, productIdSchema, timeSchema } from './common.js';
+import { planFlagsSchema, planQuotasSchema } from '../plans.js';
+import { basePlanIdSchema, entitlementsSchema, idSchema, planKeySchema, productIdSchema, timeSchema } from './common.js';
 
 /**
  * The store routes (§3.12): the catalogue of the session's store, purchases
@@ -9,7 +10,6 @@ import { basePlanIdSchema, entitlementsSchema, idSchema, productIdSchema, timeSc
  * the server verified them with the store.
  */
 
-export const planKeySchema = z.enum(['plus', 'premium']);
 export const billingPeriodSchema = z.enum(['P1W', 'P1M', 'P3M', 'P6M', 'P12M']);
 export const productBadgeSchema = z.enum(productBadge.publicNames as ['popular', 'best_value', 'new']);
 export const purchaseKindSchema = z.enum(['subscription', 'consumable']);
@@ -41,10 +41,36 @@ export const consumableProductSchema = z.object({
 });
 export type ConsumableProduct = z.infer<typeof consumableProductSchema>;
 
-/** `GET /v1/store/products`: the active products of the session's store. */
+/**
+ * A plan on sale in the session's store: what the paywall shows of it. The
+ * name and description are in the session's language (else Persian, else
+ * English); `features` and `quotas` list every switch and quota the server
+ * knows (-1 unlimited), so the app can show what the plan gives. Its
+ * periods are the `subscriptions` that name its key. A client handles any
+ * key, and ignores a feature or quota it has no text for.
+ */
+export const storePlanSchema = z.object({
+  key: planKeySchema,
+  /** Upgrade order: a higher rank is a better plan (free is 0). */
+  rank: z.number().int().min(0),
+  /** Display order on the paywall (ascending). */
+  sort: z.number().int(),
+  /** At most PLAN_NAME_MAX characters when the panel wrote it (a brand file's name is not cut). */
+  name: z.string().min(1),
+  /** At most PLAN_DESCRIPTION_MAX characters. */
+  description: z.string().min(1).optional(),
+  badge: productBadgeSchema.optional(),
+  features: planFlagsSchema,
+  quotas: planQuotasSchema,
+});
+export type StorePlan = z.infer<typeof storePlanSchema>;
+
+/** `GET /v1/store/products`: the plans on sale and the active products of the session's store. */
 export const storeProductsSchema = z.object({
   store: z.enum(appStores),
   billingRef: billingRefSchema,
+  /** The plans with at least one subscription listed below, by `sort`. */
+  plans: z.array(storePlanSchema),
   subscriptions: z.array(subscriptionProductSchema),
   consumables: z.array(consumableProductSchema),
 });

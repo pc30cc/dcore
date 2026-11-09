@@ -96,6 +96,12 @@ const envSchema = z
     AUTH_JWT_PRIVATE_KEY: pem('PRIVATE KEY').optional(),
     AUTH_JWT_PUBLIC_KEY: pem('PUBLIC KEY').optional(),
     AUTH_JWT_SECRET: base64urlSecret.optional(),
+    /** Admin access tokens (in the panel's memory); never longer than AUTH_ACCESS_TOKEN_TTL_SECONDS. */
+    ADMIN_ACCESS_TOKEN_TTL_SECONDS: envInt(600, { min: 60, max: 3_600 }),
+    /** An admin session (the refresh cookie) ends this long after its last refresh. */
+    ADMIN_SESSION_IDLE_HOURS: envInt(12, { min: 1, max: 72 }),
+    /** And at the latest this long after the sign-in, however often it refreshes. */
+    ADMIN_SESSION_MAX_DAYS: envInt(7, { min: 1, max: 30 }),
     /** The previous key during a rotation: still accepted, never used to sign. */
     AUTH_JWT_PREVIOUS_KID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(),
     AUTH_JWT_PREVIOUS_PUBLIC_KEY: pem('PUBLIC KEY').optional(),
@@ -178,6 +184,12 @@ const envSchema = z
     if (env.PG_BUDGET === 'enforce' && env.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', path: ['PG_BUDGET'], message: 'enforce refuses statements: tests only' });
     }
+    if (env.ADMIN_ACCESS_TOKEN_TTL_SECONDS > env.AUTH_ACCESS_TOKEN_TTL_SECONDS) {
+      ctx.addIssue({ code: 'custom', path: ['ADMIN_ACCESS_TOKEN_TTL_SECONDS'], message: 'may not be longer than AUTH_ACCESS_TOKEN_TTL_SECONDS' });
+    }
+    if (env.ADMIN_SESSION_IDLE_HOURS > env.ADMIN_SESSION_MAX_DAYS * 24) {
+      ctx.addIssue({ code: 'custom', path: ['ADMIN_SESSION_IDLE_HOURS'], message: 'may not be longer than ADMIN_SESSION_MAX_DAYS' });
+    }
     if (env.AUTH_JWT_PREVIOUS_KID !== undefined && env.AUTH_JWT_PREVIOUS_KID === env.AUTH_JWT_KID) {
       ctx.addIssue({ code: 'custom', path: ['AUTH_JWT_PREVIOUS_KID'], message: 'must differ from AUTH_JWT_KID' });
     }
@@ -256,6 +268,8 @@ export interface ApiConfig {
     current: SigningKeyConfig;
     previous?: SigningKeyConfig | undefined;
   };
+  /** Admin sign-in: the access token's lifetime and the session's idle and absolute limits. */
+  admin: { accessTokenTtlSeconds: number; sessionIdleSeconds: number; sessionMaxSeconds: number };
   ids: { publicKey: string; billingKey: string };
   secrets: { hashPeppers: string; hashPepperKid: number; dataKeys: string; dataKeyId: number };
   edgeTrust: string;
@@ -347,6 +361,11 @@ export function loadConfig(source: Env = process.env): ApiConfig {
             secret: env.AUTH_JWT_PREVIOUS_SECRET,
           }
         : undefined,
+    },
+    admin: {
+      accessTokenTtlSeconds: env.ADMIN_ACCESS_TOKEN_TTL_SECONDS,
+      sessionIdleSeconds: env.ADMIN_SESSION_IDLE_HOURS * 3_600,
+      sessionMaxSeconds: env.ADMIN_SESSION_MAX_DAYS * 86_400,
     },
     ids: { publicKey: env.ID_PUBLIC_KEY, billingKey: env.ID_BILLING_KEY },
     secrets: {
