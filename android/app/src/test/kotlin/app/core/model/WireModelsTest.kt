@@ -45,6 +45,7 @@ class WireModelsTest {
         "entitlements" to Entitlements.serializer(),
         "entitlements-free" to Entitlements.serializer(),
         "export" to ExportStarted.serializer(),
+        "export-status" to ExportStatus.serializer(),
         "google-nonce" to GoogleNonce.serializer(),
         "likes" to LikesPage.serializer(),
         "location" to LocationResult.serializer(),

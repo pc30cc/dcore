@@ -80,14 +80,32 @@ class SharedFixturesTest {
         "restore-account" to RestoredAccount.serializer(),
         "settings" to Settings.serializer(),
         "token-pair" to TokenPair.serializer(),
+        "export-started" to ExportStarted.serializer(),
+        "export-status" to ExportStatus.serializer(),
     )
 
-    /** Realtime payloads (`d`) the app already models; the event envelopes themselves come with the realtime client. */
+    /** The model of every realtime event's payload (`d`). A fixture with no entry fails [everyRealtimePayloadDecodesWithoutFallingBack]. */
     private val realtimePayloads: Map<String, KSerializer<*>> = mapOf(
-        "message" to Message.serializer(),
-        "call" to Call.serializer(),
-        "entitlement" to Entitlements.serializer(),
+        RealtimeTypes.MESSAGE to Message.serializer(),
+        RealtimeTypes.RECEIPT to ReceiptEvent.serializer(),
+        RealtimeTypes.TYPING to TypingEvent.serializer(),
+        RealtimeTypes.CONVERSATION to ConversationEvent.serializer(),
+        RealtimeTypes.CONVERSATION_END to ConversationEndEvent.serializer(),
+        RealtimeTypes.LIKE to LikeEvent.serializer(),
+        RealtimeTypes.REQUEST to RequestEvent.serializer(),
+        RealtimeTypes.CALL to Call.serializer(),
+        RealtimeTypes.ENTITLEMENT to Entitlements.serializer(),
+        RealtimeTypes.PROFILE to ProfileEvent.serializer(),
+        RealtimeTypes.ACCOUNT to AccountEvent.serializer(),
+        RealtimeTypes.SUPPORT to SupportEvent.serializer(),
+        RealtimeTypes.CONFIG to ConfigEvent.serializer(),
     )
+
+    /** The `const val` strings of an object of constants (`RealtimeTypes`, `PushTypes`, `ProblemCodes`). */
+    private fun constants(holder: Any): Set<String> = holder.javaClass.declaredFields
+        .filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && it.type == String::class.java }
+        .map { it.isAccessible = true; it.get(null) as String }
+        .toSet()
 
     @Suppress("UNCHECKED_CAST")
     private fun roundTrip(serializer: KSerializer<*>, json: String): JsonElement {
@@ -170,21 +188,60 @@ class SharedFixturesTest {
     }
 
     @Test
-    fun realtimePayloadsAndPushDataDecode() {
-        assertTrue(names("realtime").containsAll(realtimePayloads.keys))
+    fun everyRealtimePayloadDecodesWithoutFallingBack() {
+        val files = names("realtime")
+        assertEquals("realtime fixtures without a model", emptyList<String>(), files - realtimePayloads.keys)
+        assertEquals("models without a realtime fixture", emptyList<String>(), (realtimePayloads.keys - files.toSet()).toList())
+        assertEquals("envelope types this build names", files.toSet(), constants(RealtimeTypes))
         for ((type, serializer) in realtimePayloads) {
             val envelope = Wire.json.parseToJsonElement(text("realtime", type)).jsonObject
             assertEquals(type, envelope["t"]?.stringOrNull)
-            val back = roundTrip(serializer, envelope["d"].toString())
+            assertEquals("$type: envelope version", 1, envelope["v"]?.intOrNull)
+            val back = try {
+                roundTrip(serializer, envelope["d"].toString())
+            } catch (e: SerializationException) {
+                fail("$type did not decode: ${e.message}")
+                return
+            }
             assertFalse("$type has a value this build does not know", strings(back).any { it == "unknown" })
+            assertTrue("$type: the realtime decoder drops it", RealtimeEvents.decode(Wire.json.parseToJsonElement(text("realtime", type))) != null)
         }
-        val pushes = names("push")
-        assertTrue(pushes.containsAll(listOf("call_incoming", "call_cancel", "message", "match")))
+    }
+
+    @Test
+    fun everyPushParsesToAKnownType() {
+        val files = names("push")
+        assertEquals("push types this build names", files.toSet(), constants(PushTypes))
         val stringMap = MapSerializer(String.serializer(), String.serializer())
-        for (type in pushes) {
+        for (type in files) {
             // FCM data is a string map: every value must be a string.
-            val data = Wire.json.decodeFromString(stringMap, text("push", type))
+            val data = try {
+                Wire.json.decodeFromString(stringMap, text("push", type))
+            } catch (e: SerializationException) {
+                fail("$type is not a string map: ${e.message}")
+                return
+            }
             assertEquals(type, data["type"])
+            val push = PushData.parse(data)
+            assertTrue("$type did not parse: $push", push != null && push !is PushData.Unknown)
+            assertEquals(type, push!!.type)
         }
+    }
+
+    /**
+     * The problem codes the server can send (`server/packages/shared/src/problem.ts`,
+     * its catalogue) and this build's [ProblemCodes]: the same set, so no
+     * refusal is read by its HTTP status alone and no branch waits for a
+     * code that never comes.
+     */
+    @Test
+    fun theProblemCodesAreTheServersCatalogue() {
+        val source = File(root, "../src/problem.ts").readText()
+        val block = source.substringAfter("const catalogue = {").substringBefore("} as const")
+        val server = Regex("^\\s+([a-z_]+): \\[(\\d{3}),", RegexOption.MULTILINE).findAll(block).map { it.groupValues[1] }.toSet()
+        assertTrue("the catalogue was read", server.size > 40)
+        val ours = constants(ProblemCodes)
+        assertEquals("codes the server sends that this build does not name", emptySet<String>(), server - ours)
+        assertEquals("codes this build names that the server never sends", emptySet<String>(), ours - server)
     }
 }

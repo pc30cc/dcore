@@ -41,6 +41,7 @@ import app.core.model.DiscoveryPreferences
 import app.core.model.Entitlements
 import app.core.model.EventsRequest
 import app.core.model.ExportStarted
+import app.core.model.ExportStatus
 import app.core.model.Gender
 import app.core.model.GoogleNonce
 import app.core.model.GoogleSignInRequest
@@ -602,6 +603,10 @@ class HttpServerApi(
 
     override suspend fun requestExport(): ExportStarted =
         client.post("me.export", "v1/me/export", ExportStarted.serializer(), Idempotency.KEYED).value
+
+    override suspend fun exportStatus(): ExportStatus =
+        // Not cached: a stored "ready" would outlive its link.
+        client.get("me.export.status", "v1/me/export", ExportStatus.serializer()).value
 
     override suspend fun sendEvents(events: List<AppEvent>) {
         require(events.size <= MAX_EVENTS) { "at most $MAX_EVENTS events per request, got ${events.size}" }

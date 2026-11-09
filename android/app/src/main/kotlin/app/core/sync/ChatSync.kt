@@ -4,6 +4,7 @@ import app.core.common.Clock
 import app.core.common.Diag
 import app.core.common.runCatchingUnlessCancelled
 import app.core.model.Conversation
+import app.core.model.ConversationChange
 import app.core.model.ConversationPatch
 import app.core.model.Id
 import app.core.model.MessageKind
@@ -45,7 +46,10 @@ data class ChatTiming(
     val fallbackFirstMs: Long = 60_000L,
     val fallbackMaxMs: Long = 5 * 60_000L,
     val readDebounceMs: Long = 700,
+    /** The server takes one read pointer per conversation every 2 s (more answer 429): a later move waits its turn. */
+    val receiptSpacingMs: Long = 2_000,
     val deliveredDebounceMs: Long = 3_000,
+    /** The server takes one typing signal per person every 3 s, whichever conversation. */
     val typingThrottleMs: Long = 3_000,
     val typingShownMs: Long = 5_000,
     /** Waits between delivery attempts of one outbox row (then the last, until it expires). */
@@ -80,12 +84,15 @@ data class ListSyncState(
  *  - **While realtime fails** and the app is in front, the list is read on a
  *    fallback timer from 60 s doubling to 5 minutes, and the open thread
  *    with it. Never in the background.
- *  - **Read receipts** are debounced (700 ms), sent only when the pointer
- *    moves, and only while the thread is on screen with the app in front.
+ *  - **Read receipts** are debounced (700 ms), at most one per conversation
+ *    every 2 s (the server's limit; a refused one is sent again after its
+ *    `Retry-After`), sent only when the pointer moves, and only while the
+ *    thread is on screen with the app in front.
  *    Delivered pointers go out for the peer's messages that arrive while
  *    another screen is in front, debounced per conversation.
- *  - **Typing** goes out at most once every 3 s while composing, and only
- *    while the socket is up (the peer's arrives over it).
+ *  - **Typing** goes out at most once every 3 s while composing (per person,
+ *    as the server counts it), and only while the socket is up (the peer's
+ *    arrives over it).
  *  - **Sends** run in the app's scope (leaving the screen does not strand a
  *    bubble), retried with backoff while the network is away and for no
  *    longer than the outbox's 10-minute window.
@@ -134,7 +141,9 @@ class ChatSync(
     private val deliveredJobs = ConcurrentHashMap<Id, Job>()
     private val deliveredUpTo = ConcurrentHashMap<Id, Long>()
     private val readSent = ConcurrentHashMap<Id, Long>()
-    private val typingSentAt = ConcurrentHashMap<Id, Long>()
+    /** When the last read receipt of each conversation went out, for the server's spacing. */
+    private val readSentAt = ConcurrentHashMap<Id, Long>()
+    @Volatile private var typingSentAt: Long? = null
     private val sendJobs = ConcurrentHashMap<String, Job>()
     private var missingRead: Job? = null
     private var owed = false
@@ -253,7 +262,12 @@ class ChatSync(
             }
             is RealtimeEvent.ReceiptMoved -> conversations.applyReceipt(who, event.receipt)
             is RealtimeEvent.PeerTyping -> if (event.typing.by != who) showTyping(event.typing.conversationId)
-            is RealtimeEvent.ConversationChanged -> conversations.upsert(who, event.change.conversation)
+            is RealtimeEvent.ConversationChanged -> {
+                val change = event.change
+                conversations.upsert(who, change.conversation)
+                // An accepted request is a conversation now, on whichever side or phone it was accepted.
+                if (change.reason == ConversationChange.Accepted) requests.onAccepted(change.conversation.peer.id)
+            }
             is RealtimeEvent.ConversationEnded -> {
                 val id = event.conversationId
                 if (visible.value == id) conversations.end(who, id) else conversations.remove(who, id)
@@ -363,10 +377,12 @@ class ChatSync(
     /** The person sees the thread: tell the server how far they read, once it settles. */
     fun markSeen(conversationId: Id) = scheduleRead(conversationId)
 
-    private fun scheduleRead(conversationId: Id) {
+    private fun scheduleRead(conversationId: Id, notBeforeMs: Long = 0) {
         readJobs[conversationId]?.cancel()
         readJobs[conversationId] = scope.launch {
-            delay(timing.readDebounceMs)
+            val since = readSentAt[conversationId]?.let { clock.nowMillis() - it }
+            val spacing = if (since == null) 0L else (timing.receiptSpacingMs - since).coerceAtLeast(0)
+            delay(maxOf(timing.readDebounceMs, spacing, notBeforeMs))
             if (isViewing(conversationId)) sendRead(conversationId)
         }
     }
@@ -381,14 +397,24 @@ class ChatSync(
         if ((row?.myReadId ?: 0) >= newest || newest <= (readSent[conversationId] ?: 0)) return
         try {
             api.sendReceipts(conversationId, ReceiptsRequest(readUpTo = newest.toString()))
+            readSentAt[conversationId] = clock.nowMillis()
             readSent[conversationId] = newest
             deliveredUpTo.remove(conversationId)
             conversations.markRead(who, conversationId, newest)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiError) {
-            // Sent again the next time the thread is seen, or the network returns.
             diag.info(AREA, "read receipt not sent: ${e.code ?: e.javaClass.simpleName}")
+            val http = e as? ApiError.Http ?: return // Sent again the next time the thread is seen, or the network returns.
+            when (http.status) {
+                // Too soon after the last one: again once the server takes one.
+                STATUS_TOO_MANY -> scheduleRead(
+                    conversationId,
+                    notBeforeMs = maxOf(timing.receiptSpacingMs, (http.problem.retryAfterSeconds ?: 0) * 1_000),
+                )
+                // The conversation ended (404 for a receipt, as for every action on it).
+                STATUS_NOT_FOUND, STATUS_GONE -> conversations.end(who, conversationId)
+            }
         }
     }
 
@@ -409,9 +435,9 @@ class ChatSync(
     fun typed(conversationId: Id) {
         if (_health.value != RealtimeHealth.CONNECTED) return
         val now = clock.nowMillis()
-        val last = typingSentAt[conversationId]
+        val last = typingSentAt
         if (last != null && now - last < timing.typingThrottleMs) return
-        typingSentAt[conversationId] = now
+        typingSentAt = now
         scope.launch { runCatchingUnlessCancelled { api.sendTyping(conversationId) } }
     }
 
@@ -464,6 +490,11 @@ class ChatSync(
                 when (val outcome = messages.deliver(who, localId)) {
                     is SendOutcome.Sent -> {
                         outcome.message?.let { conversations.onMessage(who, it, viewing = true) }
+                        break
+                    }
+                    SendOutcome.Closed -> {
+                        // 404 or 410: the conversation ended (the server never says how); nothing more goes in it.
+                        messages.message(who, localId)?.let { conversations.end(who, it.conversationId) }
                         break
                     }
                     is SendOutcome.RetryLater -> {
@@ -564,7 +595,8 @@ class ChatSync(
         deliveredJobs.clear()
         deliveredUpTo.clear()
         readSent.clear()
-        typingSentAt.clear()
+        readSentAt.clear()
+        typingSentAt = null
         sendJobs.values.forEach { it.cancel() }
         sendJobs.clear()
         missingRead?.cancel()
@@ -573,5 +605,8 @@ class ChatSync(
     private companion object {
         const val AREA = "Sync"
         const val MAX_REPORTED = 20
+        const val STATUS_NOT_FOUND = 404
+        const val STATUS_GONE = 410
+        const val STATUS_TOO_MANY = 429
     }
 }

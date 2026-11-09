@@ -170,9 +170,8 @@ enum class CallEnd {
         fun refusal(error: Throwable): CallEnd = when (error) {
             is ApiError.Network -> OFFLINE
             is ApiError.Http -> when {
+                // A busy callee is never refused: the call rings and ends as missed for both.
                 error.status == 409 && error.code == ProblemCodes.CALLER_BUSY -> CALLER_BUSY
-                // Never sent for a busy callee by contract; if it is, it reads as unanswered.
-                error.status == 409 && error.code == ProblemCodes.CALLEE_BUSY -> NO_ANSWER
                 error.status == 403 && error.code == ProblemCodes.CALLS_NOT_ALLOWED -> when (error.problem.reason) {
                     "disabled" -> CALLS_OFF
                     "plan" -> NEEDS_PLAN

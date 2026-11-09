@@ -140,6 +140,7 @@
     <string name="requests_withdraw">Withdraw</string>
     <string name="requests_report">Report</string>
     <string name="requests_pending">Waiting for an answer</string>
+    <string name="requests_expired">No answer in time</string>
     <string name="requests_declined">Declined. They won\'t be told.</string>
     <string name="requests_withdrawn">Withdrawn.</string>
     <string name="requests_load_failed">Couldn\'t load message requests</string>
@@ -160,6 +161,7 @@
     <string name="request_open_chat">Open the conversation</string>
     <string name="request_quota">You\'ve used today\'s messages to people you haven\'t matched.</string>
     <string name="request_quota_at">You\'ve used today\'s messages to people you haven\'t matched. More at %1$s.</string>
+    <string name="request_daily_cap">You\'ve reached today\'s limit for first messages. Try again tomorrow.</string>
     <string name="request_refused">This message can\'t be sent. Keep it kind and respectful.</string>
     <string name="request_unavailable">This profile isn\'t available.</string>
     <string name="request_failed">Couldn\'t send. Try again.</string>

@@ -230,9 +230,14 @@ enum class LikeKind(override val wire: String) : WireEnum {
     internal object Serializer : WireEnumSerializer<LikeKind>("LikeKind", LikeKind.entries.toTypedArray(), LikeKind.Unknown)
 }
 
+/**
+ * A message request's state. A sender never sees [Declined]: the server
+ * shows a declined request as [Pending], then as [Expired] once an unanswered
+ * one would have expired.
+ */
 @Serializable(with = RequestStatus.Serializer::class)
 enum class RequestStatus(override val wire: String) : WireEnum {
-    Pending("pending"), Accepted("accepted"), Declined("declined"), Withdrawn("withdrawn"), Unknown("");
+    Pending("pending"), Accepted("accepted"), Declined("declined"), Expired("expired"), Withdrawn("withdrawn"), Unknown("");
 
     internal object Serializer : WireEnumSerializer<RequestStatus>("RequestStatus", RequestStatus.entries.toTypedArray(), RequestStatus.Unknown)
 }

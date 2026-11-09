@@ -107,6 +107,7 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                     RequestSendResult.AlreadySent -> brandString(R.string.request_already, name)
                     RequestSendResult.AlreadyMatched -> brandString(R.string.request_matched)
                     is RequestSendResult.OutOfQuota -> r.resetsAt?.let { brandString(R.string.request_quota_at, time(it)) } ?: brandString(R.string.request_quota)
+                    is RequestSendResult.TooMany -> brandString(R.string.request_daily_cap)
                     RequestSendResult.Refused -> brandString(R.string.request_refused)
                     RequestSendResult.Unavailable -> brandString(R.string.request_unavailable)
                     is RequestSendResult.Failed -> brandString(if (r.offline) R.string.chat_action_offline else R.string.request_failed)

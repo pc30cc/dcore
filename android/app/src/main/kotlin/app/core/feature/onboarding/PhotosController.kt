@@ -167,7 +167,7 @@ class PhotosController(
                     onChanged()
                 }
                 .onFailure { e ->
-                    val minimum = (e as? ApiError.Http)?.code.let { it == ProblemCodes.PHOTO_MIN || it == ProblemCodes.LAST_PHOTO }
+                    val minimum = (e as? ApiError.Http)?.code == ProblemCodes.PHOTO_MIN
                     _state.update { it.copy(error = if (minimum) null else errorOf(e), keepMinimum = minimum) }
                 }
             _state.update { it.copy(busy = false) }

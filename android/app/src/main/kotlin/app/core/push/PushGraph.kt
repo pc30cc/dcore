@@ -15,7 +15,9 @@ import app.core.i18n.AppLocales
 import app.core.model.Config
 import app.core.model.Id
 import app.core.model.PublicUid
+import app.core.model.RequestBox
 import app.core.net.ServerApi
+import app.core.realtime.RealtimeHealth
 import app.core.storage.SecretStore
 import app.core.sync.ChatSync
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +72,11 @@ class PushGraph(
             }
             override suspend fun listChanged() {
                 scope.launch { chat.reconcile("push") }
+            }
+            override suspend fun requestArrived() {
+                // Over a connected socket the `request` event has put it in the inbox already.
+                if (chat.health.value == RealtimeHealth.CONNECTED) return
+                scope.launch { chat.requests.refresh(RequestBox.Inbox) }
             }
         },
         diag = diag,

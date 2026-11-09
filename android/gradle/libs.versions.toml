@@ -39,6 +39,11 @@ firebaseBom = "34.19.0"
 playServicesBasement = "18.9.0"
 # One-off jobs with a network constraint (push registration), never polling.
 work = "2.11.2"
+# Ed25519 verification of the signed origins list (minSdk 24 has no platform
+# Ed25519). Only subtle.Ed25519Verify is used; after R8 it costs about 18 KB of
+# dex, against about 35 KB for bcprov's rfc8032.Ed25519 (measured 2026-11-09,
+# R8 9.4, min-api 24). Maven Central, released 2026-10-16.
+tink = "1.24.0"
 
 # Store SDKs. Each is a dependency of ONE flavor only (app/build.gradle.kts),
 # and tools/check-store-separation.sh proves the other flavor's APK has none
@@ -78,6 +83,7 @@ firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.r
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 play-services-basement = { group = "com.google.android.gms", name = "play-services-basement", version.ref = "playServicesBasement" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 # ProcessLifecycleOwner: whether the app is in front (one realtime socket only then).
 androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
 

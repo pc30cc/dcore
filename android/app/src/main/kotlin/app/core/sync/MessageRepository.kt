@@ -527,15 +527,20 @@ class MessageRepository(
 
     /**
      * Tap to retry: the same client id, a fresh time window, and the bubble
-     * moves to the end of the thread.
+     * moves to the end of the thread. The one exception is a client id the
+     * server refused as already spent (`409 conflict`: it named a message in
+     * another conversation): no message was made with it here, so the retry
+     * gets a new one rather than the same refusal for ever.
      */
     suspend fun retry(account: PublicUid, localId: String): Boolean = store.write("retry") { db ->
         val row = db.messages().get(account, localId) ?: return@write false
         if (row.sendState != SendState.FAILED.code) return@write false
         val now = clock.nowMillis()
+        val clientId = if (row.errorCode == ProblemCodes.CONFLICT) newClientId() else row.clientId
         db.messages().upsert(
             listOf(
                 row.copy(
+                    clientId = clientId,
                     sendState = SendState.PENDING.code,
                     errorCode = null,
                     confirmToken = null,

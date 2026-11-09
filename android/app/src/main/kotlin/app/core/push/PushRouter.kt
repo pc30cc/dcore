@@ -24,8 +24,11 @@ interface PushChatHooks {
     /** A message the phone may not have yet: its thread is read when next opened. */
     suspend fun messageArrived(conversationId: Id)
 
-    /** A new match or request: the list (and the requests) are read again. */
+    /** A new match: the conversation list is read again (normally answered 304 or with the new row). */
     suspend fun listChanged()
+
+    /** A message request arrived: the inbox is read again unless realtime already brought it. */
+    suspend fun requestArrived()
 }
 
 /**
@@ -74,8 +77,13 @@ class PushRouter(
                     PushHandled.Shown
                 }
             }
-            is PushData.NewMatch, is PushData.NewRequest -> {
+            is PushData.NewMatch -> {
                 chat.listChanged()
+                notifications.show(push, title, body)
+                PushHandled.Shown
+            }
+            is PushData.NewRequest -> {
+                chat.requestArrived()
                 notifications.show(push, title, body)
                 PushHandled.Shown
             }

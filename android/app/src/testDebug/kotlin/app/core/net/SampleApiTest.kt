@@ -429,4 +429,50 @@ class SampleApiTest {
         assertEquals(listOf("config", "me", "conversations"), api.requestLog)
         assertTrue(api.requestLog.none { it.any(Char::isDigit) })
     }
+
+    @Test
+    fun aClientIdNamesOneMessageAndOneRequestForGood() = runTest {
+        val api = SampleApi(clock = clock)
+        val (a, b) = api.conversations().value.items.take(2)
+        val request = SendMessageRequest(UUID.randomUUID().toString(), MessageKind.Text, "hi")
+        val sent = api.sendMessage(a.id, request)
+        // The same id for another conversation is refused, never answered with the first one's message.
+        expectProblem(409, ProblemCodes.CONFLICT) { api.sendMessage(b.id, request) }
+        assertEquals(sent.message, api.sendMessage(a.id, request).message)
+
+        val cards = api.deck().cards
+        val stranger = cards[0].id
+        val other = cards[1].id
+        val first = api.sendMessageRequest(stranger, "Hello there", "c-request-1")
+        expectProblem(409, ProblemCodes.CONFLICT) { api.sendMessageRequest(other, "Hello there", "c-request-1") }
+        assertEquals(first, api.sendMessageRequest(stranger, "Hello there", "c-request-1"))
+    }
+
+    @Test
+    fun theExportIsAskedOnceAWeekReadyAfterItIsBuiltAndAnnouncedOnce() = runTest {
+        val api = SampleApi(clock = clock)
+        assertEquals(app.core.model.ExportState.None, api.exportStatus().status)
+        val started = api.requestExport()
+        assertEquals("a repeat within minutes is the same export", started, api.requestExport())
+        assertEquals(app.core.model.ExportState.Pending, api.exportStatus().status)
+
+        clock.advance(10_000)
+        val before = api.channel.top
+        val ready = api.exportStatus()
+        assertEquals(app.core.model.ExportState.Ready, ready.status)
+        val link = ready.link(clock.now())!!
+        assertTrue(link, link.startsWith("https://") && started.exportId in link)
+        roundTrips(ready, app.core.model.ExportStatus.serializer())
+        val announced = api.channel.since(before, api.channel.epoch)!!.map { Wire.json.parseToJsonElement(it.second) }
+            .mapNotNull { app.core.model.RealtimeEvents.decode(it) as? app.core.model.RealtimeEvent.AccountChanged }
+        assertEquals(link, announced.single().account.export?.url)
+        api.exportStatus()
+        assertEquals("announced once", before + 1, api.channel.top)
+
+        clock.advance(5 * 60_000)
+        val again = expectProblem(429, ProblemCodes.RATE_LIMITED) { api.requestExport() }
+        assertTrue((again.problem.retryAfterSeconds ?: 0) > 6 * 24 * 3600)
+        clock.advance(24L * 3600 * 1000)
+        assertEquals("the link ran out", app.core.model.ExportState.None, api.exportStatus().status)
+    }
 }

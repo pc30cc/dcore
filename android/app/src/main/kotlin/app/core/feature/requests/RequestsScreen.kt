@@ -71,6 +71,7 @@ import app.core.model.Id
 import app.core.model.MessageRequest
 import app.core.model.ReportReason
 import app.core.model.RequestBox
+import app.core.model.RequestStatus
 import app.core.ui.components.EmptyState
 import app.core.ui.theme.Space
 import java.time.LocalDate
@@ -281,14 +282,18 @@ private fun RequestCard(
                     }
                 }
             } else {
+                // The sender sees waiting, then unanswered; never whether it was declined.
+                val expired = request.status == RequestStatus.Expired
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        brandString(R.string.requests_pending),
+                        brandString(if (expired) R.string.requests_expired else R.string.requests_pending),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    OutlinedButton(onClick = { actions.withdraw(request) }, enabled = !working) { Text(brandString(R.string.requests_withdraw)) }
+                    if (!expired) {
+                        OutlinedButton(onClick = { actions.withdraw(request) }, enabled = !working) { Text(brandString(R.string.requests_withdraw)) }
+                    }
                 }
             }
         }

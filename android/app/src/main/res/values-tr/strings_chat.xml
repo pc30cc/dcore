@@ -135,6 +135,7 @@
     <string name="requests_withdraw">Geri çek</string>
     <string name="requests_report">Bildir</string>
     <string name="requests_pending">Yanıt bekleniyor</string>
+    <string name="requests_expired">Zamanında yanıt gelmedi</string>
     <string name="requests_declined">Reddedildi. Kendisine haber verilmez.</string>
     <string name="requests_withdrawn">Geri çekildi.</string>
     <string name="requests_load_failed">Mesaj istekleri yüklenemedi</string>
@@ -155,6 +156,7 @@
     <string name="request_open_chat">Sohbeti aç</string>
     <string name="request_quota">Eşleşmediğin kişilere bugünkü mesaj hakkını kullandın.</string>
     <string name="request_quota_at">Eşleşmediğin kişilere bugünkü mesaj hakkını kullandın. %1$s itibarıyla yenilenir.</string>
+    <string name="request_daily_cap">Bugünkü ilk mesaj sınırına ulaştın. Yarın tekrar dene.</string>
     <string name="request_refused">Bu mesaj gönderilemez. Nazik ve saygılı yaz.</string>
     <string name="request_unavailable">Bu profil kullanılamıyor.</string>
     <string name="request_failed">Gönderilemedi. Tekrar dene.</string>

@@ -48,7 +48,11 @@ import app.core.model.DeviceUpdate
 import app.core.model.DiscoveryPreferences
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
+import app.core.model.AccountEvent
+import app.core.model.ExportReady
 import app.core.model.ExportStarted
+import app.core.model.ExportState
+import app.core.model.ExportStatus
 import app.core.model.Features
 import app.core.model.Gender
 import app.core.model.GoogleNonce
@@ -263,7 +267,8 @@ class SampleApi(
 
     private class Ticket(var ticket: SupportTicket, val messages: MutableList<SupportMessage>)
     private val tickets = linkedMapOf<Id, Ticket>()
-    private var lastExportAt: Long? = null
+    private class SampleExport(val id: Id, val requestedAt: Long, var announced: Boolean = false)
+    private var export: SampleExport? = null
     private var eventsReceived = 0
 
     /** The device registration last sent, for tests. */
@@ -1136,9 +1141,16 @@ class SampleApi(
         writeLagMs = 0,
     )
 
+    /** History of an ended conversation answers 410, whatever ended it; every other route of it 404. */
+    private fun readableThread(conversationId: Id): Thread {
+        val thread = liveThread(conversationId)
+        if (thread.conversation.state == ConversationState.Ended) fail(410, ProblemCodes.CONVERSATION_ENDED)
+        return thread
+    }
+
     override suspend fun messagesBefore(conversationId: Id, before: Id?, limit: Int): MessagesPage = route("conversations.messages") {
         active(snoozedOk = true)
-        val thread = liveThread(conversationId)
+        val thread = readableThread(conversationId)
         val older = thread.messages.filter { before == null || it.id.toLong() < before.toLong() }
         val items = older.takeLast(limit.coerceIn(1, 100))
         page(thread, items, hasMore = older.size > items.size)
@@ -1146,7 +1158,7 @@ class SampleApi(
 
     override suspend fun messagesAfter(conversationId: Id, after: Id, limit: Int): MessagesPage = route("conversations.messages") {
         active(snoozedOk = true)
-        val thread = liveThread(conversationId)
+        val thread = readableThread(conversationId)
         val newer = thread.messages.filter { it.id.toLong() > after.toLong() }
         val items = newer.take(limit.coerceIn(1, 200))
         page(thread, items, hasMore = newer.size > items.size)
@@ -1154,9 +1166,14 @@ class SampleApi(
 
     override suspend fun sendMessage(conversationId: Id, request: SendMessageRequest): SentMessage = route("conversations.send") {
         val me = active(snoozedOk = true)
-        sentByClientId[request.clientId]?.let { return@route SentMessage(it, replayed = true) }
+        sentByClientId[request.clientId]?.let { earlier ->
+            // A client id names one message for good: reused for another conversation it is refused.
+            if (earlier.conversationId != conversationId) fail(409, ProblemCodes.CONFLICT)
+            return@route SentMessage(earlier, replayed = true)
+        }
         val thread = liveThread(conversationId)
-        if (thread.conversation.state == ConversationState.Ended) fail(410, ProblemCodes.CONVERSATION_ENDED)
+        // Sending into an ended conversation is a 404, like every action on it (only history says 410).
+        if (thread.conversation.state == ConversationState.Ended) fail(404, ProblemCodes.NOT_FOUND)
         val body = request.body
         when (request.kind) {
             MessageKind.Text, MessageKind.Gif -> if (body.isNullOrBlank()) fail(422, ProblemCodes.FIELD_INVALID)
@@ -1230,7 +1247,10 @@ class SampleApi(
 
     override suspend fun sendMessageRequest(to: PublicUid, body: String, clientId: String): SentRequest = route("requests.send") {
         active(snoozedOk = true)
-        requestByClientId[clientId]?.let { return@route it }
+        requestByClientId[clientId]?.let { earlier ->
+            if (earlier.to.id != to) fail(409, ProblemCodes.CONFLICT)
+            return@route earlier
+        }
         val card = visible(to) ?: fail(404, ProblemCodes.NOT_FOUND)
         if (threads.values.any { it.conversation.peer.id == to }) fail(409, ProblemCodes.ALREADY_MATCHED)
         if (requests.any { (box, r) -> box == RequestBox.Sent && r.peer.id == to && r.status == RequestStatus.Pending }) {
@@ -1253,10 +1273,18 @@ class SampleApi(
     override suspend fun messageRequests(box: RequestBox, cursor: String?): MessageRequestsPage = route("requests") {
         active(snoozedOk = true)
         MessageRequestsPage(
-            items = requests.filter { (b, r) -> b == box && r.peer.id !in blocked && r.status == RequestStatus.Pending }.map { it.second },
+            items = requests.filter { (b, r) -> b == box && r.peer.id !in blocked && r.status in listed(b) }.map { (b, r) -> shownTo(b, r) },
             nextCursor = null,
         )
     }
+
+    /** The inbox lists what waits for an answer; the sender's box also what went unanswered. */
+    private fun listed(box: RequestBox): Set<RequestStatus> =
+        if (box == RequestBox.Inbox) setOf(RequestStatus.Pending) else setOf(RequestStatus.Pending, RequestStatus.Declined, RequestStatus.Expired)
+
+    /** A decline is never shown to its sender: it reads as pending. */
+    private fun shownTo(box: RequestBox, request: MessageRequest): MessageRequest =
+        if (box == RequestBox.Sent && request.status == RequestStatus.Declined) request.copy(status = RequestStatus.Pending) else request
 
     override suspend fun acceptMessageRequest(requestId: Id): Conversation = route("requests.accept") {
         active(snoozedOk = true)
@@ -1755,12 +1783,51 @@ class SampleApi(
 
     override suspend fun requestExport(): ExportStarted = route("me.export") {
         user()
-        val last = lastExportAt
-        if (last != null && nowMs() - last < EXPORT_EVERY_MS) {
-            fail(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to (EXPORT_EVERY_MS - (nowMs() - last)) / 1000)
+        val last = export
+        if (last != null && nowMs() - last.requestedAt < EXPORT_EVERY_MS) {
+            // The same request again (a lost answer, a second tap) is the same export.
+            if (nowMs() - last.requestedAt < EXPORT_REPEAT_MS) return@route ExportStarted(last.id)
+            fail(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to (EXPORT_EVERY_MS - (nowMs() - last.requestedAt)) / 1000)
         }
-        lastExportAt = nowMs()
-        ExportStarted(nextId())
+        val started = SampleExport(nextId(), nowMs())
+        export = started
+        followExport(started)
+        ExportStarted(started.id)
+    }
+
+    override suspend fun exportStatus(): ExportStatus = route("me.export.status") {
+        user()
+        exportNow()
+    }
+
+    /** Where the export stands now; announces it (`account` with `export`) the first time it is seen ready. */
+    private fun exportNow(): ExportStatus {
+        val current = export ?: return ExportStatus(ExportState.None)
+        val readyAt = current.requestedAt + EXPORT_BUILD_MS
+        val expiresAt = readyAt + EXPORT_LINK_MS
+        val now = nowMs()
+        return when {
+            now < readyAt -> ExportStatus(ExportState.Pending)
+            now >= expiresAt -> ExportStatus(ExportState.None)
+            else -> {
+                val ready = ExportReady("https://cdn.example.com/exports/${current.id}.zip?exp=${expiresAt / 1000}&sig=c2FtcGxl", Instant.ofEpochMilli(expiresAt))
+                val status = session?.status
+                if (!current.announced && status != null) {
+                    current.announced = true
+                    channel.publish(RealtimeTypes.ACCOUNT, nextId(), AccountEvent.serializer(), AccountEvent(status, export = ready))
+                }
+                ExportStatus.of(ready)
+            }
+        }
+    }
+
+    /** On the wall clock only, as for calls: the archive is announced when it would be built. */
+    private fun followExport(started: SampleExport) {
+        if (clock !== Clock.System) return
+        callTimers.launch {
+            delay(EXPORT_BUILD_MS + 50)
+            lock.withLock { if (export === started) exportNow() }
+        }
     }
 
     override suspend fun sendEvents(events: List<AppEvent>) = route("events") {
@@ -1789,6 +1856,9 @@ class SampleApi(
         private const val OTP_ATTEMPTS = 5
         private const val LOCATION_EVERY_MS = 60_000L
         private const val EXPORT_EVERY_MS = 7L * 24 * 3600 * 1000
+        private const val EXPORT_REPEAT_MS = 2 * 60_000L
+        private const val EXPORT_BUILD_MS = 8_000L
+        private const val EXPORT_LINK_MS = 24L * 3600 * 1000
         private const val PROCESSING_MS = 5_000L
         private const val VERIFICATION_MS = 10_000L
         private const val MAX_PHOTO_BYTES = 15L * 1024 * 1024

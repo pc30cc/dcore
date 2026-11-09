@@ -25,6 +25,10 @@ import app.core.net.HttpServerApi
 import app.core.net.ResponseCache
 import app.core.net.RoomResponseCache
 import app.core.net.ServerApi
+import app.core.net.origins.FileOriginsStore
+import app.core.net.origins.KtorOriginsTransport
+import app.core.net.origins.OriginsRepository
+import app.core.net.origins.OriginsTrust
 import app.core.storage.Preferences
 import app.core.storage.SecureStore
 import app.core.storage.SessionStore
@@ -38,11 +42,14 @@ import app.core.sync.CachedDeckSnapshotStore
 import app.core.sync.ChatGraph
 import app.core.sync.DeckRepository
 import app.core.sync.EntitlementRepository
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.map
 
 /**
  * Everything the app holds once, for the life of the process (plain
@@ -75,6 +82,34 @@ class AppGraph(private val app: Application) {
 
     private fun language(): String = AppLocales.current(app).tag
 
+    /**
+     * The signed origins list (net/origins): where the API, realtime and the
+     * website are now, cached, verified against the build's keys, followed
+     * as the admin panel changes it.
+     */
+    val origins: OriginsRepository by lazy {
+        OriginsRepository(
+            trust = OriginsTrust.fromBuild(),
+            compiledApi = AppBrand.apiBaseUrl,
+            compiledBootstrap = OriginsTrust.buildBootstrap(),
+            // A fixed neutral name, never the brand's.
+            store = FileOriginsStore(java.io.File(app.noBackupFilesDir, "origins.json")),
+            transport = KtorOriginsTransport(OkHttp.create()),
+            clock = clock,
+            diag = diag,
+        )
+    }
+
+    /** The origins checks: now (the cold start, alongside the config), on every new config `v`, and every six hours in front. */
+    fun startOrigins() {
+        if (Backend.isSample(app)) return
+        origins.start(
+            scope = appScope,
+            foreground = ProcessLifecycleOwner.get().lifecycle.currentStateFlow.map { it.isAtLeast(Lifecycle.State.STARTED) },
+            configVersions = config.config.map { it?.v },
+        )
+    }
+
     private val http: ApiClient by lazy {
         ApiClient(
             baseUrl = AppBrand.apiBaseUrl,
@@ -86,6 +121,7 @@ class AppGraph(private val app: Application) {
             diag = diag,
             debugLog = if (BuildConfig.DEBUG) { message -> Log.d("App.Http", message) } else null,
             clock = clock,
+            hosts = origins.apiHosts,
         )
     }
 
@@ -150,7 +186,10 @@ class AppGraph(private val app: Application) {
 
     /** Conversations, messages, message requests and the realtime socket (sync/, realtime/). */
     val chat: ChatGraph by lazy {
-        ChatGraph(app, api, cacheDatabase, realtimeTransport, auth, entitlements, config, appScope, clock, diag)
+        ChatGraph(
+            app, api, cacheDatabase, realtimeTransport, auth, entitlements, config, appScope, clock, diag,
+            realtimeAlternates = { origins.realtimeSockets() },
+        )
     }
 
     /**

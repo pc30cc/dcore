@@ -221,6 +221,7 @@ class HttpServerApiTest {
             sendSupportMessage("1287390234923488001", "Thanks")
         },
         Case("requestExport", HttpMethod.Post, "/v1/me/export", "export", HttpStatusCode.Accepted) { requestExport() },
+        Case("exportStatus", HttpMethod.Get, "/v1/me/export", "export-status") { exportStatus() },
         Case("sendEvents", HttpMethod.Post, "/v1/events", null, HttpStatusCode.NoContent) {
             sendEvents(listOf(AppEvent("app_open", Instant.parse("2026-11-06T09:14:03.120Z"))))
         },

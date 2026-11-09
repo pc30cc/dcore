@@ -22,10 +22,12 @@ class PushRouterTest {
     private class Chat(var account: PublicUid? = "aaaaaaaaaaaaa", var viewing: Id? = null) : PushChatHooks {
         val arrived = mutableListOf<Id>()
         var listReads = 0
+        var inboxReads = 0
         override suspend fun signedInAccount(): PublicUid? = account
         override fun isViewing(conversationId: Id): Boolean = viewing == conversationId
         override suspend fun messageArrived(conversationId: Id) { arrived += conversationId }
         override suspend fun listChanged() { listReads++ }
+        override suspend fun requestArrived() { inboxReads++ }
     }
 
     private val shade = Shade()
@@ -82,11 +84,14 @@ class PushRouterTest {
     }
 
     @Test
-    fun matchesAndRequestsReadTheListAndShow() = runTest {
+    fun aMatchReadsTheListAndARequestTheInboxAndBothShow() = runTest {
         router.onMessage(mapOf("type" to "match", "conversationId" to "1287390234923400001"), null, null, 0)
+        assertEquals(1, chat.listReads)
+        assertEquals(0, chat.inboxReads)
         router.onMessage(mapOf("type" to "request", "requestId" to "1287390234923440001"), null, null, 0)
-        assertEquals(2, chat.listReads)
-        assertEquals(2, shade.shown.size)
+        assertEquals("a request is not a conversation: the list stays", 1, chat.listReads)
+        assertEquals(1, chat.inboxReads)
+        assertEquals(listOf("m:1287390234923400001", "r:1287390234923440001"), shade.shown.map { NotificationTags.of(it.first) })
     }
 
     @Test

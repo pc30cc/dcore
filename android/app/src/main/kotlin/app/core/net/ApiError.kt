@@ -2,6 +2,11 @@ package app.core.net
 
 import app.core.model.Problem
 import app.core.model.ProblemCodes
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 /**
  * Every way a request can fail, in the terms a screen needs to react.
@@ -20,6 +25,23 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     /** No answer: no connection, DNS, TLS, a timeout. */
     class Network(cause: Throwable) : ApiError("network: ${cause.javaClass.simpleName}", cause) {
         override val code: String? get() = null
+
+        /**
+         * Nothing of the request left the phone: the name did not resolve, no
+         * connection or TLS session opened, or the funnel refused the host.
+         * Such a request may go to another host whatever it does; anything
+         * else (a reset, a read timeout) may have reached the server.
+         */
+        val unsent: Boolean
+            get() = generateSequence(cause) { it.cause }.take(MAX_CAUSES).any { it.isBeforeSend() }
+
+        private fun Throwable.isBeforeSend(): Boolean =
+            this is UnknownHostException || this is ConnectException || this is NoRouteToHostException ||
+                this is SSLHandshakeException || this is SSLPeerUnverifiedException || this is UntrustedHostException
+
+        private companion object {
+            const val MAX_CAUSES = 8
+        }
     }
 
     /**

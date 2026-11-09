@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val graph = appGraph
         graph.config.start()
+        // The origins list is checked alongside the config.
+        graph.startOrigins()
         calls = CallActivityHooks(this, graph.calls) { graph.realtime }.also { it.onCreate(savedInstanceState) }
         // Realtime follows the app to the front and the account in; push
         // registers the device for whoever signs in.

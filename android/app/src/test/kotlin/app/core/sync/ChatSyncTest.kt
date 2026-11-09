@@ -6,7 +6,14 @@ import app.core.cache.CacheDatabaseHolder
 import app.core.cache.ChatStore
 import app.core.common.Clock
 import app.core.common.Diag
+import app.core.model.ConversationChange
 import app.core.model.ConversationEndEvent
+import app.core.model.ConversationEvent
+import app.core.model.ConversationState
+import app.core.model.IncomingRequest
+import app.core.model.PeerSummary
+import app.core.model.Problem
+import app.core.model.ProblemCodes
 import app.core.model.RealtimeEvent
 import app.core.model.ReceiptEvent
 import app.core.model.TypingEvent
@@ -29,6 +36,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.IOException
+import java.time.Instant
 
 /**
  * The chat's one door, on a virtual clock: what realtime events do to the
@@ -100,7 +108,8 @@ class ChatSyncTest {
         h.sync.openThread(c)
         h.sync.setVisible(c, shown = true)
         runCurrent()
-        advanceTimeBy(1_000)
+        // Past the server's 2 s between two read receipts of one conversation.
+        advanceTimeBy(2_000)
         runCurrent()
         api.receipts.clear()
         api.log.clear()
@@ -276,5 +285,104 @@ class ChatSyncTest {
         h.sync.setAccount(null, active = false)
         runCurrent()
         assertNull(h.conversation())
+    }
+
+    /** A thread on screen with its first read receipt (for 1000) sent at about 700 ms. */
+    private suspend fun TestScope.openWithOneMessage(): Harness {
+        val h = harness()
+        api.conversation(c)
+        api.fill(c, 1_000, 1)
+        h.sync.reconcile("test")
+        h.sync.openThread(c)
+        h.sync.setVisible(c, shown = true)
+        runCurrent()
+        return h
+    }
+
+    @Test
+    fun aSecondReadReceiptWaitsForTheServersTwoSecondsBetweenThem() = runTest(dispatcher) {
+        val h = openWithOneMessage()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals("1000", api.receipts.single().second.readUpTo)
+
+        h.sync.onEvent(message(1_001))
+        runCurrent()
+        advanceTimeBy(800)
+        runCurrent()
+        assertEquals("not 1 s after the last: the server would refuse it", 1, api.receipts.size)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(listOf("1000", "1001"), api.receipts.map { it.second.readUpTo })
+        assertEquals(1_001L, h.conversation()!!.myReadId)
+    }
+
+    @Test
+    fun aRefusedReadReceiptIsSentAgainAfterItsRetryAfter() = runTest(dispatcher) {
+        api.receiptErrors += ApiError.Http(429, Problem.of(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to 3))
+        val h = openWithOneMessage()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertTrue("the first one was refused", api.receipts.isEmpty())
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertTrue("not before its Retry-After", api.receipts.isEmpty())
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals("1000", api.receipts.single().second.readUpTo)
+        assertEquals(1_000L, h.conversation()!!.myReadId)
+    }
+
+    @Test
+    fun aReadReceiptAnswered404EndsTheConversation() = runTest(dispatcher) {
+        api.receiptErrors += ApiError.Http(404, Problem.of(404, ProblemCodes.NOT_FOUND))
+        val h = openWithOneMessage()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(ConversationState.Ended.wire, h.conversation()!!.state)
+    }
+
+    @Test
+    fun aSendIntoAConversationThatEndedEndsItHereToo() = runTest(dispatcher) {
+        val h = harness()
+        api.conversation(c)
+        h.sync.reconcile("test")
+        // Sends, receipts and typing answer 404 for an ended conversation; only its history says 410.
+        api.sendError = ApiError.Http(404, Problem.of(404, ProblemCodes.NOT_FOUND))
+        h.sync.send(c, "still there?")
+        runCurrent()
+        assertEquals("tried once, not again", 1, api.sent.size)
+        assertEquals(ProblemCodes.CONVERSATION_ENDED, h.rows().single().errorCode)
+        assertEquals(ConversationState.Ended.wire, h.conversation()!!.state)
+    }
+
+    @Test
+    fun anAcceptedRequestLeavesTheBoxesWhenItsConversationArrives() = runTest(dispatcher) {
+        val h = harness()
+        val from = PeerSummary(PEER, "Negar")
+        h.sync.requests.onRealtime(IncomingRequest("1287390234923440001", from, "Hello", Instant.parse("2026-11-06T09:14:03.120Z")))
+        assertEquals(1, h.sync.requests.inbox.value.items.size)
+        h.sync.onEvent(RealtimeEvent.ConversationChanged("1287390234923400001", null, ConversationEvent(api.conversation(c), ConversationChange.Updated)))
+        runCurrent()
+        assertEquals("a settings change is not an accept", 1, h.sync.requests.inbox.value.items.size)
+        h.sync.onEvent(RealtimeEvent.ConversationChanged("1287390234923400002", null, ConversationEvent(api.conversation(c), ConversationChange.Accepted)))
+        runCurrent()
+        assertTrue(h.sync.requests.inbox.value.items.isEmpty())
+        assertEquals(c, h.conversation()?.conversationId)
+    }
+
+    @Test
+    fun typingIsOneSignalEveryThreeSecondsForThePersonWhicheverConversation() = runTest(dispatcher) {
+        val h = harness()
+        h.sync.onHealth(RealtimeHealth.CONNECTED)
+        h.sync.typed(c)
+        advanceTimeBy(1_000)
+        h.sync.typed("1287390234923400002")
+        runCurrent()
+        assertEquals("the server counts typing per person", 1, api.typing)
+        advanceTimeBy(2_100)
+        h.sync.typed("1287390234923400002")
+        runCurrent()
+        assertEquals(2, api.typing)
     }
 }

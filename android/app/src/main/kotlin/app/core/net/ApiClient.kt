@@ -89,6 +89,15 @@ class Answer<T>(val value: T, val status: Int, val headers: Headers) {
  * **Retries.** Only what cannot do something twice ([Idempotency]) is
  * retried, and only after no answer or a gateway failure ([RetryPolicy]).
  *
+ * **Hosts.** Requests go to the [ApiHosts] the signed origins list names. A
+ * host that gives no answer, or whose edge answers for it (502, 503, 520-526
+ * without a problem document), is marked bad and the request moves to the
+ * next one at once, when it may: anything retryable, and anything at all that
+ * failed before it left the phone. When every host failed, the published
+ * copies of the list are read once for newer hosts. Nothing, neither a session
+ * nor a body, is sent to a host outside the list and the build, and redirects
+ * are never followed (a 307 would carry a body anywhere).
+ *
  * Bodies are encoded and decoded with explicit serializers, never by
  * reflection, so R8 can rename freely.
  */
@@ -109,11 +118,14 @@ class ApiClient(
     private val random: Random = Random.Default,
     /** How a retry waits; tests record it instead. */
     private val pause: suspend (Long) -> Unit = { delay(it) },
+    /** Where requests go: the origins list's API hosts; [baseUrl] alone by default. */
+    private val hosts: ApiHosts = ApiHosts.fixed(baseUrl),
 ) {
-    private val base = baseUrl.trimEnd('/')
-
     private val http = HttpClient(engine) {
         expectSuccess = false
+        // A redirect could take the session or a body to a host nobody
+        // signed for. The API never redirects.
+        followRedirects = false
         install(HttpTimeout) {
             // A hung request is worse than a failed one: fail fast enough to
             // show a retry.
@@ -290,11 +302,20 @@ class ApiClient(
         val requestId = requestId()
         var failures = 0
         var renewed = false
+        val walk = HostWalk()
         while (true) {
             val session = if (out.authenticated) sessionFor(out.route) else null
+            val base = walk.next()
             val reply = try {
-                transmit(out, session?.access, requestId)
+                transmit(base, out, session?.access, requestId)
             } catch (e: ApiError.Network) {
+                walk.failed(base)
+                // Another host at once: what may be sent again, and anything
+                // at all that never left the phone.
+                if ((out.idempotency.retryable || e.unsent) && walk.moveOn()) {
+                    diag.info(AREA, "${out.route}: no answer (${e.cause?.javaClass?.simpleName}); trying another host")
+                    continue
+                }
                 failures++
                 val wait = if (out.idempotency.retryable) retry.delayBefore(failures, null, random) else null
                 if (wait == null) {
@@ -304,6 +325,15 @@ class ApiClient(
                 diag.info(AREA, "${out.route}: no answer, attempt $failures, retry in ${wait}ms")
                 pause(wait)
                 continue
+            }
+            if (isEdgeFailure(reply)) {
+                walk.failed(base)
+                if (out.idempotency.retryable && walk.moveOn()) {
+                    diag.info(AREA, "${out.route}: ${reply.status} from the edge; trying another host")
+                    continue
+                }
+            } else {
+                hosts.reached(base)
             }
             val status = reply.status
             if (status in 200..299 || (status == STATUS_NOT_MODIFIED && out.ifNoneMatch != null)) return reply
@@ -368,7 +398,7 @@ class ApiClient(
             authenticated = false,
             idempotency = Idempotency.NONE,
         )
-        val reply = transmit(out, token = null, requestId = requestId())
+        val reply = transmitOnce(out, token = null, requestId = requestId())
         val receivedAt = clock.nowMillis()
         if (reply.status in 200..299) {
             val pair = decode(reply.body, TokenPair.serializer())
@@ -405,9 +435,56 @@ class ApiClient(
         }
     }
 
-    private suspend fun transmit(out: Outgoing, token: String?, requestId: String): Incoming {
+    /**
+     * The hosts one request goes through: each tried at most once, best first;
+     * once all were tried, the best one again (the retry policy's waits apply
+     * then); the published copies read once when every host failed.
+     */
+    private inner class HostWalk {
+        private val tried = HashSet<String>()
+        private var recovered = false
+
+        suspend fun next(): String {
+            val candidates = hosts.candidates()
+            return candidates.firstOrNull { it !in tried } ?: candidates.first()
+        }
+
+        fun failed(base: String) {
+            hosts.failed(base)
+            tried += base
+        }
+
+        /** Whether an untried host is left, after reading the published copies once if none is. */
+        suspend fun moveOn(): Boolean {
+            if (hosts.candidates().any { it !in tried }) return true
+            if (recovered) return false
+            recovered = true
+            return hosts.recover() && hosts.candidates().any { it !in tried }
+        }
+    }
+
+    /** A request that is never sent twice: it moves to another host only while nothing of it left the phone. */
+    private suspend fun transmitOnce(out: Outgoing, token: String?, requestId: String): Incoming {
+        val walk = HostWalk()
+        while (true) {
+            val base = walk.next()
+            val reply = try {
+                transmit(base, out, token, requestId)
+            } catch (e: ApiError.Network) {
+                walk.failed(base)
+                if (e.unsent && walk.moveOn()) continue
+                throw e
+            }
+            if (isEdgeFailure(reply)) walk.failed(base) else hosts.reached(base)
+            return reply
+        }
+    }
+
+    private suspend fun transmit(base: String, out: Outgoing, token: String?, requestId: String): Incoming {
+        // Never past the list and the build, whatever handed the host over.
+        if (!hosts.trusted(base)) throw ApiError.Network(UntrustedHostException())
         val url = buildString {
-            append(base)
+            append(base.trimEnd('/'))
             append('/')
             append(out.path.trimStart('/'))
             if (out.query.isNotEmpty()) {
@@ -438,6 +515,17 @@ class ApiClient(
 
     private fun problemOf(reply: Incoming): Problem =
         Problem.parse(reply.status, reply.body, reply.headers[HttpHeaders.RetryAfter])
+
+    /**
+     * An edge (a CDN, a proxy, a stopped app) answered instead of the API: 502,
+     * 503 or 520-526 with no problem document of ours. The host is marked bad.
+     */
+    private fun isEdgeFailure(reply: Incoming): Boolean {
+        val status = reply.status
+        if (status != 502 && status != 503 && status !in 520..526) return false
+        if (reply.headers[HttpHeaders.ContentType].orEmpty().contains("problem+json", ignoreCase = true)) return false
+        return problemOf(reply).code == null
+    }
 
     /** 502 and 504 from an edge, and a 503 without a reason the server chose. */
     private fun isGatewayFailure(status: Int, problem: Problem): Boolean = when (status) {

@@ -61,6 +61,9 @@ class ChatApi(val me: String = ME) : ServerApi by unsupportedApi() {
     var sendError: ApiError? = null
     val sent = mutableListOf<SendMessageRequest>()
     val receipts = mutableListOf<Pair<Id, ReceiptsRequest>>()
+
+    /** Thrown by the next receipts, one each (a 429 for one sent too soon, a 404 for an ended conversation). */
+    val receiptErrors = ArrayDeque<ApiError>()
     val devices = mutableListOf<DeviceUpdate>()
     var typing = 0
     private var nextId = 2_000_000_000_000_000_000L
@@ -136,6 +139,7 @@ class ChatApi(val me: String = ME) : ServerApi by unsupportedApi() {
 
     override suspend fun sendReceipts(conversationId: Id, receipts: ReceiptsRequest) {
         log += "receipts:$conversationId"
+        receiptErrors.removeFirstOrNull()?.let { throw it }
         this.receipts += conversationId to receipts
     }
 

@@ -49,6 +49,8 @@ class ChatGraph(
     private val scope: CoroutineScope,
     clock: Clock,
     private val diag: Diag,
+    /** Realtime sockets to fall back on (the signed origins list's realtime hosts). */
+    realtimeAlternates: () -> List<String> = { emptyList() },
 ) {
     val store = ChatStore(holder, diag)
     val conversations = ConversationRepository(api, store, clock, diag)
@@ -79,6 +81,7 @@ class ChatGraph(
                 clock = clock::nowMillis,
                 diag = diag,
                 appVersion = BuildConfig.VERSION_NAME,
+                alternates = realtimeAlternates,
             )
         },
         listener = sync,

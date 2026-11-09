@@ -28,6 +28,7 @@ import app.core.model.DeviceUpdate
 import app.core.model.DiscoveryPreferences
 import app.core.model.Entitlements
 import app.core.model.ExportStarted
+import app.core.model.ExportStatus
 import app.core.model.GoogleNonce
 import app.core.model.Id
 import app.core.model.LikesPage
@@ -192,7 +193,7 @@ interface ServerApi {
     /** `PUT /v1/me/photos/order`. */
     suspend fun reorderPhotos(photoIds: List<Id>): OwnProfile
 
-    /** `DELETE /v1/me/photos/:photoId`; the last photo cannot go (`last_photo`). */
+    /** `DELETE /v1/me/photos/:photoId`; one that would leave too few is refused (`photo_min`). */
     suspend fun deletePhoto(photoId: Id)
 
     /** `GET /v1/profiles/:publicUid`: a profile opened from chat, likes or requests. */
@@ -379,8 +380,19 @@ interface ServerApi {
     /** `POST /v1/support/tickets/:id/messages`. */
     suspend fun sendSupportMessage(ticketId: Id, body: String): SupportMessage
 
-    /** `POST /v1/me/export`: a ZIP of the account's data, announced by realtime when ready. */
+    /**
+     * `POST /v1/me/export`: a ZIP of the account's data, announced by
+     * realtime (`account` with `export`) when ready. One a week: a repeat
+     * within minutes answers the same export, a later one `429 rate_limited`.
+     */
     suspend fun requestExport(): ExportStarted
+
+    /**
+     * `GET /v1/me/export`: where the export stands, from the server's own
+     * record (no database). Read when an export screen opens and when the
+     * realtime event arrives, so an offline phone does not lose the link.
+     */
+    suspend fun exportStatus(): ExportStatus
 
     /** `POST /v1/events`: at most 100 first-party analytics events. Never retried. */
     suspend fun sendEvents(events: List<AppEvent>)

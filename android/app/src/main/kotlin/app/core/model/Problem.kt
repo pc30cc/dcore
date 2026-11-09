@@ -119,9 +119,10 @@ class Problem(
 }
 
 /**
- * The error codes the API sends (`code` of a problem). Constants, not an
- * enum: a newer server may send one this build does not know, which callers
- * treat like its HTTP status.
+ * The error codes the API sends (`code` of a problem), exactly the server's
+ * catalogue (a test holds the two together). Constants, not an enum: a newer
+ * server may send one this build does not know, which callers treat like its
+ * HTTP status.
  */
 object ProblemCodes {
     // Generic
@@ -131,6 +132,12 @@ object ProblemCodes {
     const val TOKEN_EXPIRED = "token_expired"
     const val FORBIDDEN = "forbidden"
     const val NOT_FOUND = "not_found"
+    const val METHOD_NOT_ALLOWED = "method_not_allowed"
+
+    /**
+     * A client id already used for something else (a message's in another
+     * conversation, a request's to another person): that id is spent.
+     */
     const val CONFLICT = "conflict"
     const val PAYLOAD_TOO_LARGE = "payload_too_large"
     const val UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type"
@@ -168,7 +175,7 @@ object ProblemCodes {
     const val ALREADY_REQUESTED = "already_requested"
     const val ALREADY_MATCHED = "already_matched"
     const val CONFIRM_REQUIRED = "confirm_required"
-    const val CALLEE_BUSY = "callee_busy"
+    // A busy callee is never revealed: the call rings and ends as missed, so there is no code for it.
     const val CALLER_BUSY = "caller_busy"
     const val NOT_RINGING = "not_ringing"
     const val ANSWERED_ELSEWHERE = "answered_elsewhere"
@@ -186,7 +193,8 @@ object ProblemCodes {
     const val TEXT_REFUSED = "text_refused"
     const val MESSAGE_REFUSED = "message_refused"
     const val PHOTO_LIMIT = "photo_limit"
-    const val LAST_PHOTO = "last_photo"
+
+    /** Deleting a photo would leave fewer than the minimum (the last one included). */
     const val PHOTO_MIN = "photo_min"
     const val UPLOAD_MISSING = "upload_missing"
     const val PURCHASE_INVALID = "purchase_invalid"

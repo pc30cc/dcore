@@ -1,4 +1,6 @@
 import groovy.json.JsonSlurper
+import java.net.URI
+import java.util.Base64
 
 plugins {
     alias(libs.plugins.android.application)
@@ -130,6 +132,73 @@ fun firebaseValue(store: String, key: String): String =
         ?: brandString("android.firebase.$store.$key")
         ?: ""
 
+// MARK: - The signed origins list
+//
+// The app learns its hosts from a signed list (net/origins). Compiled in, the
+// same for both stores: `origins.publicKeys` (at most two `{kid, key}`, raw
+// Ed25519 public keys of 32 bytes in base64url: the key in use and, during a
+// rotation, the next), `origins.bootstrap` (https URLs of published copies)
+// and brand.json `id`, which the list must name.
+
+val originsKidPattern = Regex("[A-Za-z0-9._-]{1,32}")
+val originsKeyPattern = Regex("[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]")
+val brandIdPattern = Regex("[a-z0-9_][a-z0-9_-]{0,39}")
+
+/** brand.json `id`, which is also the folder's name (the server loads the brand by it). */
+val brandJsonId: String = requireBrandString("id").also { id ->
+    if (!brandIdPattern.matches(id)) {
+        throw GradleException("brands/$brandId/brand.json: 'id' must be 1-40 lower-case letters, digits, '_' or '-', got '$id'")
+    }
+    if (id != brandId) throw GradleException("brands/$brandId/brand.json says id '$id'; it must be the folder's name, '$brandId'")
+}
+
+/** `origins.publicKeys` as `kid:key`, checked: at most two, distinct ids, 32-byte keys. */
+fun brandOriginsKeys(): List<String> {
+    val raw = brand("origins.publicKeys") ?: return emptyList()
+    val list = raw as? List<*> ?: throw GradleException("brands/$brandId/brand.json: 'origins.publicKeys' must be a list")
+    if (list.size > 2) throw GradleException("brands/$brandId/brand.json: 'origins.publicKeys' holds at most two keys (the one in use and the next)")
+    val pairs = list.mapIndexed { index, entry ->
+        val where = "brands/$brandId/brand.json: 'origins.publicKeys[$index]'"
+        val key = entry as? Map<*, *> ?: throw GradleException("$where must be an object with 'kid' and 'key'")
+        val kid = (key["kid"] as? String)?.trim().orEmpty()
+        val value = (key["key"] as? String)?.trim().orEmpty()
+        if (!originsKidPattern.matches(kid)) throw GradleException("$where: 'kid' must be 1-32 letters, digits, '.', '_' or '-'")
+        val bytes = runCatching { Base64.getUrlDecoder().decode(value) }.getOrNull()
+        if (!originsKeyPattern.matches(value) || bytes?.size != 32) {
+            throw GradleException("$where: 'key' must be a raw Ed25519 public key, 32 bytes in base64url (43 characters)")
+        }
+        "$kid:$value"
+    }
+    if (pairs.map { it.substringBefore(':') }.toSet().size != pairs.size) {
+        throw GradleException("brands/$brandId/brand.json: 'origins.publicKeys' ids must differ")
+    }
+    return pairs
+}
+
+/** `origins.bootstrap`, checked: https URLs of a file, no query, fragment or user name; at most eight. */
+fun brandOriginsBootstrap(): List<String> {
+    val raw = brand("origins.bootstrap") ?: return emptyList()
+    val list = raw as? List<*> ?: throw GradleException("brands/$brandId/brand.json: 'origins.bootstrap' must be a list")
+    if (list.size > 8) throw GradleException("brands/$brandId/brand.json: 'origins.bootstrap' holds at most eight URLs")
+    val urls = list.mapIndexed { index, entry ->
+        val text = (entry as? String)?.trim().orEmpty()
+        val uri = runCatching { URI(text) }.getOrNull()
+        val path = uri?.rawPath.orEmpty()
+        val ok = uri != null && uri.scheme == "https" && !uri.host.isNullOrEmpty() && uri.rawUserInfo == null &&
+            uri.rawQuery == null && uri.rawFragment == null && path.length > 1 && !path.endsWith("/") &&
+            text.length <= 300 && text.none { it.isWhitespace() || it == ',' }
+        if (!ok) {
+            throw GradleException("brands/$brandId/brand.json: 'origins.bootstrap[$index]' must be an https URL of a file (no query, fragment or user name), got '$text'")
+        }
+        text
+    }
+    if (urls.toSet().size != urls.size) throw GradleException("brands/$brandId/brand.json: 'origins.bootstrap' lists a URL twice")
+    return urls
+}
+
+val originsKeys: List<String> = brandOriginsKeys()
+val originsBootstrap: List<String> = brandOriginsBootstrap()
+
 android {
     // The code's package. Neutral and never a brand: R, BuildConfig, the R8
     // rules and the Room schema folder name classes by it. What a phone knows
@@ -152,7 +221,12 @@ android {
         resValue("string", "app_name", androidString(requireBrandString("appName")))
         resValue("color", "brand_primary", requireBrandString("colors.brand.light"))
 
-        buildConfigField("String", "BRAND_ID", literal(brandId))
+        buildConfigField("String", "BRAND_ID", literal(brandJsonId))
+        // The signed origins list (net/origins): the keys it may be signed
+        // with (`kid:key`, comma-separated) and its published copies
+        // (space-separated). Public values, the same in both stores.
+        buildConfigField("String", "ORIGINS_PUBLIC_KEYS", literal(originsKeys.joinToString(",")))
+        buildConfigField("String", "ORIGINS_BOOTSTRAP", literal(originsBootstrap.joinToString(" ")))
         // The name in sentences (`{appName}` in the strings). The server's
         // GET /config may replace it at run time; this is the build's default.
         buildConfigField("String", "APP_NAME", literal(requireBrandString("appName")))
@@ -340,9 +414,52 @@ android {
                     "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
                     "--add-opens=java.base/java.io=ALL-UNNAMED",
                 )
+                // Files the tests read from outside the module: without them as
+                // inputs a changed server fixture, problem catalogue or brand
+                // file leaves the test task up to date (or served from the
+                // build cache) and the contract tests never see the change.
+                test.inputs.files(
+                    fileTree(rootProject.layout.projectDirectory.dir("../server/packages/shared")) {
+                        include("fixtures/**", "src/problem.ts")
+                    },
+                    brandFile,
+                    rootProject.layout.projectDirectory.file("gradle.properties"),
+                ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("externalTestFiles")
             }
         }
     }
+}
+
+// MARK: - A signed release carries the origins keys
+//
+// Without `origins.publicKeys` an app accepts no origins list and keeps the
+// hosts it was built with for good. A release signed with its store's key
+// fails the build; an unsigned local release (no `<STORE>_KEYSTORE`) only
+// warns, so the local checks keep running on the template brand.
+
+abstract class CheckOriginsKeys : DefaultTask() {
+    @get:Input abstract val keyCount: Property<Int>
+    @get:Input abstract val signed: Property<Boolean>
+    @get:Input abstract val brand: Property<String>
+
+    @TaskAction
+    fun check() {
+        if (keyCount.get() > 0) return
+        val problem = "brands/${brand.get()}/brand.json lists no origins.publicKeys: the app would accept no signed origins list and keep its compiled hosts"
+        if (signed.get()) throw GradleException("$problem. Add the public key printed by origins:keygen before signing a release.")
+        logger.warn("w: $problem (unsigned release build: allowed)")
+    }
+}
+
+for (store in listOf("bazaar", "play")) {
+    val variant = "${store.replaceFirstChar { it.uppercase() }}Release"
+    val signedRelease = android.productFlavors.getByName(store).signingConfig != null
+    val check = tasks.register<CheckOriginsKeys>("check${variant}OriginsKeys") {
+        keyCount.set(originsKeys.size)
+        signed.set(signedRelease)
+        brand.set(brandId)
+    }
+    tasks.matching { it.name == "pre${variant}Build" }.configureEach { dependsOn(check) }
 }
 
 // MARK: - The signed-out welcome: copy, colours and pictures from brand.json
@@ -471,6 +588,12 @@ dependencies {
     implementation(libs.ktor.client.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    // Ed25519 for the signed origins list (net/origins/Ed25519). Gson is
+    // only for Tink's JSON keysets, which the app never reads: excluded, so the
+    // Gson other libraries pin stays as it was.
+    implementation(libs.tink.android) {
+        exclude(group = "com.google.code.gson", module = "gson")
+    }
 
     implementation(libs.androidx.profileinstaller)
 

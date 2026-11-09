@@ -189,7 +189,10 @@ fun RestrictedRoute() {
             if (appealable) {
                 PrimaryButton(brandString(R.string.restricted_appeal_send), onClick = { model.appeal(appealText) }, enabled = appealText.isNotBlank(), busy = state.busy)
             }
-            val deleteUrl = config?.legal?.deleteAccountUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.deleteAccountUrl
+            // The config's link; without a config, the origins list's website; then the build's.
+            val deleteUrl = config?.legal?.deleteAccountUrl?.takeIf { it.isNotBlank() }
+                ?: graph.origins.deletionPage(language.tag)
+                ?: AppBrand.Legal.deleteAccountUrl
             if (deleteUrl.isNotBlank()) TextButton(onClick = { uri.openUri(deleteUrl) }) { Text(brandString(R.string.restricted_delete)) }
             TextButton(onClick = model::signOut) { Text(brandString(R.string.action_sign_out)) }
         },

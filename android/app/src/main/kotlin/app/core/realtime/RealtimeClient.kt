@@ -139,6 +139,11 @@ class RealtimeClient(
     private val diag: Diag = Diag.Android,
     private val timing: RealtimeTiming = RealtimeTiming(),
     private val appVersion: String = "",
+    /**
+     * Sockets to try once the token's own address failed [ALTERNATE_AFTER]
+     * times in a row (the signed origins list's realtime hosts), in order.
+     */
+    private val alternates: () -> List<String> = { emptyList() },
 ) {
     private val nudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val seen: SeenSet get() = positions.seen
@@ -171,7 +176,7 @@ class RealtimeClient(
         sink.onHealth(RealtimeHealth.CONNECTING)
         try {
             while (true) {
-                val outcome = session(forceToken, first = !everConnected) {
+                val outcome = session(forceToken, first = !everConnected, failures = failures) {
                     everConnected = true
                     failures = 0
                 }
@@ -242,9 +247,21 @@ class RealtimeClient(
         return if (allowed && offered.length > "wss://".length) offered else fallbackUrl
     }
 
+    /**
+     * The socket for an attempt after [failures] failed ones in a row: the
+     * token's address, then, from the [ALTERNATE_AFTER]th failure on, each
+     * alternate in turn and the token's address again.
+     */
+    internal fun socketUrl(token: RealtimeToken, failures: Int): String {
+        val primary = socketUrl(token)
+        if (failures < ALTERNATE_AFTER) return primary
+        val rotation = (listOf(primary) + alternates().filter { it.startsWith("wss://") }).distinct()
+        return rotation[(failures - ALTERNATE_AFTER + 1) % rotation.size]
+    }
+
     private fun nextId(): Int = commandIds.incrementAndGet()
 
-    private suspend fun session(forceToken: Boolean, first: Boolean, connected: () -> Unit): Outcome {
+    private suspend fun session(forceToken: Boolean, first: Boolean, failures: Int, connected: () -> Unit): Outcome {
         val held = try {
             token(forceToken)
         } catch (e: CancellationException) {
@@ -259,7 +276,7 @@ class RealtimeClient(
         }
         val channel = held.token.channel
         val socket = try {
-            withTimeoutOrNull(timing.connectTimeoutMs) { transport.open(socketUrl(held.token)) }
+            withTimeoutOrNull(timing.connectTimeoutMs) { transport.open(socketUrl(held.token, failures)) }
                 ?: return Outcome.Failed("open timed out")
         } catch (e: CancellationException) {
             throw e
@@ -489,6 +506,9 @@ class RealtimeClient(
 
     private companion object {
         const val AREA = "Realtime"
+
+        /** Failures in a row on the token's address before the alternates are tried. */
+        const val ALTERNATE_AFTER = 2
         const val PLAUSIBLE_MIN_LIFETIME_MS = 4 * 60_000L
         const val PLAUSIBLE_MAX_LIFETIME_MS = 3 * 60 * 60_000L
 

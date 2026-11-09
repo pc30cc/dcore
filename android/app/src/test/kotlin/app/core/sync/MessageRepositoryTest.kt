@@ -251,4 +251,49 @@ class MessageRepositoryTest {
         val target = rows().single { it.serverId == 1_000L }
         assertNull(target.body)
     }
+
+    @Test
+    fun aClientIdTheServerCallsSpentGetsANewOneOnRetryAndNothingElseDoes() = runTest {
+        api.conversation(c)
+        val local = repo.enqueue(ME, c, MessageKind.Text, "hi")!!
+        // 409 conflict: this client id already named a message in another conversation.
+        api.sendError = ApiError.Http(409, Problem.of(409, ProblemCodes.CONFLICT))
+        assertEquals(SendOutcome.Refused(ProblemCodes.CONFLICT), repo.deliver(ME, local))
+        assertEquals(SendState.FAILED.code, rows().single().sendState)
+        assertEquals("a refusal, not something to send again on its own", SendOutcome.Refused(ProblemCodes.CONFLICT), repo.deliver(ME, local))
+        assertEquals(1, api.sent.size)
+
+        api.sendError = null
+        assertTrue(repo.retry(ME, local))
+        assertTrue(repo.deliver(ME, local) is SendOutcome.Sent)
+        assertEquals(listOf("client-1", "client-2"), api.sent.map { it.clientId })
+        val row = rows().single()
+        assertEquals("the same bubble", local, row.localId)
+        assertEquals("client-2", row.clientId)
+        assertEquals(SendState.SENT.code, row.sendState)
+
+        // Any other failure keeps its client id: the server may have the message already.
+        val other = repo.enqueue(ME, c, MessageKind.Text, "again")!!
+        api.sendError = ApiError.Http(422, Problem.of(422, ProblemCodes.FIELD_INVALID))
+        repo.deliver(ME, other)
+        api.sendError = null
+        assertTrue(repo.retry(ME, other))
+        repo.deliver(ME, other)
+        assertEquals(listOf("client-3", "client-3"), api.sent.drop(2).map { it.clientId })
+    }
+
+    @Test
+    fun anEndedConversationAnswers410ForItsHistoryAnd404ForASend() = runTest {
+        api.conversation(c)
+        api.fill(c, 1_000, 2)
+        repo.open(ME, c, 1_001)
+        api.nextReadError = ApiError.Http(410, Problem.of(410, ProblemCodes.CONVERSATION_ENDED))
+        repo.markStale(ME, c)
+        assertEquals("history of an ended conversation: kept here, read-only", ThreadRead.Ended, repo.open(ME, c, 1_001))
+        assertEquals(listOf(1_000L, 1_001L), serverIds())
+        val local = repo.enqueue(ME, c, MessageKind.Text, "hello?")!!
+        api.sendError = ApiError.Http(404, Problem.of(404, ProblemCodes.NOT_FOUND))
+        assertEquals(SendOutcome.Closed, repo.deliver(ME, local))
+        assertEquals(ProblemCodes.CONVERSATION_ENDED, repo.message(ME, local)!!.errorCode)
+    }
 }

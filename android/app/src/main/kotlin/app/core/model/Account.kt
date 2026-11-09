@@ -108,8 +108,54 @@ data class SupportMessageCreate(val body: String)
 @Serializable
 data class SupportMessageBody(val message: SupportMessage)
 
+/** `POST /v1/me/export` (202): the export the request started, or the same one again for a repeat within minutes. */
 @Serializable
 data class ExportStarted(val exportId: Id)
+
+/** Where the account's data export stands. */
+@Serializable(with = ExportState.Serializer::class)
+enum class ExportState(override val wire: String) : WireEnum {
+    /** No export this week, or the last one's link ran out. */
+    None("none"),
+
+    /** Asked for; the archive is being built. */
+    Pending("pending"),
+
+    /** Built: the link opens until its expiry. */
+    Ready("ready"),
+    Unknown(""),
+    ;
+
+    internal object Serializer : WireEnumSerializer<ExportState>("ExportState", entries.toTypedArray(), Unknown)
+}
+
+/**
+ * `GET /v1/me/export`: the export's state, from the server's own record of
+ * it, so a link announced over realtime while the phone was offline is not
+ * lost. [url] and [expiresAt] come only while the link is valid.
+ */
+@Serializable
+data class ExportStatus(
+    val status: ExportState = ExportState.Unknown,
+    val url: String? = null,
+    val expiresAt: Instant? = null,
+) {
+    /**
+     * The link to open now: only for a ready export, a web address (https;
+     * http only from a local development store), and not past its expiry.
+     */
+    fun link(now: Instant): String? {
+        if (status != ExportState.Ready) return null
+        val href = url?.trim()?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+        val until = expiresAt
+        return href.takeIf { until == null || now.isBefore(until) }
+    }
+
+    companion object {
+        /** The `account` realtime event's `export`: the same as a read that says ready. */
+        fun of(ready: ExportReady): ExportStatus = ExportStatus(ExportState.Ready, ready.url, ready.expiresAt)
+    }
+}
 
 /** One first-party analytics event; names come from the server's whitelist. */
 @Serializable

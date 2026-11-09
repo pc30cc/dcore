@@ -46,8 +46,11 @@ sealed interface RequestSendResult {
     /** They matched in the meantime: write in the conversation instead. */
     data object AlreadyMatched : RequestSendResult
 
-    /** Today's free requests are used up; [canBuy]: more can be bought. */
+    /** Today's free requests, the week's gift and the wallet are used up (`quota_exceeded`, feature `dm`); [canBuy]: more can be bought. */
     data class OutOfQuota(val resetsAt: Instant?, val canBuy: Boolean) : RequestSendResult
+
+    /** The day's hard cap is reached, whatever is left to spend (`rate_limited`): again in [retryAfterSeconds]. */
+    data class TooMany(val retryAfterSeconds: Long?) : RequestSendResult
 
     /** The text was refused by the server's rules. */
     data object Refused : RequestSendResult
@@ -90,13 +93,31 @@ class MessageRequestsRepository(
         flow.update { it.copy(loading = true, failed = false, offline = false) }
         try {
             val page = api.messageRequests(which)
-            flow.value = RequestsBox(items = page.items.filter { it.status == RequestStatus.Pending }, loaded = true)
+            flow.value = RequestsBox(items = page.items.filter { it.status in shown(which) }, loaded = true)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiError) {
             diag.info(AREA, "requests (${which.wire}) not read: ${e.code ?: e.javaClass.simpleName}")
             flow.update { it.copy(loading = false, failed = true, offline = e is ApiError.Network) }
         }
+    }
+
+    /**
+     * What a box shows: the inbox what waits for an answer; the sent box
+     * also what went unanswered (the server shows a declined request to its
+     * sender as pending, then as expired, never as declined).
+     */
+    private fun shown(which: RequestBox): Set<RequestStatus> =
+        if (which == RequestBox.Inbox) setOf(RequestStatus.Pending) else setOf(RequestStatus.Pending, RequestStatus.Expired)
+
+    /**
+     * A request between this account and [peer] became a conversation
+     * (`conversation` with reason `accepted`, on either side or on another
+     * phone): it leaves both boxes.
+     */
+    fun onAccepted(peer: PublicUid) {
+        _inbox.update { box -> box.copy(items = box.items.filterNot { it.peer.id == peer }) }
+        _sent.update { box -> box.copy(items = box.items.filterNot { it.peer.id == peer }) }
     }
 
     /** A request that just arrived over realtime. */
@@ -162,6 +183,7 @@ class MessageRequestsRepository(
                 e.code == ProblemCodes.ALREADY_REQUESTED -> RequestSendResult.AlreadySent
                 e.code == ProblemCodes.ALREADY_MATCHED -> RequestSendResult.AlreadyMatched
                 e.code == ProblemCodes.QUOTA_EXCEEDED -> RequestSendResult.OutOfQuota(e.problem.resetsAt, e.problem.canBuy == true)
+                e.status == 429 -> RequestSendResult.TooMany(e.problem.retryAfterSeconds)
                 e.code == ProblemCodes.TEXT_REFUSED || e.code == ProblemCodes.MESSAGE_REFUSED || e.code == ProblemCodes.FIELD_INVALID ->
                     RequestSendResult.Refused
                 e.status == 404 -> RequestSendResult.Unavailable
