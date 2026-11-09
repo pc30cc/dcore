@@ -114,6 +114,8 @@ export interface ConfigSnapshot {
   plans: readonly PlanDefinition[];
   bannedTerms: BannedTerms;
   flags: readonly FeatureFlagDefinition[];
+  /** store_products, inactive rows included (the store catalogue is built from them). */
+  storeProducts: ConfigSnapshotRows['storeProducts'];
   documents: ReadonlyMap<string, ConfigDocument>;
   /** The keys of app_config this build does not know (a newer panel). */
   unknownKeys: readonly string[];
@@ -364,6 +366,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
     plans,
     bannedTerms,
     flags: rows.flags,
+    storeProducts: rows.storeProducts,
     documents,
     unknownKeys: unknown,
   };

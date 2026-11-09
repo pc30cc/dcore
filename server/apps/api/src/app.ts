@@ -38,6 +38,7 @@ import { originsPlugin, type OriginsOptions } from './plugins/origins.js';
 import { pgBudgetPlugin } from './plugins/pgBudget.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
+import { storePlugin, type StoreOptions } from './plugins/store.js';
 import { accountRoutes } from './routes/account.js';
 import { adminOriginsRoutes } from './routes/adminOrigins.js';
 import { adminRtcRoutes } from './routes/adminRtc.js';
@@ -59,6 +60,9 @@ import { BullJobProducer, type JobProducer } from './services/jobs.js';
 import { chatPlugin, type ChatOptions } from './plugins/chat.js';
 import { chatRoutes } from './routes/chat.js';
 import { requestRoutes } from './routes/requests.js';
+import { storeRoutes } from './routes/store.js';
+import { storePurchaseRoutes } from './routes/storePurchases.js';
+import { playRtdnRoutes, type PlayRtdnOptions } from './routes/webhooks/playRtdn.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -118,6 +122,10 @@ export interface AppDependencies {
   chat?: ChatOptions | undefined;
   /** The origins document's clock (tests). */
   origins?: OriginsOptions | undefined;
+  /** Store integrations and the clock of the store services (tests). */
+  store?: StoreOptions | undefined;
+  /** The Pub/Sub push authenticator of Google Play's notifications (tests); otherwise from PLAY_RTDN_*. */
+  playRtdn?: PlayRtdnOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -283,6 +291,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(originsPlugin, deps.origins ?? {});
   await app.register(authServicesPlugin, deps.authServices ?? {});
   await app.register(callsPlugin, deps.calls ?? {});
+  await app.register(storePlugin, deps.store ?? {});
 
   await app.register(healthRoutes, { readiness });
   await app.register(accountRoutes);
@@ -304,6 +313,9 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(adminRtcRoutes);
   await app.register(originsRoutes);
   await app.register(adminOriginsRoutes);
+  await app.register(storeRoutes);
+  await app.register(storePurchaseRoutes);
+  await app.register(playRtdnRoutes, deps.playRtdn ?? {});
 
   if (config.openapi.enabled) {
     app.get('/openapi.json', { schema: { hide: true }, config: { rateLimit: false, pgBudget: 0 } }, async () => app.swagger());

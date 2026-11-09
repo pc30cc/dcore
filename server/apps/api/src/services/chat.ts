@@ -14,6 +14,7 @@ import {
 } from '@app/shared';
 import {
   bumpVersion,
+  cachedPlanIds,
   cacheChatState,
   chatJobIds,
   chatKeys,
@@ -531,14 +532,8 @@ export class ChatService {
     try {
       const values = await app.cache.mget(app.keys.entitlements(userId, 0), app.keys.entitlements(userId, 1), app.keys.entitlements(userId, 2));
       return values.some((raw) => {
-        if (!raw) return false;
-        try {
-          const parsed = JSON.parse(raw) as { v?: unknown; plans?: unknown };
-          if (parsed.v !== 1 || !Array.isArray(parsed.plans)) return false;
-          return planFeature(bestPlan(cfg, parsed.plans.filter((p): p is number => typeof p === 'number')), 'read_receipts');
-        } catch {
-          return false;
-        }
+        const plans = cachedPlanIds(raw);
+        return plans !== null && planFeature(bestPlan(cfg, plans), 'read_receipts');
       });
     } catch {
       return false;

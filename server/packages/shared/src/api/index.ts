@@ -14,3 +14,4 @@ export * from './realtime.js';
 export * from './registry.js';
 export * from './safety.js';
 export * from './social.js';
+export * from './store.js';

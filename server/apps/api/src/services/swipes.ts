@@ -17,6 +17,7 @@ import {
   runLikeScript,
   useHourlySwipes,
   useQuota,
+  type EntitlementBase,
   type LikeScriptOutcome,
   type MatchEntry,
 } from '@app/shared/server';
@@ -87,6 +88,8 @@ export class SwipeService {
   private readonly cfg: ConfigSnapshot;
   private readonly now: number;
   private readonly me: string;
+  /** The session's entitlements base (the plan's read), for the event after a wallet use. */
+  private base: EntitlementBase | null = null;
 
   constructor(env: SwipeEnvironment) {
     this.app = env.app;
@@ -115,7 +118,9 @@ export class SwipeService {
       throw new HttpProblem('rate_limited', { retryAfterSeconds, headers: { 'retry-after': String(retryAfterSeconds) } });
     }
 
-    const plan = (await sessionPlan({ cache: app.cache, keys: app.keys, db: app.pg, log: this.log }, this.request, cfg, me, this.account.session.storeCode)).plan;
+    const planned = await sessionPlan({ cache: app.cache, keys: app.keys, db: app.pg, log: this.log }, this.request, cfg, me, this.account.session.storeCode);
+    const plan = planned.plan;
+    this.base = planned.base;
     // Test accounts are left out of quotas.
     const likeLimit = this.account.test ? -1 : planLimit(plan, 'daily_likes');
     const superLimit = this.account.test ? -1 : planLimit(plan, 'weekly_superlikes');
@@ -205,6 +210,7 @@ export class SwipeService {
         await this.release(lock);
         return { target: swipe.target, result: 'quota' };
       }
+      await app.store.entitlements.walletMoved(this.request, me, this.base, 'superlike', -1);
       // Paid: the lock stays until it expires, past the script's answer, so a resend is answered by the buckets.
     } else {
       return { target: swipe.target, result: 'quota' };
@@ -266,6 +272,7 @@ export class SwipeService {
     budget(this.request, 1);
     const restored = await refundSuperLike(this.app.pg, { userId: this.me, store: payment.store, ledgerId: payment.ledgerId, likeId, targetId });
     if (!restored) this.log.error({ likeId }, 'swipes: a duplicate wallet super like found nothing to give back');
+    else await this.app.store.entitlements.walletMoved(this.request, this.me, this.base, 'superlike', 0);
   }
 
   private async giveBack(quota: 'likes' | 'superlikes'): Promise<void> {

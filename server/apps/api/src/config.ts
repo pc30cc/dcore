@@ -1,4 +1,21 @@
-import { baseEnvShape, databaseEnvShape, envBoolean, envInt, envList, envUrl, parseEnv, redisEnvShape, storageConfigOf, storageEnvShape, type Env, type StorageConfig } from '@app/config';
+import {
+  baseEnvShape,
+  brandEnvShape,
+  databaseEnvShape,
+  envBoolean,
+  envInt,
+  envList,
+  envUrl,
+  parseEnv,
+  redisEnvShape,
+  storageConfigOf,
+  storageEnvShape,
+  storeConfigOf,
+  storeEnvShape,
+  type Env,
+  type StorageConfig,
+  type StoreConfig,
+} from '@app/config';
 import { parseKeyRing } from '@app/shared/server';
 import { z } from 'zod';
 
@@ -46,6 +63,7 @@ const envSchema = z
     ...databaseEnvShape,
     ...redisEnvShape,
     ...storageEnvShape,
+    ...storeEnvShape,
     HOST: z.string().default('0.0.0.0'),
     PORT: envInt(8080, { min: 1, max: 65_535 }),
     DATABASE_APPLICATION_NAME: z.string().min(1).max(63).default('api'),
@@ -97,10 +115,8 @@ const envSchema = z
     /** Statement budgets: `enforce` in tests, `count` to see them, `off` in production. */
     PG_BUDGET: z.enum(['off', 'count', 'enforce']).optional(),
 
-    /** The brand served (brands/<id>/brand.json); the template is refused in production. */
-    BRAND: z.string().regex(/^[a-z0-9_][a-z0-9_-]{0,39}$/).default('_template'),
-    /** Where the brands folder is; found by walking up from the working directory when unset. */
-    BRANDS_DIR: z.string().min(1).optional(),
+    /** BRAND and BRANDS_DIR (the same as the worker's); the template is refused in production. */
+    ...brandEnvShape,
     /** Centrifugo connection tokens (HS256, the secret Centrifugo verifies them with); required in production. */
     CENTRIFUGO_TOKEN_HMAC_SECRET: z.string().min(32).optional(),
     /** The WebSocket URL apps connect to; default wss://<domains.realtime>/connection/websocket. */
@@ -270,6 +286,8 @@ export interface ApiConfig {
   livekit: { apiUrl: string; apiKey: string; apiSecret: string; identitySecret: string } | undefined;
   /** The origins document's signing key (always set in production; undefined: not served) and lifetime. */
   origins: { signingKey: string | undefined; kid: string; ttlSeconds: number };
+  /** Store credentials; a store left undefined answers 503 store_unavailable on its purchase routes. */
+  store: StoreConfig;
 }
 
 function parseTrustProxy(value: string): TrustProxy {
@@ -371,5 +389,6 @@ export function loadConfig(source: Env = process.env): ApiConfig {
         ? { apiUrl: env.LIVEKIT_API_URL, apiKey: env.LIVEKIT_API_KEY, apiSecret: env.LIVEKIT_API_SECRET, identitySecret: env.LIVEKIT_IDENTITY_SECRET }
         : undefined,
     origins: { signingKey: env.ORIGINS_SIGNING_KEY, kid: env.ORIGINS_SIGNING_KID, ttlSeconds: env.ORIGINS_TTL_DAYS * 86_400 },
+    store: storeConfigOf(env),
   };
 }

@@ -354,12 +354,25 @@ export const entitlementFeatureKeys = [
   'priority_likes',
 ] as const;
 
+/** Store product ids: neutral, lowercase, the same in both stores (`sub.plus`, `cons.boost.5`). */
+export const productIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._]{0,98}$/, 'must be a store product id');
+/** A Play subscription's base plan (`m1`); Cafe Bazaar has none. */
+export const basePlanIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'must be a base plan id');
+
 export const entitlementsSchema = z.object({
   plan: z.enum(['free', 'plus', 'premium']),
   planExpiresAt: timeSchema.optional(),
   autoRenew: z.boolean().optional(),
   source: z.enum(['bazaar', 'play', 'grant']).optional(),
   manageUrl: httpUrl.optional(),
+  /**
+   * The store product of the subscription that gives the plan, only when it
+   * was bought in the store of this view (a plan change in the store names
+   * it); never another store's product, never for a grant.
+   */
+  productId: productIdSchema.optional(),
+  /** Its Play base plan, with `productId`; absent for Cafe Bazaar. */
+  basePlanId: basePlanIdSchema.optional(),
   features: z.object(
     Object.fromEntries(entitlementFeatureKeys.map((key) => [key, z.boolean()])) as Record<
       (typeof entitlementFeatureKeys)[number],

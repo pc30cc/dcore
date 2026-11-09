@@ -3,6 +3,7 @@ import type { WorkerConfig } from '../config.js';
 import { accountQueue } from './account.js';
 import { chatQueue } from './chat.js';
 import { deckQueue } from './deck.js';
+import { iapQueue } from './iap.js';
 import { maintQueue } from './maint.js';
 import { photoQueue } from './photo.js';
 import { pushQueue } from './push.js';
@@ -25,6 +26,7 @@ export function defaultQueues(config: WorkerConfig): QueueDefinition[] {
     callsQueue(),
     chatQueue,
     safetyQueue,
+    iapQueue(),
     ...(config.maint.enabled ? [maintQueue] : []),
   ];
 }
@@ -36,6 +38,10 @@ export * from './account.js';
 export * from './chat.js';
 export * from './deck.js';
 export * from './evidence.js';
+export * from './iap.js';
+export * from '../iap/core.js';
+export { PlayJobs } from '../iap/play.js';
+export * from '../iap/verifiers.js';
 export * from './maint.js';
 export * from './photo.js';
 export * from './push.js';

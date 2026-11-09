@@ -432,7 +432,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           }
           filters[key] = values;
         }
-        if (Object.keys(filters).length > 0 && !(await planHasFeature(app.pg, cfg, session.userId, session.storeCode, 'advanced_filters'))) {
+        if (Object.keys(filters).length > 0 && !(await planHasFeature(request, cfg, session.userId, session.storeCode, 'advanced_filters'))) {
           throw new HttpProblem('entitlement_required', { extensions: { feature: 'advanced_filters' } });
         }
       }
@@ -506,7 +506,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         if (status !== 'active' && status !== 'snoozed') throw fieldInvalid('Only an active account can be paused.', '/snoozed');
         snooze = body.snoozed;
       }
-      if (body.incognito === true && !view.profile.incognito && !(await planHasFeature(app.pg, cfg, session.userId, session.storeCode, 'incognito'))) {
+      if (body.incognito === true && !view.profile.incognito && !(await planHasFeature(request, cfg, session.userId, session.storeCode, 'incognito'))) {
         throw new HttpProblem('entitlement_required', { extensions: { feature: 'incognito' } });
       }
       const row = await writing(() =>

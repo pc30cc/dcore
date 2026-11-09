@@ -1,0 +1,57 @@
+{
+  "purchase": {
+    "id": "1290415262410948609",
+    "state": "active",
+    "productId": "sub.plus",
+    "expiresAt": "2026-12-09T08:00:00.000Z"
+  },
+  "entitlements": {
+    "plan": "plus",
+    "planExpiresAt": "2026-12-09T08:00:00.000Z",
+    "autoRenew": true,
+    "source": "play",
+    "manageUrl": "https://play.google.com/store/account/subscriptions?sku=sub.plus&package=app.example.play",
+    "productId": "sub.plus",
+    "basePlanId": "m1",
+    "features": {
+      "see_likes": true,
+      "rewind": true,
+      "read_receipts": true,
+      "incognito": true,
+      "travel_mode": false,
+      "advanced_filters": true,
+      "profile_views": true,
+      "second_look": true,
+      "priority_likes": false
+    },
+    "quotas": {
+      "likes": {
+        "limit": 100,
+        "used": 12,
+        "resetsAt": "2026-11-10T00:00:00.000Z"
+      },
+      "superlikes": {
+        "limit": 5,
+        "used": 1,
+        "resetsAt": "2026-11-16T00:00:00.000Z"
+      },
+      "dm": {
+        "limit": 3,
+        "used": 0,
+        "resetsAt": "2026-11-10T00:00:00.000Z"
+      },
+      "boosts": {
+        "limit": 1,
+        "used": 0,
+        "resetsAt": "2026-12-01T00:00:00.000Z"
+      }
+    },
+    "wallet": {
+      "superlike": 4,
+      "boost": 1,
+      "spotlight": 0,
+      "dm": 0
+    },
+    "boostEndsAt": "2026-11-09T08:30:00.000Z"
+  }
+}

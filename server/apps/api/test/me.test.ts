@@ -390,6 +390,8 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       expect(filters.statusCode).toBe(403);
       expect(problemExt('entitlement_required', filters.json())['feature']).toBe('advanced_filters');
       await db.sql.query(`INSERT INTO subscriptions (user_id, started_at, expires_at, plan_id, store, status) VALUES ($1, now(), now() + interval '7 days', 2, 0, 4)`, [user.id]);
+      // What every writer of subscriptions does once its change is durable (the cached plan is not used again).
+      await h.app.store.entitlements.changed(null, user.id, 0, { publish: false });
       const paid = await call(h, '/v1/me/preferences', { method: 'PATCH', token: user.token, body: { filters: { height: [160, 185] } } });
       expect(paid.statusCode).toBe(200);
       expect(statements(paid)).toBeLessThanOrEqual(3);

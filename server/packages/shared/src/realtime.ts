@@ -55,7 +55,12 @@ export const realtimePayloads = {
   }),
   /** Every state move of a call, to both. */
   call: callSchema,
-  entitlement: entitlementsSchema,
+  /**
+   * The entitlements as a session of one store build sees them (`store`;
+   * absent for a view of no store). A device of the other build treats the
+   * event as a hint and reads `GET /v1/me/entitlements` again.
+   */
+  entitlement: entitlementsSchema.extend({ store: z.enum(['play', 'bazaar']).optional() }),
   /** Moderation results of the person's own profile. */
   profile: z.object({
     photo: z.object({ id: idSchema, status: photoStatusSchema, rejectReason: z.string().optional() }).optional(),

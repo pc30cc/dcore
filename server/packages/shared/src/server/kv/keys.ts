@@ -66,6 +66,25 @@ export function createKeys(prefix: string) {
     device: (did: string | bigint) => k('dev', did),
     upload: (photoId: string | bigint) => k('up', photoId),
     entitlements: (uid: string | bigint, store: number) => k('ent', uid, store),
+    /** Moves after every change of a person's subscriptions or wallet (kv-core): cached entitlements of an older version are not used. */
+    entitlementsVersion: (uid: string | bigint) => k('entv', uid),
+    /** Moves after every wallet change (kv-core): cached entitlements of an older wallet version are not shown, the plan in them still counts. */
+    entitlementsWalletVersion: (uid: string | bigint) => k('entwv', uid),
+
+    // Store purchases: one verification per token at a time and the Play RTDN dedupe (kv-core); the
+    // record of a token the server has verified, so a repeat or a restore costs no statement (kv-cache)
+    iapLock: (tokenHash: string) => k('iap', 'lock', tokenHash),
+    iapToken: (store: number, tokenHash: string) => k('iap', 't', store, tokenHash),
+    /** A known token asked at the store again on the app's word (kv-core, NX, 15 min): at most once per token in that time. */
+    iapReverify: (tokenHash: string) => k('iap', 'rv', tokenHash),
+    rtdnSeen: (messageId: string) => k('rtdn', messageId),
+    /** Up to when (epoch ms) Google Play's voided purchases have been applied (kv-core): the daily sweep's next window starts there. */
+    playVoidedMark: () => k('iap', 'vd', 'wm'),
+    /** Calls made to a store's API in one period (kv-core): `d<yyyymmdd>` per UTC day, `m<minute>` per minute since the epoch. */
+    iapStoreCalls: (store: number, period: string) => k('iap', 'n', store, period),
+    // Boosts (kv-core): the running boost's end (epoch ms) and the start lock; the per-cell zsets are `boosted`
+    boostActive: (uid: string | bigint) => k('boost', uid),
+    boostLock: (uid: string | bigint) => k('boost', 'lock', uid),
     /** The week's data export (kv-core, set by the API: the export's id). */
     exportRequest: (uid: string | bigint) => k('exp', uid),
     /** The export once its archive is stored (kv-core, set by the worker: its id and when its link runs out). */

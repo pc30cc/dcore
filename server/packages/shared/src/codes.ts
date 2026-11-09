@@ -502,6 +502,67 @@ export const purchaseState = codes('store_purchases', 'state', {
   purchased: [12, 'purchased'],
 });
 
+export const productBadge = codes(
+  'store_products',
+  'badge',
+  {
+    none: [0, 'none'],
+    popular: [1, 'most popular'],
+    best_value: [2, 'best value'],
+    new: [3, 'new'],
+  },
+  ['none'],
+);
+
+/** store_events.event: the kind of state change an event row records. */
+export const storeEventKind = codes('store_events', 'event', {
+  verified: [1, 'verified'],
+  renewed: [2, 'renewed'],
+  auto_renew_off: [3, 'auto-renew off'],
+  auto_renew_on: [4, 'auto-renew on/restarted'],
+  grace: [5, 'grace'],
+  on_hold: [6, 'on hold'],
+  recovered: [7, 'recovered'],
+  paused: [8, 'paused'],
+  expired: [9, 'expired'],
+  revoked: [10, 'revoked or refunded'],
+  replaced: [11, 'replaced'],
+  acknowledged: [12, 'acknowledged'],
+  consumed: [13, 'consumed'],
+  credited: [14, 'credited'],
+  other: [99, 'other'],
+});
+
+/** store_events.source: what made the server look at the purchase. */
+export const storeEventSource = codes('store_events', 'source', {
+  app: [1, 'app'],
+  rtdn: [2, 'Play RTDN'],
+  recheck: [3, 'scheduled re-check'],
+  voided: [4, 'Play voided purchases list'],
+  admin: [5, 'admin'],
+  restore: [6, 'restore'],
+  bazaar: [7, 'Bazaar validation'],
+});
+
+export const subscriptionStatus = codes('subscriptions', 'status', {
+  renewing: [1, 'active and renewing'],
+  until_expiry: [2, 'active until expires_at'],
+  grace: [3, 'grace period'],
+  granted: [4, 'granted'],
+});
+
+export const ledgerReason = codes('wallet_ledger', 'reason', {
+  purchase: [1, 'purchase credit'],
+  use: [2, 'use'],
+  refund: [3, 'refund reversal'],
+  gift: [4, 'admin gift'],
+  referral: [5, 'referral reward'],
+  allowance: [6, 'plan allowance'],
+  expiry: [7, 'expiry'],
+  correction: [8, 'admin correction'],
+  restored: [9, 'restored'],
+});
+
 /**
  * users.notify_flags bits (migration 0010): which pushes a person gets, and
  * whether they show the message text and names (`previews`).
@@ -564,5 +625,10 @@ export const codeTables: readonly CodeTable<string>[] = [
   productKind,
   walletItem,
   purchaseState,
+  productBadge,
+  storeEventKind,
+  storeEventSource,
+  subscriptionStatus,
+  ledgerReason,
   notifyFlags,
 ];

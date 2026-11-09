@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { brandSchema, type Brand } from '@app/shared';
+import { z } from 'zod';
 
 /** The brand used when `BRAND` is unset: neutral placeholder values, never shipped. */
 export const TEMPLATE_BRAND_ID = '_template';
@@ -28,6 +29,14 @@ export function findBrandsDir(startDir: string = process.cwd()): string {
     dir = parent;
   }
 }
+
+/** The brand variables of a server process (the API and the worker read the same two). */
+export const brandEnvShape = {
+  /** The brand served (brands/<id>/brand.json); a process refuses the template in production. */
+  BRAND: z.string().regex(/^[a-z0-9_][a-z0-9_-]{0,39}$/).default(TEMPLATE_BRAND_ID),
+  /** Where the brands folder is; found by walking up from the working directory when unset. */
+  BRANDS_DIR: z.string().min(1).optional(),
+};
 
 export interface LoadBrandOptions {
   /** Defaults to the `BRAND` environment variable, then to the template. */

@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import {
   baseEnvShape,
+  brandEnvShape,
   databaseEnvShape,
   envBoolean,
   envInt,
@@ -9,8 +10,12 @@ import {
   redisEnvShape,
   storageConfigOf,
   storageEnvShape,
+  storeConfigOf,
+  storeEnvShape,
   type Env,
   type StorageConfig,
+  type StoreConfig,
+  TEMPLATE_BRAND_ID,
 } from '@app/config';
 import { parseServiceAccount, queuePrefix, type FcmServiceAccount } from '@app/shared/server';
 import { z } from 'zod';
@@ -25,6 +30,9 @@ const envSchema = z
     ...databaseEnvShape,
     ...redisEnvShape,
     ...storageEnvShape,
+    ...storeEnvShape,
+    /** BRAND and BRANDS_DIR, the same as the API's (the subscription links of entitlement events). */
+    ...brandEnvShape,
     /** Jobs run longer statements than requests; the role's own timeout (30 s in production) still applies. */
     DATABASE_STATEMENT_TIMEOUT_MS: envInt(30_000, { min: 0, max: 600_000 }),
     DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: envInt(30_000, { min: 0, max: 600_000 }),
@@ -104,6 +112,7 @@ const envSchema = z
       }
       if (env.LOG_PRETTY) ctx.addIssue({ code: 'custom', path: ['LOG_PRETTY'], message: 'must be off in production (logs are JSON lines)' });
       if (env.FCM_SERVICE_ACCOUNT_JSON === undefined) ctx.addIssue({ code: 'custom', path: ['FCM_SERVICE_ACCOUNT_JSON'], message: 'required in production' });
+      if (env.BRAND === TEMPLATE_BRAND_ID) ctx.addIssue({ code: 'custom', path: ['BRAND'], message: 'the template brand is not served in production' });
     }
     const livekit = [env.LIVEKIT_API_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, env.LIVEKIT_IDENTITY_SECRET];
     if (livekit.some((v) => v !== undefined) && livekit.some((v) => v === undefined)) {
@@ -157,6 +166,10 @@ export interface WorkerConfig {
   livekit: { apiUrl: string; apiKey: string; apiSecret: string; identitySecret: string } | undefined;
   /** Where the signed origins document is published. */
   origins: { media: boolean; targets: PublishTargetConfig[] };
+  /** Store credentials (the same as the API's); a store left undefined leaves its iap jobs failing until it is configured. */
+  store: StoreConfig;
+  /** The brand served (brands/<id>/brand.json under `dir`, else found above the working directory). */
+  brand: { id: string; dir: string | undefined };
 }
 
 export function loadConfig(source: Env = process.env): WorkerConfig {
@@ -199,5 +212,7 @@ export function loadConfig(source: Env = process.env): WorkerConfig {
         ? { apiUrl: env.LIVEKIT_API_URL, apiKey: env.LIVEKIT_API_KEY, apiSecret: env.LIVEKIT_API_SECRET, identitySecret: env.LIVEKIT_IDENTITY_SECRET }
         : undefined,
     origins: { media: env.ORIGINS_PUBLISH_MEDIA, targets: env.ORIGINS_PUBLISH_TARGETS === undefined ? [] : parsePublishTargets(env.ORIGINS_PUBLISH_TARGETS) },
+    store: storeConfigOf(env),
+    brand: { id: env.BRAND, dir: env.BRANDS_DIR },
   };
 }

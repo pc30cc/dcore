@@ -8,7 +8,16 @@ import {
   sentMessageSchema,
   sentRequestBodySchema,
 } from './chat.js';
-import { callTokenSchema, conversationSchema, notificationPrefsSchema, ownProfileSchema, preferencesSchema, profileCardSchema, settingsSchema } from './common.js';
+import {
+  callTokenSchema,
+  conversationSchema,
+  entitlementsSchema,
+  notificationPrefsSchema,
+  ownProfileSchema,
+  preferencesSchema,
+  profileCardSchema,
+  settingsSchema,
+} from './common.js';
 import { configSchema } from './config.js';
 import { exportStartedSchema, exportStatusSchema } from './dataExport.js';
 import { deckPageSchema } from './deck.js';
@@ -26,6 +35,7 @@ import { photoCompletedSchema, photoUploadTicketSchema } from './photos.js';
 import { realtimeTokenSchema } from './realtime.js';
 import { blockListSchema, reportReceiptSchema } from './safety.js';
 import { conversationsPageSchema, likesPageSchema, swipesResponseSchema } from './social.js';
+import { boostStartedSchema, purchasePendingSchema, purchaseResultSchema, restoreResultSchema, storeProductsSchema } from './store.js';
 
 /**
  * The response bodies of the routes this package describes, by the name of
@@ -77,6 +87,12 @@ export const responseSchemas = {
   'call-token': callTokenSchema,
   'export-started': exportStartedSchema,
   'export-status': exportStatusSchema,
+  'store-products': storeProductsSchema,
+  'purchase-result': purchaseResultSchema,
+  'purchase-pending': purchasePendingSchema,
+  'restore-result': restoreResultSchema,
+  entitlements: entitlementsSchema,
+  'boost-started': boostStartedSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ResponseFixtureName = keyof typeof responseSchemas;

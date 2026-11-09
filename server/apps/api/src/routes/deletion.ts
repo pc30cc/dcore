@@ -1,7 +1,6 @@
 import { renewingSubscription, restoreAccount } from '@app/db';
 import {
   accountStatus,
-  androidApplicationId,
   deletionPreflightSchema,
   deletionRequestSchema,
   deletionScheduledSchema,
@@ -10,8 +9,8 @@ import {
   wireTime,
   type AppStore,
   type AuthUser,
-  type Brand,
 } from '@app/shared';
+import { manageUrlOf } from '@app/shared/server';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
@@ -30,23 +29,6 @@ import { requireScope, sessionOf, unauthorized } from '../services/session.js';
  *   purge time. The session that asks is a `restore` session (a sign-in of
  *   a deleted account); a refresh then gives it the full scope.
  */
-
-/** Google Play's own subscription centre. */
-export const PLAY_SUBSCRIPTIONS_URL = 'https://play.google.com/store/account/subscriptions';
-
-/** Where the person cancels: the brand's link, else Play's centre (with the product, when known); Cafe Bazaar has none of its own on the web. */
-export function manageUrlOf(brand: Brand, store: AppStore, productId: string | null): string | undefined {
-  const own = brand.stores?.[store]?.subscriptionsUrl;
-  if (own) return own;
-  if (store !== 'play') return undefined;
-  const url = new URL(PLAY_SUBSCRIPTIONS_URL);
-  const packageName = androidApplicationId(brand, 'play');
-  if (productId && packageName) {
-    url.searchParams.set('sku', productId);
-    url.searchParams.set('package', packageName);
-  }
-  return url.toString();
-}
 
 export const deletionRoutes: FastifyPluginAsyncZod = async (app) => {
   const deletable = requireScope(app, app.account, ['full', 'restricted']);

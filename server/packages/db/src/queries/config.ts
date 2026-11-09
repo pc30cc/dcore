@@ -5,8 +5,8 @@ import { defineQuery } from './define.js';
 /**
  * Everything a process keeps of the run-time configuration, in one
  * statement: app_config, the active brand's overrides, the panel's strings,
- * the field and prompt catalogues, plans and their features, banned terms
- * and feature flags. Read at start-up and after `cfg:changed`, never on a
+ * the field and prompt catalogues, plans and their features, banned terms,
+ * feature flags and the store catalogue. Read at start-up and after `cfg:changed`, never on a
  * request path.
  */
 
@@ -67,6 +67,25 @@ export const configSnapshotSchema = z.object({
   flags: z.array(
     z.object({ key: z.string(), enabled: z.boolean(), rolloutPct: z.number().int().min(0).max(100), rules: z.record(z.string(), z.unknown()) }),
   ),
+  /** The store catalogue, inactive rows included (a product no longer sold still names what its buyers hold). */
+  storeProducts: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      store: z.number().int().min(1).max(3),
+      kind: z.number().int().min(1).max(2),
+      planId: z.number().int().nullable(),
+      period: z.string().nullable(),
+      item: z.number().int().min(1).max(4).nullable(),
+      quantity: z.number().int().positive().nullable(),
+      productId: z.string(),
+      basePlanId: z.string().nullable(),
+      badge: z.number().int().min(0).max(3),
+      sort: z.number().int(),
+      active: z.boolean(),
+      listPriceMinor: z.number().int().nonnegative().nullable(),
+      listCurrency: z.string().nullable(),
+    }),
+  ),
 });
 export type ConfigSnapshotRows = z.infer<typeof configSnapshotSchema>;
 
@@ -102,7 +121,14 @@ SELECT jsonb_build_object(
                     FROM banned_terms t WHERE t.is_active),
   'flags', (SELECT coalesce(jsonb_agg(jsonb_build_object('key', g.key, 'enabled', g.is_enabled, 'rolloutPct', g.rollout_pct, 'rules', g.rules)
               ORDER BY g.key), '[]'::jsonb)
-              FROM feature_flags g)
+              FROM feature_flags g),
+  'storeProducts', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                        'id', p.id, 'store', p.store, 'kind', p.kind, 'planId', p.plan_id, 'period', p.period,
+                        'item', p.grant_item, 'quantity', p.grant_qty, 'productId', p.product_id, 'basePlanId', p.base_plan_id,
+                        'badge', p.badge, 'sort', p.sort, 'active', p.is_active,
+                        'listPriceMinor', p.list_price_minor, 'listCurrency', p.list_currency)
+                      ORDER BY p.store, p.sort, p.id), '[]'::jsonb)
+                      FROM store_products p)
 ) AS snapshot`,
   );
   return configSnapshotSchema.parse(row.snapshot);

@@ -17,3 +17,4 @@ export * from './photos.js';
 export * from './requests.js';
 export * from './safety.js';
 export * from './social.js';
+export * from './billing.js';

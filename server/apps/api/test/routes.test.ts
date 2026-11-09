@@ -98,6 +98,15 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['POST', '/v1/webhooks/livekit', '200', true],
   ['GET', '/v1/admin/providers/rtc', '200', true],
   ['PUT', '/v1/admin/providers/rtc', '200', true],
+  // §3.12 (the store core; the RTDN webhook is Google Play's own)
+  ['GET', '/v1/store/products', '200', true],
+  ['POST', '/v1/store/play/purchases', '200', true],
+  ['POST', '/v1/store/bazaar/purchases', '200', true],
+  ['POST', '/v1/store/restore', '200', true],
+  ['GET', '/v1/me/entitlements', '200', true],
+  ['POST', '/v1/boosts', '201', true],
+  // §3.16 (Google Play's real-time developer notifications)
+  ['POST', '/v1/webhooks/play/rtdn', '204', false],
   // The signed origins document and its hosts in the admin panel
   ['GET', '/v1/origins', '200', true],
   ['GET', '/v1/admin/origins', '200', true],

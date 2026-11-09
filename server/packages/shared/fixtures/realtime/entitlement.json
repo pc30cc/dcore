@@ -4,10 +4,12 @@
   "id": "1287390234923417617",
   "at": "2026-11-06T09:14:03.120Z",
   "d": {
+    "store": "bazaar",
     "plan": "plus",
     "planExpiresAt": "2026-12-06T00:00:00.000Z",
     "autoRenew": true,
     "source": "bazaar",
+    "productId": "sub.plus.1m",
     "features": {
       "see_likes": true,
       "rewind": true,

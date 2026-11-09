@@ -71,6 +71,8 @@ CMD ["node", "--enable-source-maps", "dist/main.js"]
 # ── Worker ───────────────────────────────────────────────────────────────
 FROM node-service AS worker
 COPY --from=build /out/worker /app
+COPY brands /app/brands
+ENV BRANDS_DIR=/app/brands
 COPY --chmod=0644 deploy/node/worker-health.mjs /app/health.mjs
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node /app/health.mjs || exit 1

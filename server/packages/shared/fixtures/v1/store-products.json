@@ -1,0 +1,16 @@
+{
+  "store": "play",
+  "billingRef": "k7wq2m4zx5p3a",
+  "subscriptions": [
+    { "productId": "sub.plus", "basePlanId": "w1", "plan": "plus", "period": "P1W", "sort": 10 },
+    { "productId": "sub.plus", "basePlanId": "m1", "plan": "plus", "period": "P1M", "badge": "popular", "sort": 11 },
+    { "productId": "sub.plus", "basePlanId": "m3", "plan": "plus", "period": "P3M", "badge": "best_value", "sort": 12 },
+    { "productId": "sub.premium", "basePlanId": "m1", "plan": "premium", "period": "P1M", "sort": 21 }
+  ],
+  "consumables": [
+    { "productId": "cons.superlike.5", "item": "superlike", "quantity": 5, "sort": 30 },
+    { "productId": "cons.boost.1", "item": "boost", "quantity": 1, "sort": 40 },
+    { "productId": "cons.spotlight.1", "item": "spotlight", "quantity": 1, "badge": "new", "sort": 50 },
+    { "productId": "cons.dm.5", "item": "dm", "quantity": 5, "sort": 60 }
+  ]
+}

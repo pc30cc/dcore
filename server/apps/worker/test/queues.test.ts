@@ -77,6 +77,8 @@ describe('the queues the worker runs', () => {
     expect(scheduled.sort()).toEqual([
       'account/deletion-sweep',
       'chat/read-flush',
+      'iap/checks',
+      'iap/voided',
       'maint/active-drain',
       'maint/lk-rebuild',
       'maint/partitions',

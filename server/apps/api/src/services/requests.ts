@@ -29,6 +29,7 @@ import {
   SEND_RECORD_TTL_SECONDS,
   useCounter,
   utcDay,
+  type EntitlementBase,
 } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -117,8 +118,10 @@ export class RequestService {
     }
     const counted: string[] = [keys.cap];
     let pay = false;
+    let base: EntitlementBase | null = null;
     if (!account.test) {
       const plan = await sessionPlan({ cache: app.cache, keys: app.keys, db: app.pg, log: this.log }, this.request, cfg, userId, account.session.storeCode);
+      base = plan.base;
       const daily = await useCounter(app.redis, keys.daily, planLimit(plan.plan, 'daily_dm'), 2 * 86_400);
       if (daily.allowed) counted.push(keys.daily);
       else {
@@ -159,6 +162,7 @@ export class RequestService {
       }
       throw new HttpProblem('not_found');
     }
+    if (outcome.paid) await app.store.entitlements.walletMoved(this.request, userId, base, 'dm', -1);
     const toCard = parseCardSource(outcome.toCard);
     if (!toCard) throw new HttpProblem('not_found');
     const sent: SentRequest = {
@@ -273,9 +277,11 @@ export class RequestService {
     const theirs = await viewOf(fromId);
     if (app.realtime) {
       try {
-        await app.realtime.publish(userChannel(app.publicIds.user.encode(userId)), realtimeEnvelope('conversation', m.id, Date.now(), { conversation: mine, reason: 'accepted' }));
+        // Each event its own id (the idempotency and dedupe key): an accept into a conversation that exists already must
+        // not reuse the id its match or a first accept was published under.
+        await app.realtime.publish(userChannel(app.publicIds.user.encode(userId)), realtimeEnvelope('conversation', nextId(app), Date.now(), { conversation: mine, reason: 'accepted' }));
         if (theirs) {
-          await app.realtime.publish(userChannel(app.publicIds.user.encode(fromId)), realtimeEnvelope('conversation', m.id, Date.now(), { conversation: theirs, reason: 'accepted' }));
+          await app.realtime.publish(userChannel(app.publicIds.user.encode(fromId)), realtimeEnvelope('conversation', nextId(app), Date.now(), { conversation: theirs, reason: 'accepted' }));
         }
         if (first) {
           await app.realtime.broadcast(

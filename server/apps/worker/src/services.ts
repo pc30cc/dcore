@@ -1,4 +1,6 @@
+import { loadBrand } from '@app/config';
 import { createPool, type Pool } from '@app/db';
+import type { Brand } from '@app/shared';
 import {
   CentrifugoPublisher,
   FcmSender,
@@ -15,6 +17,7 @@ import {
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { WorkerConfig } from './config.js';
+import { iapServicesFrom, type IapServices } from './iap/verifiers.js';
 import { FakePhotoModerator, type PhotoModerator } from './photos/moderation.js';
 import { createWorkerRedis } from './redis.js';
 
@@ -39,6 +42,10 @@ export interface WorkerServices {
   photoModerator: PhotoModerator;
   /** FCM; null or absent without FCM_SERVICE_ACCOUNT_JSON (push jobs then finish without sending). */
   push?: PushSender | null | undefined;
+  /** The store integrations (absent: iap jobs wait for one). */
+  iap?: IapServices | undefined;
+  /** The brand served (BRAND), loaded at start; absent (tests): loaded from `config.brand` when first needed. */
+  brand?: Brand | undefined;
 }
 
 export interface OwnedServices {
@@ -48,6 +55,8 @@ export interface OwnedServices {
 }
 
 export function createWorkerServices(config: WorkerConfig, redis: Redis, logger: Logger): OwnedServices {
+  // Read before anything is opened: a brand that cannot be read stops the process with its path.
+  const brand = loadBrand({ brandId: config.brand.id, brandsDir: config.brand.dir });
   const pg = createPool({
     connectionString: config.database.url,
     applicationName: config.database.applicationName,
@@ -84,6 +93,8 @@ export function createWorkerServices(config: WorkerConfig, redis: Redis, logger:
     media: config.storage ? createMediaStore(config.storage, { timeoutMs: config.storage.timeoutMs }) : null,
     photoModerator: new FakePhotoModerator({ autoApprove: config.photos.autoApprove }),
     push: config.push ? new FcmSender({ account: config.push.account }) : null,
+    iap: iapServicesFrom(config, logger, { redis, keys: createKeys(config.redis.keyPrefix) }),
+    brand,
   };
   return {
     services,
