@@ -63,7 +63,7 @@
     <string name="update_check_failed">Güncellemeler denetlenemedi. Daha sonra tekrar deneyin.</string>
     <string name="settings_payments">Mağaza ödemeleri</string>
     <string name="payments_check">%1$s durumunu denetlemek için dokunun</string>
-    <string name="payments_ready">%1$s hazır. Satın almalar, sunucu doğrulayabildiğinde açılacak.</string>
+    <string name="payments_ready">%1$s hazır.</string>
     <string name="payments_store_missing">%1$s bu telefonda yüklü değil.</string>
     <string name="payments_store_not_ready">%1$s hesabınıza giriş yapın veya uygulamayı güncelleyin.</string>
     <string name="payments_not_supported">%1$s ödemeleri bu cihazda veya hesapta kullanılamıyor.</string>
@@ -74,6 +74,4 @@
     <string name="licences_instrument_serif">Instrument Serif yazı tipi</string>
     <string name="licences_lalezar">Lalezar yazı tipi</string>
     <string name="settings_version">Sürüm %1$s (%2$d) · %3$s</string>
-    <string name="store_bazaar">Cafe Bazaar</string>
-    <string name="store_play">Google Play</string>
 </resources>

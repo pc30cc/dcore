@@ -162,7 +162,8 @@ class LikesScreenTest {
     fun aHiddenLikeExplainsThePlans() {
         show(LikesUiState(status = LikesStatus.Ready, items = listOf(hidden), total = 1, seeLikes = false, upsell = true))
         compose.onNodeWithText("Included with Plus / Premium.").assertIsDisplayed()
-        compose.onNodeWithText("Got it").performClick()
+        compose.onNodeWithText("See plans").assertIsDisplayed()
+        compose.onNodeWithText("Not now").performClick()
         assertEquals(listOf("dismissUpsell"), actions.calls)
     }
 

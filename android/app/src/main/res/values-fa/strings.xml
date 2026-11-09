@@ -63,7 +63,7 @@
     <string name="update_check_failed">بررسی به‌روزرسانی ممکن نشد. بعداً دوباره امتحان کنید.</string>
     <string name="settings_payments">پرداخت فروشگاه</string>
     <string name="payments_check">برای بررسی %1$s لمس کنید</string>
-    <string name="payments_ready">%1$s آماده است. خرید وقتی باز می‌شود که سرور بتواند آن را تأیید کند.</string>
+    <string name="payments_ready">%1$s آماده است.</string>
     <string name="payments_store_missing">%1$s روی این گوشی نصب نیست.</string>
     <string name="payments_store_not_ready">وارد %1$s شوید یا آن را به‌روز کنید.</string>
     <string name="payments_not_supported">پرداخت %1$s روی این دستگاه یا حساب در دسترس نیست.</string>
@@ -74,6 +74,4 @@
     <string name="licences_instrument_serif">فونت Instrument Serif</string>
     <string name="licences_lalezar">فونت لاله‌زار</string>
     <string name="settings_version">نسخه‌ی %1$s (%2$d) · %3$s</string>
-    <string name="store_bazaar">کافه‌بازار</string>
-    <string name="store_play">گوگل‌پلی</string>
 </resources>

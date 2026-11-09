@@ -100,6 +100,12 @@ data class PurchaseResult(
 data class RestoredPurchase(
     val purchaseToken: String,
     val state: String,
+    /**
+     * This restore granted or credited the token for the first time (it was
+     * new to the server, pending or unclaimed). Null from a server that does
+     * not say.
+     */
+    val fresh: Boolean? = null,
 )
 
 @Serializable

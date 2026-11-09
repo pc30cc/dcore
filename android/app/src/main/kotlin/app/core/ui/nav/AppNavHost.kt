@@ -34,6 +34,12 @@ import app.core.feature.auth.AuthRoute
 import app.core.feature.chat.ChatRoute
 import app.core.feature.main.MainRoute
 import app.core.feature.main.MainTab
+import app.core.feature.paywall.PaywallHost
+import app.core.feature.paywall.StorePrompts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import app.core.feature.requests.RequestsRoute
 import app.core.push.OpenTarget
 import androidx.compose.runtime.remember
@@ -139,42 +145,48 @@ fun AppNavHost(config: Config?) {
         }
     }
 
-    NavDisplay(
-        backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
-        entryDecorators = listOf(
-            rememberSaveableStateHolderNavEntryDecorator(),
-            rememberViewModelStoreNavEntryDecorator(),
-        ),
-        transitionSpec = { forward(rtl, reducedMotion) },
-        popTransitionSpec = { backward(rtl, reducedMotion) },
-        predictivePopTransitionSpec = { backward(rtl, reducedMotion) },
-        entryProvider = entryProvider {
-            entry<SplashKey> { SplashRoute() }
-            entry<AuthKey> { AuthRoute() }
-            entry<OnboardingKey> { OnboardingRoute() }
-            entry<ReviewKey> { ReviewRoute() }
-            entry<RestrictedKey> { RestrictedRoute() }
-            entry<RestoreKey> { RestoreRoute() }
-            entry<MainKey> {
-                MainRoute(
-                    onOpenChat = { id -> backStack.add(ChatKey(id)) },
-                    onOpenRequests = { backStack.add(RequestsKey) },
-                    tabRequests = tabs,
-                )
-            }
-            entry<ChatKey> { key -> ChatRoute(key.conversationId, onBack = { backStack.removeLastOrNull() }) }
-            entry<RequestsKey> {
-                RequestsRoute(
-                    onBack = { backStack.removeLastOrNull() },
-                    onOpenChat = { id ->
-                        backStack.removeLastOrNull()
-                        backStack.add(ChatKey(id))
-                    },
-                )
-            }
-        },
-    )
+    // The paywall and the packs sheets open over whatever screen asked for them; the store's prompts ride along.
+    PaywallHost(config) {
+        Box(Modifier.fillMaxSize()) {
+            NavDisplay(
+                backStack = backStack,
+                onBack = { backStack.removeLastOrNull() },
+                entryDecorators = listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator(),
+                ),
+                transitionSpec = { forward(rtl, reducedMotion) },
+                popTransitionSpec = { backward(rtl, reducedMotion) },
+                predictivePopTransitionSpec = { backward(rtl, reducedMotion) },
+                entryProvider = entryProvider {
+                    entry<SplashKey> { SplashRoute() }
+                    entry<AuthKey> { AuthRoute() }
+                    entry<OnboardingKey> { OnboardingRoute() }
+                    entry<ReviewKey> { ReviewRoute() }
+                    entry<RestrictedKey> { RestrictedRoute() }
+                    entry<RestoreKey> { RestoreRoute() }
+                    entry<MainKey> {
+                        MainRoute(
+                            onOpenChat = { id -> backStack.add(ChatKey(id)) },
+                            onOpenRequests = { backStack.add(RequestsKey) },
+                            tabRequests = tabs,
+                        )
+                    }
+                    entry<ChatKey> { key -> ChatRoute(key.conversationId, onBack = { backStack.removeLastOrNull() }) }
+                    entry<RequestsKey> {
+                        RequestsRoute(
+                            onBack = { backStack.removeLastOrNull() },
+                            onOpenChat = { id ->
+                                backStack.removeLastOrNull()
+                                backStack.add(ChatKey(id))
+                            },
+                        )
+                    }
+                },
+            )
+            StorePrompts(root, config, Modifier.align(Alignment.BottomCenter))
+        }
+    }
 }
 
 /** Opens [key] over the main tabs, replacing any thread or list already open over them. */

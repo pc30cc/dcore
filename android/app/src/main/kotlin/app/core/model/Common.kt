@@ -351,6 +351,14 @@ data class Entitlements(
     val source: EntitlementSource? = null,
     /** The store's subscription page, to cancel or change. */
     val manageUrl: String? = null,
+    /**
+     * The store product of the subscription that gives [plan], only when it
+     * is of this session's store (never another store's, a grant's or a free
+     * plan's).
+     */
+    val productId: String? = null,
+    /** Play only: the base plan of [productId] the person is on. */
+    val basePlanId: String? = null,
     val features: Features = Features(),
     val quotas: Quotas = Quotas(),
     val wallet: Wallet = Wallet(),

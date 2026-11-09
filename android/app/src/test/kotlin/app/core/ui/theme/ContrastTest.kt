@@ -30,6 +30,8 @@ class ContrastTest {
         assertPair("$theme onPrimary/primary (button labels)", scheme.onPrimary, scheme.primary)
         assertPair("$theme primary/background (text buttons)", scheme.primary, scheme.background)
         assertPair("$theme primary/surface", scheme.primary, scheme.surface)
+        assertPair("$theme primary/surfaceContainerLow (bottom sheets)", scheme.primary, scheme.surfaceContainerLow)
+        assertPair("$theme primary/surfaceContainer (cards)", scheme.primary, scheme.surfaceContainer)
         assertPair("$theme onPrimaryContainer/primaryContainer", scheme.onPrimaryContainer, scheme.primaryContainer)
         assertPair("$theme onSecondaryContainer/secondaryContainer", scheme.onSecondaryContainer, scheme.secondaryContainer)
         assertPair("$theme onError/error", scheme.onError, scheme.error)

@@ -37,6 +37,7 @@ class RequestsScreenTest {
         override fun back() { calls += "back" }
         override fun select(box: RequestBox) { calls += "select:$box" }
         override fun refresh() { calls += "refresh" }
+        override fun loadMore() { calls += "more" }
         override fun accept(request: MessageRequest) { calls += "accept:${request.id}" }
         override fun decline(request: MessageRequest) { calls += "decline:${request.id}" }
         override fun withdraw(request: MessageRequest) { calls += "withdraw:${request.id}" }
@@ -139,5 +140,39 @@ class RequestsScreenTest {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar, fromNegar.copy(id = "3003")), loaded = true)))
         compose.onNodeWithText("درخواست‌های پیام").assertIsDisplayed()
         compose.onNodeWithText("دریافتی (۲)", substring = true).assertExists()
+    }
+
+    @Test
+    fun theEndOfABoxWithMoreReadsTheNextPartOnItsOwn() {
+        show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true, nextCursor = "c1")))
+        compose.waitForIdle()
+        assertEquals(listOf("more"), actions.calls)
+        compose.onNodeWithContentDescription("Loading message requests").assertExists()
+    }
+
+    @Test
+    fun aFailedReadOfMoreOffersToTryAgain() {
+        show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true, nextCursor = "c1", moreFailed = true)))
+        compose.onNodeWithText("More requests didn't load.").assertExists()
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(listOf("more"), actions.calls)
+    }
+
+    @Test
+    fun pagesOfHiddenSendersWaitForTheButtonInsteadOfAnEmptyBox() {
+        show(RequestsUiState(inbox = RequestsBox(loaded = true, nextCursor = "c5", moreHidden = true)))
+        compose.onNodeWithText("No message requests").assertDoesNotExist()
+        compose.waitForIdle()
+        assertEquals("nothing read unasked", emptyList<String>(), actions.calls)
+        compose.onNodeWithText("Show more").performClick()
+        assertEquals(listOf("more"), actions.calls)
+    }
+
+    @Test
+    fun theEndOfTheBoxReadsNothingMore() {
+        show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true)))
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Loading message requests").assertDoesNotExist()
+        assertEquals(emptyList<String>(), actions.calls)
     }
 }

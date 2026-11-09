@@ -2,7 +2,7 @@ package app.core.store
 
 /** The store a build is made for: one product flavor each. */
 enum class Store(val id: String) {
-    /** Cafe Bazaar (cafebazaar.ir): billing through Poolakey. */
+    /** Cafe Bazaar: billing through Poolakey. */
     BAZAAR("bazaar"),
 
     /** Google Play: Play Billing, In-App Review, In-App Updates, Play Integrity. */
@@ -37,4 +37,6 @@ class StoreServices(
     val externalSignIn: ExternalSignIn = ExternalSignIn.None,
     /** Sign-in codes read from the text message (SMS Retriever, in the Play build only). */
     val smsCodes: SmsCodeReceiver = SmsCodeReceiver.None,
+    /** The store's age band for the person (Play's Age Signals, in the Play build only). */
+    val ageSignals: AgeSignals = AgeSignals.None,
 )

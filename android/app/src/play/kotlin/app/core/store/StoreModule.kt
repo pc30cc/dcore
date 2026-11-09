@@ -21,6 +21,7 @@ internal object StoreModule {
             integrity = PlayIntegrity(context, BuildConfig.PLAY_CLOUD_PROJECT_NUMBER, diag),
             externalSignIn = GoogleSignIn(context, BuildConfig.GOOGLE_WEB_CLIENT_ID, diag),
             smsCodes = PlaySmsRetriever(diag),
+            ageSignals = PlayAgeSignals(diag),
         )
     }
 }

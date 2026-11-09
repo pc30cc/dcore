@@ -3,6 +3,9 @@ package app.core.net
 import android.content.Context
 import app.core.BuildConfig
 import app.core.common.Clock
+import app.core.store.SampleBilling
+import app.core.store.Store
+import app.core.store.StoreBilling
 import java.io.File
 
 /**
@@ -35,4 +38,8 @@ object Backend {
     /** [real] is built only when it is the one used. */
     fun create(context: Context, clock: Clock, real: () -> ServerApi): ServerApi =
         if (isSample(context)) SampleApi(store = BuildConfig.STORE, clock = clock) else real()
+
+    /** The sample store with the sample backend (no store app needed), else the flavor's [real] one. */
+    fun billing(context: Context, real: () -> StoreBilling): StoreBilling =
+        if (isSample(context)) SampleBilling(Store.fromId(BuildConfig.STORE)) else real()
 }

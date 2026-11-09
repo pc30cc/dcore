@@ -28,12 +28,14 @@ import kotlin.coroutines.resume
 /**
  * Cafe Bazaar in-app billing, through Poolakey (Bazaar's official SDK).
  *
- * Implemented: connecting, product details, the purchase and subscription
- * sheets, owned purchases and consuming. NOT implemented here, by design:
- * granting anything. A purchase is reported as the store reported it and must
- * go to the server, which validates it with Cafe Bazaar's developer API
- * before any entitlement exists ([StoreBilling]). That server endpoint does
- * not exist yet, so no screen starts a purchase.
+ * Connecting, product details, the purchase and subscription sheets (the
+ * developer payload is the server's `billingRef`), owned purchases and
+ * consuming. NOT done here, by design: granting anything. A purchase is
+ * reported as the store reported it and goes to the server
+ * (`POST /v1/store/bazaar/purchases`), which checks its signature and asks
+ * Cafe Bazaar's developer API before any entitlement exists; a pack is
+ * consumed only after that ([StoreBilling]). Bazaar cannot replace one
+ * subscription with another, so a [PlanChange] is not used here.
  *
  * The local signature check ([SecurityCheck.Enable]) needs the app's RSA
  * public key from the Bazaar developer panel (`-Pbazaar.rsaPublicKey`). Without
@@ -128,7 +130,12 @@ internal class BazaarBilling(
         }
     }
 
-    override suspend fun purchase(activity: ComponentActivity, product: StoreProduct, accountToken: String): PurchaseOutcome {
+    override suspend fun purchase(
+        activity: ComponentActivity,
+        product: StoreProduct,
+        accountToken: String,
+        change: PlanChange?,
+    ): PurchaseOutcome {
         when (val availability = connect()) {
             BillingAvailability.Ready -> Unit
             is BillingAvailability.Unavailable -> return PurchaseOutcome.Failed(availability.reason, availability.detail)
@@ -243,6 +250,7 @@ internal class BazaarBilling(
         acknowledged = null,
         originalJson = originalJson,
         signature = dataSignature,
+        accountRef = payload.takeIf { it.isNotEmpty() },
     )
 
     private companion object {

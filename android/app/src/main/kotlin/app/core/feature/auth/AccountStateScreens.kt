@@ -224,6 +224,8 @@ fun RestrictedRoute() {
             }
         }
         InlineMessage(stepErrorTextLocal(state.error))
+        // A store subscription keeps renewing: where to cancel it, and restore.
+        app.core.feature.paywall.SubscriptionNotice()
     }
 }
 

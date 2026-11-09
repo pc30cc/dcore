@@ -140,6 +140,8 @@
     <string name="requests_withdrawn">Geri çekildi.</string>
     <string name="requests_load_failed">Mesaj istekleri yüklenemedi</string>
     <string name="requests_loading">Mesaj istekleri yükleniyor</string>
+    <string name="requests_more_failed">Daha fazla istek yüklenemedi.</string>
+    <string name="requests_show_more">Daha fazla göster</string>
     <string name="requests_report_note">Mesajı bildirimle birlikte gönderilir ve istek reddedilir.</string>
     <string name="requests_empty_inbox_title">Mesaj isteği yok</string>
     <string name="requests_empty_inbox_body">Biri eşleşmeden önce sana yazarsa burada görünür.</string>

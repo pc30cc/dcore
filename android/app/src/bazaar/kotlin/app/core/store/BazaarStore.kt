@@ -33,7 +33,35 @@ internal class BazaarStoreInfo : StoreInfo {
     override fun openAppPage(activity: Activity): Boolean =
         PackageChecks.start(activity, appPageIntent(activity.packageName)) ||
             PackageChecks.start(activity, webIntent(activity.packageName))
+
+    override fun isOwnStoreLink(url: String): Boolean = runCatching {
+        val uri = java.net.URI(url)
+        val host = uri.host.orEmpty()
+        uri.scheme == BAZAAR_SCHEME || (uri.scheme == "https" && (host == BAZAAR_WEB_HOST || host.endsWith(".$BAZAAR_WEB_HOST")))
+    }.getOrDefault(false)
+
+    /**
+     * Cafe Bazaar documents no link to its subscription list: the server's
+     * link when the brand set one on Bazaar's own site, else this app's page
+     * in Bazaar, where its subscription shows.
+     */
+    override fun openSubscriptions(activity: Activity, productId: String?, serverLink: String?): Boolean {
+        val own = serverLink?.takeIf(::isOwnStoreLink)
+        if (own != null) {
+            val intent = Intent(Intent.ACTION_VIEW, own.toUri())
+            if (PackageChecks.start(activity, Intent(intent).setPackage(BAZAAR_PACKAGE)) || PackageChecks.start(activity, intent)) return true
+        }
+        return openAppPage(activity)
+    }
+
+    /** Bazaar's own site, where the Bazaar app is downloaded. */
+    override fun openStoreInstall(activity: Activity): Boolean =
+        PackageChecks.start(activity, Intent(Intent.ACTION_VIEW, BAZAAR_HOME.toUri()))
 }
+
+private const val BAZAAR_SCHEME = "bazaar"
+private const val BAZAAR_WEB_HOST = "cafebazaar.ir"
+private const val BAZAAR_HOME = "https://cafebazaar.ir/"
 
 /**
  * Cafe Bazaar offers apps no in-app update API, so there is nothing to check

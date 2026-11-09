@@ -3,6 +3,8 @@ package app.core.store
 import android.app.Activity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Whether a newer version is out, and getting it.
@@ -26,6 +28,16 @@ interface AppUpdates {
         update: UpdateCheck.Available,
         mode: UpdateMode,
     ): Boolean
+
+    /** A flexible update finished downloading and waits for [completeFlexible]. Stores without one: never. */
+    val downloaded: StateFlow<Boolean> get() = NEVER
+
+    /** Installs a downloaded flexible update (the app restarts). False when there is none, or it failed. */
+    suspend fun completeFlexible(): Boolean = false
+
+    private companion object {
+        val NEVER: StateFlow<Boolean> = MutableStateFlow(false)
+    }
 }
 
 enum class UpdateMode {

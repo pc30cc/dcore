@@ -77,6 +77,9 @@ import app.core.feature.match.MatchMomentDialog
 import app.core.i18n.brandString
 import app.core.media.CoilPhotoPreloader
 import app.core.model.BoostKind
+import app.core.feature.paywall.PaywallEntry
+import androidx.compose.runtime.produceState
+import java.time.Instant
 import app.core.model.BoostStarted
 import app.core.model.Catalog
 import app.core.model.DeckSuggestion
@@ -143,7 +146,7 @@ fun DeckRoute(onOpenChat: (Id?) -> Unit, onOpenProfile: () -> Unit, modifier: Mo
     val graph = LocalAppGraph.current
     val context = LocalContext.current
     val vm: DeckViewModel = viewModel {
-        DeckViewModel(graph.deck, graph.entitlements, ServerDeckServices(graph.api), CoilPhotoPreloader(context.applicationContext))
+        DeckViewModel(graph.deck, graph.entitlements, ServerDeckServices(graph.api), CoilPhotoPreloader(context.applicationContext), graph.paywall)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val config by graph.config.config.collectAsStateWithLifecycle()
@@ -238,7 +241,7 @@ fun DeckScreen(
 
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            DeckTopBar(onFilters = actions::openFilters)
+            DeckTopBar(onFilters = actions::openFilters, boostEndsAt = state.entitlements?.boostEndsAt, onBoost = actions::boost)
             Box(
                 Modifier
                     .weight(1f)
@@ -314,8 +317,16 @@ fun DeckScreen(
             planNames = planNames,
             onDismiss = actions::dismissSheet,
             icon = R.drawable.ic_deck_rewind,
+            entry = PaywallEntry.REWIND,
         )
-        DeckSheet.Filters -> FiltersSheet(state.preferences, state.saving, actions::applyFilters, actions::dismissSheet)
+        DeckSheet.Filters -> FiltersSheet(
+            preferences = state.preferences,
+            saving = state.saving,
+            onApply = actions::applyFilters,
+            onDismiss = actions::dismissSheet,
+            advanced = state.entitlements?.features?.advancedFilters == true,
+            advancedFields = catalog.fields.filter { it.filterable && it.kind in ADVANCED_KINDS && it.options.isNotEmpty() },
+        )
         is DeckSheet.LikeItem -> ItemLikeSheet(
             target = sheet.target,
             state = state.itemLike,
@@ -340,7 +351,7 @@ fun DeckScreen(
 }
 
 @Composable
-private fun DeckTopBar(onFilters: () -> Unit) {
+private fun DeckTopBar(onFilters: () -> Unit, boostEndsAt: Instant? = null, onBoost: () -> Unit = {}) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -353,11 +364,47 @@ private fun DeckTopBar(onFilters: () -> Unit) {
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.weight(1f).semantics { heading() },
         )
+        BoostButton(boostEndsAt, onBoost)
         IconButton(onClick = onFilters) {
             Icon(painterResource(R.drawable.ic_deck_tune), contentDescription = brandString(R.string.deck_filters))
         }
     }
 }
+
+/** Kinds of config field the advanced filters can offer: choices. */
+private val ADVANCED_KINDS = setOf("single", "multi")
+
+/**
+ * The boost: a bolt that starts one, or while one runs its minutes left,
+ * counted down on the screen's own clock (no request).
+ */
+@Composable
+private fun BoostButton(endsAt: Instant?, onBoost: () -> Unit) {
+    val now by produceState(Instant.now(), endsAt) {
+        while (endsAt != null && endsAt.isAfter(value)) {
+            kotlinx.coroutines.delay(BOOST_TICK_MS)
+            value = Instant.now()
+        }
+    }
+    val left = endsAt?.takeIf { it.isAfter(now) }?.let { java.time.Duration.between(now, it).toMinutes().plus(1).coerceAtMost(30) }
+    val number = rememberNumbers()
+    if (left == null) {
+        IconButton(onClick = onBoost) {
+            Icon(painterResource(R.drawable.ic_deck_bolt), contentDescription = brandString(R.string.boost_action), tint = AppTheme.colors.superLike)
+        }
+    } else {
+        val minutes = number(left.toInt())
+        val spoken = brandString(R.string.boost_active_a11y, minutes)
+        androidx.compose.material3.AssistChip(
+            onClick = onBoost,
+            label = { Text(brandString(R.string.boost_active, minutes)) },
+            leadingIcon = { Icon(painterResource(R.drawable.ic_deck_bolt), contentDescription = null, tint = AppTheme.colors.superLike, modifier = Modifier.size(18.dp)) },
+            modifier = Modifier.heightIn(min = Space.minTouch).semantics { contentDescription = spoken },
+        )
+    }
+}
+
+private const val BOOST_TICK_MS = 15_000L
 
 /**
  * Rewind, pass, super like and like. Pass is always at the left and like at

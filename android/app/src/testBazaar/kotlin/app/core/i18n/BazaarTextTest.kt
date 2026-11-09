@@ -16,9 +16,9 @@ import java.util.Locale
 /**
  * The Cafe Bazaar build signs in by phone only: no text it can show names
  * Google, in any of its languages. The only strings that still do are the
- * Play build's sign-in and store names, which this build never reaches (the
- * Google button needs [BuildConfig.SUPPORTS_GOOGLE_SIGN_IN]; the store's name
- * is Cafe Bazaar's here).
+ * Play build's sign-in texts, which this build never reaches (the Google
+ * button needs [BuildConfig.SUPPORTS_GOOGLE_SIGN_IN]). The store's name and
+ * terms are each build's own (`strings_store.xml`).
  */
 @RunWith(AndroidJUnit4::class)
 class BazaarTextTest {
@@ -28,13 +28,12 @@ class BazaarTextTest {
     private fun resources(tag: String) =
         base.createConfigurationContext(Configuration(base.resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) }).resources
 
-    /** Reached only through Google sign-in or the Play store's name, which this build has neither of. */
+    /** Reached only through Google sign-in, which this build does not have. */
     private val playOnly = setOf(
         "auth_continue_google",
         "auth_google_no_account",
         "auth_google_unavailable",
         "auth_google_failed",
-        "store_play",
     )
 
     private val google = Regex("google|گوگل", RegexOption.IGNORE_CASE)

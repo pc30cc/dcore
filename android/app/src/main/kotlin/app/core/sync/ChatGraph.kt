@@ -15,6 +15,7 @@ import app.core.feature.auth.AuthGate
 import app.core.feature.auth.Root
 import app.core.model.AuthUser
 import app.core.model.RealtimeEvent
+import app.core.model.StoreName
 import app.core.net.ConfigRepository
 import app.core.net.ServerApi
 import app.core.net.internetAvailability
@@ -51,6 +52,8 @@ class ChatGraph(
     private val diag: Diag,
     /** Realtime sockets to fall back on (the signed origins list's realtime hosts). */
     realtimeAlternates: () -> List<String> = { emptyList() },
+    /** The store this build is for: an `entitlement` event of another store's build is only a hint ([EntitlementEvents]). */
+    buildStore: StoreName = StoreName.fromWire(AppBrand.store.id),
 ) {
     val store = ChatStore(holder, diag)
     val conversations = ConversationRepository(api, store, clock, diag)
@@ -89,6 +92,8 @@ class ChatGraph(
         diag = diag,
     )
 
+    private val entitlementEvents = EntitlementEvents(entitlements, buildStore, scope, diag)
+
     private val started = AtomicBoolean(false)
 
     fun start() {
@@ -104,7 +109,10 @@ class ChatGraph(
         }
         scope.launch {
             // The first value is the state at registration, not news.
-            context.internetAvailability().drop(1).filter { it }.collect { realtime.onNetworkAvailable() }
+            context.internetAvailability().drop(1).filter { it }.collect {
+                realtime.onNetworkAvailable()
+                entitlementEvents.retryPending()
+            }
         }
         scope.launch {
             realtime.events.collect { event -> sideEffects(event) }
@@ -114,6 +122,7 @@ class ChatGraph(
     private fun setForeground(value: Boolean) {
         sync.setForeground(value)
         realtime.setForeground(value)
+        if (value) entitlementEvents.retryPending()
     }
 
     private suspend fun follow(root: Root) {
@@ -122,13 +131,16 @@ class ChatGraph(
         val active = root == Root.Main && user != null
         sync.setAccount(user?.id, active)
         realtime.setAccount(if (active) user.id else null)
-        if (user == null) entitlements.clear()
+        if (user == null) {
+            entitlements.clear()
+            entitlementEvents.reset()
+        }
     }
 
     /** What the rest of the app does about events that are not the chat's. */
     private suspend fun sideEffects(event: RealtimeEvent) {
         when (event) {
-            is RealtimeEvent.EntitlementsChanged -> entitlements.apply(event.entitlements)
+            is RealtimeEvent.EntitlementsChanged -> entitlementEvents.onEvent(event)
             is RealtimeEvent.ConfigChanged -> config.refresh()
             is RealtimeEvent.AccountChanged -> runCatchingUnlessCancelled { api.me().value }.getOrNull()?.let { me ->
                 auth.accountChanged(AuthUser(me.id, me.status, me.onboardingStep))

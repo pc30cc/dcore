@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This build's store: its name and its subscription terms. The other build has its own; neither names the other's store. -->
+<resources>
+    <string name="store_name">Google Play</string>
+    <string name="paywall_store_terms">Paid with your Google Play account. A subscription renews automatically at the same price and period until you cancel it in Google Play (Payments &amp; subscriptions, then Subscriptions). You can cancel at any time and keep it until the end of the period you paid for.</string>
+</resources>

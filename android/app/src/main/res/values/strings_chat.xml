@@ -145,6 +145,8 @@
     <string name="requests_withdrawn">Withdrawn.</string>
     <string name="requests_load_failed">Couldn\'t load message requests</string>
     <string name="requests_loading">Loading message requests</string>
+    <string name="requests_more_failed">More requests didn\'t load.</string>
+    <string name="requests_show_more">Show more</string>
     <string name="requests_report_note">Their message goes with the report, and the request is declined.</string>
     <string name="requests_empty_inbox_title">No message requests</string>
     <string name="requests_empty_inbox_body">When someone writes to you before you match, it shows up here.</string>

@@ -28,6 +28,13 @@ class PlayStoreTest {
     }
 
     @Test
+    fun `an empty catalogue asks the store nothing and sells nothing`() = runTest {
+        // A store the server cannot verify lists no product: the SDK is never called with no ids (Play's would throw).
+        assertEquals(BillingResult.Ok(emptyList<StoreProduct>()), services.billing.products(ProductType.SUBSCRIPTION, emptyList()))
+        assertEquals(BillingResult.Ok(emptyList<StoreProduct>()), services.billing.products(ProductType.ONE_TIME, emptyList()))
+    }
+
+    @Test
     fun `every service is the Play one`() {
         assertEquals(Store.PLAY, services.info.store)
         assertEquals(Store.PLAY, services.billing.store)
@@ -57,5 +64,19 @@ class PlayStoreTest {
         if (BuildConfig.PLAY_CLOUD_PROJECT_NUMBER == 0L) {
             assertTrue(services.integrity.token("hash") is IntegrityResult.Unsupported)
         }
+    }
+
+    @Test
+    fun `only Play's own links are followed, to its subscription centre at the product`() {
+        val info = services.info as PlayStoreInfo
+        assertTrue(info.isOwnStoreLink("https://play.google.com/store/account/subscriptions?sku=sub.plus&package=com.example.app"))
+        assertFalse(info.isOwnStoreLink("https://example.com/account/subscriptions"))
+        assertFalse(info.isOwnStoreLink("http://play.google.com/store/account/subscriptions"))
+        assertEquals(
+            "https://play.google.com/store/account/subscriptions?sku=sub.plus&package=com.example.app",
+            info.subscriptionsUrl("com.example.app", "sub.plus"),
+        )
+        assertEquals("https://play.google.com/store/account/subscriptions", info.subscriptionsUrl("com.example.app", null))
+        assertTrue(services.ageSignals is PlayAgeSignals)
     }
 }

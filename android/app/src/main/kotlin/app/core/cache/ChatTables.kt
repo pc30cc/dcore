@@ -110,6 +110,10 @@ data class MessageEntity(
     @ColumnInfo(name = "error_code") val errorCode: String?,
     /** For a `confirm_required` answer: the token that sends it anyway. */
     @ColumnInfo(name = "confirm_token") val confirmToken: String?,
+    /**
+     * When the row was stored. For a row typed here and not yet confirmed:
+     * when its client id was minted, so no attempt with that id is older.
+     */
     @ColumnInfo(name = "cached_at") val cachedAt: Long,
 ) {
     companion object {
@@ -285,6 +289,19 @@ interface MessageDao {
         """,
     )
     suspend fun newestServerRows(accountId: String, conversationId: String, limit: Int): List<MessageEntity>
+
+    /**
+     * One sender's confirmed rows of one kind from [since] (epoch ms) on,
+     * oldest first: where a message an earlier send attempt made would be.
+     */
+    @Query(
+        """
+        SELECT * FROM messages WHERE account_id = :accountId AND conversation_id = :conversationId
+        AND server_id IS NOT NULL AND sender_id = :senderId AND kind = :kind AND at >= :since
+        ORDER BY sort_key ASC LIMIT :limit
+        """,
+    )
+    suspend fun sentSince(accountId: String, conversationId: String, senderId: String, kind: String, since: Long, limit: Int): List<MessageEntity>
 
     /** Everything not yet confirmed, oldest first. */
     @Query("SELECT * FROM messages WHERE account_id = :accountId AND send_state != 0 ORDER BY sort_key ASC")

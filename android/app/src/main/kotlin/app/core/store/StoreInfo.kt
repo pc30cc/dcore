@@ -24,4 +24,22 @@ interface StoreInfo {
 
     /** Opens this app's page in the store app, else on the web. False when nothing could open it. */
     fun openAppPage(activity: Activity): Boolean
+
+    /**
+     * Whether [url] is a page of THIS store, the only kind of subscription
+     * link the app opens: a link the server sends that names another store
+     * (or anything else) is not followed.
+     */
+    fun isOwnStoreLink(url: String): Boolean
+
+    /**
+     * Opens the store's own place for cancelling or changing a subscription
+     * ([productId]: the product to show, where the store can). [serverLink]
+     * is the entitlements' `manageUrl`, opened instead when it is this
+     * store's ([isOwnStoreLink]). False when nothing could open.
+     */
+    fun openSubscriptions(activity: Activity, productId: String?, serverLink: String?): Boolean
+
+    /** Where the store app itself can be got, for a phone that lacks it. False when nothing could open. */
+    fun openStoreInstall(activity: Activity): Boolean
 }

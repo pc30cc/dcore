@@ -23,6 +23,7 @@ import app.core.i18n.LocalAppName
 import app.core.i18n.brandString
 import app.core.ui.components.BrandMark
 import app.core.ui.theme.Space
+import kotlinx.coroutines.launch
 
 /**
  * The first screen: the mark and the name, in the same colours as the
@@ -70,7 +71,20 @@ fun UpdateRequiredScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Button(onClick = { activity?.let { graph.store.info.openAppPage(it) } }) {
+            // Play's own immediate update where the store allows it, else the store's page.
+            val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult(),
+            ) {}
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            Button(onClick = {
+                val host = activity ?: return@Button
+                scope.launch {
+                    val check = graph.store.updates.check()
+                    val started = check is app.core.store.UpdateCheck.Available && check.immediateAllowed &&
+                        graph.store.updates.start(host, launcher, check, app.core.store.UpdateMode.IMMEDIATE)
+                    if (!started) graph.store.info.openAppPage(host)
+                }
+            }) {
                 Text(brandString(R.string.update_required_action))
             }
         }

@@ -2,6 +2,7 @@ package app.core.feature.deck
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +22,16 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -57,9 +61,13 @@ import app.core.R
 import app.core.feature.card.LikeTarget
 import app.core.feature.card.rememberNumbers
 import app.core.feature.card.rememberTimeOfDay
+import app.core.feature.paywall.LocalPaywall
+import app.core.feature.paywall.PaywallEntry
+import app.core.model.WalletItem
 import app.core.i18n.brandString
 import app.core.media.PhotoImage
 import app.core.model.DiscoveryPreferences
+import app.core.model.FieldDef
 import app.core.model.ItemKind
 import app.core.model.PreferencesPatch
 import app.core.model.SwipeAction
@@ -110,9 +118,8 @@ private fun SheetBadge(@DrawableRes icon: Int?, colour: Color, vector: androidx.
 }
 
 /**
- * A feature this account's plan does not include. The paywall is not built
- * yet, so the sheet says which plans include it and, plainly, that they
- * cannot be bought in this version.
+ * A feature this account's plan does not include: what it does, which plans
+ * include it, and the paywall ([entry] says what it was opened for).
  */
 @Composable
 fun UpsellSheet(
@@ -122,7 +129,9 @@ fun UpsellSheet(
     onDismiss: () -> Unit,
     @DrawableRes icon: Int? = null,
     vector: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    entry: PaywallEntry = PaywallEntry.GENERAL,
 ) {
+    val paywall = LocalPaywall.current
     Sheet(onDismiss) {
         SheetBadge(icon, MaterialTheme.colorScheme.primary, vector)
         Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -132,17 +141,29 @@ fun UpsellSheet(
             if (plans != null) brandString(R.string.upsell_plans, plans) else brandString(R.string.upsell_plans_generic),
             style = MaterialTheme.typography.titleSmall,
         )
-        Text(brandString(R.string.upsell_not_yet), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) {
-            Text(brandString(R.string.action_got_it))
+        Button(
+            onClick = {
+                onDismiss()
+                paywall.plans(entry)
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
+        ) {
+            Text(brandString(R.string.upsell_see_plans))
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) {
+            Text(brandString(R.string.upsell_not_now))
         }
     }
 }
 
-/** Out of likes or super likes: when they come back, and what includes more. */
+/**
+ * Out of likes or super likes: when they come back, what includes more (the
+ * paywall), and for super likes the packs.
+ */
 @Composable
 fun QuotaSheet(action: SwipeAction, resetsAt: Instant?, planNames: Map<String, String>, onDismiss: () -> Unit) {
     val time = rememberTimeOfDay()
+    val paywall = LocalPaywall.current
     Sheet(onDismiss) {
         val superlike = action == SwipeAction.Superlike
         SheetBadge(
@@ -165,8 +186,32 @@ fun QuotaSheet(action: SwipeAction, resetsAt: Instant?, planNames: Map<String, S
             if (plans != null) brandString(R.string.upsell_plans, plans) else brandString(R.string.upsell_plans_generic),
             style = MaterialTheme.typography.titleSmall,
         )
-        Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) {
-            Text(brandString(R.string.action_got_it))
+        if (superlike) {
+            Button(
+                onClick = {
+                    onDismiss()
+                    paywall.packs(WalletItem.Superlike, PaywallEntry.OUT_OF_SUPERLIKES)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
+            ) { Text(brandString(R.string.quota_buy_superlikes)) }
+            OutlinedButton(
+                onClick = {
+                    onDismiss()
+                    paywall.plans(PaywallEntry.OUT_OF_SUPERLIKES)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
+            ) { Text(brandString(R.string.upsell_see_plans)) }
+        } else {
+            Button(
+                onClick = {
+                    onDismiss()
+                    paywall.plans(PaywallEntry.OUT_OF_LIKES)
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
+            ) { Text(brandString(R.string.quota_more_likes)) }
+        }
+        TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) {
+            Text(brandString(R.string.upsell_not_now))
         }
     }
 }
@@ -266,9 +311,15 @@ fun FiltersSheet(
     saving: Boolean,
     onApply: (PreferencesPatch) -> Unit,
     onDismiss: () -> Unit,
+    /** The plan includes advanced filters; without it their section opens the paywall. */
+    advanced: Boolean = false,
+    /** The config's filterable choice fields (single or multi). */
+    advancedFields: List<FieldDef> = emptyList(),
 ) {
     val number = rememberNumbers()
+    val paywall = LocalPaywall.current
     val start = preferences ?: DiscoveryPreferences()
+    var chosen by remember(preferences) { mutableStateOf(start.filters.mapValues { it.value.toSet() }) }
     var distance by remember(preferences) { mutableFloatStateOf(start.maxDistanceKm.coerceIn(MIN_KM, Widening.MAX_DISTANCE_KM).toFloat()) }
     var wholeCountry by remember(preferences) { mutableStateOf(start.wholeCountry) }
     var ages by remember(preferences) { mutableStateOf(start.ageMin.toFloat()..start.ageMax.toFloat()) }
@@ -307,6 +358,19 @@ fun FiltersSheet(
         )
         SwitchRow(brandString(R.string.filters_verified_only), verifiedOnly) { verifiedOnly = it }
 
+        if (advancedFields.isNotEmpty()) {
+            AdvancedFilters(
+                advanced = advanced,
+                fields = advancedFields,
+                chosen = chosen,
+                onChange = { chosen = it },
+                onLocked = {
+                    onDismiss()
+                    paywall.plans(PaywallEntry.ADVANCED_FILTERS)
+                },
+            )
+        }
+
         Button(
             onClick = {
                 val km = distance.roundToInt()
@@ -319,6 +383,8 @@ fun FiltersSheet(
                         ageMin = min.takeIf { it != start.ageMin },
                         ageMax = max.takeIf { it != start.ageMax },
                         verifiedOnly = verifiedOnly.takeIf { it != start.verifiedOnly },
+                        filters = chosen.filterValues { it.isNotEmpty() }.mapValues { it.value.sorted() }
+                            .takeIf { advanced && it != start.filters },
                     ),
                 )
             },
@@ -326,6 +392,65 @@ fun FiltersSheet(
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         ) {
             Text(brandString(if (saving) R.string.filters_saving else R.string.filters_apply), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/**
+ * The paid filters: each filterable choice field of the config with its
+ * options as chips. Without the plan's feature the section is one locked row
+ * that opens the paywall.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AdvancedFilters(
+    advanced: Boolean,
+    fields: List<FieldDef>,
+    chosen: Map<String, Set<Int>>,
+    onChange: (Map<String, Set<Int>>) -> Unit,
+    onLocked: () -> Unit,
+) {
+    Text(brandString(R.string.filters_advanced), style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+    if (!advanced) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.md))
+                .clickable(role = Role.Button, onClick = onLocked)
+                .heightIn(min = Space.minTouch)
+                .padding(vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(brandString(R.string.filters_advanced_locked), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(brandString(R.string.upsell_see_plans), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+    fields.forEach { field ->
+        val picked = chosen[field.key].orEmpty()
+        Text(field.label, style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
+            field.options.forEach { option ->
+                val on = option.id in picked
+                androidx.compose.material3.FilterChip(
+                    selected = on,
+                    onClick = {
+                        val next = if (on) picked - option.id else picked + option.id
+                        onChange(chosen + (field.key to next))
+                    },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+    }
+    if (chosen.values.any { it.isNotEmpty() }) {
+        TextButton(onClick = { onChange(emptyMap()) }, modifier = Modifier.heightIn(min = Space.minTouch)) {
+            Text(brandString(R.string.filters_advanced_clear))
         }
     }
 }

@@ -62,6 +62,15 @@ class RequestsViewModel(private val sync: ChatSync) : ViewModel() {
         viewModelScope.launch { sync.requests.refresh(ui.value.box) }
     }
 
+    /** The end of the open box is on screen: its next part, once. */
+    fun loadMore() {
+        val box = ui.value.box
+        val current = if (box == RequestBox.Inbox) sync.requests.inbox.value else sync.requests.sent.value
+        val from = current.nextCursor ?: return
+        if (current.loadingMore || current.loading) return
+        viewModelScope.launch { sync.requests.loadMore(box, seen = from) }
+    }
+
     fun accept(request: MessageRequest) = work(request.id) {
         sync.requests.accept(request.id).onSuccess { conversation ->
             sync.adopt(conversation)

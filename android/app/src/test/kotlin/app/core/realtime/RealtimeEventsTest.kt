@@ -1,10 +1,13 @@
 package app.core.realtime
 
 import app.core.model.ConversationChange
+import app.core.model.EntitlementSource
 import app.core.model.MessageKind
+import app.core.model.Plan
 import app.core.model.PushData
 import app.core.model.RealtimeEvent
 import app.core.model.RealtimeEvents
+import app.core.model.StoreName
 import app.core.model.Wire
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -80,6 +83,25 @@ class RealtimeEventsTest {
             Wire.json.parseToJsonElement("""{"t":"typing","v":2,"id":"9","extra":true,"d":{"conversationId":"5","by":"cn5wy6l3naf5b","mood":"x"}}"""),
         )
         assertTrue(newer is RealtimeEvent.PeerTyping)
+    }
+
+    @Test
+    fun anEntitlementEventSaysWhoseViewItIs() {
+        fun decode(store: String?): RealtimeEvent.EntitlementsChanged {
+            val member = store?.let { "\"store\":$it," } ?: ""
+            val text = """{"t":"entitlement","v":1,"id":"7","d":{$member"plan":"plus","source":"play","wallet":{"boost":2}}}"""
+            return RealtimeEvents.decode(Wire.json.parseToJsonElement(text)) as RealtimeEvent.EntitlementsChanged
+        }
+        for (event in listOf(decode(null), decode("null"), decode("\"play\""), decode("\"bazaar\""), decode("\"elsewhere\""))) {
+            assertEquals(Plan.Plus, event.entitlements.plan)
+            assertEquals(EntitlementSource.Play, event.entitlements.source)
+            assertEquals(2, event.entitlements.wallet.boost)
+        }
+        assertNull("a view of no store", decode(null).store)
+        assertNull(decode("null").store)
+        assertEquals(StoreName.Play, decode("\"play\"").store)
+        assertEquals(StoreName.Bazaar, decode("\"bazaar\"").store)
+        assertEquals("a store this build does not know is not its own", StoreName.Unknown, decode("\"elsewhere\"").store)
     }
 
     @Test

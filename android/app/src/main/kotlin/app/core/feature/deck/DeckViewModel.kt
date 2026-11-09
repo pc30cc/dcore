@@ -5,6 +5,10 @@ import androidx.lifecycle.viewModelScope
 import app.core.feature.card.LikeTarget
 import app.core.media.PhotoPreloader
 import app.core.model.BoostStarted
+import app.core.model.ProblemCodes
+import app.core.feature.paywall.PaywallEntry
+import app.core.feature.paywall.PaywallLauncher
+import app.core.model.WalletItem
 import app.core.model.DiscoveryPreferences
 import app.core.model.Entitlements
 import app.core.model.Id
@@ -112,6 +116,8 @@ class DeckViewModel(
     private val entitlements: EntitlementRepository,
     private val services: DeckServices,
     private val preloader: PhotoPreloader,
+    /** Opens the packs sheet when no boost is left to start. */
+    private val paywall: PaywallLauncher = PaywallLauncher.None,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(Local())
@@ -256,15 +262,26 @@ class DeckViewModel(
         applyFilters(Widening.age(prefs))
     }
 
+    /**
+     * A 30-minute boost from the plan's monthly ones or the wallet; one
+     * already running answers its own end. None left: the packs, when they
+     * are sold ([PaywallLauncher]).
+     */
     fun boost() {
         viewModelScope.launch {
             try {
                 val started = services.boost()
+                entitlements.patch { it.copy(boostEndsAt = started.endsAt) }
                 notice(DeckNotice.BoostStarted, started.endsAt)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiError) {
-                notice(if (e is ApiError.Network) DeckNotice.Offline else DeckNotice.BoostNone)
+                when {
+                    e is ApiError.Http && e.code == ProblemCodes.QUOTA_EXCEEDED && e.problem.canBuy == true ->
+                        paywall.packs(WalletItem.Boost, PaywallEntry.BOOSTS)
+                    e is ApiError.Network -> notice(DeckNotice.Offline)
+                    else -> notice(DeckNotice.BoostNone)
+                }
             }
         }
     }

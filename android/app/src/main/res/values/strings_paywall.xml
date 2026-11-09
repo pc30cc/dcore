@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The paywall, the packs sheets, purchases, restore and boosts. The store's
+  own name (%1$s where it appears) and its renewal terms come from each
+  store build's strings_store.xml, so neither build names the other store.
+  Prices are never here: the store's own price string is shown as it is.
+-->
+<resources>
+    <string name="paywall_close">Close</string>
+    <string name="paywall_title">Get more from {appName}</string>
+    <string name="paywall_entry_see_likes">See everyone who likes you</string>
+    <string name="paywall_entry_read_receipts">Know when your messages are read</string>
+    <string name="paywall_entry_incognito">Browse without being seen</string>
+    <string name="paywall_entry_advanced_filters">Filter by what matters to you</string>
+    <string name="paywall_entry_rewind">Take back your last pass</string>
+    <string name="paywall_entry_out_of_likes">Keep liking today</string>
+    <string name="paywall_entry_out_of_superlikes">More super likes, every week</string>
+    <string name="paywall_entry_boosts">Be seen by more people</string>
+    <string name="paywall_entry_messages">Write to people before you match</string>
+    <string name="paywall_entry_general">Choose the plan that suits you</string>
+    <string name="paywall_plan_current">Your plan</string>
+    <string name="paywall_benefits_title">What\'s included</string>
+    <string name="paywall_benefit_see_likes">See who likes you</string>
+    <string name="paywall_benefit_more_likes">More likes every day</string>
+    <string name="paywall_benefit_more_superlikes">More super likes every week</string>
+    <string name="paywall_benefit_read_receipts">Read receipts</string>
+    <string name="paywall_benefit_rewind">Rewind your last pass</string>
+    <string name="paywall_benefit_incognito">Incognito: only people you like see you</string>
+    <string name="paywall_benefit_filters">Advanced filters</string>
+    <string name="paywall_benefit_boost">A boost every month</string>
+    <string name="paywall_benefit_everything">Everything in %1$s</string>
+    <string name="paywall_benefit_unlimited_likes">Unlimited likes</string>
+    <string name="paywall_benefit_priority">Your likes are seen first</string>
+    <string name="paywall_benefit_travel">Travel mode: meet people in another city</string>
+    <string name="paywall_benefit_more_boosts">More boosts every month</string>
+    <string name="paywall_periods_label">Billing period</string>
+    <string name="paywall_period_week">1 week</string>
+    <string name="paywall_period_month">1 month</string>
+    <string name="paywall_period_3m">3 months</string>
+    <string name="paywall_period_6m">6 months</string>
+    <string name="paywall_period_year">12 months</string>
+    <string name="paywall_every_week">every week</string>
+    <string name="paywall_every_month">every month</string>
+    <string name="paywall_every_3m">every 3 months</string>
+    <string name="paywall_every_6m">every 6 months</string>
+    <string name="paywall_every_year">every year</string>
+    <string name="paywall_badge_popular">Most popular</string>
+    <string name="paywall_badge_best_value">Best value</string>
+    <string name="paywall_badge_new">New</string>
+    <!-- %1$s: the store's price, as it formats it; %2$s: "every 3 months". -->
+    <string name="paywall_renews">%1$s %2$s. Renews automatically until you cancel.</string>
+    <string name="paywall_subscribe">Subscribe</string>
+    <string name="paywall_terms">Terms</string>
+    <string name="paywall_privacy">Privacy</string>
+    <string name="paywall_restore">Restore purchases</string>
+    <string name="paywall_restoring">Restoring…</string>
+    <string name="paywall_manage">Manage subscription</string>
+    <!-- %1$s: the plan's name; %2$s: a date. -->
+    <string name="paywall_current_renews">%1$s, renews on %2$s</string>
+    <string name="paywall_current_ends">%1$s, ends on %2$s</string>
+    <string name="paywall_current_grant">%1$s, from {appName} until %2$s</string>
+    <string name="paywall_current_plain">%1$s</string>
+    <string name="paywall_loading">Loading plans…</string>
+    <!-- %1$s: the store's name. -->
+    <string name="paywall_store_missing_title">%1$s isn\'t on this phone</string>
+    <string name="paywall_store_missing_body">Purchases are made through %1$s. Install it and sign in, then come back here.</string>
+    <string name="paywall_store_missing_action">Get %1$s</string>
+    <string name="paywall_store_not_ready_title">Sign in to %1$s</string>
+    <string name="paywall_store_not_ready_body">Open %1$s, sign in or update it, then try again.</string>
+    <string name="paywall_store_not_ready_action">Open %1$s</string>
+    <string name="paywall_not_supported_title">Purchases aren\'t available here</string>
+    <string name="paywall_not_supported_body">%1$s can\'t sell this on this phone or account.</string>
+    <string name="paywall_unreachable_title">Can\'t reach %1$s</string>
+    <string name="paywall_unreachable_body">Check your connection and try again in a moment.</string>
+    <string name="paywall_offline_title">You\'re offline</string>
+    <string name="paywall_offline_body">Plans load as soon as you\'re back online.</string>
+    <string name="paywall_failed_title">Plans couldn\'t be loaded</string>
+    <string name="paywall_failed_body">Try again in a moment.</string>
+    <string name="paywall_empty_title">Nothing on sale right now</string>
+    <string name="paywall_empty_body">Check again later.</string>
+    <string name="paywall_try_again">Try again</string>
+    <string name="paywall_step_opening">Opening %1$s…</string>
+    <string name="paywall_step_verifying">Confirming your purchase with %1$s…</string>
+    <string name="paywall_step_restoring">You already own this. Restoring it…</string>
+    <string name="paywall_step_pending_title">Payment pending</string>
+    <string name="paywall_step_pending_body">%1$s is waiting for your payment. Your purchase unlocks as soon as it\'s paid; you don\'t need to stay here.</string>
+    <string name="paywall_step_queued_title">Payment received</string>
+    <string name="paywall_step_queued_body">%1$s took your payment. We\'ll confirm it as soon as you\'re back online. There\'s nothing more to pay.</string>
+    <string name="paywall_done_plan_title">Welcome to %1$s</string>
+    <string name="paywall_done_plan_body">Everything in %1$s is yours now.</string>
+    <string name="paywall_done_pack_title">Added to your account</string>
+    <string name="paywall_done_action">Continue</string>
+    <string name="paywall_fail_store_missing">%1$s isn\'t installed on this phone.</string>
+    <string name="paywall_fail_not_ready">Sign in to %1$s or update it, then try again.</string>
+    <string name="paywall_fail_not_supported">%1$s can\'t sell this on this phone or account.</string>
+    <string name="paywall_fail_unreachable">Couldn\'t reach %1$s. Try again.</string>
+    <string name="paywall_fail_store_error">%1$s couldn\'t complete the purchase. Try again.</string>
+    <string name="paywall_fail_invalid">%1$s couldn\'t confirm this purchase, so nothing was unlocked. If you were charged, contact support.</string>
+    <string name="paywall_fail_other_account">This purchase belongs to another account. Sign in with that account to use it.</string>
+    <string name="paywall_fail_not_restored">%1$s says you already own this, but it couldn\'t be restored yet. Try “Restore purchases” in a moment.</string>
+    <string name="paywall_fail_completing">Your last purchase of this is still being completed in %1$s. Try again in a moment; nothing was charged.</string>
+    <string name="paywall_fail_not_active">%1$s shows this purchase as not active, so nothing was unlocked. Check it in %1$s.</string>
+    <string name="paywall_fail_change">You already have a subscription in %1$s. You can choose another plan when it ends.</string>
+    <string name="paywall_fail_current">You already have this plan.</string>
+    <!-- %1$s: the store's name. Shown when the plan was bought with a store account other than the one on this phone. -->
+    <string name="paywall_held_elsewhere">%1$s on this phone doesn\'t list your plan. If you bought it with another %1$s account, use that account to change or cancel it.</string>
+    <string name="paywall_check_again">Check again</string>
+    <string name="paywall_fail_signed_out">Sign in again to buy.</string>
+    <string name="paywall_waiting">A payment is waiting to be confirmed. We\'ll keep trying until it is.</string>
+    <string name="paywall_restored">Your purchases are restored.</string>
+    <string name="paywall_restore_up_to_date">Everything you bought is already on your account.</string>
+    <string name="paywall_restore_up_to_date_other_account">Everything you bought is already on your account. %1$s also has a purchase that belongs to another account.</string>
+    <string name="paywall_restore_nothing">There\'s nothing to restore.</string>
+    <string name="paywall_restore_offline">You\'re offline. Try again when you\'re connected.</string>
+    <string name="paywall_restore_failed">Restoring didn\'t work. Try again later.</string>
+    <string name="paywall_restore_store">Couldn\'t reach %1$s.</string>
+    <string name="paywall_restore_not_confirmed">Some purchases aren\'t confirmed yet. They\'ll be added as soon as %1$s confirms them.</string>
+    <string name="paywall_restore_not_active">%1$s shows your purchases as not active right now (ended, refunded or waiting for a payment).</string>
+    <string name="paywall_subscription_back">Your subscription is active again.</string>
+    <string name="paywall_option_selected">Selected</string>
+    <string name="paywall_option_current">Current plan</string>
+    <string name="paywall_current_option">You\'re on this plan</string>
+
+    <string name="packs_title_superlike">Super likes</string>
+    <string name="packs_title_boost">Boosts</string>
+    <string name="packs_title_spotlight">Spotlight</string>
+    <string name="packs_title_dm">Messages</string>
+    <string name="packs_body_superlike">A super like tells them you\'re really interested, before you match.</string>
+    <string name="packs_body_boost">A boost puts you among the first profiles people near you see, for 30 minutes.</string>
+    <string name="packs_body_spotlight">Spotlight shows your profile first to people near you, for 30 minutes.</string>
+    <string name="packs_body_dm">Write to someone before you match.</string>
+    <string name="packs_have">You have %1$s</string>
+    <string name="packs_or_plans">Or get a plan</string>
+    <!-- %1$s: what the pack holds ("5 super likes"); %2$s: the store's price. -->
+    <string name="packs_buy_a11y">%1$s for %2$s</string>
+    <plurals name="packs_quantity_superlike">
+        <item quantity="one">%1$s super like</item>
+        <item quantity="other">%1$s super likes</item>
+    </plurals>
+    <plurals name="packs_quantity_boost">
+        <item quantity="one">%1$s boost</item>
+        <item quantity="other">%1$s boosts</item>
+    </plurals>
+    <plurals name="packs_quantity_spotlight">
+        <item quantity="one">%1$s spotlight</item>
+        <item quantity="other">%1$s spotlights</item>
+    </plurals>
+    <plurals name="packs_quantity_dm">
+        <item quantity="one">%1$s message</item>
+        <item quantity="other">%1$s messages</item>
+    </plurals>
+
+    <string name="boost_action">Boost</string>
+    <!-- %1$s: minutes left, in the reader's digits. -->
+    <string name="boost_active">Boosted · %1$s min</string>
+    <string name="boost_active_a11y">You\'re boosted for %1$s more minutes</string>
+
+    <string name="upsell_see_plans">See plans</string>
+    <string name="upsell_not_now">Not now</string>
+    <string name="quota_buy_superlikes">Buy super likes</string>
+    <string name="quota_more_likes">Get more likes</string>
+    <string name="request_quota_buy">Buy messages</string>
+    <string name="chat_read_receipts_upsell">See when it\'s read</string>
+    <string name="filters_advanced">Advanced filters</string>
+    <string name="filters_advanced_locked">Included with a paid plan</string>
+    <string name="filters_advanced_clear">Clear</string>
+
+    <string name="settings_plans">Plans and purchases</string>
+    <string name="settings_plan_free">Free</string>
+    <string name="settings_incognito">Incognito</string>
+    <string name="settings_incognito_body">Only people you like can see you</string>
+    <string name="settings_incognito_failed">Incognito couldn\'t be changed. Try again.</string>
+
+    <string name="restricted_subscription_title">Your subscription</string>
+    <!-- %1$s: the plan's name; %2$s: the store's name. -->
+    <string name="restricted_subscription_body">Your %1$s subscription keeps renewing while your account is restricted. You can cancel it in %2$s.</string>
+    <!-- %1$s: the plan's name; %2$s: the date. -->
+    <string name="restricted_subscription_body_ends">Your %1$s subscription doesn\'t renew. It ends on %2$s.</string>
+    <!-- %1$s: the plan's name; %2$s: the store's name. -->
+    <string name="restricted_subscription_body_plain">Your %1$s subscription is managed in %2$s.</string>
+    <string name="restricted_purchases_title">Purchases</string>
+    <!-- %1$s: the store's name. -->
+    <string name="restricted_purchases_body">Bought something in %1$s that isn\'t showing? Restore it here.</string>
+
+    <string name="rating_prompt">Got a moment to rate {appName} in %1$s?</string>
+    <string name="rating_prompt_action">Rate</string>
+    <string name="update_available">A new version of {appName} is ready.</string>
+    <string name="update_available_action">Update</string>
+    <string name="update_downloaded">The update is downloaded.</string>
+    <string name="update_downloaded_action">Restart</string>
+</resources>

@@ -119,6 +119,15 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
+            val outOfQuota = result as? RequestSendResult.OutOfQuota
+            if (outOfQuota?.canBuy == true) {
+                // Out of today's requests: more come in packs.
+                val paywall = app.core.feature.paywall.LocalPaywall.current
+                Button(
+                    onClick = { paywall.packs(app.core.model.WalletItem.Dm, app.core.feature.paywall.PaywallEntry.MESSAGES) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
+                ) { Text(brandString(R.string.request_quota_buy)) }
+            }
             if (result is RequestSendResult.Sent || result == RequestSendResult.AlreadySent || result == RequestSendResult.Unavailable) {
                 Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) { Text(brandString(R.string.action_close)) }
             } else if (result == RequestSendResult.AlreadyMatched && onOpenChat != null) {

@@ -2,6 +2,7 @@ package app.core.sync
 
 import app.core.common.Diag
 import app.core.common.FakeClock
+import app.core.model.Message
 import app.core.model.MessageRequest
 import app.core.model.MessageRequestsPage
 import app.core.model.PeerSummary
@@ -20,6 +21,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -140,5 +143,126 @@ class MessageRequestsRepositoryTest {
         repo.onAccepted("aaaaaaaaaaaab")
         assertTrue(repo.inbox.value.items.isEmpty())
         assertEquals(listOf("3"), repo.sent.value.items.map { it.id })
+    }
+
+    @Test
+    fun anAcceptWhoseFirstMessageNamesItsDirectionLeavesTheRequestTheOtherWay() = runTest {
+        val them = "aaaaaaaaaaaab"
+        val api = Api(
+            mapOf(
+                RequestBox.Inbox to MessageRequestsPage(listOf(request("1", them, RequestStatus.Pending).copy(body = "Hi from them")), null),
+                RequestBox.Sent to MessageRequestsPage(listOf(request("2", them, RequestStatus.Pending).copy(body = "Hi from me")), null),
+            ),
+        )
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        repo.refresh(RequestBox.Sent)
+        // This account's request was accepted (its text is the first message, sent by this account).
+        repo.onAccepted(them, Message("1001", "c1", ME, body = "Hi from me", at = at))
+        assertEquals(emptyList<String>(), repo.sent.value.items.map { it.id })
+        assertEquals("theirs stays pending, as the server keeps it", listOf("1"), repo.inbox.value.items.map { it.id })
+        // Then theirs, into the same conversation.
+        repo.onAccepted(them, Message("1002", "c1", them, body = "Hi from them", at = at))
+        assertTrue(repo.inbox.value.items.isEmpty())
+    }
+
+    /** A box served a page per cursor, with a log of the cursors asked. */
+    private class PagedApi(private val pages: Map<String?, MessageRequestsPage>) : ServerApi by unsupportedApi() {
+        val asked = mutableListOf<String?>()
+        var error: ApiError? = null
+
+        override suspend fun messageRequests(box: RequestBox, cursor: String?): MessageRequestsPage {
+            asked += cursor
+            error?.let { throw it }
+            return pages.getValue(cursor)
+        }
+    }
+
+    private fun page(vararg ids: String, next: String?) =
+        MessageRequestsPage(ids.map { request(it, "aaaaaaaaaaaab", RequestStatus.Pending) }, next)
+
+    @Test
+    fun shortAndEmptyPagesWithACursorAreFollowedUntilOneHasSomethingToShow() = runTest {
+        val api = PagedApi(
+            mapOf(
+                null to page(next = "c1"),
+                // Only a request the inbox does not list (an expired one): nothing to show either.
+                "c1" to MessageRequestsPage(listOf(request("9", "aaaaaaaaaaaac", RequestStatus.Expired)), "c2"),
+                "c2" to page("1", next = "c3"),
+                "c3" to page("2", "3", next = null),
+            ),
+        )
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        assertEquals(listOf(null, "c1", "c2"), api.asked)
+        assertEquals(listOf("1"), repo.inbox.value.items.map { it.id })
+        assertEquals("c3", repo.inbox.value.nextCursor)
+        assertFalse(repo.inbox.value.moreHidden)
+
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals(listOf("1", "2", "3"), repo.inbox.value.items.map { it.id })
+        assertNull("the end of the box", repo.inbox.value.nextCursor)
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals("nothing more is asked at the end", 4, api.asked.size)
+    }
+
+    @Test
+    fun aReadFollowsAtMostFivePagesOfHiddenSendersThenWaitsToBeAsked() = runTest {
+        val api = PagedApi((0 until 12).associate { i -> (if (i == 0) null else "c$i") to page(next = "c${i + 1}") })
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        assertEquals(MessageRequestsRepository.MAX_PAGES, api.asked.size)
+        assertTrue(repo.inbox.value.items.isEmpty())
+        assertEquals("c5", repo.inbox.value.nextCursor)
+        assertTrue("the screen offers more instead of reading on", repo.inbox.value.moreHidden)
+
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals(2 * MessageRequestsRepository.MAX_PAGES, api.asked.size)
+        assertEquals("c10", repo.inbox.value.nextCursor)
+    }
+
+    @Test
+    fun aFailedReadOfMoreKeepsWhatIsShownAndWhereTheRestStarts() = runTest {
+        val api = PagedApi(mapOf(null to page("1", next = "c1"), "c1" to page("2", next = null)))
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        api.error = ApiError.Network(java.io.IOException("down"))
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals(listOf("1"), repo.inbox.value.items.map { it.id })
+        assertEquals("c1", repo.inbox.value.nextCursor)
+        assertTrue(repo.inbox.value.moreFailed)
+        assertFalse(repo.inbox.value.loadingMore)
+
+        api.error = null
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals(listOf("1", "2"), repo.inbox.value.items.map { it.id })
+        assertFalse(repo.inbox.value.moreFailed)
+    }
+
+    @Test
+    fun aSecondAskForThePartAlreadyReadAndARepeatedCursorReadNothingTwice() = runTest {
+        val api = PagedApi(mapOf(null to page("1", next = "c1"), "c1" to page("2", next = "c1")))
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        repo.loadMore(RequestBox.Inbox, seen = "c1")
+        assertEquals(listOf("1", "2"), repo.inbox.value.items.map { it.id })
+        assertNull("a cursor handed back unchanged ends the box", repo.inbox.value.nextCursor)
+        repo.loadMore(RequestBox.Inbox, seen = "c1")
+        assertEquals(listOf(null, "c1"), api.asked)
+    }
+
+    @Test
+    fun aRequestAlreadyShownIsNotRepeatedByALaterPage() = runTest {
+        val api = PagedApi(mapOf(null to page("1", next = "c1"), "c1" to page("2", "3", next = null)))
+        val repo = repository(api)
+        repo.refresh(RequestBox.Inbox)
+        // It arrived over realtime meanwhile, at the top.
+        repo.onRealtime(app.core.model.IncomingRequest("3", peer("aaaaaaaaaaaab"), "hi", at))
+        repo.loadMore(RequestBox.Inbox)
+        assertEquals(listOf("3", "1", "2"), repo.inbox.value.items.map { it.id })
+    }
+
+    private companion object {
+        const val ME = "aaaaaaaaaaaaa"
     }
 }

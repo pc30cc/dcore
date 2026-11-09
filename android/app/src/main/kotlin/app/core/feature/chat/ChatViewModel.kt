@@ -108,6 +108,8 @@ data class ChatUiState(
     /** Not this account's, or gone: nothing to show. */
     val gone: Boolean = false,
     val typing: Boolean = false,
+    /** A message of yours was delivered and the plan has no read receipts: the hint that opens the paywall. */
+    val readReceiptsLocked: Boolean = false,
     val connection: RealtimeHealth = RealtimeHealth.IDLE,
     /** A message the server asked "are you sure?" about, waiting for the answer. */
     val confirm: ChatMessage? = null,
@@ -156,13 +158,17 @@ class ChatViewModel(
     val state: StateFlow<ChatUiState> = combine(
         combine(ui, account, conversation) { base, me, c -> Triple(base, me, c) },
         combine(rows, marks) { r, m -> r to m },
-        combine(sync.typing, sync.health, entitlements.entitlements) { typing, health, ent -> Triple(typing, health, ent?.features?.readReceipts == true) },
-    ) { (base, me, conversation), (rows, marks), (typing, health, readReceipts) ->
+        combine(sync.typing, sync.health, entitlements.entitlements) { typing, health, ent -> Triple(typing, health, ent) },
+    ) { (base, me, conversation), (rows, marks), (typing, health, ent) ->
         val ended = base.ended || conversation?.state == ConversationState.Ended
+        val readReceipts = ent?.features?.readReceipts == true
+        val items = buildTranscript(rows, marks, conversation ?: base.conversation, readReceipts, atTop = !base.olderLoading && !base.moreOlder, me = me)
         base.copy(
             me = me,
             conversation = conversation ?: base.conversation,
-            items = buildTranscript(rows, marks, conversation ?: base.conversation, readReceipts, atTop = !base.olderLoading && !base.moreOlder, me = me),
+            items = items,
+            readReceiptsLocked = ent != null && !readReceipts && !ended &&
+                items.any { it is ChatItem.Bubble && it.message.mine && it.delivery == Delivery.Delivered },
             loading = base.loading && rows.isEmpty(),
             loadFailed = base.loadFailed && rows.isEmpty(),
             ended = ended,

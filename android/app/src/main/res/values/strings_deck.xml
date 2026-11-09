@@ -73,7 +73,6 @@
     <string name="deck_rewind_nothing">Nothing to bring back: only your last pass can be rewound, right after it.</string>
     <string name="upsell_plans">Included with %1$s.</string>
     <string name="upsell_plans_generic">Included with a paid plan.</string>
-    <string name="upsell_not_yet">Plans can\'t be bought in this version of the app yet.</string>
     <string name="action_got_it">Got it</string>
 
     <!-- A like on one photo or one answer -->

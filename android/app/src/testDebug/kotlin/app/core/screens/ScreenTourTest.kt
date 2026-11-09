@@ -72,6 +72,11 @@ import app.core.i18n.JalaliDates
 import app.core.i18n.LocalAppName
 import app.core.media.LocalRemoteImages
 import app.core.model.CallKind
+import app.core.model.WalletItem
+import app.core.feature.paywall.PaywallEntry
+import app.core.store.BillingUnavailableReason
+import app.core.store.SampleBilling
+import app.core.store.Store
 import app.core.model.Id
 import app.core.net.Backend
 import app.core.net.SampleApi
@@ -413,6 +418,180 @@ class ScreenTourTest {
         fields[fields.fetchSemanticsNodes().lastIndex].performTextInput(if (language == "fa") "سلام! عکس کوهت عالیه" else "Hi! Love the mountain photo")
         compose.waitForIdle()
         captureWithSheet("request-write")
+    }
+
+    // MARK: - Paywall, packs and purchases
+
+    @Test @Config(qualifiers = "+en") fun paywallEnglishLight() = paywall()
+    @Test @Config(qualifiers = "+en-night") fun paywallEnglishDark() = paywall()
+    @Test @Config(qualifiers = "+fa") fun paywallPersianLight() = paywall()
+    @Test @Config(qualifiers = "+fa-night") fun paywallPersianDark() = paywall()
+
+    /**
+     * From the likes list's lock to the paywall, then every step of a
+     * purchase on the sample store and server: pending, paid but the server
+     * unreachable (queued), another account's, confirming, confirmed; the
+     * store app missing; and the super likes' packs, bought.
+     */
+    private fun paywall() {
+        flow = "e"
+        start(signedIn = true)
+        val graph = app.graph
+        val billing = graph.billing as SampleBilling
+        val sample = graph.api as SampleApi
+        runBlocking { forgetPurchases() }
+
+        val like = str(R.string.deck_action_like)
+        waitFor(hasContentDescription(like) and isEnabled() and !hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.onNodeWithText(str(R.string.tab_likes)).performClick()
+        waitFor(hasText(str(R.string.likes_banner_title)), timeoutMs = 20_000)
+        compose.onAllNodes(hasText(str(R.string.likes_banner_title)))[0].performClick()
+        waitFor(hasText(str(R.string.upsell_see_plans)), timeoutMs = 10_000)
+        compose.waitForIdle()
+        captureWithSheet("upsell")
+        compose.onNodeWithText(str(R.string.upsell_see_plans)).performClick()
+
+        val subscribe = hasText(str(R.string.paywall_subscribe)) and hasAnyAncestor(isDialog())
+        waitFor(subscribe, timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall", compose.onNode(isDialog()))
+        compose.onNode(hasScrollAction() and hasAnyAncestor(isDialog())).performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        capture("paywall-periods", compose.onNode(isDialog()))
+
+        // Paid in cash later: pending.
+        billing.next = SampleBilling.Outcome.PENDING
+        buy(subscribe)
+        waitFor(hasText(str(R.string.paywall_step_pending_title)) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        scrollToEnd()
+        capture("paywall-pending", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.purchases.acknowledge() }
+
+        // Another account's purchase.
+        billing.next = SampleBilling.Outcome.OTHER_ACCOUNT
+        buy(subscribe)
+        waitFor(hasText(str(R.string.paywall_fail_other_account)) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        scrollToEnd()
+        capture("paywall-failed", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.purchases.acknowledge() }
+
+        // Paid, and the network gone before the server answered: kept, sent again, confirmed once.
+        billing.next = SampleBilling.Outcome.PURCHASED
+        sample.purchasesUnreachable = true
+        buy(subscribe)
+        waitFor(hasText(str(R.string.paywall_step_queued_title)) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        scrollToEnd()
+        capture("paywall-queued", compose.onNode(isDialog()))
+        sample.purchasesUnreachable = false
+        runBlocking { graph.purchases.flushNow() }
+        waitFor(hasText(str(R.string.paywall_done_action)) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall-done", compose.onNode(isDialog()))
+        compose.onNode(hasText(str(R.string.paywall_done_action)) and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+
+        // The plan is shown with its renewal date and the store's page.
+        compose.runOnUiThread { graph.paywall.plans(PaywallEntry.GENERAL) }
+        waitFor(hasText(str(R.string.paywall_plan_current)) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall-subscribed", compose.onNode(isDialog()))
+
+        // The plan's own tab: the period bought is marked, and another is chosen.
+        val plusName = graph.config.config.value?.planNames?.get("plus") ?: "Plus"
+        compose.onNode(hasText(plusName) and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+        val held = hasContentDescription(str(R.string.paywall_option_current), substring = true) and hasAnyAncestor(isDialog())
+        waitFor(held, timeoutMs = 10_000, unmerged = false)
+        compose.onNode(held).performScrollTo()
+        compose.waitForIdle()
+        capture("paywall-current-marked", compose.onNode(isDialog()))
+        // Chosen, it is not sold again: a line in place of the button.
+        compose.onNode(held).performClick()
+        waitFor(hasText(str(R.string.paywall_current_option)) and hasAnyAncestor(isDialog()), timeoutMs = 10_000)
+        compose.waitForIdle()
+        capture("paywall-current-chosen", compose.onNode(isDialog()))
+
+        // Restore with nothing new: the account had it all already (the other account's purchase is gone from the store).
+        billing.removeOwned("foreign")
+        compose.onNode(hasText(str(R.string.paywall_restore)) and hasAnyAncestor(isDialog())).performClick()
+        waitFor(hasText(str(R.string.paywall_restore_up_to_date)), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall-restore-up-to-date", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.paywall.close() }
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+
+        // Another store account on this phone, holding another account's subscription of the same plan:
+        // the plan is held elsewhere; no second one is sold.
+        billing.switchStoreAccount(holdingAnotherAccountsPlan = true)
+        compose.runOnUiThread { graph.paywall.plans(PaywallEntry.GENERAL) }
+        waitFor(hasText(str(R.string.paywall_held_elsewhere, str(R.string.store_name))) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        waitFor(hasText(str(R.string.paywall_check_again)) and hasAnyAncestor(isDialog()), timeoutMs = 10_000)
+        compose.waitForIdle()
+        capture("paywall-elsewhere", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.paywall.close() }
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+
+        // A store account that lists nothing of the plan: Play says so (its list is the only word);
+        // Cafe Bazaar's list can be empty for the holder itself, so its usual lock stays.
+        billing.switchStoreAccount()
+        compose.runOnUiThread { graph.paywall.plans(PaywallEntry.GENERAL) }
+        val unlisted = if (AppBrand.store == Store.BAZAAR) {
+            hasText(str(R.string.paywall_fail_change, str(R.string.store_name))) or hasText(str(R.string.paywall_current_option))
+        } else {
+            hasText(str(R.string.paywall_held_elsewhere, str(R.string.store_name)))
+        }
+        waitFor(unlisted and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall-unlisted", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.paywall.close() }
+        compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
+
+        // Super likes: the packs (sold whichever store account holds the plan), one bought, slowly enough to see it confirmed.
+        compose.runOnUiThread { graph.paywall.packs(WalletItem.Superlike, PaywallEntry.OUT_OF_SUPERLIKES) }
+        waitFor(hasText(str(R.string.packs_body_superlike)), timeoutMs = 20_000)
+        compose.waitForIdle()
+        captureWithSheet("packs")
+        val five = app.resources.getQuantityString(R.plurals.packs_quantity_superlike, 5, Digits.localize("5", ui()))
+        sample.purchaseDelayMs = 2_500
+        compose.onAllNodes(hasContentDescription(five, substring = true) and hasClickAction())[0].performClick()
+        waitFor(hasText(str(R.string.paywall_step_verifying, str(R.string.store_name))), timeoutMs = 10_000)
+        compose.waitForIdle()
+        captureWithSheet("packs-verifying")
+        sample.purchaseDelayMs = 0
+        waitFor(hasText(str(R.string.paywall_done_pack_title)), timeoutMs = 20_000)
+        compose.waitForIdle()
+        captureWithSheet("packs-done")
+        compose.runOnUiThread { graph.paywall.close() }
+
+        // The store app missing.
+        billing.unavailable = BillingUnavailableReason.STORE_NOT_INSTALLED
+        compose.runOnUiThread { graph.paywall.plans(PaywallEntry.BOOSTS) }
+        waitFor(hasText(str(R.string.paywall_store_missing_title, str(R.string.store_name))) and hasAnyAncestor(isDialog()), timeoutMs = 20_000)
+        compose.waitForIdle()
+        capture("paywall-store-missing", compose.onNode(isDialog()))
+        compose.runOnUiThread { graph.paywall.close() }
+        billing.unavailable = null
+        runBlocking { forgetPurchases() }
+    }
+
+    private fun ui(): AppLanguage = if (language == "fa") AppLanguage.FA else AppLanguage.EN
+
+    /** Taps the paywall's button once the last step is cleared and it can be tapped again. */
+    private fun buy(button: SemanticsMatcher) {
+        waitFor(button and isEnabled(), timeoutMs = 10_000, unmerged = false)
+        compose.onNode(button).performClick()
+        compose.waitForIdle()
+    }
+
+    /** The paywall's steps sit under the periods: scrolled into view for the picture. */
+    private fun scrollToEnd() {
+        compose.onNode(hasScrollAction() and hasAnyAncestor(isDialog())).performTouchInput { swipeUp() }
+        compose.waitForIdle()
+    }
+
+    /** Purchases this JVM's earlier tours left on the phone's storage (the outbox outlives a test). */
+    private suspend fun forgetPurchases() {
+        app.graph.secureStore.remove("billing.outbox")
+        app.graph.secureStore.remove("billing.known")
     }
 
     private fun send(text: String) {

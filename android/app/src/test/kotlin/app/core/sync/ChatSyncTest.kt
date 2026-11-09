@@ -385,4 +385,64 @@ class ChatSyncTest {
         runCurrent()
         assertEquals(2, api.typing)
     }
+
+    @Test
+    fun aReadOnAnotherPhoneOfAThreadThisOneDoesNotHoldTakesTheCountFromOneListRead() = runTest(dispatcher) {
+        val h = harness()
+        api.conversation(c, last = api.message(c, 1_001), unread = 1)
+        h.sync.reconcile("test")
+        runCurrent()
+        // This account's reply from its other phone: the newest message is not the peer's.
+        h.sync.onEvent(message(1_002, from = ME))
+        runCurrent()
+        assertEquals(1, h.conversation()!!.unread)
+        api.log.clear()
+
+        // The server, which counted 1001 for this account and has the read pointer there now.
+        api.conversations[c] = api.conversations.getValue(c).copy(lastMessage = api.message(c, 1_002, from = ME), unread = 0, myReadId = "1001")
+        api.listChanged = true
+        h.sync.onEvent(RealtimeEvent.ReceiptMoved("r1", null, ReceiptEvent(c, ME, readUpTo = "1001")))
+        runCurrent()
+        advanceTimeBy(600)
+        runCurrent()
+        assertEquals(listOf("conversations"), api.log)
+        assertEquals(0, h.conversation()!!.unread)
+    }
+
+    @Test
+    fun acceptingARequestFromSomeoneAlreadyInAConversationPutsItsTextThereInTheSameRow() = runTest(dispatcher) {
+        val h = harness()
+        api.conversation(c)
+        api.fill(c, 1_000, 2)
+        h.sync.reconcile("test")
+        h.sync.openThread(c)
+        runCurrent()
+        // Requests both ways: theirs stayed pending when the other one was accepted into this conversation.
+        val theirs = IncomingRequest("1287390234923440001", PeerSummary(PEER, "Negar"), "Still up for coffee?", Instant.parse("2026-11-06T09:14:03.120Z"))
+        h.sync.requests.onRealtime(theirs)
+        api.acceptInto[theirs.id] = c to theirs.body
+
+        // 201 with the conversation that exists.
+        val conversation = h.sync.requests.accept(theirs.id).getOrThrow()
+        h.sync.adopt(conversation)
+        runCurrent()
+        assertEquals(c, conversation.id)
+        assertEquals("one row for the one conversation", listOf(c), h.sync.conversations.observeList(ME).first().map { it.id })
+        val row = h.conversation()!!
+        assertEquals(1_002L, row.lastMessageId)
+        assertEquals("read by the one who accepted it", 0, row.unread)
+        assertTrue(h.sync.requests.inbox.value.items.isEmpty())
+
+        // The thread reads it (its last message is not here yet), and its realtime copy changes nothing.
+        api.log.clear()
+        assertTrue(h.sync.openThread(c) is ThreadRead.Read)
+        assertEquals(listOf("after:$c:1001"), api.log.filter { it.startsWith("after") || it.startsWith("before") })
+        h.sync.onEvent(RealtimeEvent.MessageArrived("1002", null, api.threads.getValue(c).last()))
+        h.sync.onEvent(RealtimeEvent.ConversationChanged("e2", null, ConversationEvent(conversation, ConversationChange.Accepted)))
+        runCurrent()
+        assertEquals("the text, once", 1, h.rows().count { it.body == "Still up for coffee?" })
+        assertEquals(listOf(1_000L, 1_001L, 1_002L), h.rows().mapNotNull { it.serverId }.sorted())
+        assertEquals(0, h.conversation()!!.unread)
+        assertEquals(listOf(c), h.sync.conversations.observeList(ME).first().map { it.id })
+    }
 }

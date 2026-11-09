@@ -256,6 +256,7 @@ fun LikesScreen(
             planNames = planNames,
             onDismiss = actions::dismissUpsell,
             icon = R.drawable.ic_tab_likes,
+            entry = app.core.feature.paywall.PaywallEntry.SEE_LIKES,
         )
     }
     state.quota?.let { (action, resetsAt) -> QuotaSheet(action, resetsAt, planNames, actions::dismissQuota) }

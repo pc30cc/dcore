@@ -307,7 +307,7 @@ class DeckScreenTest {
     fun rewindWithoutThePlanSaysWhichPlansHaveIt() {
         show(ready(ScreenTestData.negar).copy(sheet = DeckSheet.RewindUpsell))
         compose.onNodeWithText("Changed your mind?").assertIsDisplayed()
-        compose.onNodeWithText("Plans can't be bought in this version of the app yet.").assertIsDisplayed()
+        compose.onNodeWithText("See plans").assertIsDisplayed()
     }
 
     @Test

@@ -59,11 +59,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** This build's store's name: each store build has its own `store_name`, so neither names the other's. */
+@Suppress("UnusedReceiverParameter")
 @StringRes
-fun Store.label(): Int = when (this) {
-    Store.BAZAAR -> R.string.store_bazaar
-    Store.PLAY -> R.string.store_play
-}
+fun Store.label(): Int = R.string.store_name
 
 /**
  * The Profile tab: the profile itself is not built (it needs `GET/PATCH /me`);
@@ -100,6 +99,8 @@ fun ProfileTab() {
                     body = brandString(R.string.profile_empty_body),
                 )
             }
+            item { SectionHeader(brandString(R.string.settings_plans)) }
+            item { PlansSection(snackbar) }
             item { SectionHeader(brandString(R.string.settings_section)) }
             item {
                 SettingsRow(brandString(R.string.settings_language), languageName(AppLocales.chosen(context), current)) {

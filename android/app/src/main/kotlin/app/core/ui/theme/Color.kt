@@ -106,7 +106,8 @@ val LocalSemanticColors = staticCompositionLocalOf { LightSemantic }
  * Material's scheme for [dark], built from the brand's colours.
  *
  * The brand colour is used as given wherever it carries no text. Where it
- * does (a filled button's label, a text button on the background), it is
+ * does (a filled button's label, a text button on the background, a sheet or
+ * a card), it is
  * moved toward black in the light theme, or white in the dark one, only as far
  * as WCAG AA needs ([Contrast.ensure]): a brand whose pink is too light for
  * white text keeps its hue and gets a readable button.
@@ -114,7 +115,7 @@ val LocalSemanticColors = staticCompositionLocalOf { LightSemantic }
 fun appColorScheme(dark: Boolean, brand: BrandColors = BrandColors.Build): ColorScheme {
     if (dark) {
         val p = Palette.Dark
-        val primary = Contrast.ensure(brand.brandDark, listOf(brand.onBrandDark, p.background, p.surface), Contrast.AA, Contrast.awayFrom(brand.onBrandDark))
+        val primary = Contrast.ensure(brand.brandDark, listOf(brand.onBrandDark) + primaryTextSurfaces(p.background, p.surface, p.surfaceContainerLow, p.surfaceContainer), Contrast.AA, Contrast.awayFrom(brand.onBrandDark))
         val primaryContainer = lerp(brand.brandDark, p.background, 0.72f)
         val onPrimaryContainer = Contrast.ensure(lerp(brand.brandDark, Color.White, 0.6f), listOf(primaryContainer), Contrast.AA, Color.White)
         return darkColorScheme(
@@ -149,7 +150,7 @@ fun appColorScheme(dark: Boolean, brand: BrandColors = BrandColors.Build): Color
         )
     }
     val p = Palette.Light
-    val primary = Contrast.ensure(brand.brandLight, listOf(brand.onBrandLight, p.background, p.surface), Contrast.AA, Contrast.awayFrom(brand.onBrandLight))
+    val primary = Contrast.ensure(brand.brandLight, listOf(brand.onBrandLight) + primaryTextSurfaces(p.background, p.surface, p.surfaceContainerLow, p.surfaceContainer), Contrast.AA, Contrast.awayFrom(brand.onBrandLight))
     val primaryContainer = lerp(brand.brandLight, Color.White, 0.85f)
     val onPrimaryContainer = Contrast.ensure(lerp(brand.brandLight, Color.Black, 0.55f), listOf(primaryContainer), Contrast.AA, Color.Black)
     return lightColorScheme(
@@ -183,6 +184,14 @@ fun appColorScheme(dark: Boolean, brand: BrandColors = BrandColors.Build): Color
         inverseOnSurface = Palette.Dark.text,
     )
 }
+
+/**
+ * What `primary` text (text buttons, accent labels) is drawn on: the
+ * background, surfaces, bottom sheets (Material's `surfaceContainerLow`) and
+ * cards (`surfaceContainer`). `primary` must reach AA on each of them.
+ */
+private fun primaryTextSurfaces(background: Color, surface: Color, sheet: Color, card: Color): List<Color> =
+    listOf(background, surface, sheet, card)
 
 /** WCAG 2.x contrast, on sRGB colours. */
 object Contrast {

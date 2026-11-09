@@ -2,6 +2,7 @@ package app.core.net
 
 import android.content.Context
 import app.core.common.Clock
+import app.core.store.StoreBilling
 
 /**
  * Chooses the backend for this launch. **Release build.**
@@ -20,4 +21,7 @@ object Backend {
 
     @Suppress("UNUSED_PARAMETER")
     fun create(context: Context, clock: Clock, real: () -> ServerApi): ServerApi = real()
+
+    @Suppress("UNUSED_PARAMETER")
+    fun billing(context: Context, real: () -> StoreBilling): StoreBilling = real()
 }

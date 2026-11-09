@@ -59,6 +59,15 @@ class ChatApi(val me: String = ME) : ServerApi by unsupportedApi() {
 
     /** Thrown by every send while set. */
     var sendError: ApiError? = null
+
+    /** The next send is made on the server, and its answer is lost on the way back. */
+    var loseNextAnswer = false
+
+    /** The `X-Write-Lag-Ms` every page reports. */
+    var writeLagMs: Long? = null
+
+    /** The server's clock, for the messages a send makes. */
+    var now: () -> Instant = { Instant.parse("2026-11-06T10:00:00Z") }
     val sent = mutableListOf<SendMessageRequest>()
     val receipts = mutableListOf<Pair<Id, ReceiptsRequest>>()
 
@@ -100,7 +109,8 @@ class ChatApi(val me: String = ME) : ServerApi by unsupportedApi() {
             watermark == null -> newest
             else -> minOf(newest, watermark)
         }
-        return MessagesPage(items, hasMore, syncCursor = sync?.toString(), readCursors = ReadCursors())
+        // History rows carry no client id: only a send's answer and its realtime copy do.
+        return MessagesPage(items.map { it.copy(clientId = null) }, hasMore, syncCursor = sync?.toString(), readCursors = ReadCursors(), writeLagMs = writeLagMs)
     }
 
     private fun readable(conversationId: Id): List<Message> {
@@ -131,10 +141,37 @@ class ChatApi(val me: String = ME) : ServerApi by unsupportedApi() {
         sent += request
         sendError?.let { throw it }
         byClientId[request.clientId]?.let { return SentMessage(it, replayed = true) }
-        val message = Message((nextId++).toString(), conversationId, me, request.clientId, request.kind, request.body, request.refId, at = Instant.parse("2026-11-06T10:00:00Z"))
+        val message = Message((nextId++).toString(), conversationId, me, request.clientId, request.kind, request.body, request.refId, at = now())
         byClientId[request.clientId] = message
         threads.getOrPut(conversationId) { mutableListOf() } += message
+        if (loseNextAnswer) {
+            loseNextAnswer = false
+            throw ApiError.Network(java.io.IOException("answer lost"))
+        }
         return SentMessage(message, replayed = false)
+    }
+
+    /** The server's records of sends ran out (`idem:msg` lives 15 minutes): a client id is new to it again. */
+    fun forgetSendRecords() = byClientId.clear()
+
+    /**
+     * Requests from the peer whose conversation already exists (one each way, the other one accepted first):
+     * request id to (conversation, its text). Accepting one adds the text to that conversation, read by the
+     * one who accepted, and answers (201) with it.
+     */
+    val acceptInto = mutableMapOf<Id, Pair<Id, String>>()
+
+    override suspend fun acceptMessageRequest(requestId: Id): Conversation {
+        log += "accept:$requestId"
+        val (conversationId, body) = acceptInto.remove(requestId) ?: throw ApiError.Http(404, Problem.of(404, "not_found"))
+        val list = threads.getOrPut(conversationId) { mutableListOf() }
+        val id = (list.maxOfOrNull { it.id.toLong() } ?: 1_000L) + 1
+        val first = message(conversationId, id, body = body)
+        list += first
+        val conversation = conversations.getValue(conversationId).copy(lastMessage = first, unread = 0, myReadId = first.id)
+        conversations[conversationId] = conversation
+        listChanged = true
+        return conversation
     }
 
     override suspend fun sendReceipts(conversationId: Id, receipts: ReceiptsRequest) {

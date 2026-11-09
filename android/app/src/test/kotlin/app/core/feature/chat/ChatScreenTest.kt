@@ -540,4 +540,21 @@ class ChatScreenTest {
         compose.onNode(hasContentDescription("۲ دقیقه و ۵ ثانیه", substring = true)).assertIsDisplayed()
         compose.onNode(hasContentDescription("۲:۰۵", substring = true)).assertDoesNotExist()
     }
+
+    @Test
+    fun aDeliveredMessageWithoutReadReceiptsOffersThePlans() {
+        val opened = mutableListOf<app.core.feature.paywall.PaywallRequest>()
+        compose.setContent {
+            AppTheme(dark = false) {
+                CompositionLocalProvider(
+                    LocalRemoteImages provides false,
+                    app.core.feature.paywall.LocalPaywall provides app.core.feature.paywall.PaywallLauncher { opened += it },
+                ) {
+                    ChatScreen(ChatUiState(me = ME, conversation = conversation(), loading = false, readReceiptsLocked = true), actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        compose.onNodeWithText("See when it's read").performClick()
+        assertEquals(listOf(app.core.feature.paywall.PaywallRequest.Plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS)), opened)
+    }
 }

@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -194,15 +196,18 @@ fun ChatScreen(
                 when {
                     state.gone -> Unit
                     state.ended -> EndedBar()
-                    else -> Composer(
-                        text = draft,
-                        max = messageMax,
-                        onText = { value ->
-                            draft = value
-                            if (value.isNotBlank()) actions.typed()
-                        },
-                        onSend = { if (actions.send(draft)) draft = "" },
-                    )
+                    else -> Column {
+                        if (state.readReceiptsLocked) ReadReceiptsHint()
+                        Composer(
+                            text = draft,
+                            max = messageMax,
+                            onText = { value ->
+                                draft = value
+                                if (value.isNotBlank()) actions.typed()
+                            },
+                            onSend = { if (actions.send(draft)) draft = "" },
+                        )
+                    }
                 }
             }
         },
@@ -419,6 +424,20 @@ private fun Composer(text: String, max: Int, onText: (String) -> Unit, onSend: (
 }
 
 private const val COUNTER_AT = 100
+
+/** "See when it's read": read receipts are the plan's, and the paywall is one tap away. */
+@Composable
+private fun ReadReceiptsHint() {
+    val paywall = app.core.feature.paywall.LocalPaywall.current
+    androidx.compose.material3.TextButton(
+        onClick = { paywall.plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS) },
+        modifier = Modifier.padding(horizontal = Space.sm).heightIn(min = Space.minTouch),
+    ) {
+        Icon(painterResource(R.drawable.ic_chat_read), contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(Space.xs))
+        Text(brandString(R.string.chat_read_receipts_upsell), style = MaterialTheme.typography.labelLarge)
+    }
+}
 
 @Composable
 private fun EndedBar() {

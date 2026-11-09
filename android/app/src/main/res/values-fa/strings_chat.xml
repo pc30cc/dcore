@@ -140,6 +140,8 @@
     <string name="requests_withdrawn">پس گرفته شد.</string>
     <string name="requests_load_failed">درخواست‌های پیام بارگذاری نشدند</string>
     <string name="requests_loading">در حال بارگذاری درخواست‌های پیام</string>
+    <string name="requests_more_failed">درخواست‌های بیشتر بارگذاری نشدند.</string>
+    <string name="requests_show_more">نمایش بیشتر</string>
     <string name="requests_report_note">پیامش همراه گزارش فرستاده می‌شود و درخواست رد می‌شود.</string>
     <string name="requests_empty_inbox_title">درخواست پیامی ندارید</string>
     <string name="requests_empty_inbox_body">وقتی کسی پیش از مچ برایتان بنویسد، این‌جا نشان داده می‌شود.</string>

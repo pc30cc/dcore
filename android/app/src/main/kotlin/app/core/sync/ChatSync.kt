@@ -254,19 +254,21 @@ class ChatSync(
                 val viewing = isViewing(conversationId)
                 messages.applyRealtime(who, message)
                 val known = conversations.onMessage(who, message, viewing)
-                if (!known) readListSoon()
+                if (!known) readListSoon("unknown conversation")
                 if (message.senderId != who && message.kind != MessageKind.Reaction && message.kind != MessageKind.Unsend) {
                     _typing.update { it - conversationId }
                     if (viewing) scheduleRead(conversationId) else scheduleDelivered(conversationId, message.id)
                 }
             }
-            is RealtimeEvent.ReceiptMoved -> conversations.applyReceipt(who, event.receipt)
+            // Read on another phone of this account, in a thread this one does not hold: the list says what is left.
+            is RealtimeEvent.ReceiptMoved -> if (conversations.applyReceipt(who, event.receipt)) readListSoon("unread unknown")
             is RealtimeEvent.PeerTyping -> if (event.typing.by != who) showTyping(event.typing.conversationId)
             is RealtimeEvent.ConversationChanged -> {
                 val change = event.change
                 conversations.upsert(who, change.conversation)
-                // An accepted request is a conversation now, on whichever side or phone it was accepted.
-                if (change.reason == ConversationChange.Accepted) requests.onAccepted(change.conversation.peer.id)
+                // An accepted request is a conversation now, on whichever side or phone it was accepted; its
+                // first message (the request's text) says which of the two directions it was.
+                if (change.reason == ConversationChange.Accepted) requests.onAccepted(change.conversation.peer.id, change.conversation.lastMessage)
             }
             is RealtimeEvent.ConversationEnded -> {
                 val id = event.conversationId
@@ -287,11 +289,11 @@ class ChatSync(
         }
     }
 
-    private fun readListSoon() {
+    private fun readListSoon(reason: String) {
         if (missingRead?.isActive == true) return
         missingRead = scope.launch {
             delay(timing.missingConversationReadMs)
-            reconcile("unknown conversation")
+            reconcile(reason)
         }
     }
 

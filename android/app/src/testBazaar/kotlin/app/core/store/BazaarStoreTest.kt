@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.core.BuildConfig
 import app.core.common.Diag
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,11 +29,23 @@ class BazaarStoreTest {
     }
 
     @Test
+    fun `an empty catalogue asks the store nothing and sells nothing`() = runTest {
+        // A store the server cannot verify lists no product: the SDK is never called with no ids (Play's would throw).
+        assertEquals(BillingResult.Ok(emptyList<StoreProduct>()), services.billing.products(ProductType.SUBSCRIPTION, emptyList()))
+        assertEquals(BillingResult.Ok(emptyList<StoreProduct>()), services.billing.products(ProductType.ONE_TIME, emptyList()))
+    }
+
+    @Test
     fun `every service is the Bazaar one`() {
         assertEquals(Store.BAZAAR, services.info.store)
         assertEquals(Store.BAZAAR, services.billing.store)
         assertEquals("com.farsitel.bazaar", services.info.storePackage)
         assertTrue(services.billing is BazaarBilling)
+    }
+
+    @Test
+    fun `Bazaar has no store messages, so it never asks for a re-sync of the subscriptions`() = runTest {
+        assertEquals(emptyList<Unit>(), services.billing.subscriptionStatusChanges.toList())
     }
 
     @Test
@@ -57,5 +70,16 @@ class BazaarStoreTest {
     fun `there is no in-app update check or attestation, and they say so`() = runTest {
         assertTrue(services.updates.check() is UpdateCheck.Unsupported)
         assertTrue(services.integrity.token("hash") is IntegrityResult.Unsupported)
+    }
+
+    @Test
+    fun `only Bazaar's own links are followed for its subscriptions, and the app has no age signals`() {
+        val info = services.info
+        assertTrue(info.isOwnStoreLink("https://cafebazaar.ir/app/com.example.app"))
+        assertTrue(info.isOwnStoreLink("bazaar://details?id=com.example.app"))
+        assertFalse(info.isOwnStoreLink("https://play.google.com/store/account/subscriptions"))
+        assertFalse(info.isOwnStoreLink("https://cafebazaar.ir.example.com/x"))
+        assertFalse(info.isOwnStoreLink("not a link"))
+        assertTrue(services.ageSignals === AgeSignals.None)
     }
 }

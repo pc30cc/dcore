@@ -32,8 +32,19 @@ import app.core.net.origins.OriginsTrust
 import app.core.storage.Preferences
 import app.core.storage.SecureStore
 import app.core.storage.SessionStore
+import app.core.billing.KnownPurchases
+import app.core.billing.PurchaseOutbox
+import app.core.billing.PurchaseSyncWorker
+import app.core.billing.Purchases
+import app.core.billing.ServerStoreApi
+import app.core.feature.paywall.PaywallController
+import app.core.model.SwipeOutcome
+import app.core.store.AgeSignalsCheck
+import app.core.store.RatingPacing
+import app.core.store.StoreBilling
 import app.core.store.StoreModule
 import app.core.store.StoreServices
+import app.core.store.UpdatePacing
 import app.core.push.PushGraph
 import app.core.realtime.KtorRealtimeTransport
 import app.core.realtime.RealtimeCoordinator
@@ -50,6 +61,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Everything the app holds once, for the life of the process (plain
@@ -147,7 +159,15 @@ class AppGraph(private val app: Application) {
     val store: StoreServices by lazy { StoreModule.create(app, diag) }
 
     /** Where the app's root is: signed out, signing up, restricted, in (feature/auth). */
-    val auth: AuthGate by lazy { AuthGate(api, store.externalSignIn, store.smsCodes, appScope, diag) }
+    val auth: AuthGate by lazy {
+        AuthGate(api, store.externalSignIn, store.smsCodes, appScope, diag).also { gate ->
+            // Another account's plan, quotas and purchase in progress are never shown to the next one.
+            gate.onSignOut(after = {
+                entitlements.clear()
+                if (purchasesHolder.isInitialized()) purchases.clear()
+            })
+        }
+    }
 
     /** The privacy notice and terms accepted on this install, before an account exists. */
     val legal: LegalAcceptance by lazy { LegalAcceptance(secureStore, clock) }
@@ -172,7 +192,11 @@ class AppGraph(private val app: Application) {
             fetchPage = { limit -> api.deck(limit) },
             // A match the answer carries is in the chat list (and its thread
             // opens) before any read.
-            sendSwipes = { swipes -> api.swipe(swipes).also(chat.sync::onSwipes) },
+            sendSwipes = { swipes ->
+                api.swipe(swipes).also(chat.sync::onSwipes).also { result ->
+                    if (result.results.any { it.result == SwipeOutcome.Matched }) appScope.launch { ratingPacing.noteMatch() }
+                }
+            },
             account = { api.sessionUser()?.id },
             store = CachedDeckSnapshotStore(responseCache, diag),
             onQuotas = { result -> entitlements.applyQuotas(result.quotas) },
@@ -180,6 +204,37 @@ class AppGraph(private val app: Application) {
             diag = diag,
         )
     }
+
+    /** The store's billing: the flavor's, or in a debug build on the sample backend, the sample store's. */
+    val billing: StoreBilling by lazy { Backend.billing(app) { store.billing } }
+
+    /** The paywall and the packs sheets: what is open (feature/paywall). */
+    val paywall = PaywallController()
+
+    private val purchasesHolder = lazy {
+        Purchases(
+            billing = billing,
+            api = ServerStoreApi(api),
+            outbox = PurchaseOutbox(secureStore, diag),
+            known = KnownPurchases(secureStore),
+            entitlements = entitlements,
+            account = { api.sessionUser()?.id },
+            scope = appScope,
+            clock = clock,
+            diag = diag,
+            retryInBackground = { PurchaseSyncWorker.enqueue(app) },
+        )
+    }
+
+    /** Store purchases: verified by the server, queued until it answers, restored (billing/). */
+    val purchases: Purchases by purchasesHolder
+
+    /** When a rating or a recommended update may be asked for (store/). */
+    val ratingPacing: RatingPacing by lazy { RatingPacing(secureStore, clock) }
+    val updatePacing: UpdatePacing by lazy { UpdatePacing(secureStore, clock) }
+
+    /** The store's age signal, once per install (the Play build only has one). */
+    val ageCheck: AgeSignalsCheck by lazy { AgeSignalsCheck(store.ageSignals, secureStore, clock) }
 
     /** The realtime socket's transport: the real server's, or in a debug build on the sample backend, the sample's. */
     private val realtimeTransport: RealtimeTransport by lazy { (api as? RealtimeTransport) ?: KtorRealtimeTransport() }

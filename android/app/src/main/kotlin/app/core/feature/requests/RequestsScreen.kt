@@ -34,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -72,6 +73,7 @@ import app.core.model.MessageRequest
 import app.core.model.ReportReason
 import app.core.model.RequestBox
 import app.core.model.RequestStatus
+import app.core.sync.RequestsBox
 import app.core.ui.components.EmptyState
 import app.core.ui.theme.Space
 import java.time.LocalDate
@@ -80,6 +82,9 @@ interface RequestsActions {
     fun back()
     fun select(box: RequestBox)
     fun refresh()
+
+    /** The end of the open box is on screen and the server has more. */
+    fun loadMore()
     fun accept(request: MessageRequest)
     fun decline(request: MessageRequest)
     fun withdraw(request: MessageRequest)
@@ -107,6 +112,7 @@ fun RequestsRoute(onBack: () -> Unit, onOpenChat: (Id) -> Unit) {
             override fun back() = back()
             override fun select(box: RequestBox) = vm.select(box)
             override fun refresh() = vm.refresh()
+            override fun loadMore() = vm.loadMore()
             override fun accept(request: MessageRequest) = vm.accept(request)
             override fun decline(request: MessageRequest) = vm.decline(request)
             override fun withdraw(request: MessageRequest) = vm.withdraw(request)
@@ -172,14 +178,14 @@ fun RequestsScreen(state: RequestsUiState, actions: RequestsActions, catalog: Ca
             val box = state.current
             when {
                 !box.loaded && (box.loading || !box.failed) -> SkeletonRequests()
-                box.items.isEmpty() && box.failed -> EmptyState(
+                box.items.isEmpty() && box.failed && box.nextCursor == null -> EmptyState(
                     icon = R.drawable.ic_chat_offline,
                     title = brandString(R.string.requests_load_failed),
                     body = brandString(if (box.offline) R.string.chat_load_failed_offline else R.string.error_generic),
                     modifier = Modifier.fillMaxSize(),
                     action = { Button(onClick = actions::refresh) { Text(brandString(R.string.action_try_again)) } },
                 )
-                box.items.isEmpty() -> EmptyState(
+                box.items.isEmpty() && box.nextCursor == null -> EmptyState(
                     icon = R.drawable.ic_chat_requests,
                     title = brandString(if (state.box == RequestBox.Inbox) R.string.requests_empty_inbox_title else R.string.requests_empty_sent_title),
                     body = brandString(if (state.box == RequestBox.Inbox) R.string.requests_empty_inbox_body else R.string.requests_empty_sent_body),
@@ -200,6 +206,9 @@ fun RequestsScreen(state: RequestsUiState, actions: RequestsActions, catalog: Ca
                                 actions = actions,
                                 onReport = { reporting = request },
                             )
+                        }
+                        if (box.nextCursor != null) {
+                            item(key = "more:${state.box.wire}") { MoreRequests(box, actions) }
                         }
                     }
                 }
@@ -298,6 +307,40 @@ private fun RequestCard(
             }
         }
     }
+}
+
+/**
+ * The end of a box with more on the server: read on its own when it comes
+ * into view; a button when that read failed, or when it read on through
+ * pages whose senders are all hidden and found nothing to show.
+ */
+@Composable
+private fun MoreRequests(box: RequestsBox, actions: RequestsActions) {
+    Box(Modifier.fillMaxWidth().padding(Space.md), contentAlignment = Alignment.Center) {
+        when {
+            box.loadingMore -> Spinner()
+            box.moreFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(brandString(R.string.requests_more_failed), style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = actions::loadMore, modifier = Modifier.heightIn(min = Space.minTouch)) {
+                    Text(brandString(R.string.action_try_again))
+                }
+            }
+            box.moreHidden -> TextButton(onClick = actions::loadMore, modifier = Modifier.heightIn(min = Space.minTouch)) {
+                Text(brandString(R.string.requests_show_more))
+            }
+            else -> {
+                Spinner()
+                // Again after a refresh that ran meanwhile (the ask is dropped while one runs).
+                LaunchedEffect(box.nextCursor, box.loading) { if (!box.loading) actions.loadMore() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Spinner() {
+    val loading = brandString(R.string.requests_loading)
+    CircularProgressIndicator(Modifier.size(28.dp).semantics { contentDescription = loading })
 }
 
 @Composable

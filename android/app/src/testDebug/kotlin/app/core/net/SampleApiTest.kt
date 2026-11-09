@@ -358,8 +358,8 @@ class SampleApiTest {
         assertTrue(products.subscriptions.all { it.basePlanId == null && it.productId.startsWith("sub.") })
         assertTrue("no weekly plan in this store", products.subscriptions.none { it.period == app.core.model.BillingPeriod.Week })
 
-        val first = bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("superlike.5", "tok-1", "{}", "sig", PurchaseKind.Consumable))
-        val again = bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("superlike.5", "tok-1", "{}", "sig", PurchaseKind.Consumable))
+        val first = bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("cons.superlike.5", "tok-1", "{}", "sig", PurchaseKind.Consumable))
+        val again = bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("cons.superlike.5", "tok-1", "{}", "sig", PurchaseKind.Consumable))
         assertEquals(first, again)
         assertEquals("credited once", 7, bazaar.entitlements().value.wallet.superlike)
 

@@ -1,5 +1,6 @@
 package app.core.sync
 
+import app.core.cache.CacheDatabase
 import app.core.cache.ChatMapping
 import app.core.cache.ChatStore
 import app.core.cache.ConversationEntity
@@ -41,6 +42,12 @@ sealed interface ListRefresh {
  * almost always. Between reads, realtime keeps the rows current: a message
  * moves its conversation's preview, time and unread count; a receipt moves
  * the pointers; `conversation` and `conversation_end` add and remove rows.
+ *
+ * The unread count follows the server's rule: it is 0 once the reader's
+ * pointer reaches the newest message counted for them, whatever came after
+ * it (their own reply, an unsend, a call line of theirs). The phone compares
+ * with the newest such message it knows of ([newestCounted]); when it cannot
+ * know it, it keeps the count until the server's list says otherwise.
  */
 class ConversationRepository(
     private val api: ServerApi,
@@ -97,7 +104,7 @@ class ConversationRepository(
                 val fresh = ChatMapping.conversation(account, conversation, now)
                 val newer = (fresh.lastMessageId ?: 0) > (before?.lastMessageId ?: 0)
                 if (newer) moved += conversation.id
-                merged(before, fresh)
+                merged(db, account, before, fresh)
             }
             dao.upsert(rows)
             if (page.nextCursor == null) {
@@ -135,7 +142,7 @@ class ConversationRepository(
             val now = clock.nowMillis()
             val existing = page.items.map { it.id }.chunked(app.core.cache.SQL_CHUNK)
                 .flatMap { dao.getAll(account, it) }.associateBy { it.conversationId }
-            dao.upsert(page.items.map { merged(existing[it.id], ChatMapping.conversation(account, it, now)) })
+            dao.upsert(page.items.map { merged(db, account, existing[it.id], ChatMapping.conversation(account, it, now)) })
             db.syncState().upsert(SyncStateEntity(account, SyncKeys.LIST, page.nextCursor, null, page.nextCursor != null, false, now))
         }
         true
@@ -143,29 +150,73 @@ class ConversationRepository(
 
     /**
      * The server's row, with what this phone knows better: its own read
-     * pointer when it is ahead (a receipt not flushed yet on the server), and
-     * then no unread count for what it has read.
+     * pointer when it is ahead (a receipt the answer was made before). The
+     * unread count is the server's, unless that pointer already reaches the
+     * newest message counted for this account (then 0, as the server will
+     * say once it has the receipt).
      */
-    private fun merged(before: ConversationEntity?, fresh: ConversationEntity): ConversationEntity {
+    private suspend fun merged(db: CacheDatabase, account: PublicUid, before: ConversationEntity?, fresh: ConversationEntity): ConversationEntity {
         if (before == null) return fresh
         val myRead = maxOf(before.myReadId ?: 0, fresh.myReadId ?: 0).takeIf { it > 0 }
         val readAll = myRead != null && fresh.lastMessageId != null && myRead >= fresh.lastMessageId
-        return fresh.copy(
+        val ahead = myRead != null && myRead > (fresh.myReadId ?: 0)
+        val next = fresh.copy(
             myReadId = myRead,
-            unread = if (readAll) 0 else fresh.unread,
             peerReadId = maxOf(before.peerReadId ?: 0, fresh.peerReadId ?: 0).takeIf { it > 0 },
             peerDeliveredId = maxOf(before.peerDeliveredId ?: 0, fresh.peerDeliveredId ?: 0).takeIf { it > 0 },
         )
+        val settled = readAll || (ahead && fresh.unread > 0 && readUpToCounted(myRead, newestCounted(db, account, next)))
+        return if (settled) next.copy(unread = 0) else next
     }
 
-    /** A conversation the server just described (a match, an accepted request, a settings change). */
+    /**
+     * A conversation the server just described (a match, an accepted request,
+     * a settings change). An answer that names no last message (an accept
+     * repeated after it worked) never erases the one this phone shows.
+     */
     suspend fun upsert(account: PublicUid, conversation: Conversation) {
         store.write("conversation") { db ->
             val dao = db.conversations()
-            val fresh = ChatMapping.conversation(account, conversation, clock.nowMillis())
-            dao.upsert(listOf(merged(dao.get(account, conversation.id), fresh)))
+            val before = dao.get(account, conversation.id)
+            var fresh = ChatMapping.conversation(account, conversation, clock.nowMillis())
+            if (before?.lastMessageId != null && fresh.lastMessageId == null) {
+                fresh = fresh.copy(
+                    lastMessageJson = before.lastMessageJson,
+                    lastMessageId = before.lastMessageId,
+                    lastActivityAt = maxOf(before.lastActivityAt, fresh.lastActivityAt),
+                )
+            }
+            dao.upsert(listOf(merged(db, account, before, fresh)))
         }
     }
+
+    /**
+     * The newest message this phone knows of that the server may count as
+     * unread for [account]: the peer's, neither a reaction nor an unsend.
+     * The list row's last message when it is that (or the thread's newest
+     * such row, when a read put a newer one there); otherwise the thread's,
+     * but only from a thread complete up to that last message (read here,
+     * not stale, holding it), since a gap could hide a newer one. 0: the peer
+     * has written nothing that counts. Null: this phone cannot tell.
+     */
+    private suspend fun newestCounted(db: CacheDatabase, account: PublicUid, row: ConversationEntity): Long? {
+        val messages = db.messages()
+        val newest = messages.newestServerRows(account, row.conversationId, COUNTED_SCAN)
+        val inThread = newest.firstOrNull { it.senderId != account && counts(ChatMapping.kind(it)) }?.serverId
+        val last = ChatMapping.lastMessage(row)
+        val lastId = row.lastMessageId
+        if (last != null && lastId != null && last.senderId != account && counts(last.kind)) return maxOf(lastId, inThread ?: 0)
+        val state = db.syncState().get(account, SyncKeys.thread(row.conversationId)) ?: return null
+        if (state.stale) return null
+        if (lastId != null && messages.countServerId(account, row.conversationId, lastId) == 0) return null
+        if (inThread != null) return inThread
+        // Nothing of theirs among the rows looked at: none at all only if those were the whole thread.
+        return if (newest.size < COUNTED_SCAN && !state.hasMoreBefore) 0 else null
+    }
+
+    private fun counts(kind: MessageKind): Boolean = kind != MessageKind.Reaction && kind != MessageKind.Unsend
+
+    private fun readUpToCounted(myRead: Long?, counted: Long?): Boolean = counted != null && (myRead ?: 0) >= counted
 
     /**
      * A message reached the phone (realtime, a send, a read): the preview,
@@ -198,16 +249,31 @@ class ConversationRepository(
             true
         } ?: true
 
-    /** A pointer moved: the reader's own (another phone of theirs), or the peer's. */
-    suspend fun applyReceipt(account: PublicUid, receipt: ReceiptEvent) {
+    /**
+     * A pointer moved: the reader's own (another phone of theirs), or the
+     * peer's. True when the reader's count is left standing only because
+     * this phone cannot tell whether the pointer reached the newest message
+     * counted for them (it does not hold the thread): the server's list
+     * knows, and its version moved with the receipt.
+     */
+    suspend fun applyReceipt(account: PublicUid, receipt: ReceiptEvent): Boolean =
         store.write("receipt") { db ->
             val dao = db.conversations()
-            val row = dao.get(account, receipt.conversationId) ?: return@write
+            val row = dao.get(account, receipt.conversationId) ?: return@write false
             val read = ChatMapping.idOf(receipt.readUpTo)
             val delivered = ChatMapping.idOf(receipt.deliveredUpTo)
+            var unknown = false
             val next = if (receipt.by == account) {
                 val mine = maxOf(row.myReadId ?: 0, read ?: 0).takeIf { it > 0 }
-                row.copy(myReadId = mine, unread = if (mine != null && mine >= (row.lastMessageId ?: 0)) 0 else row.unread)
+                val moved = row.copy(myReadId = mine)
+                if (row.unread == 0 || read == null) {
+                    moved
+                } else {
+                    // Not known here: past the last message nothing can be unread; short of it, the list decides.
+                    val counted = newestCounted(db, account, moved)
+                    unknown = counted == null && (mine ?: 0) < (row.lastMessageId ?: 0)
+                    if (readUpToCounted(mine, counted ?: row.lastMessageId ?: 0)) moved.copy(unread = 0) else moved
+                }
             } else {
                 row.copy(
                     peerReadId = maxOf(row.peerReadId ?: 0, read ?: 0).takeIf { it > 0 },
@@ -215,8 +281,8 @@ class ConversationRepository(
                 )
             }
             if (next != row) dao.upsert(listOf(next))
-        }
-    }
+            unknown
+        } ?: false
 
     /** The pointers a thread read carried. */
     suspend fun applyPointers(account: PublicUid, conversationId: Id, pointers: ReadPointers) {
@@ -224,12 +290,12 @@ class ConversationRepository(
             val dao = db.conversations()
             val row = dao.get(account, conversationId) ?: return@write
             val mine = maxOf(row.myReadId ?: 0, pointers.mine ?: 0).takeIf { it > 0 }
-            val next = row.copy(
+            val moved = row.copy(
                 myReadId = mine,
                 peerReadId = maxOf(row.peerReadId ?: 0, pointers.peerRead ?: 0).takeIf { it > 0 },
                 peerDeliveredId = maxOf(row.peerDeliveredId ?: 0, pointers.peerDelivered ?: 0, pointers.peerRead ?: 0).takeIf { it > 0 },
-                unread = if (mine != null && mine >= (row.lastMessageId ?: 0)) 0 else row.unread,
             )
+            val next = if (moved.unread > 0 && readUpToCounted(mine, newestCountedOrLast(db, account, moved))) moved.copy(unread = 0) else moved
             if (next != row) dao.upsert(listOf(next))
         }
     }
@@ -243,16 +309,20 @@ class ConversationRepository(
         }
     }
 
-    /** The server has this phone's read pointer at [upTo]: no unread count left for it. */
+    /** The server has this phone's read pointer at [upTo]: no unread count left for what it covers. */
     suspend fun markRead(account: PublicUid, conversationId: Id, upTo: Long) {
         store.write("mark read") { db ->
             val dao = db.conversations()
             val row = dao.get(account, conversationId) ?: return@write
-            val mine = maxOf(row.myReadId ?: 0, upTo)
-            val next = row.copy(myReadId = mine, unread = if (mine >= (row.lastMessageId ?: 0)) 0 else row.unread)
+            val moved = row.copy(myReadId = maxOf(row.myReadId ?: 0, upTo))
+            val next = if (moved.unread > 0 && readUpToCounted(moved.myReadId, newestCountedOrLast(db, account, moved))) moved.copy(unread = 0) else moved
             if (next != row) dao.upsert(listOf(next))
         }
     }
+
+    /** [newestCounted], else the last message itself (nothing after it can be unread). */
+    private suspend fun newestCountedOrLast(db: CacheDatabase, account: PublicUid, row: ConversationEntity): Long =
+        newestCounted(db, account, row) ?: row.lastMessageId ?: 0
 
     /**
      * The conversation ended (unmatch, block, ban or deletion; the server
@@ -299,5 +369,8 @@ class ConversationRepository(
     companion object {
         private const val AREA = "Sync"
         const val PAGE = 50
+
+        /** Thread rows looked at for the peer's newest counted message. */
+        private const val COUNTED_SCAN = 100
     }
 }

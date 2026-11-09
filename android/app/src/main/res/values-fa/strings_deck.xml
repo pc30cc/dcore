@@ -68,7 +68,6 @@
     <string name="deck_rewind_nothing">چیزی برای برگشت نیست: فقط آخرین رد، آن هم بلافاصله، برمی‌گردد.</string>
     <string name="upsell_plans">در %1$s هست.</string>
     <string name="upsell_plans_generic">در اشتراک‌های پولی هست.</string>
-    <string name="upsell_not_yet">در این نسخهٔ اپ هنوز نمی‌شود اشتراک خرید.</string>
     <string name="action_got_it">متوجه شدم</string>
 
     <!-- A like on one photo or one answer -->

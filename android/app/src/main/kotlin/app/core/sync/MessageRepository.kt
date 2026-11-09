@@ -63,6 +63,14 @@ import java.util.concurrent.ConcurrentHashMap
  * was killed) sends that same id, and the server answers a replay with the
  * message it already made. A pending row older than [RESUME_WINDOW_MS] is not
  * sent on the person's behalf: it becomes FAILED and waits for a tap.
+ *
+ * The server keeps that answer for [REPLAY_WINDOW_MS] only, counted from the
+ * message it made, and its history rows carry no client id. So an attempt
+ * made when the row's first attempt is older than that window first reads
+ * the thread's catch-up and takes as its own an earlier attempt's message
+ * (the same kind, body and ref, sent by this account after the first
+ * attempt, not a bubble of another send); only when there is none does it
+ * send again.
  */
 class MessageRepository(
     private val api: ServerApi,
@@ -123,9 +131,12 @@ class MessageRepository(
         (store.read("has") { it.messages().countServerId(account, conversationId, serverId) } ?: 0) > 0
 
     /** The newest page, as for a thread never read (or one read again from its end). */
-    suspend fun initial(account: PublicUid, conversationId: Id): ThreadRead = lockFor(conversationId).withLock {
+    suspend fun initial(account: PublicUid, conversationId: Id): ThreadRead = initial(account, conversationId, lag = null)
+
+    private suspend fun initial(account: PublicUid, conversationId: Id, lag: LagSeen?): ThreadRead = lockFor(conversationId).withLock {
         val page = fetch(conversationId) { api.messagesBefore(conversationId, before = null, limit = PAGE) }
             .getOrElse { return@withLock failure(account, conversationId, it) }
+        lag?.see(page)
         store.write("initial read") { db ->
             merge(db, account, conversationId, page.items)
             val oldest = page.items.minOfOrNull { ChatMapping.idOf(it.id) ?: Long.MAX_VALUE }
@@ -150,7 +161,9 @@ class MessageRepository(
      * [MAX_CATCH_UP_PAGES] pages behind is read again from its end instead:
      * its older part stays reachable by paging back.
      */
-    suspend fun catchUp(account: PublicUid, conversationId: Id): ThreadRead {
+    suspend fun catchUp(account: PublicUid, conversationId: Id): ThreadRead = catchUp(account, conversationId, lag = null)
+
+    private suspend fun catchUp(account: PublicUid, conversationId: Id, lag: LagSeen?): ThreadRead {
         val reset = lockFor(conversationId).withLock {
             var state = syncState(account, conversationId)
             val cursor = state?.cursor ?: return@withLock true
@@ -159,6 +172,7 @@ class MessageRepository(
             repeat(MAX_CATCH_UP_PAGES) {
                 val page = fetch(conversationId) { api.messagesAfter(conversationId, after = after, limit = CATCH_UP_PAGE) }
                     .getOrElse { return failure(account, conversationId, it) }
+                lag?.see(page)
                 total += page.items.size
                 val next = cursorOf(page, previous = after)
                 store.write("catch-up") { db ->
@@ -187,7 +201,17 @@ class MessageRepository(
             db.messages().deleteConfirmed(account, conversationId)
             db.syncState().delete(account, SyncKeys.thread(conversationId))
         }
-        return initial(account, conversationId)
+        return initial(account, conversationId, lag)
+    }
+
+    /** The largest write-behind lag the pages of one read reported. */
+    private class LagSeen {
+        var maxMs: Long = 0
+            private set
+
+        fun see(page: MessagesPage) {
+            maxMs = maxOf(maxMs, page.writeLagMs ?: 0)
+        }
     }
 
     /** One page further back. */
@@ -407,6 +431,16 @@ class MessageRepository(
         if (row.sendState == SendState.CONFIRM.code) return SendOutcome.NeedsConfirm(row.errorCode)
         if (row.sendState == SendState.FAILED.code) return SendOutcome.Refused(row.errorCode ?: ChatErrors.OTHER)
         val clientId = row.clientId ?: return SendOutcome.Missing
+        if (beyondReplay(row)) {
+            when (val earlier = sentBefore(account, row)) {
+                Earlier.Adopted -> return SendOutcome.Sent(null)
+                Earlier.None -> Unit
+                is Earlier.Unknown -> return waitForHistory(account, row, earlier.afterMs)
+                Earlier.Closed -> return closed(account, row)
+                Earlier.Gone -> return SendOutcome.Closed
+                Earlier.Missing -> return SendOutcome.Missing
+            }
+        }
         val kind = ChatMapping.kind(row)
         val request = SendMessageRequest(
             clientId = clientId,
@@ -459,6 +493,124 @@ class MessageRepository(
         }
         diag.warn(AREA, "send not done in ${Diag.id(row.conversationId)}: ${e.code ?: e.javaClass.simpleName}")
         return outcome
+    }
+
+    /**
+     * Whether the server may have forgotten [row]'s client id: its record of
+     * a send lives [REPLAY_WINDOW_MS] from the message it made, which is no
+     * older than the id's first attempt. An outbox row's [MessageEntity.cachedAt]
+     * is when its client id was minted; [MessageEntity.at] moves with every
+     * retry and cannot say.
+     */
+    private fun beyondReplay(row: MessageEntity): Boolean = clock.nowMillis() - row.cachedAt > REPLAY_WINDOW_MS
+
+    /** What the thread's history says about an earlier attempt of an outbox row. */
+    private sealed interface Earlier {
+        /** An earlier attempt's message was found and is this row now. */
+        data object Adopted : Earlier
+
+        /** The history is complete past the window and holds no such message: sending again is safe. */
+        data object None : Earlier
+
+        /** Not answerable now (no network, or the server's write-behind lags past the window). */
+        data class Unknown(val afterMs: Long?) : Earlier
+
+        data object Closed : Earlier
+
+        /** The conversation is gone: the catch-up removed the thread, this row with it. */
+        data object Gone : Earlier
+
+        /** The row left the outbox meanwhile (deleted, or confirmed by another way). */
+        data object Missing : Earlier
+    }
+
+    /**
+     * Reads the thread's catch-up, then looks for a message an earlier
+     * attempt of [row] made. A message whose record expired was made more
+     * than [REPLAY_WINDOW_MS] ago, so it is in a history whose write-behind
+     * lags by less than that (minus [LAG_MARGIN_MS] for the watermark's own
+     * margin); a later one is still answered by the client id.
+     */
+    private suspend fun sentBefore(account: PublicUid, row: MessageEntity): Earlier {
+        val lag = LagSeen()
+        when (val read = catchUp(account, row.conversationId, lag)) {
+            ThreadRead.Gone -> return Earlier.Gone
+            ThreadRead.Ended -> return Earlier.Closed
+            is ThreadRead.Failed -> return Earlier.Unknown(null)
+            else -> Unit
+        }
+        if (lag.maxMs > REPLAY_WINDOW_MS - LAG_MARGIN_MS) {
+            diag.info(AREA, "resend in ${Diag.id(row.conversationId)} waits: history lags ${lag.maxMs} ms")
+            return Earlier.Unknown(LAGGING_RETRY_MS)
+        }
+        return lockFor(row.conversationId).withLock { store.write("adopt earlier send") { db -> adopt(db, account, row) } }
+            ?: Earlier.Unknown(null)
+    }
+
+    /**
+     * Makes [row] the server's copy of the message an earlier attempt made,
+     * in the caller's transaction: this account's server row of the same
+     * kind, body and ref, from the first attempt on ([CLOCK_MARGIN_MS] for the
+     * two clocks), stored here no earlier than that attempt (a row the phone
+     * had before the message was typed is another message), and claimed by no
+     * other bubble (history rows carry no client id; one typed on this phone
+     * or another keeps its own). The oldest such row wins, so two equal
+     * failed bubbles take two different rows.
+     */
+    private suspend fun adopt(db: CacheDatabase, account: PublicUid, row: MessageEntity): Earlier {
+        val dao = db.messages()
+        val current = dao.get(account, row.localId) ?: return Earlier.Missing
+        // Confirmed meanwhile (its realtime copy), or no longer the attempt this check was for.
+        if (current.sendState == SendState.SENT.code && current.serverId != null) return Earlier.Adopted
+        if (current.sendState != SendState.PENDING.code || current.clientId != row.clientId) return Earlier.Missing
+        val twin = dao.sentSince(account, current.conversationId, account, current.kind, current.cachedAt - CLOCK_MARGIN_MS, ADOPT_SCAN)
+            .firstOrNull {
+                it.localId != current.localId &&
+                    (it.clientId == null || it.clientId == current.clientId) &&
+                    it.cachedAt >= current.cachedAt &&
+                    it.refId == current.refId &&
+                    it.body.orEmpty() == current.body.orEmpty()
+            } ?: return Earlier.None
+        dao.delete(account, listOf(twin.localId))
+        dao.upsert(
+            listOf(
+                current.copy(
+                    serverId = twin.serverId,
+                    body = twin.body,
+                    mediaJson = twin.mediaJson,
+                    callJson = twin.callJson,
+                    at = twin.at,
+                    sortKey = twin.sortKey,
+                    sendState = SendState.SENT.code,
+                    errorCode = null,
+                    confirmToken = null,
+                    cachedAt = clock.nowMillis(),
+                ),
+            ),
+        )
+        if (ChatMapping.kind(current) == MessageKind.Unsend) current.refId?.let { clearUnsent(db, account, current.conversationId, listOf(it)) }
+        diag.info(AREA, "outbox row in ${Diag.id(current.conversationId)} was already on the server: adopted")
+        return Earlier.Adopted
+    }
+
+    /** The row waits, PENDING, for the next attempt (which asks the history again). */
+    private suspend fun waitForHistory(account: PublicUid, row: MessageEntity, afterMs: Long?): SendOutcome {
+        store.write("send waits") { db ->
+            val current = db.messages().get(account, row.localId) ?: return@write
+            if (current.sendState == SendState.PENDING.code) db.messages().upsert(listOf(current.copy(errorCode = ChatErrors.NETWORK)))
+        }
+        return SendOutcome.RetryLater(afterMs)
+    }
+
+    /** The conversation ended: nothing more is sent in it. */
+    private suspend fun closed(account: PublicUid, row: MessageEntity): SendOutcome {
+        store.write("send closed") { db ->
+            val current = db.messages().get(account, row.localId) ?: return@write
+            if (current.sendState != SendState.SENT.code) {
+                db.messages().upsert(listOf(current.copy(sendState = SendState.FAILED.code, errorCode = ProblemCodes.CONVERSATION_ENDED)))
+            }
+        }
+        return SendOutcome.Closed
     }
 
     /** The server has it: the row takes its server id and time, and any realtime twin goes. */
@@ -531,21 +683,26 @@ class MessageRepository(
      * server refused as already spent (`409 conflict`: it named a message in
      * another conversation): no message was made with it here, so the retry
      * gets a new one rather than the same refusal for ever.
+     *
+     * The client id's first attempt ([MessageEntity.cachedAt]) stays: when it
+     * is older than the server's [REPLAY_WINDOW_MS], [deliver] reads the
+     * history before it sends again.
      */
     suspend fun retry(account: PublicUid, localId: String): Boolean = store.write("retry") { db ->
         val row = db.messages().get(account, localId) ?: return@write false
         if (row.sendState != SendState.FAILED.code) return@write false
         val now = clock.nowMillis()
-        val clientId = if (row.errorCode == ProblemCodes.CONFLICT) newClientId() else row.clientId
+        val fresh = row.errorCode == ProblemCodes.CONFLICT
         db.messages().upsert(
             listOf(
                 row.copy(
-                    clientId = clientId,
+                    clientId = if (fresh) newClientId() else row.clientId,
                     sendState = SendState.PENDING.code,
                     errorCode = null,
                     confirmToken = null,
                     at = now,
                     sortKey = MessageEntity.PENDING_SORT_FLOOR + now,
+                    cachedAt = if (fresh) now else row.cachedAt,
                 ),
             ),
         )
@@ -581,6 +738,21 @@ class MessageRepository(
 
         /** How old a pending send can be and still be sent again without asking. */
         const val RESUME_WINDOW_MS = 10 * 60 * 1000L
+
+        /** How long the server answers a client id with the message it made (`idem:msg`, 15 minutes). */
+        const val REPLAY_WINDOW_MS = 15 * 60 * 1000L
+
+        /** The server's watermark sits a little behind its lag figure. */
+        private const val LAG_MARGIN_MS = 60_000L
+
+        /** How far the phone's clock and the server's may disagree when an earlier attempt is looked for. */
+        private const val CLOCK_MARGIN_MS = 2 * 60_000L
+
+        /** A history lagging past the window is asked again this much later. */
+        private const val LAGGING_RETRY_MS = 30_000L
+
+        /** Rows of one sender and kind looked at for an earlier attempt's message. */
+        private const val ADOPT_SCAN = 200
 
         private const val MAINTENANCE_RETRY_MS = 60_000L
         private const val NEWEST_SCAN = 100

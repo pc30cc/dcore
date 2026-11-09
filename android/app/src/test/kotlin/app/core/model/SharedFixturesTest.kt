@@ -82,6 +82,12 @@ class SharedFixturesTest {
         "token-pair" to TokenPair.serializer(),
         "export-started" to ExportStarted.serializer(),
         "export-status" to ExportStatus.serializer(),
+        "store-products" to StoreProducts.serializer(),
+        "purchase-result" to PurchaseResult.serializer(),
+        "purchase-pending" to PurchaseResult.serializer(),
+        "restore-result" to RestoreResult.serializer(),
+        "entitlements" to Entitlements.serializer(),
+        "boost-started" to BoostStarted.serializer(),
     )
 
     /** The model of every realtime event's payload (`d`). A fixture with no entry fails [everyRealtimePayloadDecodesWithoutFallingBack]. */
@@ -94,7 +100,7 @@ class SharedFixturesTest {
         RealtimeTypes.LIKE to LikeEvent.serializer(),
         RealtimeTypes.REQUEST to RequestEvent.serializer(),
         RealtimeTypes.CALL to Call.serializer(),
-        RealtimeTypes.ENTITLEMENT to Entitlements.serializer(),
+        RealtimeTypes.ENTITLEMENT to EntitlementEvent.serializer(),
         RealtimeTypes.PROFILE to ProfileEvent.serializer(),
         RealtimeTypes.ACCOUNT to AccountEvent.serializer(),
         RealtimeTypes.SUPPORT to SupportEvent.serializer(),
@@ -206,6 +212,44 @@ class SharedFixturesTest {
             assertFalse("$type has a value this build does not know", strings(back).any { it == "unknown" })
             assertTrue("$type: the realtime decoder drops it", RealtimeEvents.decode(Wire.json.parseToJsonElement(text("realtime", type))) != null)
         }
+    }
+
+    @Test
+    fun theEntitlementEventKeepsTheStoreWhoseViewItIs() {
+        val fixture = Wire.json.parseToJsonElement(text("realtime", RealtimeTypes.ENTITLEMENT)).jsonObject
+        val sent = fixture["d"]!!.jsonObject
+        val store = StoreName.fromWire(sent["store"]?.stringOrNull ?: "")
+        assertTrue("the fixture names a store this build knows", store != StoreName.Unknown)
+        val event = RealtimeEvents.decode(fixture) as RealtimeEvent.EntitlementsChanged
+        assertEquals("the store member is read, not dropped", store, event.store)
+        assertEquals("the entitlements beside it", sent["plan"]?.stringOrNull, event.entitlements.plan.wire)
+        // Written back, the payload carries it again: nothing of it is lost on the way.
+        val back = roundTrip(EntitlementEvent.serializer(), sent.toString()).jsonObject
+        assertEquals(sent["store"], back["store"])
+    }
+
+    @Test
+    fun theEntitlementsNameThePlansProductAndTheRestoreWhatIsNew() {
+        // Each fixture that carries them: the members are read, not dropped.
+        for ((dir, name, path) in listOf(
+            Triple("v1", "entitlements", emptyList()),
+            Triple("v1", "purchase-result", listOf("entitlements")),
+            Triple("v1", "restore-result", listOf("entitlements")),
+            Triple("realtime", RealtimeTypes.ENTITLEMENT, listOf("d")),
+        )) {
+            var sent: JsonObject = Wire.json.parseToJsonElement(text(dir, name)).jsonObject
+            path.forEach { sent = sent[it]!!.jsonObject }
+            val productId = sent["productId"]?.stringOrNull
+            assertTrue("$dir/$name names the plan's product", productId != null)
+            val read = Wire.json.decodeFromJsonElement(Entitlements.serializer(), sent)
+            assertEquals("$dir/$name productId", productId, read.productId)
+            assertEquals("$dir/$name basePlanId", sent["basePlanId"]?.stringOrNull, read.basePlanId)
+        }
+        val restore = Wire.json.parseToJsonElement(text("v1", "restore-result")).jsonObject
+        val sentFresh = restore["results"]!!.let { it as kotlinx.serialization.json.JsonArray }.map { (it.jsonObject["fresh"] as JsonPrimitive).content.toBooleanStrict() }
+        val read = Wire.json.decodeFromString(app.core.model.RestoreResult.serializer(), restore.toString())
+        assertEquals("fresh, per token", sentFresh, read.results.map { it.fresh })
+        assertTrue("the fixture has both answers", true in sentFresh && false in sentFresh)
     }
 
     @Test

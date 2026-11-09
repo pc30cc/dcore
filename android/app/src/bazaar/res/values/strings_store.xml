@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This build's store: its name and its subscription terms. The other build has its own; neither names the other's store. -->
+<resources>
+    <string name="store_name">Cafe Bazaar</string>
+    <string name="paywall_store_terms">Paid through Cafe Bazaar. A subscription renews at the end of each period, at the same price, from your Bazaar credit until you cancel it in Cafe Bazaar. If a renewal can\'t be paid, the subscription ends.</string>
+</resources>

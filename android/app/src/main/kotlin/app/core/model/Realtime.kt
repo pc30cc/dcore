@@ -4,9 +4,18 @@ package app.core.model
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.UseSerializers
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 
 // What arrives on the account's personal realtime channel (`u:#<publicUid>`).
@@ -123,6 +132,39 @@ data class SupportEvent(val ticketId: Id, val at: Instant? = null)
 data class ConfigEvent(val v: Long = 0)
 
 /**
+ * `entitlement`: [entitlements] as a session of [store]'s build sees them
+ * (each build counts its own store's purchases); [store] is null for a view
+ * of no store. On the wire it is one more key of the entitlements object.
+ */
+@Serializable(with = EntitlementEvent.Serializer::class)
+data class EntitlementEvent(
+    val entitlements: Entitlements,
+    val store: StoreName? = null,
+) {
+    internal object Serializer : KSerializer<EntitlementEvent> {
+        private const val STORE = "store"
+
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("app.core.model.EntitlementEvent")
+
+        override fun deserialize(decoder: Decoder): EntitlementEvent {
+            val input = decoder as? JsonDecoder ?: throw SerializationException("EntitlementEvent is JSON only")
+            val body = input.decodeJsonElement().jsonObject
+            val store = body[STORE]?.takeUnless { it is JsonNull }?.let { input.json.decodeFromJsonElement(StoreName.serializer(), it) }
+            return EntitlementEvent(input.json.decodeFromJsonElement(Entitlements.serializer(), JsonObject(body - STORE)), store)
+        }
+
+        override fun serialize(encoder: Encoder, value: EntitlementEvent) {
+            val output = encoder as? JsonEncoder ?: throw SerializationException("EntitlementEvent is JSON only")
+            val body = output.json.encodeToJsonElement(Entitlements.serializer(), value.entitlements).jsonObject
+            val store = value.store
+            output.encodeJsonElement(
+                if (store == null) body else JsonObject(body + (STORE to output.json.encodeToJsonElement(StoreName.serializer(), store))),
+            )
+        }
+    }
+}
+
+/**
  * A decoded publication. [id] is the envelope's (the dedupe key), [at] when
  * the server published it.
  */
@@ -138,7 +180,13 @@ sealed interface RealtimeEvent {
     data class LikeReceived(override val id: Id, override val at: Instant?, val like: LikeEvent) : RealtimeEvent
     data class RequestReceived(override val id: Id, override val at: Instant?, val request: IncomingRequest) : RealtimeEvent
     data class CallChanged(override val id: Id, override val at: Instant?, val call: Call) : RealtimeEvent
-    data class EntitlementsChanged(override val id: Id, override val at: Instant?, val entitlements: Entitlements) : RealtimeEvent
+    /** [store]: the store build that [entitlements] are the view of; null for a view of no store ([EntitlementEvent]). */
+    data class EntitlementsChanged(
+        override val id: Id,
+        override val at: Instant?,
+        val entitlements: Entitlements,
+        val store: StoreName? = null,
+    ) : RealtimeEvent
     data class ProfileModerated(override val id: Id, override val at: Instant?, val profile: ProfileEvent) : RealtimeEvent
     data class AccountChanged(override val id: Id, override val at: Instant?, val account: AccountEvent) : RealtimeEvent
     data class SupportReplied(override val id: Id, override val at: Instant?, val support: SupportEvent) : RealtimeEvent
@@ -190,7 +238,9 @@ object RealtimeEvents {
                 RealtimeTypes.LIKE -> RealtimeEvent.LikeReceived(id, at, read(LikeEvent.serializer(), d))
                 RealtimeTypes.REQUEST -> RealtimeEvent.RequestReceived(id, at, read(RequestEvent.serializer(), d).request)
                 RealtimeTypes.CALL -> RealtimeEvent.CallChanged(id, at, read(Call.serializer(), d))
-                RealtimeTypes.ENTITLEMENT -> RealtimeEvent.EntitlementsChanged(id, at, read(Entitlements.serializer(), d))
+                RealtimeTypes.ENTITLEMENT -> read(EntitlementEvent.serializer(), d).let { event ->
+                    RealtimeEvent.EntitlementsChanged(id, at, event.entitlements, event.store)
+                }
                 RealtimeTypes.PROFILE -> RealtimeEvent.ProfileModerated(id, at, read(ProfileEvent.serializer(), d))
                 RealtimeTypes.ACCOUNT -> RealtimeEvent.AccountChanged(id, at, read(AccountEvent.serializer(), d))
                 RealtimeTypes.SUPPORT -> RealtimeEvent.SupportReplied(id, at, read(SupportEvent.serializer(), d))

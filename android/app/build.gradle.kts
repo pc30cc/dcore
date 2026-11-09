@@ -619,6 +619,8 @@ dependencies {
     "playImplementation"(libs.play.review.ktx)
     "playImplementation"(libs.play.app.update.ktx)
     "playImplementation"(libs.play.integrity)
+    // Play's Age Signals (beta): the age band Play holds, checked once at sign-up (store/PlayAgeSignals).
+    "playImplementation"(libs.play.age.signals)
     // Sign in with Google (Credential Manager) and the SMS Retriever: Google
     // Play services APIs, so the Play build only.
     "playImplementation"(libs.androidx.credentials)

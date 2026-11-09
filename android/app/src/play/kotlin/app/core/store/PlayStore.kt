@@ -12,7 +12,9 @@ import com.google.android.gms.tasks.Task
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
@@ -27,6 +29,9 @@ import com.google.android.play.core.review.ReviewManagerFactory
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -49,18 +54,88 @@ internal class PlayStoreInfo : StoreInfo {
     override fun openAppPage(activity: Activity): Boolean =
         PackageChecks.start(activity, appPageIntent(activity.packageName)) ||
             PackageChecks.start(activity, Intent(Intent.ACTION_VIEW, appPageWebUrl(activity.packageName).toUri()))
+
+    override fun isOwnStoreLink(url: String): Boolean = runCatching {
+        val uri = java.net.URI(url)
+        uri.scheme == "https" && uri.host == PLAY_HOST
+    }.getOrDefault(false)
+
+    /**
+     * Play's subscription centre, at [productId]'s subscription when it is
+     * known (Google's documented deep link), opened in the Play Store app
+     * when it is there.
+     */
+    fun subscriptionsUrl(packageName: String, productId: String?): String =
+        if (productId.isNullOrBlank()) {
+            SUBSCRIPTIONS_URL
+        } else {
+            "$SUBSCRIPTIONS_URL?sku=${java.net.URLEncoder.encode(productId, "UTF-8")}&package=${java.net.URLEncoder.encode(packageName, "UTF-8")}"
+        }
+
+    override fun openSubscriptions(activity: Activity, productId: String?, serverLink: String?): Boolean {
+        val link = serverLink?.takeIf(::isOwnStoreLink) ?: subscriptionsUrl(activity.packageName, productId)
+        val intent = Intent(Intent.ACTION_VIEW, link.toUri())
+        return PackageChecks.start(activity, Intent(intent).setPackage(PLAY_STORE_PACKAGE)) || PackageChecks.start(activity, intent)
+    }
+
+    /** The Play Store comes with the phone; when it is missing there is nowhere to get it from. Its web page is the fallback. */
+    override fun openStoreInstall(activity: Activity): Boolean =
+        PackageChecks.start(activity, Intent(Intent.ACTION_VIEW, appPageWebUrl(activity.packageName).toUri()))
+
+    private companion object {
+        const val PLAY_HOST = "play.google.com"
+        const val SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
+    }
 }
 
 /**
  * Play In-App Updates.
  *
- * Implemented: the check and starting either flow. NOT implemented yet: the
- * flexible flow's ending. A flexible update downloads in the background and
- * then needs `completeUpdate()` behind a "restart to install" prompt, driven
- * by an install-state listener; until that is built, use [UpdateMode.IMMEDIATE].
+ * The check, either flow, and the flexible flow's ending: while a flexible
+ * update downloads, an install-state listener reports it; once downloaded,
+ * [downloaded] says so and [completeFlexible] installs it (Play restarts the
+ * app). An update downloaded in an earlier session is reported by the next
+ * [check].
  */
 internal class PlayUpdates(context: Context, private val diag: Diag) : AppUpdates {
     private val manager by lazy { AppUpdateManagerFactory.create(context.applicationContext) }
+
+    private val _downloaded = MutableStateFlow(false)
+    override val downloaded: StateFlow<Boolean> = _downloaded.asStateFlow()
+
+    private val listener = InstallStateUpdatedListener { state ->
+        when (state.installStatus()) {
+            InstallStatus.DOWNLOADED -> _downloaded.value = true
+            InstallStatus.INSTALLED, InstallStatus.FAILED, InstallStatus.CANCELED -> {
+                _downloaded.value = false
+                stopListening()
+            }
+            else -> Unit
+        }
+    }
+
+    @Volatile private var listening = false
+
+    private fun startListening() {
+        if (listening) return
+        listening = true
+        runCatching { manager.registerListener(listener) }
+    }
+
+    private fun stopListening() {
+        if (!listening) return
+        listening = false
+        runCatching { manager.unregisterListener(listener) }
+    }
+
+    override suspend fun completeFlexible(): Boolean =
+        runCatchingUnlessCancelled { manager.completeUpdate().await() }.fold(
+            onSuccess = { true },
+            onFailure = { error ->
+                diag.info(AREA, "completing the update failed: ${error.javaClass.simpleName}")
+                false
+            },
+        )
 
     /** The answer [start] needs: Play starts a flow from the info object of the check, not from a version code. */
     @Volatile private var lastInfo: AppUpdateInfo? = null
@@ -69,6 +144,7 @@ internal class PlayUpdates(context: Context, private val diag: Diag) : AppUpdate
         runCatchingUnlessCancelled { manager.requestAppUpdateInfo() }.fold(
             onSuccess = { info ->
                 lastInfo = info
+                if (info.installStatus() == InstallStatus.DOWNLOADED) _downloaded.value = true
                 when (info.updateAvailability()) {
                     UpdateAvailability.UPDATE_AVAILABLE,
                     UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS,
@@ -95,6 +171,7 @@ internal class PlayUpdates(context: Context, private val diag: Diag) : AppUpdate
             UpdateMode.IMMEDIATE -> AppUpdateType.IMMEDIATE
         }
         if (!info.isUpdateTypeAllowed(type)) return false
+        if (mode == UpdateMode.FLEXIBLE) startListening()
         return runCatching {
             manager.startUpdateFlowForResult(info, launcher, AppUpdateOptions.newBuilder(type).build())
         }.getOrElse { error ->

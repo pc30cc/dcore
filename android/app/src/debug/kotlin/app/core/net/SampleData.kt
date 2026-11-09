@@ -325,10 +325,11 @@ internal object SampleData {
         }
 
     val consumables: List<ConsumableProduct> = listOf(
-        ConsumableProduct("superlike.5", WalletItem.Superlike, 5, sort = 1),
-        ConsumableProduct("superlike.15", WalletItem.Superlike, 15, badge = "best_value", sort = 2),
-        ConsumableProduct("boost.1", WalletItem.Boost, 1, sort = 3),
-        ConsumableProduct("spotlight.1", WalletItem.Spotlight, 1, sort = 4),
-        ConsumableProduct("dm.3", WalletItem.Dm, 3, sort = 5),
+        ConsumableProduct("cons.superlike.5", WalletItem.Superlike, 5, sort = 1),
+        ConsumableProduct("cons.superlike.15", WalletItem.Superlike, 15, badge = "best_value", sort = 2),
+        ConsumableProduct("cons.boost.1", WalletItem.Boost, 1, sort = 3),
+        ConsumableProduct("cons.boost.5", WalletItem.Boost, 5, badge = "popular", sort = 4),
+        ConsumableProduct("cons.spotlight.1", WalletItem.Spotlight, 1, badge = "new", sort = 5),
+        ConsumableProduct("cons.dm.5", WalletItem.Dm, 5, sort = 6),
     )
 }

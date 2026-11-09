@@ -1546,10 +1546,22 @@ class SampleApi(
         StoreProducts(StoreName.fromWire(store), "br" + me.id.take(11), SampleData.subscriptions(store), SampleData.consumables)
     }
 
+    /**
+     * The sample store's verdict. Tokens the sample billing makes for its
+     * scripted outcomes: `pending…` is held (202), `foreign…` belongs to
+     * another account (409), `invalid…` is not confirmed by the store (422).
+     * While [purchasesUnreachable], no purchase gets an answer (as with no network).
+     */
     private fun grant(productId: String, purchaseToken: String, kind: PurchaseKind): PurchaseResult {
         purchases[purchaseToken]?.let { return it }
         if (purchaseToken.startsWith("pending")) return PurchaseResult(PurchaseRecord(state = PurchaseRecord.PENDING, productId = productId))
-        val subscription = SampleData.subscriptions(store).firstOrNull { it.productId == productId || "${it.productId}:${it.basePlanId}" == productId }
+        if (purchasesUnreachable) throw ApiError.Network(java.io.IOException("sample: no answer"))
+        if (purchaseToken.startsWith("foreign")) fail(409, ProblemCodes.PURCHASE_OTHER_ACCOUNT)
+        if (purchaseToken.startsWith("invalid")) fail(422, ProblemCodes.PURCHASE_INVALID)
+        // The sample store writes the base plan into its tokens (Play's own token does not carry it).
+        val basePlan = purchaseToken.substringAfterLast(app.core.store.SampleBilling.BASE_PLAN_MARK, "").takeIf { it.isNotEmpty() }
+        val subscription = SampleData.subscriptions(store).firstOrNull { it.productId == productId && (basePlan == null || it.basePlanId == basePlan) }
+            ?: SampleData.subscriptions(store).firstOrNull { it.productId == productId || "${it.productId}:${it.basePlanId}" == productId }
         val consumable = SampleData.consumables.firstOrNull { it.productId == productId }
         val expires: Instant?
         when {
@@ -1572,6 +1584,8 @@ class SampleApi(
                     source = if (store == "play") EntitlementSource.Play else EntitlementSource.Bazaar,
                     // The server names the store's own page; the sample stays neutral.
                     manageUrl = "https://example.com/account/subscriptions",
+                    productId = subscription.productId,
+                    basePlanId = subscription.basePlanId,
                     features = if (premium) premiumFeatures() else plusFeatures(),
                     quotas = entitlements.quotas.copy(likes = unlimited, superlikes = Quota(limit = if (premium) 5 else 3), boosts = Quota(limit = if (premium) 2 else 1)),
                 )
@@ -1592,28 +1606,47 @@ class SampleApi(
             else -> fail(422, ProblemCodes.PURCHASE_INVALID)
         }
         bumpEntitlements()
-        return PurchaseResult(PurchaseRecord(nextId(), "granted", productId, expires), currentEntitlements()).also { purchases[purchaseToken] = it }
+        val state = if (kind == PurchaseKind.Subscription) "active" else "purchased"
+        return PurchaseResult(PurchaseRecord(nextId(), state, productId, expires), currentEntitlements()).also { purchases[purchaseToken] = it }
     }
 
-    override suspend fun verifyPlayPurchase(request: PlayPurchaseRequest): PurchaseResult = route("store.play.purchase") {
+    /** How long the sample server takes to verify a purchase (screenshots of the "confirming" step). */
+    @Volatile var purchaseDelayMs: Long = 0
+
+    /** No purchase gets an answer while set: the network lost between the store and the server. */
+    @Volatile var purchasesUnreachable: Boolean = false
+
+    override suspend fun verifyPlayPurchase(request: PlayPurchaseRequest): PurchaseResult = verifyDelay().let { route("store.play.purchase") {
         user()
         if (store != "play") fail(403, ProblemCodes.STORE_NOT_SUPPORTED)
         grant(request.productId, request.purchaseToken, request.kind)
-    }
+    } }
 
-    override suspend fun verifyBazaarPurchase(request: BazaarPurchaseRequest): PurchaseResult = route("store.bazaar.purchase") {
+    override suspend fun verifyBazaarPurchase(request: BazaarPurchaseRequest): PurchaseResult = verifyDelay().let { route("store.bazaar.purchase") {
         user()
         if (store != "bazaar") fail(403, ProblemCodes.STORE_NOT_SUPPORTED)
         if (request.signature.isBlank() || request.originalJson.isBlank()) fail(422, ProblemCodes.PURCHASE_INVALID)
         grant(request.productId, request.purchaseToken, request.kind)
+    } }
+
+    private suspend fun verifyDelay() {
+        if (purchaseDelayMs > 0) kotlinx.coroutines.delay(purchaseDelayMs)
     }
 
     override suspend fun restorePurchases(purchases: List<RestorePurchase>): RestoreResult = route("store.restore") {
         user()
         if (purchases.size > HttpServerApi.MAX_RESTORE) fail(422, ProblemCodes.FIELD_INVALID)
         val results = purchases.map { p ->
-            val state = runCatching { grant(p.productId, p.purchaseToken, p.kind).purchase.state }.getOrElse { "invalid" }
-            RestoredPurchase(p.purchaseToken, state)
+            // As the server: `fresh` only when this call is the one that granted or credited the token.
+            val known = this.purchases.containsKey(p.purchaseToken)
+            val state = runCatching { grant(p.productId, p.purchaseToken, p.kind).purchase.state }.getOrElse { e ->
+                when ((e as? ApiError)?.code) {
+                    ProblemCodes.PURCHASE_OTHER_ACCOUNT -> "other_account"
+                    null -> if (e is ApiError.Network) "unavailable" else "invalid"
+                    else -> "invalid"
+                }
+            }
+            RestoredPurchase(p.purchaseToken, state, fresh = !known && state in setOf("active", "purchased"))
         }
         RestoreResult(results, currentEntitlements())
     }
@@ -1625,6 +1658,8 @@ class SampleApi(
 
     override suspend fun boost(kind: BoostKind): BoostStarted = route("boosts") {
         active()
+        // As the server: one at a time, and a request while one runs answers its end and spends nothing.
+        entitlements.boostEndsAt?.takeIf { it.isAfter(now()) }?.let { return@route BoostStarted(it) }
         val boosts = entitlements.quotas.boosts
         when {
             kind == BoostKind.Unknown -> fail(422, ProblemCodes.FIELD_INVALID)

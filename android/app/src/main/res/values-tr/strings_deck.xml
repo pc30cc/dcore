@@ -68,7 +68,6 @@
     <string name="deck_rewind_nothing">Geri getirilecek bir şey yok: yalnızca son geçişin, hemen ardından geri alınabilir.</string>
     <string name="upsell_plans">%1$s ile birlikte gelir.</string>
     <string name="upsell_plans_generic">Ücretli bir planla birlikte gelir.</string>
-    <string name="upsell_not_yet">Uygulamanın bu sürümünde henüz plan satın alınamıyor.</string>
     <string name="action_got_it">Anladım</string>
 
     <!-- A like on one photo or one answer -->

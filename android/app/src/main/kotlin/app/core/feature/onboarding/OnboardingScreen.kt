@@ -101,6 +101,11 @@ fun OnboardingRoute() {
 
     // Back to the app (from the photo picker, the settings, another app): the account may have moved on.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.refresh(quiet = true) }
+    // The store's own age signal, where it has one (Play), once per install: under 18 ends the sign-up.
+    val host = androidx.activity.compose.LocalActivity.current
+    androidx.compose.runtime.LaunchedEffect(host) {
+        if (host != null && graph.ageCheck.minor(host)) graph.auth.ended(app.core.feature.auth.GateNotice.AccountClosed)
+    }
     BackHandler(enabled = state.canGoBack) { model.back() }
 
     when {
