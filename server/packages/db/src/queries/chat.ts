@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { execute, many, maybeOne, one, sql } from '../query.js';
+import { execute, many, maybeOne, one, sql, type SqlFragment } from '../query.js';
 import { defineQuery } from './define.js';
 
 /**
@@ -229,6 +229,29 @@ export interface ConversationTailRow {
 export const UNREAD_COUNT_CAP = 100;
 
 /**
+ * The newest message as the live list state keeps it (`lm:`, send.lua): the
+ * newest row that is news (not a reaction, not an unsend), or the unsend of
+ * that very row when its sender took it back. A bounded probe of the primary
+ * key from the newest row back to that one.
+ */
+function lastOf(matchId: SqlFragment): SqlFragment {
+  return sql`(SELECT jsonb_build_array(z.id::text, z.sender_id::text, z.ref_id::text, z.kind, z.flags, z.body)
+                FROM (SELECT y.id FROM messages y WHERE y.match_id = ${matchId} AND y.kind NOT IN (7, 8) ORDER BY y.id DESC LIMIT 1) n
+               CROSS JOIN LATERAL (SELECT w.id, w.sender_id, w.ref_id, w.kind, w.flags, w.body FROM messages w
+                                    WHERE w.match_id = ${matchId} AND w.id >= n.id AND (w.id = n.id OR (w.kind = 8 AND w.ref_id = n.id))
+                                    ORDER BY w.id DESC LIMIT 1) z)`;
+}
+
+/**
+ * What counts as unread for the person who did not send it (`u`, as the live
+ * counts): not a reaction or an unsend, and a call line only for a call that
+ * was missed or cancelled (its caller is the line's sender, so the reader is
+ * the callee); a body that is not a call summary counts nothing.
+ */
+const countedUnread = sql`u.kind NOT IN (7, 8)
+  AND (u.kind <> 5 OR (CASE WHEN pg_input_is_valid(u.body, 'jsonb') THEN u.body::jsonb ->> 'o' END) IN ('3', '4'))`;
+
+/**
  * The newest message and both read pointers of each conversation, in one
  * statement (a primary-key probe per conversation): the list state when
  * Valkey's copy expired or was lost. With a viewer, also how many of the
@@ -242,14 +265,13 @@ export const conversationTails = defineQuery(
     const rows = await many<{ id: string; lo: string; hi: string; lo_read: string; hi_read: string; last: unknown; unread: number }>(
       db,
       sql`SELECT m.id::text AS id, m.user_lo::text AS lo, m.user_hi::text AS hi, m.lo_read_id::text AS lo_read, m.hi_read_id::text AS hi_read,
-                 (SELECT jsonb_build_array(y.id::text, y.sender_id::text, y.ref_id::text, y.kind, y.flags, y.body)
-                    FROM messages y WHERE y.match_id = m.id ORDER BY y.id DESC LIMIT 1) AS last,
+                 ${lastOf(sql`m.id`)} AS last,
                  CASE WHEN ${viewerId}::bigint IS NULL THEN 0 ELSE
                    cardinality(ARRAY(
                      SELECT 1 FROM messages u
                       WHERE u.match_id = m.id
                         AND u.id > CASE WHEN m.user_lo = ${viewerId}::bigint THEN m.lo_read_id ELSE m.hi_read_id END
-                        AND u.sender_id <> ${viewerId}::bigint AND u.kind NOT IN (7, 8)
+                        AND u.sender_id <> ${viewerId}::bigint AND ${countedUnread}
                       LIMIT ${UNREAD_COUNT_CAP}::integer))
                  END AS unread
             FROM matches m
@@ -292,13 +314,17 @@ export interface ConversationFlagsRow {
   hiReadId: string;
   /** The other person's card (null: hidden, gone). */
   peerCard: unknown;
+  /** The other person may see the person (visibility rule, context 2): only then are they told of a change. */
+  seenByPeer: boolean;
 }
 
 /**
  * The person's own call consent and mute of one active conversation
  * (`matches.flags`: 1/2 calls allowed by lo/hi, 4/8 muted by lo/hi), in one
- * statement; written only when a bit changes. Null when the person is not
- * in an active conversation of that id.
+ * statement; written only when one of the person's own bits changes, and
+ * computed from the row as it is when written, so a concurrent change of the
+ * other person's bits is kept. Null when the person is not in an active
+ * conversation of that id.
  */
 export const setConversationFlags = defineQuery(
   { name: 'chat.setConversationFlags', statements: 1 },
@@ -316,6 +342,7 @@ export const setConversationFlags = defineQuery(
       lo_read: string;
       hi_read: string;
       card: unknown;
+      seen_by_peer: boolean;
     }>(
       db,
       sql`WITH cur AS (
@@ -333,12 +360,17 @@ export const setConversationFlags = defineQuery(
                     | (c.before & ~(c.call_bit | c.mute_bit)))::smallint AS flags
               FROM cur c
           ), up AS (
-            UPDATE matches m SET flags = n.flags FROM next n WHERE m.id = n.id AND m.flags <> n.flags
-            RETURNING m.id
+            UPDATE matches m
+               SET flags = ((m.flags & ~(n.call_bit | n.mute_bit)) | (n.flags & (n.call_bit | n.mute_bit)))::smallint
+              FROM next n
+             WHERE m.id = n.id AND (m.flags & (n.call_bit | n.mute_bit)) <> (n.flags & (n.call_bit | n.mute_bit))
+            RETURNING m.id, m.flags
           )
-          SELECT n.id::text AS id, n.user_lo::text AS lo, n.user_hi::text AS hi, x.state, n.flags, x.source, n.before,
+          SELECT n.id::text AS id, n.user_lo::text AS lo, n.user_hi::text AS hi, x.state,
+                 coalesce((SELECT u.flags FROM up u WHERE u.id = n.id), n.flags) AS flags, x.source, n.before,
                  x.lo_read_id::text AS lo_read, x.hi_read_id::text AS hi_read,
-                 CASE WHEN can_see(${w.userId}::bigint, n.peer, 2) THEN profile_card(n.peer) END AS card
+                 CASE WHEN can_see(${w.userId}::bigint, n.peer, 2) THEN profile_card(n.peer) END AS card,
+                 can_see(n.peer, ${w.userId}::bigint, 2) AS seen_by_peer
             FROM next n JOIN matches x ON x.id = n.id`,
     );
     if (!row) return null;
@@ -353,6 +385,7 @@ export const setConversationFlags = defineQuery(
       loReadId: row.lo_read,
       hiReadId: row.hi_read,
       peerCard: row.card ?? null,
+      seenByPeer: row.seen_by_peer === true,
     };
   },
 );
@@ -378,7 +411,8 @@ export const clearUnsentBody = defineQuery(
                                           AND (h.match_id = m.id OR h.user_id = m.user_lo OR h.user_id = m.user_hi)) AS yes),
                up AS (UPDATE messages SET body = NULL, flags = flags | 8
                        WHERE match_id = ${matchId}::bigint AND id = ${messageId}::bigint AND sender_id = ${senderId}::bigint
-                         AND kind IN (1, 4) AND (flags & 8) = 0 AND NOT (SELECT yes FROM held)
+                         -- Every kind with a body of its sender's (text, GIF, a like's note, a reaction), as the history hides them.
+                         AND kind IN (1, 4, 6, 7) AND (flags & 8) = 0 AND NOT (SELECT yes FROM held)
                       RETURNING 1)
           SELECT CASE WHEN (SELECT yes FROM held) THEN 'held' WHEN EXISTS (SELECT 1 FROM up) THEN 'cleared' ELSE 'nothing' END AS outcome`,
     );
@@ -473,14 +507,11 @@ export const conversationList = defineQuery({ name: 'chat.conversationList', sta
         SELECT x.id::text AS id, x.user_lo::text AS lo, x.user_hi::text AS hi, x.peer::text AS peer, x.state, x.flags, x.source,
                x.lo_read_id::text AS lo_read, x.hi_read_id::text AS hi_read, s.visible,
                CASE WHEN s.visible THEN profile_card(x.peer) END AS card,
-               CASE WHEN s.visible THEN
-                 (SELECT jsonb_build_array(y.id::text, y.sender_id::text, y.ref_id::text, y.kind, y.flags, y.body)
-                    FROM messages y WHERE y.match_id = x.id ORDER BY y.id DESC LIMIT 1)
-               END AS last,
+               CASE WHEN s.visible THEN ${lastOf(sql`x.id`)} END AS last,
                CASE WHEN s.visible THEN
                  cardinality(ARRAY(
                    SELECT 1 FROM messages u
-                    WHERE u.match_id = x.id AND u.id > x.my_read AND u.sender_id <> ${userId}::bigint AND u.kind NOT IN (7, 8)
+                    WHERE u.match_id = x.id AND u.id > x.my_read AND u.sender_id <> ${userId}::bigint AND ${countedUnread}
                     LIMIT ${UNREAD_COUNT_CAP}::integer))
                ELSE 0 END AS unread
           FROM mine x

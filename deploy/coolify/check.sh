@@ -15,6 +15,8 @@
 #   4. The configurations written at start (realtime server, media server)
 #      and the relay's render from their templates with sample values, with
 #      every placeholder filled.
+#   5. The variables of .env.example's "Required" block are exactly the ones
+#      the file requires (${VAR:?...}), so a deploy without one stops.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -47,6 +49,16 @@ if [ -n "$unused" ]; then
   status=1
 fi
 [ -n "$missing$unused" ] || echo "check: .env.example lists exactly the variables the file uses"
+
+awk '/^# ── Required/ { on = 1; next } /^# ──/ { on = 0 } on && /^[A-Z0-9_]+=/ { sub("=.*", ""); print }' "$example" | sort -u > "$work/required-listed"
+grep -o '\${[A-Z0-9_]*:?' "$compose" | sed 's/^\${//; s/:?$//' | sort -u > "$work/required-used"
+if cmp -s "$work/required-listed" "$work/required-used"; then
+  echo "check: the required variables of .env.example are the ones the file requires"
+else
+  echo "check: required in .env.example but not in the file: $(echo $(comm -23 "$work/required-listed" "$work/required-used"))" >&2
+  echo "check: required by the file but not in .env.example's Required block: $(echo $(comm -13 "$work/required-listed" "$work/required-used"))" >&2
+  status=1
+fi
 
 # Services with a top-level `ports:` key, from the rendered file.
 published=$(awk '

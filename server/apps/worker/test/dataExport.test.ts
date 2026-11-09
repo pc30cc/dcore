@@ -3,12 +3,14 @@ import { crc32, inflateRawSync } from 'node:zlib';
 import { createPool, instrumentPool, statementCounter, type Pool } from '@app/db';
 import { userChannel } from '@app/shared';
 import {
+  EXPORT_EVERY_SECONDS,
   FakeObjectStorage,
   FakeRealtimePublisher,
   IdGenerator,
   createKeys,
   createPublicIds,
   exportObjectKey,
+  parseExportReady,
   photoVariantKey,
   type ExportData,
   type MediaStore,
@@ -196,6 +198,9 @@ describe.skipIf(!hasDatabase || !hasRedis)('the account/export job (PostgreSQL, 
     const expiresAtMs = job.data.stored!.expiresAtMs;
     expect(expiresAtMs - startedAt).toBeGreaterThanOrEqual(24 * 3_600_000 - 5_000);
     expect(job.delayedUntil).toBe(expiresAtMs);
+    // What GET /v1/me/export reads: this export, stored, with its link's end, kept for the week.
+    expect(parseExportReady(await redis.get(keys.exportReady(me)))).toEqual({ id: exportId, exp: expiresAtMs });
+    expect(await redis.ttl(keys.exportReady(me))).toBeGreaterThan(EXPORT_EVERY_SECONDS - 60);
 
     const stored = await storage.getObject('uploads', `exports/${exportId}.zip`);
     expect(stored).not.toBeNull();
@@ -273,5 +278,6 @@ describe.skipIf(!hasDatabase || !hasRedis)('the account/export job (PostgreSQL, 
     const exportId = ids.nextId();
     expect(await exportJob(fakeJob({ userId: gone, exportId }), context)).toEqual({ outcome: 'missing' });
     expect(await storage.getObject('uploads', `exports/${exportId}.zip`)).toBeNull();
+    expect(await redis.exists(keys.exportReady(gone))).toBe(0);
   });
 });

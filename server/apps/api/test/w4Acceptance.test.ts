@@ -128,8 +128,9 @@ describe.skipIf(!hasInfrastructure)('W4 across the tracks (PostgreSQL, Valkey)',
     clock.advance(65_000);
     const ended = await post(`/v1/calls/${callId}/end`, a);
     expect(callOf(ended)).toMatchObject({ state: 'ended', outcome: 'completed', durationSeconds: 65 });
-    // Place, rang, accept, token, end: the pair's first look-up and the callee's account view (read once, then cached) only.
-    expect([placed, ...moves, ended].map(statements)).toEqual([1, 1, 0, 0, 0]);
+    // Place, rang, accept, token, end: the callee's account view (read once, then cached) only; the pair comes from the
+    // conversation's state the chat cached, its visibility included.
+    expect([placed, ...moves, ended].map(statements)).toEqual([0, 1, 0, 0, 0]);
     const [finalize] = await worker.runAll('finalize', callId);
     expect(finalize?.statements).toBe(2);
 

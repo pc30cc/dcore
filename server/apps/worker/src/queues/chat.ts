@@ -1,4 +1,4 @@
-import { clearUnsentBody, flushReadPointers, withTransaction, writeLikeNotes } from '@app/db';
+import { clearUnsentBody, flushReadPointers, isTransientDatabaseError, withTransaction, writeLikeNotes } from '@app/db';
 import { idTime, realtimeEnvelope, userChannel, wireTime } from '@app/shared';
 import {
   chatJobNames,
@@ -49,15 +49,20 @@ import type { JobContext, QueueDefinition } from './types.js';
  * already holds. One transaction writes the notes once (an earlier try
  * that committed leaves them, and they are what this one finds); the notes
  * are published to both people (`message`) by the try that wrote them, or
- * again by a retry, whose earlier try may have died before its publish. A
- * replayed job writes and publishes nothing (a note whose publish failed
- * reaches the apps with the conversation's history).
+ * again by a later try whose earlier one may have died before its publish
+ * (a retry, a run BullMQ took back from a worker that stalled or was
+ * killed, a try that waited for PostgreSQL). A replayed job writes and
+ * publishes nothing (a note whose publish failed reaches the apps with the
+ * conversation's history). PostgreSQL unreachable delays the job without
+ * using an attempt, however long it lasts.
  */
 
 export const CHAT_QUEUE = 'chat';
 /** A note job gives up waiting for the watermark after this long and writes what it can find. */
 export const NOTES_MAX_WAIT_MS = 10 * 60_000;
 const RECHECK_MS = 2_000;
+/** How long a note job waits for PostgreSQL to come back before it tries again. */
+export const NOTES_DATABASE_WAIT_MS = 5_000;
 
 const ID = z.string().regex(/^[1-9][0-9]{0,18}$/);
 
@@ -73,6 +78,8 @@ export const likeNotesJobSchema = z.object({
   itemRef: ID.nullable(),
   comment: z.string().min(1).max(300).nullable(),
   queuedAtMs: z.number().int().nonnegative(),
+  /** An earlier try reached its write (it may have committed): this one publishes what it finds. */
+  tried: z.boolean().optional(),
 });
 export type LikeNotesJob = z.infer<typeof likeNotesJobSchema>;
 
@@ -106,12 +113,24 @@ export async function likeNotesJob(job: Job, context: JobContext, now: () => num
         windowDays: settings.likesWindowDays,
       }),
     );
+  } catch (error) {
+    if (!isTransientDatabaseError(error)) throw error;
+    // PostgreSQL away (or gone after a commit it may have made): wait for it without using an attempt; the next
+    // try publishes what it finds.
+    log.warn({ err: error, matchId: data.matchId }, 'like notes: PostgreSQL not reachable; trying again later');
+    if (!context.token) throw error;
+    await job.updateData({ ...data, tried: true });
+    await job.moveToDelayed(now() + NOTES_DATABASE_WAIT_MS, context.token);
+    throw new DelayedError();
   } finally {
     // Durable, or not written at all (a retry mints new ids).
     await releaseDirectWrites(redis, services.keys, noteIds).catch((error: unknown) => log.warn({ err: error, matchId: data.matchId }, 'like notes: hold not released (it runs out)'));
   }
-  // Notes this try found already written: a retry publishes them (its earlier try may have died before that), a replay does not.
-  const notes = write.written || job.attemptsMade > 0 ? write.notes : [];
+  // Notes this try found already written are published when an earlier try may have died before it published
+  // them: a retry, a run taken back from a stalled worker (BullMQ does not count it as an attempt), a try after a
+  // wait for PostgreSQL. A replay (a fresh job of the same match) publishes nothing.
+  const earlier = job.attemptsMade > 0 || (job.stalledCounter ?? 0) > 0 || data.tried === true;
+  const notes = write.written || earlier ? write.notes : [];
   const ordered = notes.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
   for (const note of ordered) {
     // The list shows the note as the conversation's newest line, unread for the person it was written to.

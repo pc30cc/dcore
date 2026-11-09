@@ -10,6 +10,7 @@ import {
 } from './chat.js';
 import { callTokenSchema, conversationSchema, notificationPrefsSchema, ownProfileSchema, preferencesSchema, profileCardSchema, settingsSchema } from './common.js';
 import { configSchema } from './config.js';
+import { exportStartedSchema, exportStatusSchema } from './dataExport.js';
 import { deckPageSchema } from './deck.js';
 import { deletionPreflightSchema, deletionScheduledSchema, publicDeletionChallengeSchema } from './deletion.js';
 import {
@@ -74,6 +75,8 @@ export const responseSchemas = {
   'call-body': callBodySchema,
   'call-acceptance': callAcceptanceSchema,
   'call-token': callTokenSchema,
+  'export-started': exportStartedSchema,
+  'export-status': exportStatusSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ResponseFixtureName = keyof typeof responseSchemas;

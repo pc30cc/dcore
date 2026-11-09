@@ -138,6 +138,12 @@ export interface SendInput {
   clientId: string;
   /** False when the other person may not see the sender: the message reaches the sender's side only. */
   deliver: boolean;
+  /**
+   * The state the caller checked the send against, used by the script only
+   * while no copy is cached (a copy fenced after a change, or one that
+   * expired since the check); the end tombstone still wins.
+   */
+  checked?: Pick<MatchState, 'lo' | 'hi' | 'state'> | undefined;
   now?: number | undefined;
 }
 
@@ -180,6 +186,9 @@ export async function sendMessage(core: Redis, keys: KeyBuilder, lo: string, hi:
       LAST_MESSAGE_TTL_SECONDS,
       UNREAD_TTL_SECONDS,
       input.now ?? Date.now(),
+      input.checked?.lo ?? '',
+      input.checked?.hi ?? '',
+      input.checked?.state ?? '',
     ],
   );
   if (!Array.isArray(reply) || typeof reply[0] !== 'string') throw new TypeError('the send script returned an unexpected reply');
@@ -198,6 +207,8 @@ export interface NoteInput {
   hi: string;
   /** Whose unread count grows (the other person's, unless they already read it). */
   unreadFor: 'lo' | 'hi' | null;
+  /** The only side whose list moves: a message only its sender may see (the other person may not see them). */
+  only?: 'lo' | 'hi' | undefined;
   now?: number | undefined;
 }
 
@@ -225,7 +236,21 @@ export async function noteMessage(core: Redis, keys: KeyBuilder, input: NoteInpu
       keys.conversationVersion(input.lo),
       keys.conversationVersion(input.hi),
     ],
-    [m.id, m.matchId, m.senderId, m.kind, m.refId ?? '', m.flags, previewOf(m), ms, input.unreadFor ?? '', LAST_MESSAGE_TTL_SECONDS, UNREAD_TTL_SECONDS, input.now ?? Date.now()],
+    [
+      m.id,
+      m.matchId,
+      m.senderId,
+      m.kind,
+      m.refId ?? '',
+      m.flags,
+      previewOf(m),
+      ms,
+      input.unreadFor ?? '',
+      LAST_MESSAGE_TTL_SECONDS,
+      UNREAD_TTL_SECONDS,
+      input.now ?? Date.now(),
+      input.only ?? '',
+    ],
   );
   return Number(reply) === 1;
 }

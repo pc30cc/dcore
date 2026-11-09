@@ -11,7 +11,7 @@ import { RtcSettingsHolder } from '../services/rtc.js';
  * - `identitySecret`: the key of the opaque per-call identities;
  * - `rtc`: the RTC settings in memory (reloaded after each configuration change);
  * - `jobs`: the `calls` queue of the worker;
- * - `now` and `random`: the clock and the short ring's dice (tests fix them).
+ * - `now` and `random`: the clock and a source of chance for the calls (tests fix them).
  */
 
 export interface CallsRuntime {

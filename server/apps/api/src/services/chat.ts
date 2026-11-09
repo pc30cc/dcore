@@ -15,7 +15,6 @@ import {
 import {
   bumpVersion,
   cacheChatState,
-  cacheMatchState,
   chatJobIds,
   chatKeys,
   FLAG,
@@ -37,6 +36,7 @@ import {
   sendMessage,
   sidesVisible,
   typingAllowed,
+  writeChangedMatchState,
   type ChatState,
   type SendRecord,
   type StoredMessage,
@@ -211,13 +211,9 @@ export class ChatService {
     if (kind === KIND.unsend) await this.checkOwnMessage(matchId, body.refId!, userId);
 
     const message: StoredMessage = { id: nextId(app), matchId, senderId: userId, refId: body.refId ?? null, kind, flags, body: text };
-    let outcome = await this.append(member.state, message, body.clientId, member.seenByPeer);
-    if (outcome.outcome === 'nostate') {
-      // The cached state expired between the check and the script: read it again, once.
-      const again = await this.state(matchId, true);
-      if (again?.state !== 1) throw new HttpProblem('not_found');
-      outcome = await this.append(again, message, body.clientId, member.seenByPeer);
-    }
+    // The script checks the send against the state just checked here when no copy is cached (one read while a
+    // change's fence stands, or a copy that expired since): nothing is read again between the id and its append.
+    const outcome = await this.append(member.state, message, body.clientId, member.seenByPeer);
     if (outcome.outcome === 'replay') return this.replay(session, matchId, body.clientId, outcome.record);
     if (outcome.outcome !== 'sent') throw new HttpProblem('not_found');
 
@@ -232,7 +228,7 @@ export class ChatService {
 
   private async append(state: ChatState, message: StoredMessage, clientId: string, deliver: boolean) {
     try {
-      return await sendMessage(this.app.redis, this.app.keys, state.lo, state.hi, { message, clientId, deliver });
+      return await sendMessage(this.app.redis, this.app.keys, state.lo, state.hi, { message, clientId, deliver, checked: state });
     } catch (error) {
       throw unavailable(error);
     }
@@ -569,9 +565,12 @@ export class ChatService {
 
   /**
    * The person's call consent and mute of one conversation (one
-   * statement). Their other devices hear `conversation` (updated); the
-   * other person hears it only when the call consent changed (the mute is
-   * the person's own business).
+   * statement). The conversation's cached state takes the new flags behind a
+   * fence (a state read before the change is not cached over it). Their
+   * other devices hear `conversation` (updated); the other person hears it
+   * only when the call consent changed (the mute is the person's own
+   * business) and only while they may see the person (a shadowban, as on
+   * every other path).
    */
   async update(session: AppSession, matchId: string, patch: { allowCalls?: boolean | undefined; muted?: boolean | undefined }): Promise<Conversation> {
     const { app } = this;
@@ -582,13 +581,14 @@ export class ChatService {
     if (!card) throw new HttpProblem('not_found');
     const peerId = row.lo === userId ? row.hi : row.lo;
     const state = { id: row.id, lo: row.lo, hi: row.hi, state: row.state, flags: row.flags, source: row.source, createdMs: idTime(row.id).getTime() };
-    const callBits = 3;
-    const callsChanged = (row.before & callBits) !== (row.flags & callBits);
+    const callBit = row.lo === userId ? 1 : 2;
+    const callsChanged = (row.before & callBit) !== (row.flags & callBit);
+    const tellPeer = callsChanged && row.seenByPeer;
     try {
-      // Call placement reads the flags from this copy; the visibility kept in it stays.
-      await cacheMatchState(app.redis, app.keys, state);
+      // Call placement and the push read the flags from this copy; the visibility kept in it stays.
+      await writeChangedMatchState(app.redis, app.keys, state, row.before);
       await bumpVersion(app.redis, app.keys.conversationVersion(userId));
-      if (callsChanged) await bumpVersion(app.redis, app.keys.conversationVersion(peerId));
+      if (tellPeer) await bumpVersion(app.redis, app.keys.conversationVersion(peerId));
     } catch (error) {
       this.log.warn({ err: error }, 'conversation settings: Valkey not updated');
     }
@@ -602,7 +602,7 @@ export class ChatService {
       await app.realtime
         .publish(userChannel(this.publicUid(userId)), realtimeEnvelope('conversation', nextId(app), Date.now(), { conversation: mine, reason: 'updated' }))
         .catch((error: unknown) => this.log.warn({ err: error }, 'conversation settings: not published'));
-      if (callsChanged) await this.publishToPeer(lists, state, peerId, userId);
+      if (tellPeer) await this.publishToPeer(lists, state, peerId, userId);
     }
     return mine;
   }

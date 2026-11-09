@@ -241,7 +241,7 @@ describe('the call line', () => {
     expect(formatCallDuration(65)).toBe('1:05');
     expect(formatCallDuration(3_725)).toBe('1:02:05');
     expect(callLinePreview({ kind: 'video', outcome: 'completed', durationSeconds: 65, placedMs: T0 }, 'caller', 'en')).toBe('Video call · 1:05');
-    expect(callLinePreview({ kind: 'audio', outcome: 'missed', durationSeconds: 0, placedMs: T0 }, 'callee', 'fa')).toBe('تماس صوتی از دست رفته');
+    expect(callLinePreview({ kind: 'audio', outcome: 'missed', durationSeconds: 0, placedMs: T0 }, 'callee', 'fa')).toBe('تماس صوتی بی‌پاسخ');
     expect(callLinePreview({ kind: 'audio', outcome: 'missed', durationSeconds: 0, placedMs: T0 }, 'caller', 'tr')).toBe('Yanıt yok');
   });
 });
@@ -271,7 +271,6 @@ describe.skipIf(!hasRedis)('live calls in Valkey (prefixed keys)', () => {
     now,
     maxLive: null,
     shadow: false,
-    fakeRingMs: 10_000,
     ...extra,
   });
   const read = async (id: string): Promise<LiveCall> => {
@@ -292,11 +291,13 @@ describe.skipIf(!hasRedis)('live calls in Valkey (prefixed keys)', () => {
     expect(await placeCall(redis, keys, toBusy)).toBe('callee_busy');
     const fake = await read(toBusy.id);
     expect(fake.fake).toBe('busy');
-    expect(fake.ringMs).toBe(10_000);
+    expect(fake.ringMs).toBe(CALL_RING_MS);
     // The busy callee's line is untouched: busy:<b> still names the first call.
     expect(await redis.get(callKeys(keys).busy(b))).toBe(`${prefix}call:${input.id}`);
+    // The caller of a call that rings nobody is held as long as by any ring.
+    expect(await placeCall(redis, keys, placeInput(person(), c, T0 + CALL_RING_MS + 1))).toBe('callee_busy');
     // A ring that ran out holds nobody, even before anything marked it missed.
-    expect(await placeCall(redis, keys, placeInput(a, c, T0 + CALL_RING_MS + 1))).toBe('placed');
+    expect(await placeCall(redis, keys, placeInput(a, c, T0 + 1_000 + CALL_RING_MS + 1))).toBe('placed');
   });
 
   it('lets exactly one of many simultaneous calls sharing a person ring', async () => {
@@ -382,10 +383,10 @@ describe.skipIf(!hasRedis)('live calls in Valkey (prefixed keys)', () => {
     expect((await stampRang(redis, keys, busy.id, T0 + 1_000, true)).verdict).toBe('not_ringing');
   });
 
-  it('shows a busy callee to the caller exactly like an unanswered call', async () => {
+  it('shows a busy callee to the caller exactly like an unanswered call, its times included', async () => {
     const [a, b, c] = [person(), person(), person()];
     await placeCall(redis, keys, placeInput(a, b));
-    const toBusy = placeInput(c, b, T0, { fakeRingMs: 9_000 });
+    const toBusy = placeInput(c, b, T0);
     const unanswered = placeInput(person(), person());
     expect(await placeCall(redis, keys, toBusy)).toBe('callee_busy');
     expect(await placeCall(redis, keys, unanswered)).toBe('placed');
@@ -397,12 +398,15 @@ describe.skipIf(!hasRedis)('live calls in Valkey (prefixed keys)', () => {
     };
     expect(shape(fake, c)).toEqual(shape(real, real.callerId));
     expect(callAudience(fake, 'placed')).toEqual(['caller']);
-    const fakeEnd = await missCall(ctx(), fake, T0 + 9_001);
+    // It rings as long as any call: no end comes before the ring a real call has.
+    expect(fake.ringMs).toBe(CALL_RING_MS);
+    expect(await missCall(ctx(), fake, T0 + CALL_RING_MS - 1)).toBeNull();
+    const fakeEnd = await missCall(ctx(), fake, T0 + CALL_RING_MS + 1);
     const realEnd = await missCall(ctx(), real, T0 + CALL_RING_MS + 1);
     expect(fakeEnd?.endReason).toBe('callee_busy');
     const ended = (call: LiveCall | null, viewer: string) => {
       const view = callView(call!, viewer);
-      return { ...view, id: 'x', conversationId: 'x', endedAt: 'x' };
+      return { ...view, id: 'x', conversationId: 'x' };
     };
     expect(ended(fakeEnd, c)).toEqual(ended(realEnd, real.callerId));
     expect(callView(fakeEnd!, c).endReason).toBe('ring_timeout');
@@ -595,7 +599,7 @@ describe.skipIf(!hasRedis)('live calls in Valkey (prefixed keys)', () => {
     expect(callAudience(call, 'placed')).toEqual(['caller']);
     expect(parseLiveCall(liveCallFields(call))).toEqual(call);
     // A shadow call never reaches the callee, not even at its end.
-    const ended = await missCall(ctx(), call, T0 + 20_000);
+    const ended = await missCall(ctx(), call, T0 + CALL_RING_MS + 1);
     expect(callAudience(ended!, 'ended')).toEqual(['caller']);
   });
 });

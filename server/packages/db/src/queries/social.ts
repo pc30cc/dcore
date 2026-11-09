@@ -645,8 +645,9 @@ export const pushTargetsOf = defineQuery({ name: 'social.pushTargetsOf', stateme
                (SELECT jsonb_agg(jsonb_build_object('id', d.id::text, 'token', d.push_token, 'locale', d.locale) ORDER BY d.id)
                   FROM devices d
                  WHERE d.user_id = u.id AND d.push_token IS NOT NULL AND d.disabled_at IS NULL
+                   -- The account's sessions (sessions_user_idx), never a scan of all of them.
                    AND EXISTS (SELECT 1 FROM sessions s
-                                WHERE s.device_id = d.id AND s.revoked_at IS NULL AND s.expires_at > now())) AS devices
+                                WHERE s.user_id = u.id AND s.device_id = d.id AND s.revoked_at IS NULL AND s.expires_at > now())) AS devices
           FROM users u
          WHERE u.id = ${userId}::bigint AND u.status IN (3, 4)`,
   );

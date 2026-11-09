@@ -64,7 +64,8 @@ export interface RequestAccepted {
   fromId: string;
   toId: string;
   body: string;
-  messageId: string;
+  /** The first message (null: an accept repeated after it worked, whose message is not stored). */
+  messageId: string | null;
   loCard: unknown;
   hiCard: unknown;
 }
@@ -77,7 +78,7 @@ const acceptSchema = z.union([
     fromId: id,
     toId: id,
     body: z.string(),
-    messageId: id,
+    messageId: id.nullable(),
     loCard: z.unknown().optional(),
     hiCard: z.unknown().optional(),
   }),
@@ -126,6 +127,9 @@ export interface RequestBoxRow {
   body: string;
   /** message_requests.status as it may be shown to this side. */
   status: number;
+  /** The other side may be listed (context 1); a hidden row is scanned, never shown. */
+  visible: boolean;
+  /** Null for a hidden row. */
   peerCard: unknown;
 }
 
@@ -135,7 +139,9 @@ export const REQUEST_EXPIRY_DAYS = 14;
 /**
  * One page of a box, newest first, keyset on the request id, with the
  * other side's visibility (context 1: hidden, banned and blocked people
- * leave both boxes) and card, in one statement. The inbox holds the
+ * leave both boxes) and card, in one statement. Every row scanned comes
+ * back (`limit + 1`, hidden ones flagged and without a card), so the caller
+ * pages on what was scanned, not on what may be shown. The inbox holds the
  * pending requests to the person (its partial index); the sent box the
  * person's own requests, where a decline reads as pending, and as expired
  * once a pending request would have expired: a decline is never revealed.
@@ -145,7 +151,7 @@ export const requestBox = defineQuery(
   async (db, userId: string, box: 'inbox' | 'sent', limit: number, before: string | null): Promise<RequestBoxRow[]> => {
     const rows =
       box === 'inbox'
-        ? await many<{ id: string; peer: string; body: string; status: number; card: unknown }>(
+        ? await many<{ id: string; peer: string; body: string; status: number; visible: boolean; card: unknown }>(
             db,
             sql`WITH page AS (
                   SELECT r.id, r.from_id AS peer, r.body, r.status
@@ -156,11 +162,12 @@ export const requestBox = defineQuery(
                 ), seen AS (
                   SELECT v.id FROM visible_subset(${userId}::bigint, ARRAY(SELECT peer FROM page), 1) AS v(id)
                 )
-                SELECT p.id::text AS id, p.peer::text AS peer, p.body, p.status, profile_card(p.peer) AS card
-                  FROM page p WHERE EXISTS (SELECT 1 FROM seen s WHERE s.id = p.peer)
+                SELECT p.id::text AS id, p.peer::text AS peer, p.body, p.status, (s.id IS NOT NULL) AS visible,
+                       CASE WHEN s.id IS NOT NULL THEN profile_card(p.peer) END AS card
+                  FROM page p LEFT JOIN seen s ON s.id = p.peer
                  ORDER BY p.id DESC`,
           )
-        : await many<{ id: string; peer: string; body: string; status: number; card: unknown }>(
+        : await many<{ id: string; peer: string; body: string; status: number; visible: boolean; card: unknown }>(
             db,
             sql`WITH page AS (
                   SELECT r.id, r.to_id AS peer, r.body,
@@ -174,11 +181,12 @@ export const requestBox = defineQuery(
                 ), seen AS (
                   SELECT v.id FROM visible_subset(${userId}::bigint, ARRAY(SELECT peer FROM page), 1) AS v(id)
                 )
-                SELECT p.id::text AS id, p.peer::text AS peer, p.body, p.status, profile_card(p.peer) AS card
-                  FROM page p WHERE EXISTS (SELECT 1 FROM seen s WHERE s.id = p.peer)
+                SELECT p.id::text AS id, p.peer::text AS peer, p.body, p.status, (s.id IS NOT NULL) AS visible,
+                       CASE WHEN s.id IS NOT NULL THEN profile_card(p.peer) END AS card
+                  FROM page p LEFT JOIN seen s ON s.id = p.peer
                  ORDER BY p.id DESC`,
           );
-    return rows.map((r) => ({ id: r.id, peerId: r.peer, body: r.body, status: Number(r.status), peerCard: r.card ?? null }));
+    return rows.map((r) => ({ id: r.id, peerId: r.peer, body: r.body, status: Number(r.status), visible: r.visible === true, peerCard: r.card ?? null }));
   },
 );
 

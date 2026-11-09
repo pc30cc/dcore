@@ -246,6 +246,7 @@ export const notificationPrefsSchema = z.object({
   messages: z.boolean(),
   matches: z.boolean(),
   likes: z.boolean(),
+  /** The missed-call notification only, never the ring (a match's call consent is what stops calls). */
   calls: z.boolean(),
   offers: z.boolean(),
   /** Message text and names in notifications; off shows generic texts. */

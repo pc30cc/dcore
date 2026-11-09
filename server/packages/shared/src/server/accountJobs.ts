@@ -67,6 +67,14 @@ export const accountJobAttempts = {
 export const EXPORT_JOB = 'export' as const;
 export const EXPORT_LINK_TTL_SECONDS = 24 * 3_600;
 export const EXPORT_EVERY_SECONDS = 7 * 86_400;
+/** A link with less left than this is not handed out (announced or read). */
+export const EXPORT_LINK_MIN_SECONDS = 60;
+/**
+ * How long an export asked for and not stored reads `pending`: well past the
+ * job's last retry ({@link accountJobAttempts}), so one that failed for good
+ * (or was lost) reads `none` instead of being built forever.
+ */
+export const EXPORT_PENDING_MAX_SECONDS = 6 * 3_600;
 
 export const exportDataSchema = z.object({
   userId: id,
@@ -78,6 +86,30 @@ export const exportDataSchema = z.object({
 export type ExportData = z.infer<typeof exportDataSchema>;
 
 export const exportJobId = (exportId: string): string => jobId(EXPORT_JOB, exportId);
+
+/**
+ * `exp:r:<uid>` (kv-core, {@link EXPORT_EVERY_SECONDS}): written by the job
+ * once the archive is stored, before it is announced, so `GET /v1/me/export`
+ * can hand the link to a phone that missed the announcement. It outlives the
+ * week's `exp:<uid>`; only a record naming that export counts.
+ */
+export const exportReadySchema = z.object({ id, exp: epochMs });
+export type ExportReady = z.infer<typeof exportReadySchema>;
+
+export function exportReadyValue(exportId: string, expiresAtMs: number): string {
+  return JSON.stringify(exportReadySchema.parse({ id: exportId, exp: expiresAtMs }));
+}
+
+/** The stored record, or null for none or anything unreadable. */
+export function parseExportReady(value: string | null | undefined): ExportReady | null {
+  if (!value) return null;
+  try {
+    const parsed = exportReadySchema.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The archive's key in the private bucket: the export's id, never a person's. */
 export const exportObjectKey = (exportId: string): string => {

@@ -46,7 +46,7 @@ export interface RingFace {
   peerPhotoUrl?: string | undefined;
 }
 
-/** The finalize job: rows and line, then the events and the missed-call push. Retried while PostgreSQL is down. */
+/** The finalize job: rows and line, then the events and the missed-call push (it waits while PostgreSQL is down; attempts are for other errors). */
 export const FINALIZE_ATTEMPTS = 12;
 export const FINALIZE_BACKOFF_MS = 2_000;
 

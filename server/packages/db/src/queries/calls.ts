@@ -75,13 +75,15 @@ export interface CallLineRow {
  * earlier run wrote (`lineId`: the line of this call as it is stored, null
  * when there is none). The caller mints `line.id` right before each try: a
  * try that did not commit leaves no id behind, and one that did is found by
- * the next. A conversation purged meanwhile gets neither row.
+ * the next. A conversation purged meanwhile gets neither row. `active`
+ * says whether the conversation is still active (read with the first
+ * statement): a line of a conversation that ended is stored, never shown.
  */
 export const writeFinishedCall = defineQuery(
   { name: 'calls.writeFinished', statements: 2 },
-  async (tx, call: FinishedCallRow, line: CallLineRow): Promise<{ call: boolean; line: boolean; lineId: string | null }> => {
+  async (tx, call: FinishedCallRow, line: CallLineRow): Promise<{ call: boolean; line: boolean; lineId: string | null; active: boolean }> => {
     const ms = (value: number | null) => (value === null ? null : new Date(value).toISOString());
-    const first = await one<{ inserted: boolean; kept: string | null }>(
+    const first = await one<{ inserted: boolean; kept: string | null; match_state: number | null }>(
       tx,
       sql`WITH ins AS (
             INSERT INTO calls (id, match_id, caller_id, callee_id, rang_at, answered_at, ended_at, duration_s,
@@ -101,9 +103,11 @@ export const writeFinishedCall = defineQuery(
                    WHERE NOT EXISTS (SELECT 1 FROM ins)
                      AND l.match_id = ${call.matchId}::bigint AND l.kind = 5 AND l.ref_id = ${call.id}::bigint
                      AND l.id >= id_floor(${ms(call.endedAtMs)}::timestamptz - interval '1 day')
-                   ORDER BY l.id LIMIT 1) AS kept`,
+                   ORDER BY l.id LIMIT 1) AS kept,
+                 (SELECT m.state FROM matches m WHERE m.id = ${call.matchId}::bigint) AS match_state`,
     );
-    if (!first.inserted) return { call: false, line: false, lineId: first.kept };
+    const active = Number(first.match_state) === 1;
+    if (!first.inserted) return { call: false, line: false, lineId: first.kept, active };
     const lines = await execute(
       tx,
       sql`INSERT INTO messages (match_id, id, sender_id, ref_id, kind, flags, body)
@@ -112,7 +116,7 @@ export const writeFinishedCall = defineQuery(
            WHERE m.id = ${call.matchId}::bigint
           ON CONFLICT (match_id, id) DO NOTHING`,
     );
-    return { call: true, line: lines === 1, lineId: lines === 1 ? line.id : null };
+    return { call: true, line: lines === 1, lineId: lines === 1 ? line.id : null, active };
   },
 );
 

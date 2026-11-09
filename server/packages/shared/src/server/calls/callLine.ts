@@ -9,8 +9,9 @@ type CallLine = z.infer<typeof callLineSchema>;
  * The call in the chat: every finished call leaves one line in its
  * conversation, a `messages` row of kind 5 (`ref_id` = the call, the sender
  * = the caller), written in the same transaction as the `calls` row. Its id
- * is minted when the call ends, so it sorts after every cursor that moved
- * during the call. Its body is a small summary (below) from which `call`
+ * is minted right before that transaction, so it sorts after every cursor
+ * handed out before it is durable, and its time (the id's) is the line's
+ * time everywhere it is shown. Its body is a small summary (below) from which `call`
  * is built on every read; nothing else of the calls row is needed to show it.
  *
  * Titles, by who is looking:
@@ -166,8 +167,8 @@ const TITLES: Record<'en' | 'fa' | 'tr', TitleTexts> = {
     cancelled: 'تماس لغوشده',
     declined: 'تماس ردشده',
     failed: 'تماس ناموفق',
-    missed_voice: 'تماس صوتی از دست رفته',
-    missed_video: 'تماس تصویری از دست رفته',
+    missed_voice: 'تماس صوتی بی‌پاسخ',
+    missed_video: 'تماس تصویری بی‌پاسخ',
   },
   tr: {
     voice: 'Sesli arama',

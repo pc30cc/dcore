@@ -1,6 +1,16 @@
 import { exportAccount, exportOwnMessages, type ExportMessageRow } from '@app/db';
 import { accountStatus, messageKind, realtimeEnvelope, userChannel, wireTime } from '@app/shared';
-import { EXPORT_LINK_TTL_SECONDS, exportDataSchema, exportObjectKey, photoVariantKey, type ExportData, type MediaStore } from '@app/shared/server';
+import {
+  EXPORT_EVERY_SECONDS,
+  EXPORT_LINK_MIN_SECONDS,
+  EXPORT_LINK_TTL_SECONDS,
+  exportDataSchema,
+  exportObjectKey,
+  exportReadyValue,
+  photoVariantKey,
+  type ExportData,
+  type MediaStore,
+} from '@app/shared/server';
 import { DelayedError, type Job } from 'bullmq';
 import type { JobContext } from '../queues/types.js';
 import { buildZip, type ZipEntry } from './zip.js';
@@ -21,7 +31,9 @@ import { buildZip, type ZipEntry } from './zip.js';
  *
  * Steps are kept in the job: a retry after the upload publishes the same
  * archive under the same event id, and a published one only waits for its
- * expiry.
+ * expiry. Before the announcement the job records the stored archive in
+ * `exp:r:<uid>`, which `GET /v1/me/export` reads (a phone offline at the
+ * announcement still finds the link).
  */
 
 export const MESSAGES_PAGE = 5_000;
@@ -134,8 +146,10 @@ export async function exportJob(job: Job, context: JobContext): Promise<ExportRe
   }
 
   const stored = data.stored;
+  // Recorded first, so a phone that reads the state when the announcement arrives finds it ready.
+  await context.redis.set(services.keys.exportReady(data.userId), exportReadyValue(data.exportId, stored.expiresAtMs), 'EX', EXPORT_EVERY_SECONDS);
   const remaining = Math.floor((stored.expiresAtMs - Date.now()) / 1_000);
-  if (remaining >= 60) {
+  if (remaining >= EXPORT_LINK_MIN_SECONDS) {
     if (services.realtime) {
       const link = await media.storage.presignGet({ bucket: media.privateBucket, key: stored.key, expiresInSeconds: remaining });
       // A retry after the upload reads the status again (one statement) rather than keeping it in the job.

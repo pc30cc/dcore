@@ -134,7 +134,7 @@ const envSchema = z
     LIVEKIT_API_SECRET: z.string().min(32).optional(),
     /** Keys the opaque per-call identities (`u:<hmac>`); the worker uses the same value. */
     LIVEKIT_IDENTITY_SECRET: z.string().min(32).optional(),
-    /** Signs the origins document (Ed25519 seed, 32 bytes base64url; `origins:keygen` makes one); unset: GET /v1/origins answers 503. */
+    /** Signs the origins document (Ed25519 seed, 32 bytes base64url; `origins:keygen` makes one). Required in production; unset elsewhere: GET /v1/origins answers 503. */
     ORIGINS_SIGNING_KEY: z
       .string()
       .regex(/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/, 'must be an Ed25519 seed: 32 bytes in base64url (43 characters)')
@@ -173,6 +173,8 @@ const envSchema = z
       ctx.addIssue({ code: 'custom', path: ['CENTRIFUGO_API_KEY'], message: 'CENTRIFUGO_API_URL and CENTRIFUGO_API_KEY come together' });
     }
     if (env.NODE_ENV === 'production') need('CENTRIFUGO_API_URL', 'in production');
+    // Without it apps never learn of a host change and keep the hosts they were built with.
+    if (env.NODE_ENV === 'production') need('ORIGINS_SIGNING_KEY', 'in production (the origins document; `origins:keygen` makes one)');
     if (env.SMS_KAVENEGAR_API_KEY !== undefined) need('SMS_KAVENEGAR_TEMPLATE', 'with SMS_KAVENEGAR_API_KEY');
     if (env.SMS_SMSIR_API_KEY !== undefined) need('SMS_SMSIR_TEMPLATE_ID', 'with SMS_SMSIR_API_KEY');
     if (env.SMS_TELNYX_API_KEY !== undefined) need('SMS_TELNYX_VERIFY_PROFILE_ID', 'with SMS_TELNYX_API_KEY');
@@ -266,7 +268,7 @@ export interface ApiConfig {
   siteOrigin: string | undefined;
   /** LiveKit's server API and the identity key of calls; undefined: calls answer 503. */
   livekit: { apiUrl: string; apiKey: string; apiSecret: string; identitySecret: string } | undefined;
-  /** The origins document's signing key (undefined: not served) and lifetime. */
+  /** The origins document's signing key (always set in production; undefined: not served) and lifetime. */
   origins: { signingKey: string | undefined; kid: string; ttlSeconds: number };
 }
 

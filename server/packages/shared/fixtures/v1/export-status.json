@@ -1,0 +1,5 @@
+{
+  "status": "ready",
+  "url": "https://s3.example.com/uploads/exports/1287390234923499901.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=sample%2F20261106%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261106T091403Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=0b5e1f0c2d9a7e3b4c6d8f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+  "expiresAt": "2026-11-07T09:14:03.120Z"
+}

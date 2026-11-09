@@ -201,10 +201,11 @@ export class RequestService {
       before = decoded.i;
     }
     const rows = await requestBox(app.pg, userId, box, limit, before);
+    // Paged on the rows scanned: a hidden sender (a block, a shadowban) shortens the page, never ends the box.
     const page = rows.slice(0, limit);
     const items: MessageRequestsPage['items'] = [];
     for (const row of page) {
-      const card = parseCardSource(row.peerCard);
+      const card = row.visible ? parseCardSource(row.peerCard) : null;
       if (!card) continue;
       items.push({
         id: row.id,
@@ -235,11 +236,12 @@ export class RequestService {
     const m = outcome.match;
     const state = { id: m.id, lo: m.lo, hi: m.hi, state: m.state, flags: m.flags, source: m.source, createdMs: idTime(m.id).getTime() };
     const fromId = outcome.fromId;
-    const first = { id: outcome.messageId, matchId: m.id, senderId: fromId, refId: null, kind: KIND.text, flags: 0, body: outcome.body };
+    // No first message to show: an accept repeated after it worked, whose message is not stored.
+    const first = outcome.messageId ? { id: outcome.messageId, matchId: m.id, senderId: fromId, refId: null, kind: KIND.text, flags: 0, body: outcome.body } : null;
     let announced = true;
     try {
       announced = await announceMatch(app.redis, app.keys, state);
-      if (announced) {
+      if (announced && first) {
         await noteMessage(app.redis, app.keys, { message: first, lo: m.lo, hi: m.hi, unreadFor: null });
         // The person who accepted has read it.
         await moveReceipts(app.redis, app.keys, {
@@ -270,16 +272,17 @@ export class RequestService {
     if (!mine) throw new HttpProblem('not_found');
     const theirs = await viewOf(fromId);
     if (app.realtime) {
-      const message = messageOf({ publicIds: app.publicIds }, first);
       try {
         await app.realtime.publish(userChannel(app.publicIds.user.encode(userId)), realtimeEnvelope('conversation', m.id, Date.now(), { conversation: mine, reason: 'accepted' }));
         if (theirs) {
           await app.realtime.publish(userChannel(app.publicIds.user.encode(fromId)), realtimeEnvelope('conversation', m.id, Date.now(), { conversation: theirs, reason: 'accepted' }));
         }
-        await app.realtime.broadcast(
-          [userId, fromId].map((uid) => userChannel(app.publicIds.user.encode(uid))),
-          realtimeEnvelope('message', first.id, idTime(first.id), message),
-        );
+        if (first) {
+          await app.realtime.broadcast(
+            [userId, fromId].map((uid) => userChannel(app.publicIds.user.encode(uid))),
+            realtimeEnvelope('message', first.id, idTime(first.id), messageOf({ publicIds: app.publicIds }, first)),
+          );
+        }
       } catch (error) {
         this.log.warn({ err: error }, 'request accept: not published');
       }

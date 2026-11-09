@@ -185,6 +185,7 @@ export async function startCallWorker(h: Harness, realtime: FakeRealtimePublishe
       data: recorded.data,
       attemptsMade: options.attemptsMade ?? 0,
       attemptsStarted: (options.attemptsMade ?? 0) + 1,
+      opts: { attempts: recorded.options.attempts ?? 1 },
       moveToDelayed: async () => undefined,
       updateData: async (data: unknown) => {
         if (crash && (data as { done?: { rows?: boolean } }).done?.rows === true) {

@@ -238,7 +238,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the push sender (PostgreSQL, Valkey,
       fcm.requests.length = 0;
       await settled(standIn(messagePush(ben, conv.id, { senderName: 'Ava', preview: 'call me 0912 345 6789' })));
       const shown = fcm.requests.map((r) => (r.body.message.android as { notification: Record<string, unknown> }).notification['body']);
-      expect(shown.sort()).toEqual(['Sana bir mesaj gönderdi.', 'برای شما پیام فرستاد.'].sort());
+      expect(shown.sort()).toEqual(['Sana bir mesaj gönderdi.', 'برایتان پیام فرستاد.'].sort());
       expect(JSON.stringify(fcm.requests)).not.toContain('0912');
     });
 
@@ -302,7 +302,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the push sender (PostgreSQL, Valkey,
       expect(await sendPushJob(standIn({ type: 'request', userId: cleo, requestId }), context)).toMatchObject({ outcome: 'sent', devices: 1 });
       const sent = fcm.requests[0]!.body.message;
       expect(sent.data).toEqual({ type: 'request', requestId });
-      expect(notificationOf()).toMatchObject({ title: 'درخواست پیام جدید', channel_id: 'messages', tag: `r:${requestId}`, visibility: 'PRIVATE' });
+      expect(notificationOf()).toMatchObject({ title: 'درخواست پیام تازه', body: 'کسی می‌خواهد با شما گفتگو کند.', channel_id: 'messages', tag: `r:${requestId}`, visibility: 'PRIVATE' });
     });
   });
 
@@ -394,7 +394,6 @@ describe.skipIf(!hasDatabase || !hasRedis)('the push sender (PostgreSQL, Valkey,
         now: Date.now(),
         maxLive: null,
         shadow: false,
-        fakeRingMs: 10_000,
         callerName: 'Ava',
       });
       expect(verdict).toBe('placed');

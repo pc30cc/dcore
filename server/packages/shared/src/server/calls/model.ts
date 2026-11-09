@@ -18,16 +18,14 @@ import { callEndReason, callKind, callOutcome, type CallKind, type CallOutcome }
  *
  * Two kinds of call never ring anybody (`fake`): a callee already in another
  * call (`busy`), and a caller nobody else may see (`shadow`, a shadowban).
- * The caller sees an ordinary call that rings for a short while and ends as
- * missed; a busy callee then finds a missed call, a shadow call leaves no
- * trace for anyone else.
+ * The caller sees an ordinary call that rings as long as any other and ends
+ * as missed, exactly like one nobody answered (its times included), and
+ * finds its line in the chat; a busy callee then finds a missed call, a
+ * shadow call leaves no trace for anyone else.
  */
 
-/** How long a call rings before it is missed. */
+/** How long a call rings before it is missed (a call that rings nobody too). */
 export const CALL_RING_MS = 45_000;
-/** The ring of a call that rings nobody: a random length in this range. */
-export const FAKE_RING_MIN_MS = 8_000;
-export const FAKE_RING_MAX_MS = 15_000;
 /** A live call holds nobody longer than this (the guard of last resort). */
 export const CALL_LIVE_TTL_SECONDS = 12 * 3_600;
 /** A finished call's hash stays this long, so late moves answer with the final state. */
@@ -70,7 +68,7 @@ export interface LiveCall {
   kind: CallKind;
   state: CallState;
   placedMs: number;
-  /** How long this call rings: {@link CALL_RING_MS}, or the short ring of a call that rings nobody. */
+  /** How long this call rings ({@link CALL_RING_MS}, a call that rings nobody too). */
   ringMs: number;
   /** A call that rings nobody: the callee was busy, or the caller is hidden from everyone. */
   fake: 'busy' | 'shadow' | null;
@@ -255,7 +253,3 @@ export function callView(call: LiveCall, viewerId: string): Call {
   return callSchema.parse(view);
 }
 
-/** A random short ring for a call that rings nobody. */
-export function fakeRingMs(random: () => number = Math.random): number {
-  return Math.round(FAKE_RING_MIN_MS + random() * (FAKE_RING_MAX_MS - FAKE_RING_MIN_MS));
-}

@@ -104,6 +104,30 @@ export function cacheMatchState(core: Redis, keys: KeyBuilder, match: MatchState
   return writeMatchState(core, keys, match);
 }
 
+const changedScript = luaScript(new URL('./matchChanged.lua', import.meta.url), 'match-changed', 3);
+
+/** What {@link writeChangedMatchState} did: `written`, `ended` (the tombstone) or `dropped` (another change's fence stood). */
+export type MatchStateChange = 'written' | 'ended' | 'dropped';
+
+/**
+ * A change of the match's flags committed in PostgreSQL (call consent,
+ * mute), made from the flags `before`: the copy takes the new flags (its
+ * visibility stays) and is fenced for {@link MATCH_STATE_FENCE_SECONDS}, so
+ * no state read before the change is cached over it. While another change's
+ * fence stands, the copy is written only when it holds `before`, else
+ * dropped.
+ */
+export async function writeChangedMatchState(core: Redis, keys: KeyBuilder, match: MatchState, before: number): Promise<MatchStateChange> {
+  const reply = await runScript(
+    core,
+    changedScript,
+    [keys.matchState(match.id), keys.matchEnded(match.id), matchStateFence(keys, match.id)],
+    [match.lo, match.hi, match.state, match.flags, match.source, match.createdMs, MATCH_STATE_TTL_SECONDS, MATCH_STATE_FENCE_SECONDS, before],
+  );
+  const n = Number(reply);
+  return n === 1 ? 'written' : n === 0 ? 'ended' : 'dropped';
+}
+
 /**
  * A writer changed what a conversation's cached state holds (call consent,
  * a person's visibility): the copy goes (whole, or only `field`), and for a

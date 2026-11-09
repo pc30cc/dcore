@@ -17,27 +17,30 @@ export function pushLocale(locale: string | null | undefined): PushLocale {
   return base === 'fa' || base === 'tr' ? base : 'en';
 }
 
-
+/**
+ * The words follow the app's own (its notification and chat strings): in
+ * Persian «مچ» for a match and «لایک» for a like, and «تازه» for new.
+ */
 const TEXTS = {
   match: {
-    en: { title: 'New match', body: 'You have a new match. Say hello!', named: (name: string) => `You and ${name} like each other.` },
-    fa: { title: 'مچ جدید', body: 'یک مچ جدید دارید. سلام کنید!', named: (name: string) => `شما و ${name} همدیگر را پسندیدید.` },
-    tr: { title: 'Yeni eşleşme', body: 'Yeni bir eşleşmen var. Merhaba de!', named: (name: string) => `${name} ile birbirinizi beğendiniz.` },
+    en: { title: 'You have a new match', body: "Say hello while it's fresh.", named: (name: string) => `You and ${name} matched.` },
+    fa: { title: 'مچ تازه دارید', body: 'تا داغ است سلام کنید.', named: (name: string) => `شما و ${name} مچ شدید.` },
+    tr: { title: 'Yeni bir eşleşmen var', body: 'Sıcakken bir merhaba de.', named: (name: string) => `Sen ve ${name} eşleştiniz.` },
   },
   like: {
-    en: { title: 'New like', one: 'Someone liked you.', many: (n: string) => `${n} people liked you.` },
-    fa: { title: 'لایک جدید', one: 'کسی شما را لایک کرده است.', many: (n: string) => `${n} نفر شما را لایک کرده‌اند.` },
+    en: { title: 'New like', one: 'Someone likes you.', many: (n: string) => `${n} people like you.` },
+    fa: { title: 'لایک تازه', one: 'کسی شما را لایک کرده.', many: (n: string) => `${n} نفر شما را لایک کرده‌اند.` },
     tr: { title: 'Yeni beğeni', one: 'Biri seni beğendi.', many: (n: string) => `${n} kişi seni beğendi.` },
   },
   message: {
     en: { title: 'New message', body: 'You have a new message.', sent: 'Sent you a message.' },
-    fa: { title: 'پیام جدید', body: 'یک پیام جدید دارید.', sent: 'برای شما پیام فرستاد.' },
+    fa: { title: 'پیام تازه', body: 'یک پیام تازه دارید.', sent: 'برایتان پیام فرستاد.' },
     tr: { title: 'Yeni mesaj', body: 'Yeni bir mesajın var.', sent: 'Sana bir mesaj gönderdi.' },
   },
   request: {
-    en: { title: 'New message request', body: 'Someone sent you a message request.' },
-    fa: { title: 'درخواست پیام جدید', body: 'کسی برای شما درخواست پیام فرستاده است.' },
-    tr: { title: 'Yeni mesaj isteği', body: 'Biri sana mesaj isteği gönderdi.' },
+    en: { title: 'New message request', body: 'Someone wants to talk to you.' },
+    fa: { title: 'درخواست پیام تازه', body: 'کسی می‌خواهد با شما گفتگو کند.' },
+    tr: { title: 'Yeni mesaj isteği', body: 'Biri seninle konuşmak istiyor.' },
   },
 } as const;
 

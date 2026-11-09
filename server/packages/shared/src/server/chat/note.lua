@@ -11,7 +11,9 @@
 -- code, ARGV[5] ref id or '', ARGV[6] flags, ARGV[7] preview, ARGV[8] the
 -- message's time (ms), ARGV[9] the side whose unread count grows ('lo',
 -- 'hi' or ''), ARGV[10] lm: lifetime (s), ARGV[11] lists' lifetime (s),
--- ARGV[12] now (ms).
+-- ARGV[12] now (ms), ARGV[13] the only side whose list moves ('lo' or 'hi'
+-- for a message only its sender may see, as a send that is not delivered;
+-- '' or absent: both).
 --
 -- Returns 1 when the state moved, 0 when the conversation ended or a newer
 -- message is already the preview (the order and the count still move).
@@ -37,9 +39,13 @@ if (not last) or newer(ARGV[1], last) then
   redis.call('EXPIRE', KEYS[2], tonumber(ARGV[10]))
   moved = 1
 end
+local only = ARGV[13] or ''
+local function moves(side) return only == '' or only == side end
 for i = 3, 4 do
-  redis.call('ZADD', KEYS[i], 'GT', tonumber(ARGV[8]), ARGV[2])
-  redis.call('EXPIRE', KEYS[i], listTtl)
+  if moves(i == 3 and 'lo' or 'hi') then
+    redis.call('ZADD', KEYS[i], 'GT', tonumber(ARGV[8]), ARGV[2])
+    redis.call('EXPIRE', KEYS[i], listTtl)
+  end
 end
 if ARGV[9] == 'lo' then
   redis.call('HINCRBY', KEYS[5], ARGV[2], 1)
@@ -48,7 +54,13 @@ elseif ARGV[9] == 'hi' then
   redis.call('HINCRBY', KEYS[6], ARGV[2], 1)
   redis.call('EXPIRE', KEYS[6], listTtl)
 end
+-- The newest message counted for that side (as send.lua keeps it).
+if ARGV[9] ~= '' and redis.call('HEXISTS', KEYS[2], 'id') == 1 then
+  local field = 'u' .. ARGV[9]
+  local counted = redis.call('HGET', KEYS[2], field)
+  if (not counted) or newer(ARGV[1], counted) then redis.call('HSET', KEYS[2], field, ARGV[1]) end
+end
 local now = tonumber(ARGV[12])
-bump(KEYS[7], now, listTtl)
-bump(KEYS[8], now, listTtl)
+if moves('lo') then bump(KEYS[7], now, listTtl) end
+if moves('hi') then bump(KEYS[8], now, listTtl) end
 return moved

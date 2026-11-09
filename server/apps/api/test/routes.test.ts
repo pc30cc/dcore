@@ -85,6 +85,7 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['POST', '/v1/public/account-deletion/google', '202', true],
   // §3.15 (the data export)
   ['POST', '/v1/me/export', '202', true],
+  ['GET', '/v1/me/export', '200', true],
   // §3.10 (calls), §3.16 (the LiveKit webhook), §3.17 (the admin RTC settings)
   ['POST', '/v1/calls', '201', true],
   ['GET', '/v1/calls/{id}', '200', true],

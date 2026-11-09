@@ -59,8 +59,7 @@ export interface PlaceInput extends CallParties {
   maxLive: number | null;
   /** A caller nobody may see: the call rings nobody. */
   shadow: boolean;
-  /** The short ring of a call that rings nobody. */
-  fakeRingMs: number;
+  /** How long the call rings, whether or not it rings anybody. */
   ringMs?: number | undefined;
   /** The caller's first name (the callee's missed-call notification). */
   callerName?: string | undefined;
@@ -79,7 +78,6 @@ export async function placeCall(redis: Redis, keys: KeyBuilder, input: PlaceInpu
       input.maxLive ?? -1,
       CALL_LIVE_TTL_SECONDS,
       input.ringMs ?? CALL_RING_MS,
-      input.fakeRingMs,
       input.shadow ? 'shadow' : '',
       ...flatten({ m: input.matchId, cr: input.callerId, ce: input.calleeId, k: input.kind, ...(input.callerName ? { nm: input.callerName } : {}) }),
     ],
@@ -271,7 +269,11 @@ export async function giveBackRing(redis: Redis, ring: Pick<RingTake, 'key'>): P
 /** How long a conversation state read for a call stays cached (a flag change that raced the read lasts no longer). */
 export const CALL_PAIR_STATE_TTL_SECONDS = 60;
 
-/** Caches a conversation's state read from PostgreSQL, unless it ended meanwhile or was just dropped (`writeMatchState`). */
+/**
+ * Caches a conversation's state read from PostgreSQL, unless it ended
+ * meanwhile or was just dropped (`writeMatchState`). A new copy lives a
+ * minute; a longer one a chat read keeps already keeps its lifetime.
+ */
 export function cacheOpenPairState(
   redis: Redis,
   keys: KeyBuilder,

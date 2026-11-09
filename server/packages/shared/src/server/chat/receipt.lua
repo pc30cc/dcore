@@ -2,7 +2,10 @@
 -- pointer goes to `rp:<m>` (and the conversation into `rp:dirty`, which the
 -- flush job writes to PostgreSQL once a minute) and pulls the delivered
 -- pointer along; the reader's unread count of the conversation is set to 0
--- once the read pointer reaches its newest message (kept as 0, not deleted:
+-- once the read pointer reaches the newest message counted for them (`u<side>`
+-- in lm:, kept by the writers of the counts; else the newest message), so a
+-- reply of their own, an unsend or a line of theirs after it leaves no
+-- count behind (kept as 0, not deleted:
 -- a list rebuilt from PostgreSQL before the flush would otherwise count again
 -- what was just read, from the database's older pointer); the conversation is
 -- marked as on screen for push suppression. The delivered pointer lives in
@@ -44,7 +47,7 @@ if ARGV[2] ~= '' then
     read = upTo
     readMoved = upTo
   end
-  local last = redis.call('HGET', KEYS[5], 'id')
+  local last = redis.call('HGET', KEYS[5], 'u' .. side) or redis.call('HGET', KEYS[5], 'id')
   if (not last) or not newer(last, read) then
     redis.call('HSET', KEYS[4], ARGV[4], 0)
     redis.call('EXPIRE', KEYS[4], tonumber(ARGV[9]))

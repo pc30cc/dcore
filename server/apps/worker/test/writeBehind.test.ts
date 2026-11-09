@@ -660,13 +660,13 @@ describe.skipIf(!hasDatabase || !hasRedis)('the write-behind pipeline of likes a
       // The targets (1) and the dead token (1).
       expect(tally.statements).toBe(2);
       expect(push.sent).toHaveLength(1);
-      expect(push.sent[0]!.payload).toMatchObject({ type: 'match', channel: 'matches', tag: `m:${conversationId}`, title: 'مچ جدید', data: { type: 'match', conversationId } });
+      expect(push.sent[0]!.payload).toMatchObject({ type: 'match', channel: 'matches', tag: `m:${conversationId}`, title: 'مچ تازه دارید', body: 'تا داغ است سلام کنید.', data: { type: 'match', conversationId } });
       expect(push.sent[0]!.payload.body).not.toContain('Negar');
       expect(await value<string | null>(`SELECT push_token FROM devices WHERE id = $1`, [dead])).toBeNull();
 
       await db.admin.query(`UPDATE users SET notify_flags = notify_flags | 32 WHERE id = $1`, [a]);
       await sendPushJob(fakeJob('send', { type: 'match', userId: a, conversationId, peerName: 'Negar Ahmadi' }), context);
-      expect(push.sent.at(-1)!.payload.body).toBe('شما و Negar همدیگر را پسندیدید.');
+      expect(push.sent.at(-1)!.payload.body).toBe('شما و Negar مچ شدید.');
       await db.admin.query(`UPDATE users SET notify_flags = notify_flags & ~2 WHERE id = $1`, [a]);
       expect(await sendPushJob(fakeJob('send', { type: 'match', userId: a, conversationId }), context)).toEqual({ outcome: 'skipped', reason: 'switched_off' });
     });

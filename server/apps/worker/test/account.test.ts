@@ -205,7 +205,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the account jobs (PostgreSQL, Valkey
       const ab = await match(a, b);
       await listed(ab, a, b);
       const callId = ids.nextId();
-      expect(await placeCall(redis, keys, { id: callId, matchId: ab, callerId: b, calleeId: a, kind: 'audio', now: Date.now(), maxLive: null, shadow: false, fakeRingMs: 10_000 })).toBe(
+      expect(await placeCall(redis, keys, { id: callId, matchId: ab, callerId: b, calleeId: a, kind: 'audio', now: Date.now(), maxLive: null, shadow: false })).toBe(
         'placed',
       );
       const deletedAtMs = await deleted(a);

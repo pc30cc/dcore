@@ -66,6 +66,10 @@ export function createKeys(prefix: string) {
     device: (did: string | bigint) => k('dev', did),
     upload: (photoId: string | bigint) => k('up', photoId),
     entitlements: (uid: string | bigint, store: number) => k('ent', uid, store),
+    /** The week's data export (kv-core, set by the API: the export's id). */
+    exportRequest: (uid: string | bigint) => k('exp', uid),
+    /** The export once its archive is stored (kv-core, set by the worker: its id and when its link runs out). */
+    exportReady: (uid: string | bigint) => k('exp', 'r', uid),
 
     // Config
     configVersion: () => k('cfg', 'v'),

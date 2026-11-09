@@ -24,9 +24,10 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   out that way gives its `push:m:` window back, so the next message after
  *   the person looked away is pushed.
  * - Retries go only to the devices FCM did not take yet (the job records
- *   the ones it did), so a retry never alerts a phone twice. On the last
- *   attempt the text a push would have shown is dropped from the job before
- *   it is kept as failed.
+ *   the ones it did), so a retry never alerts a phone twice. Whatever makes
+ *   the last attempt fail (FCM, PostgreSQL or Valkey away), the text a push
+ *   would have shown and the names in it are dropped from the job before it
+ *   is kept as failed.
  * - A dead token is cleared on its device row (`deliverPush`).
  */
 
@@ -124,7 +125,38 @@ async function messageStillDue(context: JobContext, data: Extract<PushJob, { typ
   return verdict;
 }
 
-export async function sendPushJob(job: PushJobRun, context: JobContext, options: PushJobOptions = {}): Promise<PushResult> {
+/** The job data's words a push would have shown: never kept with a job that failed for good. */
+export const PUSH_TEXT_FIELDS = ['preview', 'senderName', 'peerName', 'peerPhotoUrl'] as const;
+
+/**
+ * Runs a push job's attempt; when it fails and no attempt is left (and it was
+ * not merely put off), the words it carries are dropped from the job first,
+ * so the failed set keeps no message text, name or photo link.
+ */
+export async function dropTextOnLastFailure<T>(
+  job: Partial<Pick<Job, 'attemptsMade' | 'opts' | 'updateData'>> & Pick<Job, 'data'>,
+  log: JobContext['log'],
+  attempt: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await attempt();
+  } catch (error) {
+    const last = (job.attemptsMade ?? 0) + 1 >= (job.opts?.attempts ?? 1);
+    const data = job.data as Record<string, unknown> | null;
+    if (last && !(error instanceof DelayedError) && job.updateData && data && PUSH_TEXT_FIELDS.some((field) => field in data)) {
+      const next: Record<string, unknown> = { ...data };
+      for (const field of PUSH_TEXT_FIELDS) delete next[field];
+      await job.updateData(next).catch((e: unknown) => log.warn({ err: e }, 'push: its text was not dropped from the failed job'));
+    }
+    throw error;
+  }
+}
+
+export function sendPushJob(job: PushJobRun, context: JobContext, options: PushJobOptions = {}): Promise<PushResult> {
+  return dropTextOnLastFailure(job, context.log, () => sendPushOnce(job, context, options));
+}
+
+async function sendPushOnce(job: PushJobRun, context: JobContext, options: PushJobOptions): Promise<PushResult> {
   const { services, log } = context;
   const data = pushJobSchema.parse(job.data);
   const progress = progressSchema.safeParse(job.data);
@@ -178,14 +210,8 @@ export async function sendPushJob(job: PushJobRun, context: JobContext, options:
   const delivery = await deliverPush(context, sender, target.devices, payloadOf, sentBefore);
   if (delivery.retry.length > 0) {
     const sent = [...sentBefore, ...delivery.sent];
-    const last = (job.attemptsMade ?? 0) + 1 >= (job.opts?.attempts ?? 1);
     const next: Record<string, unknown> = { ...(job.data as Record<string, unknown>), sent };
-    if (last) {
-      // Kept as failed for a week: without the words it would have shown.
-      delete next['preview'];
-      delete next['senderName'];
-      delete next['peerName'];
-    }
+    // On the last attempt the words go too, as the failure is thrown (dropTextOnLastFailure).
     if (job.updateData) await job.updateData(next).catch((error: unknown) => log.warn({ err: error }, 'push: progress not recorded'));
     throw new PushRetryError(delivery.retry.length);
   }

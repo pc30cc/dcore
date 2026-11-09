@@ -14,7 +14,6 @@ import {
   cancelCall,
   declineCall,
   failCall,
-  fakeRingMs,
   giveBackRing,
   hangUpCall,
   isLiveState,
@@ -41,6 +40,8 @@ import {
   type LifecycleContext,
   type LiveCall,
   type RingFace,
+  VIS_HI,
+  VIS_LO,
 } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nextId } from '../auth/sessions.js';
@@ -68,7 +69,7 @@ import { sessionOf, type AppSession } from './session.js';
  * nothing after the placement looks at the plan or the settings again.
  *
  * A busy callee is never revealed: the caller gets an ordinary ring that
- * ends as missed after a short while, and the callee finds a missed call. A
+ * ends as missed when any ring would, and the callee finds a missed call. A
  * caller nobody may see (a shadowban) gets the same, and nobody else hears
  * of it. Outsiders, ended conversations and blocked pairs get 404, as for a
  * call or a conversation that does not exist.
@@ -81,6 +82,13 @@ const VERDICT_TTL_MS = 60_000;
 
 function budget(request: FastifyRequest, statements: number): void {
   if (request.pgTally?.budget !== undefined) request.pgTally.budget += statements;
+}
+
+/** The visibility kept with a conversation's cached state (`vis`), or null when it is not known. */
+function visibilityOf(hash: Record<string, string>): number | null {
+  const raw = hash['vis'];
+  if (raw === undefined || !/^[0-3]$/.test(raw)) return null;
+  return Number(raw);
 }
 
 interface Pair {
@@ -181,7 +189,6 @@ export class CallService {
         now,
         maxLive: app.calls.rtc.get().maxLiveCalls,
         shadow,
-        fakeRingMs: fakeRingMs(app.calls.random),
         callerName: face.peerName,
       });
     } catch (error) {
@@ -212,12 +219,14 @@ export class CallService {
   }
 
   /**
-   * The conversation as a call needs it: from `mt:<id>` and the pair's
-   * visibility verdict (a minute, dropped when either person was hidden
-   * since), else one statement (the match and the visibility rule both
-   * ways). 404 for anything the caller may not call, and at once for a
-   * conversation whose end left its tombstone, whatever copy of its state
-   * or verdict is still around.
+   * The conversation as a call needs it: from `mt:<id>` with the visibility
+   * kept in it (context 2 both ways, dropped behind a fence whenever either
+   * person's visibility changes) or the pair's visibility verdict (a
+   * minute), unless either person was hidden since (`vis:out`); else one
+   * statement (the match and the visibility rule both ways). 404 for
+   * anything the caller may not call, and at once for a conversation whose
+   * end left its tombstone, whatever copy of its state or verdict is still
+   * around.
    */
   private async pair(matchId: string, callerId: string, now: number): Promise<Pair> {
     const { app } = this;
@@ -228,13 +237,18 @@ export class CallService {
     ]);
     if (ended) throw new HttpProblem('not_found');
     const state = matchStateOf(matchId, hash);
-    if (state?.state === 1 && verdict) {
-      const parsed = /^([0-9]{1,15}):([01])([01])$/.exec(verdict);
+    if (state?.state === 1) {
+      const hidden = await app.redis.zmscore(app.keys.accountsHidden(), state.lo, state.hi);
+      const pair = { matchId, lo: state.lo, hi: state.hi, flags: state.flags, state: state.state };
+      const parsed = verdict ? /^([0-9]{1,15}):([01])([01])$/.exec(verdict) : null;
       if (parsed) {
         const at = Number(parsed[1]);
-        const hidden = await app.redis.zmscore(app.keys.accountsHidden(), state.lo, state.hi);
         const fresh = now - at < VERDICT_TTL_MS && hidden.every((score) => score === null || Number(score) < at - VERDICT_SLACK_MS);
-        if (fresh) return this.decide({ matchId, lo: state.lo, hi: state.hi, flags: state.flags, state: state.state, loSeesHi: parsed[2] === '1', hiSeesLo: parsed[3] === '1' }, callerId);
+        if (fresh) return this.decide({ ...pair, loSeesHi: parsed[2] === '1', hiSeesLo: parsed[3] === '1' }, callerId);
+      }
+      const vis = visibilityOf(hash);
+      if (vis !== null && hidden.every((score) => score === null)) {
+        return this.decide({ ...pair, loSeesHi: (vis & VIS_HI) !== 0, hiSeesLo: (vis & VIS_LO) !== 0 }, callerId);
       }
     }
     budget(this.request, 1);

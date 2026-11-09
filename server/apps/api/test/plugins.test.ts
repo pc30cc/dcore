@@ -138,9 +138,43 @@ describe('statement budgets', () => {
       S3_SECRET_ACCESS_KEY: 'secret',
       CDN_BASE_URL: 'https://cdn.example.com',
       CDN_SIGNING_KEY: 'k'.repeat(32),
+      // The origins document is signed in production, always.
+      ORIGINS_SIGNING_KEY: 'A'.repeat(43),
     };
     expect(testConfig({ ...production, LOG_LEVEL: 'info', PG_BUDGET: 'count' }).pgBudget).toBe('count');
     expect(() => testConfig({ ...production, PG_BUDGET: 'enforce' })).toThrow(/PG_BUDGET/);
+  });
+
+  it('refuses to start in production without the origins signing key, and runs without it elsewhere', () => {
+    const production = {
+      NODE_ENV: 'production',
+      BRAND: 'live',
+      LOG_LEVEL: 'info',
+      PG_BUDGET: 'count',
+      CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
+      CENTRIFUGO_API_URL: 'http://centrifugo:8000',
+      CENTRIFUGO_API_KEY: 'a'.repeat(32),
+      S3_ENDPOINT: 'https://s3.example.com',
+      S3_BUCKET_PRIVATE: 'uploads',
+      S3_BUCKET_MEDIA: 'media',
+      S3_ACCESS_KEY_ID: 'id',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      CDN_BASE_URL: 'https://cdn.example.com',
+      CDN_SIGNING_KEY: 'k'.repeat(32),
+    };
+    let message = '';
+    try {
+      testConfig(production);
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/ORIGINS_SIGNING_KEY/);
+    expect(message).toMatch(/required in production/);
+    expect(() => testConfig({ ...production, ORIGINS_SIGNING_KEY: 'not-a-seed' })).toThrow(/ORIGINS_SIGNING_KEY/);
+    expect(testConfig({ ...production, ORIGINS_SIGNING_KEY: 'A'.repeat(43) }).origins.signingKey).toBe('A'.repeat(43));
+    // Development and tests may run without it (GET /v1/origins then answers 503).
+    expect(testConfig({ NODE_ENV: 'development' }).origins.signingKey).toBeUndefined();
+    expect(testConfig().origins.signingKey).toBeUndefined();
   });
 });
 

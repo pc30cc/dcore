@@ -2,9 +2,11 @@ import type { PushText } from '@app/shared';
 import { firstName, type PushLocale } from '../push/texts.js';
 
 /**
- * The missed-call notification, in the person's language. Generic unless
- * the person turned previews on; with previews it names the caller by first
- * name only.
+ * The missed-call notification, in the person's language, in the words of
+ * the app's own call notifications. Generic unless the person turned
+ * previews on; with previews it names the caller by first name only. Sent
+ * only while the person's `calls` switch is on; the switch never silences
+ * the ring itself.
  */
 
 const TEXTS = {
@@ -15,9 +17,9 @@ const TEXTS = {
     named: (name: string) => `${name} called you.`,
   },
   fa: {
-    audio: 'تماس صوتی از دست رفته',
-    video: 'تماس تصویری از دست رفته',
-    body: 'یک تماس را از دست دادید.',
+    audio: 'تماس صوتی بی‌پاسخ',
+    video: 'تماس تصویری بی‌پاسخ',
+    body: 'یک تماس بی‌پاسخ دارید.',
     named: (name: string) => `${name} با شما تماس گرفت.`,
   },
   tr: {

@@ -19,11 +19,15 @@
 -- ARGV[12] '1' when the other person receives it (else only the sender's
 -- side moves), ARGV[13] the record a retry gets back, ARGV[14] the record's
 -- lifetime (s), ARGV[15] lm: lifetime (s), ARGV[16] lists' lifetime (s),
--- ARGV[17] now (ms, for the versions).
+-- ARGV[17] now (ms, for the versions), ARGV[18..20] lo, hi and state of a
+-- state the caller checked the send against (read from PostgreSQL while the
+-- copy was fenced, or a copy that expired since), used only while `mt:<m>`
+-- holds none ('': none given). It is as safe as the copy: every end leaves
+-- its tombstone before it drops the copy, and the tombstone is checked first.
 --
 -- Returns {'sent', <stream id>, <side>}, {'replay', <record>},
--- {'ended'}, {'nostate'} (not cached: read it and try again) or
--- {'notmember'}.
+-- {'ended'}, {'nostate'} (not cached and none given: read it and try
+-- again) or {'notmember'}.
 
 local function newer(a, b)
   if #a ~= #b then return #a > #b end
@@ -39,7 +43,10 @@ end
 
 if redis.call('EXISTS', KEYS[1]) == 1 then return {'ended'} end
 local state = redis.call('HMGET', KEYS[2], 'lo', 'hi', 'st')
-if not state[1] or not state[2] then return {'nostate'} end
+if not state[1] or not state[2] then
+  if (ARGV[18] or '') == '' then return {'nostate'} end
+  state = {ARGV[18], ARGV[19], ARGV[20]}
+end
 if state[3] ~= '1' then return {'ended'} end
 local sender = ARGV[3]
 local side
@@ -86,6 +93,13 @@ if effect == 'news' and both then
   if side == 'hi' then unread = KEYS[8] end
   redis.call('HINCRBY', unread, ARGV[2], 1)
   redis.call('EXPIRE', unread, listTtl)
+  -- The newest message counted for the recipient (`u<side>` in lm:): a read up to it clears their count, whatever
+  -- came after it (their own reply, an unsend, a call line of theirs).
+  if redis.call('HEXISTS', KEYS[5], 'id') == 1 then
+    local field = 'u' .. ((side == 'lo') and 'hi' or 'lo')
+    local counted = redis.call('HGET', KEYS[5], field)
+    if (not counted) or newer(ARGV[1], counted) then redis.call('HSET', KEYS[5], field, ARGV[1]) end
+  end
 end
 if effect == 'news' or moves then
   if side == 'lo' or both then bump(KEYS[10], now, listTtl) end

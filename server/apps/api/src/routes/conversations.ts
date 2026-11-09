@@ -1,4 +1,5 @@
 import { conversationParamsSchema, conversationsPageSchema, conversationsQuerySchema } from '@app/shared';
+import { PRESENCE_TTL_SECONDS } from '@app/shared/server';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { ConversationService } from '../services/conversations.js';
 import { requireScope, sessionOf } from '../services/session.js';
@@ -7,14 +8,20 @@ import { notModified } from './me.js';
 /**
  * `GET /v1/conversations`: the person's conversations, newest activity
  * first (a snoozed account keeps its own). The first page carries the
- * list's version as its ETag (`cv:<uid>`): a 304 costs no statement and no
- * list read. Warm, the page costs no statement either.
+ * list's version (`cv:<uid>`) and the presence epoch as its ETag: a 304
+ * costs no statement and no list read, and vouches for the peers' presence
+ * (and anything else of theirs that moves no version) for one more epoch at
+ * most, so a list a client keeps never shows anyone online for longer than
+ * about a minute after they left. Warm, the page costs no statement either.
  *
  * `DELETE /v1/conversations/:id`: an unmatch (one statement).
  */
 
-function etagOf(version: number): string {
-  return `"cv-${version}"`;
+/** The presence a list shows is cached this long; its ETag changes as often. */
+export const LIST_PRESENCE_EPOCH_MS = PRESENCE_TTL_SECONDS * 1_000;
+
+function etagOf(version: number, epoch: number): string {
+  return `"cv-${version}-${epoch}"`;
 }
 
 function matches(header: string | string[] | undefined, etag: string): boolean {
@@ -41,9 +48,13 @@ export const conversationRoutes: FastifyPluginAsyncZod = async (app) => {
       const service = new ConversationService(app, request);
       const first = request.query.cursor === undefined;
       if (first) {
-        const etag = etagOf(await service.version(session.userId));
+        const version = await service.version(session.userId);
+        const epoch = Math.floor(Date.now() / LIST_PRESENCE_EPOCH_MS);
+        const etag = etagOf(version, epoch);
         reply.header('etag', etag).header('cache-control', 'private, no-cache');
-        if (matches(request.headers['if-none-match'], etag)) return notModified(reply);
+        // The epoch before stands too: a revalidation right after a boundary is not a full read.
+        const given = request.headers['if-none-match'];
+        if (matches(given, etag) || matches(given, etagOf(version, epoch - 1))) return notModified(reply);
       }
       return service.page(session.userId, request.query.limit, request.query.cursor);
     },

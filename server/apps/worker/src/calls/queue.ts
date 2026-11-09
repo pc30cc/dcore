@@ -1,5 +1,5 @@
-import { pushTargetsOf, withTransaction, writeFinishedCall, type FinishedCallRow } from '@app/db';
-import { callEndReason, callEndedBy, callKind, callOutcome, messageKind, notifyFlags, pushPayload, userChannel, wireTime, realtimeEnvelope } from '@app/shared';
+import { isTransientDatabaseError, pushTargetsOf, withTransaction, writeFinishedCall, type FinishedCallRow } from '@app/db';
+import { callEndReason, callEndedBy, callKind, callOutcome, idTime, messageKind, notifyFlags, pushPayload, userChannel, wireTime, realtimeEnvelope } from '@app/shared';
 import {
   CALL_RING_MS,
   CONNECT_MAX_MS,
@@ -39,6 +39,7 @@ import { DelayedError, type Job } from 'bullmq';
 import { z } from 'zod';
 import { releaseDeadToken } from '../push/deliver.js';
 import { firstName, pushLocale } from '../push/texts.js';
+import { dropTextOnLastFailure } from '../queues/push.js';
 import { queueJob } from '../social/jobs.js';
 import type { JobContext, QueueDefinition } from '../queues/types.js';
 import { missedCallText } from './texts.js';
@@ -67,7 +68,13 @@ import { missedCallText } from './texts.js';
  *   transaction (and kept in the job for its retries), not when the call
  *   ended: a sync cursor handed out while the finalize waited (LiveKit slow
  *   to delete the room, a busy worker, PostgreSQL down) is then below it, so
- *   a client catching up with `after=` still fetches the line.
+ *   a client catching up with `after=` still fetches the line. PostgreSQL
+ *   unreachable delays the job without using an attempt, however long it
+ *   lasts. A conversation that is not active any more when the rows go in
+ *   keeps them for reports and tells nobody. A shadow call (a caller nobody
+ *   may see) leaves its line for the caller only, as a message nobody else
+ *   may see: the other person is never told, counts nothing and gets no
+ *   push.
  * - `ring-push.<id>` and `ring-stop.<id>`: the ring to the callee's phones
  *   and its stop, in that order whatever FCM does (ringPush.lua): a ring is
  *   never sent for a call that already stopped ringing, a stop waits for its
@@ -110,7 +117,7 @@ export type CallJobResult =
   | { outcome: 'skipped'; reason: string };
 
 /** What a job needs of BullMQ's job (tests pass a stand-in). */
-export type CallJob = Pick<Job, 'name' | 'data' | 'attemptsMade' | 'attemptsStarted' | 'moveToDelayed' | 'updateData'>;
+export type CallJob = Pick<Job, 'name' | 'data' | 'attemptsMade' | 'attemptsStarted' | 'moveToDelayed' | 'updateData'> & Partial<Pick<Job, 'opts'>>;
 
 interface CallRuntime {
   livekit: LiveKitApi | null;
@@ -260,9 +267,6 @@ export async function finalizeJob(job: CallJob, context: JobContext, runtime: Ca
     const deleted = await runtime.livekit.deleteRoom(roomName(call.id));
     if (deleted === 'failed') log.warn({ callId: call.id }, 'finalize: the room could not be deleted (LiveKit closes it when empty)');
   }
-  // A call nobody else may know of leaves nothing behind.
-  if (call.fake === 'shadow') return { outcome: 'skipped', reason: 'shadow' };
-
   const done = { ...data.done };
   if (!done.rows) {
     // The line's id is minted by each try right before its transaction and held until it is done: no
@@ -291,6 +295,10 @@ export async function finalizeJob(job: CallJob, context: JobContext, runtime: Ca
     let written;
     try {
       written = await withTransaction(services.pg, (tx) => writeFinishedCall(tx, row, { id: lineId, body: encodeCallLineBody(summary) }));
+    } catch (error) {
+      // PostgreSQL down: the job waits without using an attempt (the next try mints its own line id).
+      if (isTransientDatabaseError(error)) return await databaseLater(job, context, call.id, error);
+      throw error;
     } finally {
       await releaseDirectWrites(context.redis, services.keys, [lineId]).catch((error: unknown) => log.warn({ err: error, callId: call.id }, 'finalize: hold not released (it runs out)'));
     }
@@ -298,6 +306,11 @@ export async function finalizeJob(job: CallJob, context: JobContext, runtime: Ca
     done.replay = !written.call && !written.line && job.attemptsMade === 0 && job.attemptsStarted <= 1;
     done.rows = true;
     if (written.lineId) done.lineId = written.lineId;
+    // The conversation is over (a block, an unmatch, however long ago): the rows stay for reports, nobody is told.
+    if (!written.active) {
+      done.published = true;
+      done.pushed = true;
+    }
     await job.updateData({ ...data, done });
   }
   if (done.replay) return { outcome: 'finalized', rows: false, replay: true };
@@ -317,33 +330,56 @@ export async function finalizeJob(job: CallJob, context: JobContext, runtime: Ca
     await job.updateData({ ...data, done });
   }
   if (!done.pushed) {
-    if (callLineUnreadFor({ outcome: call.outcome }, 'callee') && services.push) await sendMissedCall(context, services.push, call);
+    if (call.fake !== 'shadow' && callLineUnreadFor({ outcome: call.outcome }, 'callee') && services.push) {
+      try {
+        await sendMissedCall(context, services.push, call);
+      } catch (error) {
+        if (isTransientDatabaseError(error)) return await databaseLater(job, context, call.id, error);
+        throw error;
+      }
+    }
     done.pushed = true;
     await job.updateData({ ...data, done });
   }
   return { outcome: 'finalized', rows: true, replay: false };
 }
 
-/** The line to both people (`message`) and the conversation lists (preview, order, the callee's unread count). */
+/** How long a finalize waits for PostgreSQL to come back before it tries again. */
+export const FINALIZE_DATABASE_WAIT_MS = 5_000;
+
+function databaseLater(job: CallJob, context: JobContext, callId: string, error: unknown): Promise<never> {
+  context.log.warn({ err: error, callId }, 'finalize: PostgreSQL not reachable; trying again later');
+  return later(job, context, Date.now() + FINALIZE_DATABASE_WAIT_MS);
+}
+
+/**
+ * The line to both people (`message`) and the conversation lists (preview,
+ * order, the callee's unread count); a shadow call's to the caller only, as
+ * a message the other person may not see. Its time is the stored line's
+ * (its id's), as the history and the list read it.
+ */
 async function publishLine(context: JobContext, call: LiveCall): Promise<void> {
   const { services, redis, log } = context;
   const lo = BigInt(call.callerId) < BigInt(call.calleeId) ? call.callerId : call.calleeId;
   const hi = lo === call.callerId ? call.calleeId : call.callerId;
   const summary = { kind: call.kind, outcome: call.outcome!, durationSeconds: talkSeconds(call), placedMs: call.placedMs };
   const body = encodeCallLineBody(summary);
-  const unread = callLineUnreadFor(summary, 'callee');
+  const shadow = call.fake === 'shadow';
+  const unread = !shadow && callLineUnreadFor(summary, 'callee');
   await noteMessage(redis, services.keys, {
     message: { id: call.lineId!, matchId: call.matchId, senderId: call.callerId, refId: call.id, kind: messageKind.code('call'), flags: 0, body },
     lo,
     hi,
     unreadFor: unread ? (call.calleeId === lo ? 'lo' : 'hi') : null,
+    ...(shadow ? { only: call.callerId === lo ? ('lo' as const) : ('hi' as const) } : {}),
   }).catch((error: unknown) => log.warn({ err: error, callId: call.id }, 'finalize: conversation lists not updated'));
   if (!services.realtime) return;
   const callerPublicUid = services.publicIds.user.encode(call.callerId);
-  const message = callLineMessage({ lineId: call.lineId!, conversationId: call.matchId, callId: call.id, callerPublicUid, summary, atMs: call.endedMs! });
-  const channels = [call.callerId, call.calleeId].map((id) => userChannel(services.publicIds.user.encode(id)));
+  const atMs = idTime(call.lineId!).getTime();
+  const message = callLineMessage({ lineId: call.lineId!, conversationId: call.matchId, callId: call.id, callerPublicUid, summary, atMs });
+  const channels = (shadow ? [call.callerId] : [call.callerId, call.calleeId]).map((id) => userChannel(services.publicIds.user.encode(id)));
   await services.realtime
-    .broadcast(channels, realtimeEnvelope('message', call.lineId!, call.endedMs!, message))
+    .broadcast(channels, realtimeEnvelope('message', call.lineId!, atMs, message))
     .catch((error: unknown) => log.warn({ err: error, callId: call.id }, 'finalize: the call line was not published (history has it)'));
 }
 
@@ -370,14 +406,18 @@ async function sendMissedCall(context: JobContext, sender: PushSender, call: Liv
 export async function ringPushJob(job: CallJob, context: JobContext, runtime: CallRuntime): Promise<CallJobResult> {
   const data = ringPushSchema.parse(job.data);
   const { services, redis, log } = context;
+  // The reads come before the ring is marked as sending: one that fails (PostgreSQL away a moment) leaves the
+  // ring untouched, so the retry still rings; after the mark, nothing left can fail before the stop may go.
+  const call = await readCall(redis, services.keys, data.callId);
+  const sender = services.push;
+  const target = call && sender ? await pushTargetsOf(services.pg, call.calleeId) : null;
   const now = runtime.now();
   const step = await ringPushStep(redis, services.keys, data.callId, 'begin', now);
   if (step.step !== 'go') return { outcome: 'skipped', reason: step.step === 'skip' ? step.reason : step.step };
   const rung: RungDevice[] = [];
   try {
-    const call = await readCall(redis, services.keys, data.callId);
-    const sender = services.push;
-    const target = call && sender ? await pushTargetsOf(services.pg, call.calleeId) : null;
+    // Whatever the callee's `calls` switch says: it silences only the missed-call notification; a match's
+    // call consent is what stops calls.
     if (call && sender && target) {
       const payload = pushPayload('call_incoming', {
         callId: call.id,
@@ -448,7 +488,8 @@ export function callsQueue(options: CallQueueOptions = {}): QueueDefinition<unkn
         case 'finalize':
           return finalizeJob(job, context, runtime);
         case 'ring-push':
-          return ringPushJob(job, context, runtime);
+          // A ring that failed for good is kept without the caller's name and photo link.
+          return dropTextOnLastFailure(job, context.log, () => ringPushJob(job, context, runtime));
         case 'ring-stop':
           return ringStopJob(job, context, runtime);
         default:

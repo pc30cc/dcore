@@ -6,6 +6,7 @@ import {
   PARTICIPANT_IDENTITY,
   callIdentities,
   callKeys,
+  chatKeys,
   directWritesKey,
   holdDirectWrites,
   participantIdentity,
@@ -313,14 +314,20 @@ describe.skipIf(!hasInfrastructure)('calls (PostgreSQL, Valkey)', () => {
     expect((await call(h, `/v1/calls/${fakeId}`, { token: busy.token })).statusCode).toBe(404);
     expect((await post(`/v1/calls/${fakeId}/accept`, busy.token)).statusCode).toBe(404);
 
-    // The short ring ends it as missed; the unanswered one ends the same way at 45 s.
-    clock.advance(11_501);
+    // It rings as long as the unanswered one, and both end the same way at the same moment of their ring.
+    clock.advance(CALL_RING_MS - 1_000);
+    expect(callOf(await call(h, `/v1/calls/${fakeId}`, { token: caller.token })).state).toBe('ringing');
+    clock.advance(1_001);
     await worker.runAll('ring', fakeId);
-    clock.advance(CALL_RING_MS);
     await worker.runAll('ring', callOf(real).id);
     const fakeEnd = lastCallEvent(realtime, caller.publicUid, fakeId) as Call;
     const realEnd = lastCallEvent(realtime, someone.publicUid, callOf(real).id) as Call;
-    const ended = (c: Call) => ({ ...strip(c), endedAt: 't' });
+    // Times relative to the placement: the ring's end and the call's end alike.
+    const ended = (c: Call) => ({
+      ...strip(c),
+      ringExpiresAt: Date.parse(c.ringExpiresAt) - Date.parse(c.placedAt),
+      endedAt: Date.parse(c.endedAt!) - Date.parse(c.placedAt),
+    });
     expect(ended(fakeEnd)).toEqual(ended(realEnd));
     expect(fakeEnd).toMatchObject({ state: 'missed', outcome: 'missed', endReason: 'ring_timeout', durationSeconds: 0 });
     // The busy callee finds a missed call: the event, the line and the notification.
@@ -664,6 +671,41 @@ describe.skipIf(!hasInfrastructure)('calls (PostgreSQL, Valkey)', () => {
     expect(pushIndex).toBeGreaterThanOrEqual(0);
   });
 
+  it('rings a callee whose calls notifications are off, and leaves out only the missed-call notification', async () => {
+    const { a, b, matchId } = await pair(['Ring', 'Quiet']);
+    const off = await call(h, '/v1/me/notifications', { method: 'PATCH', token: b.token, body: { calls: false } });
+    expect(off.statusCode, off.body).toBe(200);
+    expect(off.json()).toMatchObject({ calls: false, messages: true });
+    const missedPushes = (id: string) => worker.push.sent.filter((s) => s.payload.type === 'call_missed' && s.payload.data['callId'] === id);
+
+    // The switch is not consent: the call rings in the app and on the phone as for anyone (a match's call
+    // consent is what stops calls).
+    const placed = await place(a, matchId, 'video');
+    expect(placed.statusCode, placed.body).toBe(201);
+    const quiet = callOf(placed).id;
+    expect(lastCallEvent(realtime, b.publicUid, quiet)).toMatchObject({ role: 'callee', state: 'ringing' });
+    const [ring] = await worker.runAll('ring-push', quiet);
+    expect(ring?.result).toEqual({ outcome: 'rung', devices: 1 });
+    expect(worker.push.sent.filter((s) => s.payload.type === 'call_incoming' && s.payload.data['callId'] === quiet)).toHaveLength(1);
+
+    // Nobody answers: the missed call is in the chat, but no notification says so.
+    clock.advance(CALL_RING_MS + 1);
+    await worker.runAll('ring', quiet);
+    await worker.runAll('finalize', quiet);
+    expect(lastCallEvent(realtime, b.publicUid, quiet)).toMatchObject({ state: 'missed' });
+    expect(eventsOf(realtime, b.publicUid, 'message').some((e) => (e.d as { refId?: string }).refId === quiet)).toBe(true);
+    expect(missedPushes(quiet)).toEqual([]);
+
+    // Switched on again: the next missed call is notified too.
+    expect((await call(h, '/v1/me/notifications', { method: 'PATCH', token: b.token, body: { calls: true } })).statusCode).toBe(200);
+    const next = callOf(await place(a, matchId)).id;
+    expect((await worker.runAll('ring-push', next))[0]?.result).toEqual({ outcome: 'rung', devices: 1 });
+    clock.advance(CALL_RING_MS + 1);
+    await worker.runAll('ring', next);
+    await worker.runAll('finalize', next);
+    expect(missedPushes(next)).toHaveLength(1);
+  });
+
   it('keeps, activates or ends a call in the room check, and decides nothing while LiveKit cannot be asked but the connecting cap', async () => {
     const { a, b, matchId } = await pair(['Room', 'Check']);
     const ids = (callId: string) => callIdentities(IDENTITY_SECRET, { id: callId, callerId: a.id, calleeId: b.id });
@@ -830,22 +872,33 @@ describe.skipIf(!hasInfrastructure)('calls (PostgreSQL, Valkey)', () => {
     void b;
   });
 
-  it('gives a caller nobody may see an ordinary ring that nobody hears, and leaves no trace of it', async () => {
+  it('gives a caller nobody may see an ordinary ring that nobody hears, its line in their chat, and nothing to anyone else', async () => {
     const { a, b, matchId } = await pair(['Shadow', 'Quiet']);
     await db.sql.query(`UPDATE users SET is_shadowbanned = true WHERE id = $1`, [a.id]);
     const before = eventsOf(realtime, b.publicUid, 'call').length;
+    const bMessages = eventsOf(realtime, b.publicUid, 'message').length;
+    const unreadBefore = await h.redis.hget(chatKeys(h.app.keys).unread(b.id), matchId);
     const placed = await place(a, matchId);
     expect(placed.statusCode).toBe(201);
     const id = callOf(placed).id;
     expect(callOf(placed)).toMatchObject({ state: 'ringing', role: 'caller' });
     expect(worker.pending('ring-push', id)).toEqual([]);
-    clock.advance(11_501);
+    clock.advance(CALL_RING_MS + 1);
     await worker.runAll('ring', id);
     expect(lastCallEvent(realtime, a.publicUid, id)).toMatchObject({ state: 'missed', endReason: 'ring_timeout' });
     expect(eventsOf(realtime, b.publicUid, 'call').length).toBe(before);
-    expect((await worker.runAll('finalize', id))[0]?.result).toEqual({ outcome: 'skipped', reason: 'shadow' });
-    expect(await rows(db, `SELECT 1 FROM calls WHERE id = $1`, [id])).toEqual([]);
-    expect(await rows(db, `SELECT 1 FROM messages WHERE match_id = $1 AND kind = 5`, [matchId])).toEqual([]);
+    expect((await worker.runAll('finalize', id))[0]?.result).toEqual({ outcome: 'finalized', rows: true, replay: false });
+    // The caller's chat holds the line any unanswered call leaves, live and in the history.
+    expect(await rows(db, `SELECT 1 FROM calls WHERE id = $1`, [id])).toHaveLength(1);
+    const line = eventsOf(realtime, a.publicUid, 'message').find((e) => (e.d as { refId?: string }).refId === id);
+    expect(line?.d).toMatchObject({ kind: 'call', senderId: a.publicUid, call: { callId: id, outcome: 'missed', durationSeconds: 0 } });
+    const history = messagesPageSchema.parse((await call(h, `/v1/conversations/${matchId}/messages`, { token: a.token })).json());
+    expect(history.items.find((m) => m.kind === 'call' && m.refId === id)).toMatchObject({ id: line!.id, call: { outcome: 'missed' } });
+    // The other person: no event, nothing counted, no notification, and the conversation still hidden from them.
+    expect(eventsOf(realtime, b.publicUid, 'message').length).toBe(bMessages);
+    expect(await h.redis.hget(chatKeys(h.app.keys).unread(b.id), matchId)).toBe(unreadBefore);
+    expect(worker.push.sent.some((s) => s.payload.data['callId'] === id)).toBe(false);
+    expect((await call(h, `/v1/conversations/${matchId}/messages`, { token: b.token })).statusCode).toBe(404);
   });
 
   it('finishes a finalize whose worker died after the commit, without writing twice', async () => {
@@ -876,13 +929,13 @@ describe.skipIf(!hasInfrastructure)('calls (PostgreSQL, Valkey)', () => {
     const id = callOf(await place(a, matchId)).id;
     await post(`/v1/calls/${id}/cancel`, a.token);
     const [job] = worker.pending('finalize', id);
-    // The first try cannot reach PostgreSQL.
+    // The first try cannot reach PostgreSQL: the job waits for it, without using an attempt.
     const connect = worker.pool.connect;
     worker.pool.connect = (async () => {
       worker.pool.connect = connect;
       throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
     }) as typeof connect;
-    await expect(worker.run(job!)).rejects.toThrow('ECONNREFUSED');
+    expect((await worker.run(job!)).delayed).toBe(true);
     expect(await h.redis.zcard(directWritesKey(h.app.keys))).toBe(0);
     // Meanwhile the message writer moves on and the callee catches up: a cursor above anything minted so far.
     await h.redis.set(h.app.keys.streamWatermark('msg'), h.app.ids.nextId());
