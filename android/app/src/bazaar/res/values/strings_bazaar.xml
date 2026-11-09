@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This store's build signs in by phone number only and has no Google sign-in;
+  its push needs no word about the services behind it. These replace the
+  shared strings that name Google.
+-->
+<resources>
+    <string name="privacy_collect_body">Your phone number, what you put in your profile (name, birth date, gender, photos, answers), who you\'d like to meet, your approximate area, and what you do in the app, like likes, matches and messages.</string>
+    <string name="chat_push_missing_body">New messages arrive only while {appName} is open.</string>
+</resources>

@@ -5,6 +5,7 @@ import app.core.model.CallKind
 import app.core.model.CallRole
 import app.core.model.CallState
 import app.core.model.Id
+import app.core.model.Photo
 import app.core.push.IncomingCallLink
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -23,7 +24,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CallControllerTest {
 
-    private class App(scope: TestScope) {
+    private class App(scope: TestScope, cachedFace: suspend (Id) -> Photo? = { null }) {
         val api = ScriptedCallApi()
         val signals = CallSignals().apply { setRealtimeConnected(true) }
         val ringsEnded = mutableListOf<Pair<Id, CallEnd>>()
@@ -42,6 +43,7 @@ class CallControllerTest {
             },
             scope = scope.backgroundScope,
             onRingEnded = { id, end -> ringsEnded += id to end },
+            cachedFace = cachedFace,
         )
     }
 
@@ -108,6 +110,37 @@ class CallControllerTest {
         advanceTimeBy(CallController.END_LINGER_MS + 100)
         runCurrent()
         assertNull("a missed call closes by itself", app.controller.session.value)
+    }
+
+    @Test
+    fun aRingTakesTheFaceTheChatStoredForItsConversation() = runTest {
+        val stored = Photo(id = "1", w = 640, h = 800, blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj", url = "https://cdn.example.test/p/1/1/320.webp?sig=a")
+        val asked = mutableListOf<Id>()
+        val app = App(this, cachedFace = { id -> asked += id; stored.takeIf { id == "500" } })
+        // The ring brought a name and no photo.
+        assertTrue(app.controller.openRing(link()))
+        runCurrent()
+        val peer = app.controller.session.value!!.peer.value
+        assertEquals(listOf("500"), asked)
+        assertEquals(stored.url, peer.photoUrl)
+        assertEquals("the blurhash, drawn while the photo loads", stored.blurhash, peer.blurhash)
+        assertEquals("Negar", peer.name)
+        app.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun aRingWhoseConversationIsNotStoredKeepsWhatItBrought() = runTest {
+        val app = App(this, cachedFace = { error("the cache is closed") })
+        val withPhoto = IncomingCallLink("9001", "500", CallKind.Audio, "Negar", "https://cdn.example.test/p/2/1/320.webp?sig=b", false, at(45_000))
+        assertTrue(app.controller.openRing(withPhoto))
+        runCurrent()
+        val peer = app.controller.session.value!!.peer.value
+        assertEquals(withPhoto.peerPhotoUrl, peer.photoUrl)
+        assertNull(peer.blurhash)
+        assertEquals("the ring still rings", CallPhase.Ringing, app.controller.session.value!!.phase.value)
+        app.controller.dismiss()
+        runCurrent()
     }
 
     @Test

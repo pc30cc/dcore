@@ -118,7 +118,22 @@
     <string name="call_line_declined">رد شد</string>
     <string name="call_line_cancelled">لغو شد</string>
     <string name="call_line_failed">تماس ناموفق</string>
+    <string name="call_line_failed_after_kind">ناموفق</string>
     <string name="call_line_outgoing">خروجی</string>
     <string name="call_line_incoming">ورودی</string>
     <string name="call_line_call_back">تماس دوباره</string>
+    <!-- A call's length, only if the platform's unit formats fail (the line and TalkBack use those). -->
+    <plurals name="call_length_hours">
+        <item quantity="one">%d ساعت</item>
+        <item quantity="other">%d ساعت</item>
+    </plurals>
+    <plurals name="call_length_minutes">
+        <item quantity="one">%d دقیقه</item>
+        <item quantity="other">%d دقیقه</item>
+    </plurals>
+    <plurals name="call_length_seconds">
+        <item quantity="one">%d ثانیه</item>
+        <item quantity="other">%d ثانیه</item>
+    </plurals>
+    <string name="call_length_join">" و "</string>
 </resources>

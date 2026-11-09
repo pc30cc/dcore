@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_collect_body">Telefon numaranız, profilinize koyduklarınız (ad, doğum tarihi, cinsiyet, fotoğraflar, yanıtlar), tanışmak istediğiniz kişiler, yaklaşık bölgeniz ve uygulamada yaptıklarınız; beğeniler, eşleşmeler ve mesajlar gibi.</string>
+    <string name="chat_push_missing_body">Yeni mesajlar yalnızca {appName} açıkken gelir.</string>
+</resources>

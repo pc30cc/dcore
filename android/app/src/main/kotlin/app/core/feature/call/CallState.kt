@@ -2,6 +2,7 @@ package app.core.feature.call
 
 import androidx.annotation.StringRes
 import app.core.R
+import app.core.media.ImageLoading
 import app.core.model.Call
 import app.core.model.CallKind
 import app.core.model.CallOutcome
@@ -218,7 +219,30 @@ data class CallPeer(
     val name: String,
     val photoUrl: String? = null,
     val blurhash: String? = null,
-)
+) {
+    /**
+     * This peer with the face the chat's cache knows for the conversation
+     * ([photoUrl] and [blurhash] of the match's photo there), for a ring that
+     * carried only a photo URL, or none:
+     * - no URL in the ring: the cached photo, URL and blurhash;
+     * - the same photo (same address without its signature): the ring's
+     *   fresher URL with the cached blurhash, drawn first while it loads;
+     * - another photo (the match changed it since): the ring's URL alone; an
+     *   old picture's blur would show the wrong face first.
+     * What the peer already has is kept.
+     */
+    fun withCachedFace(photoUrl: String?, blurhash: String?): CallPeer {
+        val cachedUrl = photoUrl?.takeIf { it.isNotBlank() }
+        val cachedBlur = blurhash?.takeIf { it.isNotBlank() }
+        val ringUrl = this.photoUrl
+        return when {
+            ringUrl == null -> copy(photoUrl = cachedUrl, blurhash = this.blurhash ?: cachedBlur.takeIf { cachedUrl != null })
+            this.blurhash != null -> this
+            cachedUrl != null && ImageLoading.cacheKey(cachedUrl) == ImageLoading.cacheKey(ringUrl) -> copy(blurhash = cachedBlur)
+            else -> this
+        }
+    }
+}
 
 /**
  * What the rest of the app heard about a call, for the session on screen to

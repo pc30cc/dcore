@@ -41,17 +41,6 @@
     <string name="chat_preview_you_unsent">You unsent a message</string>
     <string name="chat_preview_reaction">Reacted %1$s</string>
 
-    <!-- Call lines -->
-    <string name="chat_call_back">Call back</string>
-    <string name="chat_line_call_audio_length">Voice call · %1$s</string>
-    <string name="chat_line_call_video_length">Video call · %1$s</string>
-    <string name="chat_line_call_audio_unanswered">Voice call, no answer</string>
-    <string name="chat_line_call_video_unanswered">Video call, no answer</string>
-    <string name="chat_line_call_audio_missed">Missed voice call</string>
-    <string name="chat_line_call_video_missed">Missed video call</string>
-    <string name="chat_line_call_audio_failed">Voice call didn\'t connect</string>
-    <string name="chat_line_call_video_failed">Video call didn\'t connect</string>
-
     <!-- A thread -->
     <string name="chat_view_profile">View profile</string>
     <string name="chat_mute">Mute notifications</string>

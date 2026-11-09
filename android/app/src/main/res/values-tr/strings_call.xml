@@ -118,7 +118,22 @@
     <string name="call_line_declined">Reddedildi</string>
     <string name="call_line_cancelled">İptal edildi</string>
     <string name="call_line_failed">Arama başarısız</string>
+    <string name="call_line_failed_after_kind">Başarısız</string>
     <string name="call_line_outgoing">Giden</string>
     <string name="call_line_incoming">Gelen</string>
     <string name="call_line_call_back">Geri ara</string>
+    <!-- A call's length, only if the platform's unit formats fail (the line and TalkBack use those). -->
+    <plurals name="call_length_hours">
+        <item quantity="one">%d saat</item>
+        <item quantity="other">%d saat</item>
+    </plurals>
+    <plurals name="call_length_minutes">
+        <item quantity="one">%d dakika</item>
+        <item quantity="other">%d dakika</item>
+    </plurals>
+    <plurals name="call_length_seconds">
+        <item quantity="one">%d saniye</item>
+        <item quantity="other">%d saniye</item>
+    </plurals>
+    <string name="call_length_join">" "</string>
 </resources>

@@ -67,6 +67,34 @@ class TranscriptRulesTest {
     }
 
     @Test
+    fun theIntroNamesItsDayOnlyWhenTheSeparatorUnderItDoesNot() {
+        val matched = conversation() // matched three days before today, at noon
+        fun intro(rows: List<app.core.sync.ChatMessage>) =
+            buildTranscript(rows, emptyList(), matched, readReceipts = false, atTop = true, me = ME, zone = zone).last() as ChatItem.Intro
+
+        // The first message the same day as the match: its separator already says which day.
+        assertFalse(intro(listOf(row(1, mine = true, at = matched.createdAt.plusSeconds(600)))).showDate)
+        // A first message on a later day: the intro says when they matched.
+        assertTrue(intro(listOf(row(1, mine = true, at = minutesAgo(1)))).showDate)
+        // Nothing written yet: no separator, so the intro carries the day.
+        assertTrue(intro(emptyList()).showDate)
+    }
+
+    @Test
+    fun theIntroSuggestsHowToStartOnlyUntilTheFirstMessage() {
+        val matched = conversation()
+        fun intro(rows: List<app.core.sync.ChatMessage>, marks: List<app.core.sync.ChatMessage> = emptyList()) =
+            buildTranscript(rows, marks, matched, readReceipts = false, atTop = true, me = ME, zone = zone).last() as ChatItem.Intro
+        assertTrue("an empty thread", intro(emptyList()).hint)
+        assertFalse("after the first message, sent or received", intro(listOf(row(1, mine = true, at = minutesAgo(1)))).hint)
+        assertFalse(intro(listOf(row(1, mine = false, at = minutesAgo(1)))).hint)
+        assertFalse("a call line is a start too", intro(listOf(row(2, mine = true, kind = MessageKind.Call, body = null, call = ChatTestData.callLine(2, ME, CallOutcome.Missed)))).hint)
+        // Marks are not messages: a reaction or an unsend alone leaves the thread unstarted.
+        val marksOnly = listOf(row(3, mine = true, kind = MessageKind.Reaction, body = "❤️", refId = 9), row(4, mine = true, kind = MessageKind.Unsend, refId = 9))
+        assertTrue(intro(marksOnly).hint)
+    }
+
+    @Test
     fun runsJoinTheSamePersonWithinFiveMinutesAndCallsStandAlone() {
         val rows = listOf(
             row(5, mine = false, at = minutesAgo(0)),

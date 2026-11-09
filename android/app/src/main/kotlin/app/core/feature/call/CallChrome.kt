@@ -145,8 +145,10 @@ internal fun callFaceSize(maxHeight: Dp, incoming: Boolean): Dp = when {
 }
 
 /**
- * The match's face: their photo, or a person silhouette on a quiet circle.
- * Never a letter. Photos load through the app's own image cache.
+ * The match's face: the photo's blurhash at once and the photo over it once
+ * loaded; a person silhouette on a quiet circle only while nothing of the
+ * face is known (no blurhash; under a photo still loading or that never
+ * loads). Never a letter. Photos load through the app's own image cache.
  */
 @Composable
 internal fun CallFace(photoUrl: String?, blurhash: String?, size: Dp, modifier: Modifier = Modifier) {
@@ -159,19 +161,27 @@ internal fun CallFace(photoUrl: String?, blurhash: String?, size: Dp, modifier: 
             .background(CALL_TILE),
         contentAlignment = Alignment.Center,
     ) {
-        if (blurhash != null) BlurHashImage(blurhash, Modifier.fillMaxSize())
-        if (photoUrl == null || !remote) {
-            if (blurhash == null) {
-                Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.72f), modifier = Modifier.size(size * 0.6f))
-            }
+        // Bottom up: the silhouette only when nothing of the face is known,
+        // the blurhash at once, the photo over it once it loads (and while it
+        // loads, or if it never does, what is under it shows).
+        if (blurhash != null) {
+            BlurHashImage(blurhash, Modifier.fillMaxSize().testTag(CallTags.FACE_BLURHASH))
         } else {
+            Icon(
+                Icons.Filled.Person,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.size(size * 0.6f).testTag(CallTags.FACE_SILHOUETTE),
+            )
+        }
+        if (photoUrl != null && remote) {
             val request = remember(photoUrl) { ImageLoading.request(context, photoUrl) }
             AsyncImage(
                 model = request,
                 contentDescription = null,
                 imageLoader = ImageLoading.loader(context),
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag(CallTags.FACE_PHOTO),
             )
         }
     }
@@ -424,4 +434,7 @@ object CallTags {
     const val HEADER_SETTINGS = "call.header.settings"
     const val CONSENT = "call.consent"
     const val CONSENT_LINE = "call.consent.line"
+    const val FACE_SILHOUETTE = "call.face.silhouette"
+    const val FACE_BLURHASH = "call.face.blurhash"
+    const val FACE_PHOTO = "call.face.photo"
 }

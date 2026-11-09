@@ -124,7 +124,23 @@
     <string name="call_line_declined">Declined</string>
     <string name="call_line_cancelled">Cancelled</string>
     <string name="call_line_failed">Call failed</string>
+    <!-- After the call's kind, where the kind already says "call": "Voice call · Failed". -->
+    <string name="call_line_failed_after_kind">Failed</string>
     <string name="call_line_outgoing">Outgoing</string>
     <string name="call_line_incoming">Incoming</string>
     <string name="call_line_call_back">Call back</string>
+    <!-- A call's length, only if the platform's unit formats fail (the line and TalkBack use those). -->
+    <plurals name="call_length_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="call_length_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="call_length_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <string name="call_length_join">", "</string>
 </resources>

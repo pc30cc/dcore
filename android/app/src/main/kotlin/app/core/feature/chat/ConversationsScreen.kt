@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,7 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -55,6 +53,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +63,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.core.LocalAppGraph
 import app.core.R
 import app.core.feature.card.VerifiedBadge
+import app.core.ui.components.BadgeAnchor
+import app.core.ui.components.CountBadge
+import app.core.ui.components.badgeCount
 import app.core.feature.card.isolate
 import app.core.feature.card.rememberNumbers
 import app.core.feature.card.shimmer
@@ -145,16 +147,19 @@ private fun ListHeader(state: ConversationsUiState, actions: ConversationsAction
         )
         val number = rememberNumbers()
         val description = if (state.requests > 0) brandString(R.string.chat_requests_count, number(state.requests)) else brandString(R.string.chat_requests)
-        // The count sits over the button, not inside it: the button clips to its
-        // circle, which cut the count off with large text.
-        Box {
+        // The count sits over the button, not inside it (the button clips to its
+        // circle), centred on the icon's top end corner and grows with the text.
+        // The same count as the requests row under it (up to "99+").
+        val badge: (@Composable () -> Unit)? = if (state.requests > 0) {
+            { CountBadge(requestsBadgeText(state.requests, number), Modifier.clearAndSetSemantics { testTag = REQUESTS_BADGE_TAG }) }
+        } else {
+            null
+        }
+        BadgeAnchor(badge) {
             IconButton(onClick = actions::openRequests, modifier = Modifier.semantics { contentDescription = description }) {
-                Icon(painterResource(R.drawable.ic_chat_requests), contentDescription = null)
-            }
-            if (state.requests > 0) {
-                Badge(Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 6.dp).clearAndSetSemantics {}) {
-                    Text(number(state.requests))
-                }
+                // A glyph with no dot of its own: the badge is the only "something new"
+                // (an outline, so it is not the filled Chats tab icon either).
+                Icon(painterResource(R.drawable.ic_chat_requests_plain), contentDescription = null)
             }
         }
     }
@@ -302,7 +307,7 @@ private fun RequestsRow(count: Int, onClick: () -> Unit) {
             Text(brandString(R.string.chat_requests), style = MaterialTheme.typography.titleMedium)
             Text(brandString(R.string.chat_requests_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Badge(containerColor = MaterialTheme.colorScheme.primary) { Text(number(count), modifier = Modifier.padding(horizontal = 2.dp)) }
+        CountBadge(requestsBadgeText(count, number), containerColor = MaterialTheme.colorScheme.primary)
     }
     HorizontalDivider(Modifier.padding(start = 76.dp), color = MaterialTheme.colorScheme.outlineVariant)
 }
@@ -318,7 +323,9 @@ private fun ConversationRow(
 ) {
     val number = rememberNumbers()
     val unread = conversation.unread
-    val preview = if (typing) brandString(R.string.chat_typing) else previewText(conversation.lastMessage, me, clock).orEmpty()
+    val preview = if (typing) brandString(R.string.chat_typing) else previewText(conversation.lastMessage, me).orEmpty()
+    // What TalkBack reads: a call's length in words ("12 minutes, 34 seconds"), not the short units shown.
+    val spokenPreview = if (typing) preview else previewText(conversation.lastMessage, me, spoken = true).orEmpty()
     val time = conversation.lastMessage?.at?.let { listTime(clock, it, today) }.orEmpty()
     val separator = brandString(R.string.chat_list_separator)
     val description = buildList {
@@ -326,7 +333,7 @@ private fun ConversationRow(
         if (conversation.peer.verified) add(brandString(R.string.deck_verified))
         if (conversation.peer.online) add(brandString(R.string.chat_online))
         if (unread > 0) add(brandString(R.string.chat_unread_count, number(unread)))
-        if (preview.isNotEmpty()) add(preview)
+        if (spokenPreview.isNotEmpty()) add(spokenPreview)
         if (time.isNotEmpty()) add(time)
         if (conversation.muted) add(brandString(R.string.chat_muted))
     }.joinToString(separator)
@@ -383,9 +390,12 @@ private fun ConversationRow(
                 )
                 if (unread > 0) {
                     Spacer(Modifier.width(Space.sm))
-                    Badge(
-                        containerColor = if (conversation.muted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
-                    ) { Text(number(unread.coerceAtMost(MAX_BADGE)) + if (unread > MAX_BADGE) "+" else "", modifier = Modifier.padding(horizontal = 2.dp)) }
+                    // Muted: a quiet grey count that still reads (the outline grey failed AA under its text).
+                    CountBadge(
+                        badgeCount(unread, MAX_BADGE, number),
+                        containerColor = if (conversation.muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                        contentColor = if (conversation.muted) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onPrimary,
+                    )
                 }
             }
         }
@@ -411,3 +421,9 @@ private fun SkeletonList() {
 
 private const val SKELETON_ROWS = 6
 private const val MAX_BADGE = 99
+
+/** The requests count, the same over the header's button and on the requests row: up to "99+". */
+internal fun requestsBadgeText(count: Int, number: (Int) -> String): String = badgeCount(count, MAX_BADGE, number)
+
+/** The requests count over the header's button, for tests. */
+const val REQUESTS_BADGE_TAG = "chats.requests.badge"

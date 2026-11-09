@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,12 +64,15 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.core.R
+import app.core.feature.call.CallLineRow
+import app.core.feature.call.rememberCallLengths
 import app.core.feature.card.isolate
 import app.core.feature.card.shimmer
 import app.core.i18n.brandString
@@ -128,7 +130,7 @@ internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (Chat
             items(items, key = { it.key }) { item ->
                 when (item) {
                     is ChatItem.Bubble -> BubbleRow(item, bubbleMax, clock, state, actions, onSheet)
-                    is ChatItem.Call -> CallLineRow(item, clock, state)
+                    is ChatItem.Call -> CallLine(item, state)
                     is ChatItem.Day -> DayRow(dayHeader(clock, item.date, today))
                     is ChatItem.Intro -> Intro(item, clock, today)
                 }
@@ -202,18 +204,25 @@ private fun Intro(item: ChatItem.Intro, clock: ChatClockText, today: LocalDate) 
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = Space.xl).semantics { heading() },
         )
-        Text(
-            clock.day(clock.date(conversation.createdAt), today),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            brandString(R.string.chat_intro_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = Space.xl),
-        )
+        // Said the way the day separators say it ("Yesterday", a weekday, a date),
+        // and left out when the separator under it names the same day.
+        if (item.showDate) {
+            Text(
+                dayHeader(clock, clock.date(conversation.createdAt), today),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // How to start: only until the first message (it read oddly over a whole history).
+        if (item.hint) {
+            Text(
+                brandString(R.string.chat_intro_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = Space.xl),
+            )
+        }
     }
 }
 
@@ -287,8 +296,11 @@ private fun BubbleRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.xxs),
                 ) {
-                    Text(time, style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
-                    item.delivery?.let { DeliveryMark(it, content) }
+                    // Quieter than the text only on the grey bubble: on the brand colour the
+                    // 11 sp time at 75 % fell under AA (about 3.2:1 in light), and so did it
+                    // on an unsent one's bare background (3.9:1).
+                    Text(time, style = MaterialTheme.typography.labelSmall, color = bubbleQuietColor(content, onGrey = !mine && !unsent))
+                    item.delivery?.let { DeliveryMark(it, content, container) }
                 }
             }
             if (item.reactions.isNotEmpty() && !unsent) {
@@ -328,7 +340,7 @@ private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) 
                     Text(
                         brandString(if (mine) R.string.chat_like_note_mine else R.string.chat_like_note_theirs),
                         style = MaterialTheme.typography.labelMedium,
-                        color = content.copy(alpha = 0.85f),
+                        color = bubbleQuietColor(content, onGrey = !mine, alpha = NOTE_LABEL_ALPHA),
                     )
                 }
                 message.body?.takeIf { it.isNotBlank() }?.let {
@@ -349,16 +361,18 @@ private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) 
                 }
             }
             MessageKind.Voice -> Column {
-                val clock = rememberChatClock()
+                // Its length as a length ("42 sec"), not m:ss beside the bubble's time.
+                val seconds = (message.media?.durationMs ?: 0) / 1000
+                val length = rememberCallLengths().line(seconds)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Icon(painterResource(R.drawable.ic_deck_voice), contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
                     Text(
-                        brandString(R.string.chat_voice, callLength(clock, (message.media?.durationMs ?: 0) / 1000)),
+                        if (seconds > 0) brandString(R.string.chat_voice, length) else brandString(R.string.chat_preview_voice),
                         style = MaterialTheme.typography.bodyLarge,
                         color = content,
                     )
                 }
-                Text(brandString(R.string.chat_voice_unavailable), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
+                Text(brandString(R.string.chat_voice_unavailable), style = MaterialTheme.typography.labelSmall, color = bubbleQuietColor(content, onGrey = !mine))
             }
             else -> Placeholder(brandString(R.string.chat_unknown), content)
         }
@@ -370,20 +384,52 @@ private fun Placeholder(text: String, content: Color) {
     Text(text, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = content)
 }
 
+/**
+ * A bubble's quieter text (its time, a like note's label, the voice line):
+ * softened ([alpha]) only on the other person's grey bubble ([onGrey]),
+ * where it still passes AA; in the bubble's content colour in full on your
+ * own (brand-coloured) bubble and on an unsent one's bare background, where
+ * any transparency fell under it.
+ */
+internal fun bubbleQuietColor(content: Color, onGrey: Boolean, alpha: Float = QUIET_ALPHA): Color =
+    if (onGrey) content.copy(alpha = alpha) else content
+
+/** The time's and the voice line's alpha on the grey bubble (ContrastTest checks it, blended, in both themes). */
+internal const val QUIET_ALPHA = 0.75f
+
+/** A like note's label on the grey bubble. */
+internal const val NOTE_LABEL_ALPHA = 0.85f
+
+/**
+ * Your message's tick, in the bubble's content colour in full (on the brand
+ * colour, any transparency fell under the 3:1 an icon needs). Read is the
+ * double tick reversed out of a disc of that colour, so it is told from
+ * delivered by its shape, not by a shade.
+ */
 @Composable
-private fun DeliveryMark(delivery: Delivery, content: Color) {
+private fun DeliveryMark(delivery: Delivery, content: Color, container: Color) {
+    val tag = Modifier.testTag(deliveryTag(delivery))
+    if (delivery == Delivery.Read && container.alpha > 0f) {
+        Box(tag.size(16.dp).background(content, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_chat_read), contentDescription = null, tint = container, modifier = Modifier.size(12.dp))
+        }
+        return
+    }
     val (icon, tint) = when (delivery) {
-        Delivery.Pending -> R.drawable.ic_chat_pending to content.copy(alpha = 0.75f)
-        Delivery.Sent -> R.drawable.ic_chat_sent to content.copy(alpha = 0.75f)
-        Delivery.Delivered -> R.drawable.ic_chat_read to content.copy(alpha = 0.75f)
-        Delivery.Read -> R.drawable.ic_chat_read to AppTheme.colors.success.let { if (content == MaterialTheme.colorScheme.onPrimary) content else it }
+        Delivery.Pending -> R.drawable.ic_chat_pending to content
+        Delivery.Sent -> R.drawable.ic_chat_sent to content
+        Delivery.Delivered -> R.drawable.ic_chat_read to content
+        // A message unsent since: no bubble colour to reverse out of.
+        Delivery.Read -> R.drawable.ic_chat_read to AppTheme.colors.success
         // In the bubble's own content colour: the error red on a filled bubble
         // was all but invisible (under 2:1). The red line under the bubble says why.
         Delivery.Failed, Delivery.Confirm -> R.drawable.ic_chat_error to content
     }
-    val emphasis = if (delivery == Delivery.Read || delivery == Delivery.Failed || delivery == Delivery.Confirm) Modifier else Modifier.alpha(0.9f)
-    Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = Modifier.size(14.dp).then(emphasis))
+    Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = tag.size(14.dp))
 }
+
+/** A bubble's delivery mark, for tests. */
+internal fun deliveryTag(delivery: Delivery): String = "chat.delivery.${delivery.name.lowercase()}"
 
 @Composable
 private fun FailedLine(code: String?, onClick: () -> Unit) {
@@ -432,12 +478,10 @@ private fun bubbleDescription(item: ChatItem.Bubble, time: String): String {
     return listOfNotNull(who, text, time, status, reactions).joinToString(brandString(R.string.chat_list_separator))
 }
 
+/** A call's line: the call feature's own row, with "call back" while both still allow calls. */
 @Composable
-private fun CallLineRow(item: ChatItem.Call, clock: ChatClockText, state: ChatUiState) {
+private fun CallLine(item: ChatItem.Call, state: ChatUiState) {
     val call = item.message.call ?: return
-    val me = state.me
-    val text = callLineText(call, mine = call.caller == me, clock = clock)
-    val time = clock.time(item.message.at)
     val conversation = state.conversation
     val callBack = LocalChatCallBack.current
     val onCallBack = if (callBack != null && conversation != null && conversation.callsAllowed.both && !state.ended) {
@@ -445,32 +489,7 @@ private fun CallLineRow(item: ChatItem.Call, clock: ChatClockText, state: ChatUi
     } else {
         null
     }
-    val missed = call.caller != me && call.outcome != app.core.model.CallOutcome.Completed
-    Box(Modifier.fillMaxWidth().padding(vertical = Space.sm), contentAlignment = Alignment.Center) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .then(if (onCallBack != null) Modifier.clickable(onClickLabel = brandString(R.string.chat_call_back), onClick = onCallBack) else Modifier)
-                .semantics(mergeDescendants = true) { },
-        ) {
-            Row(
-                Modifier.padding(horizontal = Space.md, vertical = Space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            ) {
-                Icon(
-                    Icons.Filled.Call,
-                    contentDescription = null,
-                    tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(text, style = MaterialTheme.typography.labelLarge)
-                Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+    CallLineRow(call, me = state.me, at = item.message.at, onCallBack = onCallBack)
 }
 
 @Composable

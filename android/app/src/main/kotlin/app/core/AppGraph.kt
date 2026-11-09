@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.core.brand.AppBrand
 import app.core.cache.CacheDatabaseHolder
+import app.core.cache.ChatMapping
 import app.core.common.Clock
 import app.core.common.Diag
 import app.core.feature.auth.AuthGate
@@ -164,7 +165,20 @@ class AppGraph(private val app: Application) {
      * its ring from push and realtime, and the match's call switch. Cheap to
      * build: nothing in it opens a socket or sends a request until a call does.
      */
-    val calls: CallGraph by lazy { CallGraph(app, apiOf = { api }, scope = appScope, clock = clock, diag = diag) }
+    val calls: CallGraph by lazy {
+        CallGraph(
+            app,
+            apiOf = { api },
+            scope = appScope,
+            clock = clock,
+            diag = diag,
+            // A ring names the conversation; the chat's cache has the match's photo and its blurhash.
+            cachedFace = { conversationId ->
+                api.sessionUser()?.id?.let { account -> chat.conversations.get(account, conversationId) }
+                    ?.let { row -> ChatMapping.conversation(row).peer.photo }
+            },
+        )
+    }
 
     /** Push: the FCM transport, the registration, the router and the notification taps (push/). */
     val push: PushGraph by lazy {

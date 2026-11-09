@@ -255,6 +255,26 @@ class BubbleFieldTest {
     }
 
     @Test
+    fun `the word bubble grows to its smallest readable size and the rest keep theirs`() {
+        val plain = field(intro = false)
+        val word = (0 until plain.count).first { plain.label(it) }
+        assertEquals(plain.baseR[word], plain.wordRadius, 0.001f)
+        val grown = BubbleField(dp).apply {
+            wordMinRadius = 52 * dp
+            layout(width, height, bandTop, bandBottom, keepOut, startIntro = false)
+        }
+        assertEquals(52 * dp, grown.wordRadius, 0.001f)
+        assertEquals(52 * dp, grown.baseR[word], 0.001f)
+        for (i in 0 until grown.count) if (i != word) assertEquals(plain.baseR[i], grown.baseR[i], 0.001f)
+        // A smaller minimum than the spec's size changes nothing.
+        val small = BubbleField(dp).apply {
+            wordMinRadius = 10 * dp
+            layout(width, height, bandTop, bandBottom, keepOut, startIntro = false)
+        }
+        assertEquals(plain.baseR[word], small.baseR[word], 0.001f)
+    }
+
+    @Test
     fun `a frame allocates nothing`() {
         val bean = ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
         val f = field(intro = true)

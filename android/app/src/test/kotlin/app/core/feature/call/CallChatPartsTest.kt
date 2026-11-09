@@ -1,7 +1,10 @@
 package app.core.feature.call
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -11,16 +14,26 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.core.feature.chat.ChatClockText
 import app.core.model.CallKind
 import app.core.model.CallLine
 import app.core.model.CallOutcome
 import app.core.model.CallSwitches
 import app.core.ui.theme.AppTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import kotlin.math.abs
+import java.util.Locale
 
 /** The call's parts in a conversation: the header's buttons, the match's call settings, and the call line. */
 @RunWith(AndroidJUnit4::class)
@@ -124,13 +137,27 @@ class CallChatPartsTest {
     private fun line(outcome: CallOutcome, caller: String, kind: CallKind = CallKind.Audio) =
         CallLine(callId = "77", kind = kind, outcome = outcome, placedAt = at(0), durationSeconds = 245, caller = caller)
 
+    /** The one TalkBack sentence of the call line [line]. */
+    private fun label(line: CallLine): String =
+        compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().config[SemanticsProperties.ContentDescription].single()
+
     @Test
     fun aCompletedCallLineReadsAsOneSentenceAndCallsBack() {
-        show { CallLineRow(line(CallOutcome.Completed, caller = "me"), me = "me", at = at(0), onCallBack = { calls += "back" }) }
+        val line = line(CallOutcome.Completed, caller = "me")
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = { calls += "back" }) }
         compose.onNodeWithTag("call.line.77").assertIsDisplayed()
         compose.onNodeWithText("Voice call", substring = false).assertDoesNotExist() // merged into one node
-        compose.onNodeWithContentDescription("Voice call, 4:05, Outgoing", substring = true).performClick()
+        val time = ChatClockText(Locale.US).time(at(0))
+        // The length as a length, every word spelt out; the time last, apart from it.
+        assertEquals("Voice call, 4 minutes, 5 seconds, Outgoing, $time", label(line))
+        compose.onNodeWithTag("call.line.77").assert(hasClickAction()).performClick()
         assertEquals(listOf("back"), calls)
+    }
+
+    @Test
+    fun withoutCallBackTheLineIsNotAButton() {
+        show { CallLineRow(line(CallOutcome.Completed, caller = "me"), me = "me", at = at(0), onCallBack = null) }
+        compose.onNodeWithTag("call.line.77").assert(hasClickAction().not())
     }
 
     @Test
@@ -141,14 +168,103 @@ class CallChatPartsTest {
 
     @Test
     fun theCallerSeesNoAnswer() {
-        show(dark = true) { CallLineRow(line(CallOutcome.Missed, caller = "me"), me = "me", at = at(0), onCallBack = null) }
-        compose.onNodeWithContentDescription("No answer, Outgoing", substring = true).assertIsDisplayed()
+        val line = line(CallOutcome.Missed, caller = "me")
+        show(dark = true) { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        // TalkBack has no icon to go by: the kind is said first.
+        assertTrue(label(line), label(line).startsWith("Voice call, No answer, Outgoing, "))
+    }
+
+    @Test
+    fun declinedAndCancelledSayWhatHappened() {
+        val line = line(CallOutcome.Declined, caller = "me", kind = CallKind.Video)
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        assertTrue(label(line), label(line).startsWith("Video call, Declined, Outgoing, "))
+    }
+
+    @Test
+    fun theCallerSeesTheirCancelledCall() {
+        val line = line(CallOutcome.Cancelled, caller = "me", kind = CallKind.Video)
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        assertTrue(label(line), label(line).startsWith("Video call, Cancelled, Outgoing, "))
+    }
+
+    @Test
+    fun aFailedCallSaysItsKindOnce() {
+        val line = line(CallOutcome.Failed, caller = "them")
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        assertTrue(label(line), label(line).startsWith("Voice call, Failed, Incoming, "))
+    }
+
+    /** How many of [line]'s pixels are drawn in the accent (the call-back button's phone or camera). */
+    private fun accentPixels(line: CallLine, dark: Boolean): Int {
+        val image = compose.onNodeWithTag(callLineTag(line)).captureToImage().asAndroidBitmap()
+        val accent = app.core.ui.theme.appColorScheme(dark).primary
+        val (r, g, b) = Triple((accent.red * 255).toInt(), (accent.green * 255).toInt(), (accent.blue * 255).toInt())
+        var count = 0
+        for (y in 0 until image.height) for (x in 0 until image.width) {
+            val p = image.getPixel(x, y)
+            val d = abs(android.graphics.Color.red(p) - r) + abs(android.graphics.Color.green(p) - g) + abs(android.graphics.Color.blue(p) - b)
+            if (d < 24) count++
+        }
+        return count
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aLineThatCallsBackShowsItsButtonAndARecordShowsNone() {
+        val line = line(CallOutcome.Completed, caller = "me", kind = CallKind.Video)
+        var dark by mutableStateOf(false)
+        var back: (() -> Unit)? by mutableStateOf(null)
+        compose.setContent { AppTheme(dark = dark) { CallLineRow(line, me = "me", at = at(0), onCallBack = back) } }
+        for (theme in listOf(false, true)) {
+            dark = theme
+            back = { calls += "back" }
+            compose.waitForIdle()
+            val withButton = accentPixels(line, dark)
+            val wide = compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().boundsInRoot.width
+            back = null
+            compose.waitForIdle()
+            val record = accentPixels(line, dark)
+            val narrow = compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().boundsInRoot.width
+            assertTrue("dark=$dark: the button's camera in the accent ($withButton px)", withButton > 40)
+            assertEquals("dark=$dark: no accent on a record", 0, record)
+            // The button's 48 dp touch target ends the line.
+            assertTrue("dark=$dark: $wide vs $narrow", wide - narrow >= 40f * compose.density.density)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "fa-w411dp-h891dp")
+    fun persianDeclinedLineSaysTheKind() {
+        val line = line(CallOutcome.Declined, caller = "me")
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        assertTrue(label(line), label(line).startsWith("تماس صوتی، رد شد، خروجی، "))
     }
 
     @Test
     @Config(qualifiers = "fa-w411dp-h891dp")
     fun persianCallLine() {
-        show { CallLineRow(line(CallOutcome.Completed, caller = "me"), me = "me", at = at(0), onCallBack = null) }
-        compose.onNodeWithContentDescription("تماس صوتی، ۴:۰۵، خروجی", substring = true).assertIsDisplayed()
+        val line = line(CallOutcome.Completed, caller = "me")
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        val label = label(line)
+        assertTrue(label, label.startsWith("تماس صوتی، ۴ دقیقه و ۵ ثانیه، خروجی، "))
+        assertTrue("Persian digits only: $label", label.none { it in '0'..'9' })
+    }
+
+    @Test
+    @Config(qualifiers = "tr-w411dp-h891dp")
+    fun turkishCallLine() {
+        val line = line(CallOutcome.Completed, caller = "them")
+        show { CallLineRow(line, me = "me", at = at(0), onCallBack = null) }
+        assertTrue(label(line), label(line).startsWith("Sesli arama, 4 dakika 5 saniye, Gelen, "))
+    }
+
+    @Test
+    @Config(qualifiers = "fa-w411dp-h891dp", fontScale = 1.5f)
+    fun persianLargeTextKeepsTheLineWhole() {
+        val line = line(CallOutcome.Missed, caller = "them", kind = CallKind.Video)
+        show(dark = true) { CallLineRow(line, me = "me", at = at(0), onCallBack = { calls += "back" }) }
+        compose.onNodeWithTag(callLineTag(line)).assertIsDisplayed()
+        assertTrue(label(line), label(line).startsWith("تماس تصویری بی‌پاسخ، ورودی، "))
     }
 }

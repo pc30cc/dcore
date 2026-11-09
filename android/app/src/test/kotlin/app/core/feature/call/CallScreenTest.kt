@@ -2,6 +2,9 @@ package app.core.feature.call
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -70,6 +73,32 @@ class CallScreenTest {
     }
 
     private fun status() = compose.onNodeWithTag(CallTags.STATUS, useUnmergedTree = true)
+
+    @Test
+    fun theRingDrawsTheBlurhashOnceItIsKnownAndTheSilhouetteOnlyBefore() {
+        var peer by mutableStateOf(CallPeer("500", "Negar"))
+        compose.setContent { Screen(state(CallPhase.Ringing, incoming = true).copy(peer = peer)) }
+        // Nothing known of the face yet: the silhouette (never a letter).
+        compose.onNodeWithTag(CallTags.FACE_SILHOUETTE, useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(CallTags.FACE_BLURHASH, useUnmergedTree = true).assertDoesNotExist()
+        // The stored conversation's photo arrives: its blurhash at once, no silhouette.
+        peer = peer.withCachedFace("https://cdn.example.test/p/1/1/320.webp?sig=a", "LEHV6nWB2yk8pyo0adR*.7kCMdnj")
+        compose.onNodeWithTag(CallTags.FACE_BLURHASH, useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(CallTags.FACE_SILHOUETTE, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun withRemoteImagesThePhotoIsDrawnOverItsBlurhash() {
+        val face = negar.copy(blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj")
+        compose.setContent {
+            AppTheme(dark = true) {
+                CallScreen(state(CallPhase.Ringing, incoming = true).copy(peer = face), actions, now = { at(65_000) })
+            }
+        }
+        compose.onNodeWithTag(CallTags.FACE_BLURHASH, useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(CallTags.FACE_PHOTO, useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(CallTags.FACE_SILHOUETTE, useUnmergedTree = true).assertDoesNotExist()
+    }
 
     @Test
     fun anIncomingVoiceCallShowsWhoAndAnswerAndDecline() {

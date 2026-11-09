@@ -31,16 +31,45 @@ object WelcomeFaces {
     @Volatile private var generated: List<Bitmap>? = null
     private val pictures = HashMap<WelcomePicture, Bitmap>()
 
-    /** The generated figures, painted once per process. */
-    fun generated(): List<Bitmap> = generated ?: synchronized(this) {
-        generated ?: List(GENERATED) { GeneratedFaces.paint(it, BubbleArt.FACE) }.also { generated = it }
-    }
+    /** The thread that painted [generated] (tests: never the main one). */
+    @Volatile internal var paintedOn: Thread? = null
+        private set
+
+    /** The generated figures as bubble sprites if this process painted them already, else null. Cheap: for the first frame. */
+    fun generatedIfReady(): List<Bitmap>? = generated
 
     /**
-     * The brand's pictures, decoded (or fetched) once and kept for the
-     * process. With [remote] off (previews, screen tests) config URLs are
-     * skipped. Fewer than [MIN_PICTURES] are mixed with generated figures,
-     * so a short list does not repeat the same few faces.
+     * The generated figures as bubble sprites ([BubbleArt.faceSprite]),
+     * painted once per process. Sixteen canvases of figures and their circles:
+     * call it off the main thread ([rememberBubbleArt] does, on
+     * [Dispatchers.Default]).
+     */
+    fun generated(): List<Bitmap> = generated ?: synchronized(this) {
+        generated ?: List(GENERATED) { i ->
+            val figure = GeneratedFaces.paint(i, BubbleArt.FACE)
+            BubbleArt.faceSprite(figure).also { figure.recycle() }
+        }.also {
+            paintedOn = Thread.currentThread()
+            generated = it
+        }
+    }
+
+    /** Forgets what was painted, so a test sees a first launch. */
+    internal fun forgetForTest() = synchronized(this) {
+        generated = null
+        paintedOn = null
+        synchronized(pictures) { pictures.clear() }
+    }
+
+    /** A picture already decoded and cut, as [load] keeps it (tests: a brand picture without an asset file). */
+    internal fun keepForTest(source: WelcomePicture, sprite: Bitmap) = synchronized(pictures) { pictures[source] = sprite }
+
+    /**
+     * The brand's pictures as bubble sprites, decoded (or fetched) and cut
+     * once and kept for the process; off the main thread. With [remote] off
+     * (previews, screen tests) config URLs are skipped. Fewer than
+     * [MIN_PICTURES] are mixed with generated figures, so a short list does
+     * not repeat the same few faces.
      */
     suspend fun load(context: Context, sources: List<WelcomePicture>, remote: Boolean): List<Bitmap> {
         if (sources.isEmpty()) return emptyList()
@@ -50,7 +79,7 @@ object WelcomeFaces {
                 is WelcomePicture.Asset -> decodeAsset(context, source.name)
                 is WelcomePicture.Remote -> if (remote) fetch(context, source.url) else null
             }
-            bitmap?.let(BubbleArt::portrait)?.also { synchronized(pictures) { pictures[source] = it } }
+            bitmap?.let(BubbleArt::portrait)?.let(BubbleArt::faceSprite)?.also { synchronized(pictures) { pictures[source] = it } }
         }
         if (loaded.isEmpty()) return emptyList()
         return if (loaded.size >= MIN_PICTURES) loaded else loaded + generated()
@@ -85,7 +114,13 @@ object WelcomeFaces {
 
 /**
  * The bubbles' art for this screen: the action [labels] drawn in the
- * screen's script, generated faces at once, the brand's pictures once loaded.
+ * screen's script; the faces painted on [Dispatchers.Default] (once per
+ * process: a second visit has them from the first frame), the bubbles
+ * showing their empty glass until then; the brand's pictures once loaded.
+ * When [pictures] change (the server's config arriving after the brand's
+ * own list was shown) the faces on screen stay until the new ones are
+ * ready, and stay for good if none of the new ones load: the generated
+ * figures stand in only while the bubbles have no face at all.
  */
 @Composable
 fun rememberBubbleArt(pictures: List<WelcomePicture>, labels: List<String>, persian: Boolean): BubbleArt {
@@ -97,9 +132,16 @@ fun rememberBubbleArt(pictures: List<WelcomePicture>, labels: List<String>, pers
         } else {
             Typeface.create("sans-serif", Typeface.BOLD)
         }
-        BubbleArt(labels, typeface, if (persian) 0f else 0.06f, WelcomeFaces.generated())
+        BubbleArt(
+            labels,
+            typeface,
+            labelTracking = if (persian) 0f else 0.06f,
+            faceSprites = WelcomeFaces.generatedIfReady().orEmpty(),
+            labelSize = if (persian) BubbleArt.PERSIAN_LABEL_SHARE else BubbleArt.LABEL_SHARE,
+        )
     }
     LaunchedEffect(art, pictures, remote) {
+        if (art.faces.isEmpty()) art.replaceFaces(withContext(Dispatchers.Default) { WelcomeFaces.generated() })
         val loaded = withContext(Dispatchers.Default) { WelcomeFaces.load(context.applicationContext, pictures, remote) }
         art.replaceFaces(loaded)
     }

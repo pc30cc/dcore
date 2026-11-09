@@ -344,7 +344,8 @@ class ScreenTourTest {
 
         // The thread: what was there, the call's line, a message sent and one the server refused.
         // The hang-up reaches the server from the call's own (main thread) timers: the looper's clock moves too.
-        val calledLine = hasLabel(str(R.string.chat_line_call_audio_length, ""), substring = true)
+        // The call's line (its tag; "Voice call" alone would also find the header's button).
+        val calledLine = SemanticsMatcher("a call line") { node -> node.config.getOrElseNullable(SemanticsProperties.TestTag) { null }?.startsWith("call.line.") == true }
         pump(20_000) { compose.onAllNodes(calledLine, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         val sentText = if (language == "fa") "فردا عصر کافه؟" else "Coffee tomorrow evening?"
         send(sentText)

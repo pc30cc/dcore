@@ -2,6 +2,9 @@ package app.core.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import app.core.feature.chat.NOTE_LABEL_ALPHA
+import app.core.feature.chat.bubbleQuietColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -33,9 +36,25 @@ class ContrastTest {
         assertPair("$theme like/background", semantic.like, scheme.background)
         assertPair("$theme superLike/background", semantic.superLike, scheme.background)
         assertPair("$theme danger/background", semantic.danger, scheme.background)
+        // A missed call's title on the call line.
+        assertPair("$theme danger/surfaceContainerHigh (call line)", semantic.danger, scheme.surfaceContainerHigh)
+        assertPair("$theme onSurface/surfaceContainerHigh (call line)", scheme.onSurface, scheme.surfaceContainerHigh)
+        // Count badges: requests (error), unread (primary), a muted conversation's unread (grey).
+        assertPair("$theme surface/onSurfaceVariant (muted count)", scheme.surface, scheme.onSurfaceVariant)
         assertPair("$theme onSemantic/like", semantic.onSemantic, semantic.like)
         assertPair("$theme onSemantic/superLike", semantic.onSemantic, semantic.superLike)
+        // A bubble's quieter text (time, like note label, voice line), blended as drawn: on your own
+        // bubble (the brand colour), on theirs (grey), and on an unsent one (no fill: the thread's
+        // background; 75 % there was 3.9:1 in light).
+        assertPair("$theme own bubble time/primary", bubbleQuietColor(scheme.onPrimary, onGrey = false).compositeOver(scheme.primary), scheme.primary)
+        assertPair("$theme their bubble time/surfaceContainerHigh", bubbleQuietColor(scheme.onSurface, onGrey = true).compositeOver(scheme.surfaceContainerHigh), scheme.surfaceContainerHigh)
+        assertPair("$theme their like note label/surfaceContainerHigh", bubbleQuietColor(scheme.onSurface, onGrey = true, alpha = NOTE_LABEL_ALPHA).compositeOver(scheme.surfaceContainerHigh), scheme.surfaceContainerHigh)
+        assertPair("$theme unsent bubble time/background", bubbleQuietColor(scheme.onSurfaceVariant, onGrey = false).compositeOver(scheme.background), scheme.background)
+        assertPair("$theme unsent bubble time/surface", bubbleQuietColor(scheme.onSurfaceVariant, onGrey = false).compositeOver(scheme.surface), scheme.surface)
         // Icons and outlines: non-text contrast (WCAG 1.4.11).
+        // The call line's call-back button: the accent on its 12 % tint of itself, over the line.
+        val callBack = scheme.primary.copy(alpha = 0.12f).compositeOver(scheme.surfaceContainerHigh)
+        assertPair("$theme call-back icon/its disc", scheme.primary, callBack, Contrast.AA_LARGE)
         assertPair("$theme pass/background", semantic.pass, scheme.background, Contrast.AA_LARGE)
         assertPair("$theme outline/background", scheme.outline, scheme.background, Contrast.AA_LARGE)
     }

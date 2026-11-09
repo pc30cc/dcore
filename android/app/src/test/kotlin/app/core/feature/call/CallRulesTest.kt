@@ -93,9 +93,67 @@ class CallRulesTest {
         assertEquals(CallLineTitle.MISSED_VOICE, line(CallOutcome.Missed).title(viewerIsCaller = false))
         assertEquals(CallLineTitle.CANCELLED, line(CallOutcome.Cancelled).title(viewerIsCaller = true))
         assertEquals(CallLineTitle.MISSED_VIDEO, line(CallOutcome.Cancelled, CallKind.Video).title(viewerIsCaller = false))
+        // Red only for the person a call rang and did not reach: never for the caller's own call.
+        assertTrue(line(CallOutcome.Missed).isMissedFor(viewerIsCaller = false))
         assertTrue(line(CallOutcome.Cancelled).isMissedFor(viewerIsCaller = false))
+        assertFalse(line(CallOutcome.Missed).isMissedFor(viewerIsCaller = true))
         assertFalse(line(CallOutcome.Cancelled).isMissedFor(viewerIsCaller = true))
-        assertEquals("4:05", line(CallOutcome.Completed).length(app.core.i18n.AppLanguage.EN))
-        assertNull(line(CallOutcome.Declined).length(app.core.i18n.AppLanguage.EN))
+        assertFalse(line(CallOutcome.Declined).isMissedFor(viewerIsCaller = false))
+        assertFalse(line(CallOutcome.Completed).isMissedFor(viewerIsCaller = false))
+        assertEquals(245L, line(CallOutcome.Completed).lengthSeconds())
+        assertNull(line(CallOutcome.Declined).lengthSeconds())
+        assertNull("no length is written for an unknown one", line(CallOutcome.Completed).copy(durationSeconds = 0).lengthSeconds())
+    }
+
+    @Test
+    fun outsideTheThreadEveryCallSaysItsKind() {
+        fun line(outcome: CallOutcome, kind: CallKind = CallKind.Audio) =
+            app.core.model.CallLine(callId = "1", kind = kind, outcome = outcome, placedAt = at(0), durationSeconds = 245, caller = "me")
+        val voice = app.core.R.string.call_line_audio
+        val video = app.core.R.string.call_line_video
+        // Titles that name the kind stand alone.
+        assertEquals(listOf(voice), line(CallOutcome.Completed).words(viewerIsCaller = true))
+        assertEquals(listOf(app.core.R.string.call_line_missed_video), line(CallOutcome.Missed, CallKind.Video).words(viewerIsCaller = false))
+        // The four that do not come after it.
+        assertEquals(listOf(voice, app.core.R.string.call_line_no_answer), line(CallOutcome.Missed).words(viewerIsCaller = true))
+        assertEquals(listOf(video, app.core.R.string.call_line_declined), line(CallOutcome.Declined, CallKind.Video).words(viewerIsCaller = true))
+        assertEquals(listOf(voice, app.core.R.string.call_line_cancelled), line(CallOutcome.Cancelled).words(viewerIsCaller = true))
+        assertEquals(listOf(video, app.core.R.string.call_line_failed_after_kind), line(CallOutcome.Failed, CallKind.Video).words(viewerIsCaller = false))
+        // Every title either names the kind or says what follows it.
+        val namesKind = setOf(CallLineTitle.VOICE, CallLineTitle.VIDEO, CallLineTitle.MISSED_VOICE, CallLineTitle.MISSED_VIDEO)
+        for (title in CallLineTitle.entries) assertEquals(title.name, title !in namesKind, title.afterKind != null)
+    }
+
+    @Test
+    fun aRingsFaceIsFilledInFromTheStoredConversation() {
+        val blur = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+        val stored = "https://cdn.example.test/p/1/1/320.webp?sig=old"
+        val bare = CallPeer("500", "Negar")
+        // Nothing in the ring: the stored photo and its blurhash.
+        assertEquals(CallPeer("500", "Negar", stored, blur), bare.withCachedFace(stored, blur))
+        // The same photo, signed again: the ring's fresher address, the stored blurhash.
+        val fresh = bare.copy(photoUrl = "https://cdn.example.test/p/1/1/320.webp?sig=new")
+        assertEquals(fresh.copy(blurhash = blur), fresh.withCachedFace(stored, blur))
+        // Another photo (changed since): no blurhash of the old face.
+        val other = bare.copy(photoUrl = "https://cdn.example.test/p/9/1/320.webp?sig=new")
+        assertEquals(other, other.withCachedFace(stored, blur))
+        // Nothing stored: nothing changes, and the screen keeps its silhouette.
+        assertEquals(bare, bare.withCachedFace(null, null))
+        assertEquals(bare, bare.withCachedFace(null, blur))
+        // What the peer already has wins.
+        val full = fresh.copy(blurhash = "L00000fQfQfQfQfQfQfQfQfQfQfQ")
+        assertEquals(full, full.withCachedFace(stored, blur))
+    }
+
+    @Test
+    fun aLengthIsSaidInTheUnitsThatFitIt() {
+        fun parts(seconds: Long) = lengthParts(seconds).map { it.unit to it.amount }
+        assertEquals(emptyList<Pair<LengthUnit, Long>>(), parts(0))
+        assertEquals(listOf(LengthUnit.SECOND to 45L), parts(45))
+        assertEquals("a zero part is left out", listOf(LengthUnit.MINUTE to 2L), parts(120))
+        assertEquals(listOf(LengthUnit.MINUTE to 2L, LengthUnit.SECOND to 5L), parts(125))
+        assertEquals(listOf(LengthUnit.MINUTE to 59L, LengthUnit.SECOND to 59L), parts(3599))
+        assertEquals(listOf(LengthUnit.HOUR to 1L), parts(3600))
+        assertEquals("from an hour on, no seconds", listOf(LengthUnit.HOUR to 1L, LengthUnit.MINUTE to 2L), parts(3723))
     }
 }

@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.SweepGradient
@@ -17,9 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withTranslation
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * The bubbles' pictures, made once and drawn scaled: the glass (a thin
@@ -36,26 +39,47 @@ class BubbleArt(
     labelTypeface: Typeface,
     /** Letter spacing for the words (em); 0 for scripts that join. */
     labelTracking: Float,
-    faces: List<Bitmap>,
+    /**
+     * The faces, already cut to circles ([faceSprite], made off the main
+     * thread). Empty until they are ready: the bubbles show their glass alone.
+     */
+    faceSprites: List<Bitmap> = emptyList(),
+    /**
+     * The words' wanted size as a share of the bubble's diameter, before a
+     * long word makes it smaller: [LABEL_SHARE] for Latin capitals, more
+     * for a script whose letters stand lower at the same font size (Persian).
+     */
+    labelSize: Float = LABEL_SHARE,
 ) {
     private val rim: Bitmap = paintRim(GLASS)
     private val light: Bitmap = paintLight(GLASS)
-    private val labelSprites: List<Bitmap> = labels.map { paintLabel(it, labelTypeface, labelTracking, LABEL, filled = true) }
-    private val coreWord: Bitmap? = labels.firstOrNull()?.let { paintLabel(it, labelTypeface, labelTracking, LABEL, filled = false) }
 
-    /** The faces as circles; replaced when pictures arrive. */
-    @Volatile var faces: List<Bitmap> = faces.map { faceSprite(it) }
+    /**
+     * The words' size as a share of the word bubble's diameter: [labelSize]
+     * ([LABEL_SHARE]: 13 sp in the 31 dp bubble), smaller for a long word so
+     * every word's ink stays inside [LABEL_REACH] of the radius. All words
+     * share it, so the crossfade does not change size.
+     */
+    val labelShare: Float = fitLabels(labels, labelTypeface, labelTracking, labelSize)
+    private val labelSprites: List<Bitmap> = labels.map { paintLabel(it, labelTypeface, labelTracking, labelShare, filled = true) }
+    private val coreWord: Bitmap? = labels.firstOrNull()?.let { paintLabel(it, labelTypeface, labelTracking, labelShare, filled = false) }
+
+    /** The faces as circles; empty until the first ones are ready, replaced when pictures arrive. */
+    @Volatile var faces: List<Bitmap> = faceSprites
         private set
 
     /** Bumped when [faces] changes, and read by [draw]: a still scene redraws with the new faces too. */
     private var facesVersion by mutableIntStateOf(0)
 
-    /** On the main thread. */
-    fun replaceFaces(pictures: List<Bitmap>) {
-        if (pictures.isEmpty()) return
-        faces = pictures.map { faceSprite(it) }
+    /** On the main thread, with sprites made elsewhere ([faceSprite]): nothing is painted here. */
+    fun replaceFaces(sprites: List<Bitmap>) {
+        if (sprites.isEmpty() || sprites === faces) return
+        faces = sprites
         facesVersion++
     }
+
+    /** The word bubble's radius (px) at which its words are [minTextPx] high (font size): [BubbleField.wordMinRadius]. */
+    fun wordRadiusFor(minTextPx: Float): Float = minTextPx / (2f * labelShare)
 
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -104,19 +128,19 @@ class BubbleArt(
             if (label && state == BubbleField.HELD) continue
             val alpha = if (state == BubbleField.HELD) HELD_ALPHA else 255
             val squash = field.wobble[i] * sin(t * 17f + field.phase[i])
-            canvas.save()
-            canvas.translate(field.x[i], field.y[i])
-            canvas.scale(1f + squash, 1f - squash)
-            when {
-                label -> drawWord(canvas, field, radius)
-                kind >= 0 && faceList.isNotEmpty() -> blit(canvas, faceList[kind % faceList.size], radius * FACE_SHARE, alpha)
+            canvas.withTranslation(field.x[i], field.y[i]) {
+                scale(1f + squash, 1f - squash)
+                when {
+                    label -> drawWord(this, field, radius)
+                    // No faces yet (still being painted): the glass alone.
+                    kind >= 0 && faceList.isNotEmpty() -> blit(this, faceList[kind % faceList.size], radius * FACE_SHARE, alpha)
+                }
+                val spin = field.phase[i] * 57.3f + t * 9f
+                rotate(spin)
+                blit(this, rim, radius * HALO, alpha)
+                rotate(-spin)
+                blit(this, light, radius, alpha)
             }
-            val spin = field.phase[i] * 57.3f + t * 9f
-            canvas.rotate(spin)
-            blit(canvas, rim, radius * HALO, alpha)
-            canvas.rotate(-spin)
-            blit(canvas, light, radius, alpha)
-            canvas.restore()
         }
         if (core) drawCoreFront(canvas, field, density)
         drawDroplets(canvas, field, density)
@@ -148,8 +172,8 @@ class BubbleArt(
         val r = field.coreR
         canvas.save()
         canvas.translate(field.coreX, field.coreY)
-        // The word, as small as the word bubble's: the opening bubble is that bubble, grown.
-        coreWord?.let { blit(canvas, it, LABEL_DP * density, a) }
+        // The word, as large as the word bubble's: the opening bubble is that bubble, grown.
+        coreWord?.let { blit(canvas, it, if (field.wordRadius > 0f) field.wordRadius else LABEL_DP * density, a) }
         canvas.save()
         canvas.scale(r, r)
         canvas.rotate(field.time * 14f + 30f)
@@ -201,21 +225,37 @@ class BubbleArt(
     fun drawBadge(canvas: Canvas, cx: Float, cy: Float, radius: Float, face: Int, spin: Float) {
         facesVersion
         val faceList = faces
-        canvas.save()
-        canvas.translate(cx, cy)
-        if (faceList.isNotEmpty()) blit(canvas, faceList[Math.floorMod(face, faceList.size)], radius * FACE_SHARE, 255)
-        canvas.rotate(spin)
-        blit(canvas, rim, radius * HALO, 255)
-        canvas.rotate(-spin)
-        blit(canvas, light, radius, 255)
-        canvas.restore()
+        canvas.withTranslation(cx, cy) {
+            if (faceList.isNotEmpty()) blit(this, faceList[Math.floorMod(face, faceList.size)], radius * FACE_SHARE, 255)
+            rotate(spin)
+            blit(this, rim, radius * HALO, 255)
+            rotate(-spin)
+            blit(this, light, radius, 255)
+        }
     }
 
     companion object {
         /** Sprite sizes in pixels: the glass is drawn up to the largest bubble's size, words and faces smaller. */
         const val GLASS = 384
-        const val LABEL = 256
+        const val LABEL = 320
         const val FACE = 224
+
+        /**
+         * The words' font size as a share of the word bubble's diameter: 13 sp
+         * in the 31 dp bubble (it was 0.135, about 8 sp). The bubble grows for
+         * larger text ([wordRadiusFor]), so the share holds at any text size.
+         */
+        const val LABEL_SHARE = 13f / 62f
+
+        /**
+         * Persian letters stand lower than Latin capitals at the same font
+         * size: its words are a quarter larger (16 sp in the 31 dp bubble),
+         * which its short words leave room for.
+         */
+        const val PERSIAN_LABEL_SHARE = LABEL_SHARE * 1.25f
+
+        /** How far from the middle a word's ink may reach, as a share of the radius (the dark glass ends at 1). */
+        const val LABEL_REACH = 0.82f
 
         /** How much of a bubble its face fills: nearly all, the film is thin. */
         const val FACE_SHARE = 0.965f
@@ -288,18 +328,17 @@ class BubbleArt(
             val c = size / 2f
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             fun glint(cx: Float, cy: Float, rx: Float, ry: Float, angle: Float, alpha: Int) {
-                canvas.save()
-                canvas.translate(c + cx * c, c + cy * c)
-                canvas.rotate(angle)
-                canvas.scale(1f, ry / rx)
-                paint.shader = RadialGradient(
-                    0f, 0f, rx * c,
-                    intArrayOf(Color.argb(alpha, 255, 255, 255), Color.argb(alpha / 2, 255, 255, 255), 0x00FFFFFF),
-                    floatArrayOf(0f, 0.45f, 1f),
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawCircle(0f, 0f, rx * c, paint)
-                canvas.restore()
+                canvas.withTranslation(c + cx * c, c + cy * c) {
+                    rotate(angle)
+                    scale(1f, ry / rx)
+                    paint.shader = RadialGradient(
+                        0f, 0f, rx * c,
+                        intArrayOf(Color.argb(alpha, 255, 255, 255), Color.argb(alpha / 2, 255, 255, 255), 0x00FFFFFF),
+                        floatArrayOf(0f, 0.45f, 1f),
+                        Shader.TileMode.CLAMP,
+                    )
+                    drawCircle(0f, 0f, rx * c, paint)
+                }
             }
             // A soft bloom where the light comes in, top left, and its small bright point.
             glint(-0.40f, -0.46f, 0.40f, 0.24f, -38f, 0x8C)
@@ -309,38 +348,58 @@ class BubbleArt(
             return bitmap
         }
 
-        private fun paintLabel(word: String, typeface: Typeface, tracking: Float, size: Int, filled: Boolean): Bitmap {
+        /** A paint for the words at [share] of the sprite's size. */
+        private fun labelPaint(typeface: Typeface, tracking: Float, share: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            this.typeface = typeface
+            letterSpacing = tracking
+            textAlign = Paint.Align.CENTER
+            textSize = LABEL * share
+        }
+
+        /**
+         * The words' share of the diameter: [LABEL_SHARE], or less when a word's
+         * ink at that size would reach past [LABEL_REACH] of the radius (its
+         * box's half-diagonal: the corners stay inside the round glass).
+         */
+        internal fun fitLabels(words: List<String>, typeface: Typeface, tracking: Float, wanted: Float = LABEL_SHARE): Float {
+            val paint = labelPaint(typeface, tracking, wanted)
+            val bounds = Rect()
+            var reach = 0f
+            for (word in words) {
+                if (word.isEmpty()) continue
+                paint.getTextBounds(word, 0, word.length, bounds)
+                val halfWidth = max(paint.measureText(word), bounds.width().toFloat()) / 2f
+                val halfHeight = bounds.height() / 2f
+                reach = max(reach, sqrt(halfWidth * halfWidth + halfHeight * halfHeight))
+            }
+            val allowed = LABEL / 2f * LABEL_REACH
+            return if (reach <= allowed || reach <= 0f) wanted else wanted * allowed / reach
+        }
+
+        private fun paintLabel(word: String, typeface: Typeface, tracking: Float, share: Float, filled: Boolean): Bitmap {
+            val size = LABEL
             val bitmap = createBitmap(size, size)
             val canvas = Canvas(bitmap)
             val c = size / 2f
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             if (filled) {
                 // Translucent dark glass, lit from a little above, so the white word reads on any background.
-                paint.shader = RadialGradient(
+                val glass = Paint(Paint.ANTI_ALIAS_FLAG)
+                glass.shader = RadialGradient(
                     c, c * 0.8f, c,
                     intArrayOf(0x8C6A2430.toInt(), 0xA63A0C16.toInt(), 0xC02A070D.toInt()),
                     floatArrayOf(0f, 0.7f, 1f),
                     Shader.TileMode.CLAMP,
                 )
-                canvas.drawCircle(c, c, c - 1f, paint)
-                paint.shader = null
+                canvas.drawCircle(c, c, c - 1f, glass)
             }
-            paint.color = Color.WHITE
-            paint.typeface = typeface
-            paint.letterSpacing = tracking
-            paint.textAlign = Paint.Align.CENTER
-            // Small, as on a label: about an eighth of the bubble high, at most 62 % of it wide.
-            var textSize = size * 0.135f
-            paint.textSize = textSize
-            val maxWidth = size * 0.62f
-            val width = paint.measureText(word)
-            if (width > maxWidth) {
-                textSize *= maxWidth / width
-                paint.textSize = textSize
-            }
+            val paint = labelPaint(typeface, tracking, share)
             paint.setShadowLayer(size * 0.02f, 0f, size * 0.006f, 0x66000000)
-            val metrics = paint.fontMetrics
-            canvas.drawText(word, c, c - (metrics.ascent + metrics.descent) / 2f, paint)
+            // Centred on its ink, not on the font's line: a script with tall
+            // line metrics (Persian) would otherwise sit high or low.
+            val bounds = Rect()
+            paint.getTextBounds(word, 0, word.length, bounds)
+            canvas.drawText(word, c, c - (bounds.top + bounds.bottom) / 2f, paint)
             return bitmap
         }
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!--
       The Cafe Bazaar build. Poolakey's own manifest brings the rest: the
       PAY_THROUGH_BAZAAR permission, its billing receiver and the
@@ -10,4 +11,22 @@
     <queries>
         <package android:name="com.farsitel.bazaar" />
     </queries>
+
+    <application>
+        <!--
+          Play services' resolution screen (its "update Google Play services"
+          dialogs, which open the Play Store), declared by play-services-base,
+          which push brings. Nothing in the app starts it: push only asks
+          GoogleApiAvailabilityLight whether the services are there and stays
+          quiet when they are not. Play services' own error notification for a
+          failed FCM connection would still point here; in this build its tap
+          opens nothing instead of the Play Store.
+        -->
+        <!-- MissingClass: a removal marker; lint does not see the class on
+             this build's compile classpath (it comes in with push at run time). -->
+        <activity
+            android:name="com.google.android.gms.common.api.GoogleApiActivity"
+            tools:ignore="MissingClass"
+            tools:node="remove" />
+    </application>
 </manifest>

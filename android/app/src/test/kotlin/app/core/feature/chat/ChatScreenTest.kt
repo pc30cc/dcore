@@ -7,15 +7,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -31,7 +37,9 @@ import app.core.feature.chat.ChatTestData.minutesAgo
 import app.core.feature.chat.ChatTestData.peer
 import app.core.feature.chat.ChatTestData.row
 import app.core.media.LocalRemoteImages
+import app.core.model.CallKind
 import app.core.model.CallOutcome
+import app.core.model.CallsAllowed
 import app.core.model.Conversation
 import app.core.model.ConversationState
 import app.core.model.MessageKind
@@ -45,6 +53,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import kotlin.math.abs
+import java.time.LocalDate
+import java.util.Locale
 
 /** Every state of a thread: loading, failed, gone, ended, sending, failed sends, marks, typing, actions, safety. */
 @RunWith(AndroidJUnit4::class)
@@ -79,6 +91,8 @@ class ChatScreenTest {
     }
 
     private val actions = Recorder()
+
+    private val INTRO_HINT = "Say something about their profile. It's the easiest way to start."
 
     private fun show(state: ChatUiState, dark: Boolean = false) {
         compose.setContent {
@@ -202,6 +216,31 @@ class ChatScreenTest {
         compose.onNode(bubble("You, Third", ", Sent")).assertIsDisplayed()
         compose.onNode(bubble("You, Second", ", Delivered")).assertIsDisplayed()
         compose.onNode(bubble("You, First", ", Read")).assertIsDisplayed()
+    }
+
+    /** How many of the node [tag]'s pixels are within a few levels of [color]. */
+    private fun pixelsNear(tag: String, color: androidx.compose.ui.graphics.Color): Int {
+        val image = compose.onNodeWithTag(tag, useUnmergedTree = true).captureToImage().asAndroidBitmap()
+        val (r, g, b) = Triple((color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
+        var count = 0
+        for (y in 0 until image.height) for (x in 0 until image.width) {
+            val p = image.getPixel(x, y)
+            if (abs(android.graphics.Color.red(p) - r) + abs(android.graphics.Color.green(p) - g) + abs(android.graphics.Color.blue(p) - b) < 24) count++
+        }
+        return count
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun readIsToldFromDeliveredByItsShapeNotAShade() {
+        show(thread(listOf(row(102, mine = true, body = "Second", at = minutesAgo(3)), row(101, mine = true, body = "First", at = minutesAgo(4))),
+            conversation = conversation(peerReadId = "101", peerDeliveredId = "102")))
+        val ink = app.core.ui.theme.appColorScheme(dark = false).onPrimary
+        // Delivered: the double tick's thin strokes on the bubble. Read: a disc of the same ink with
+        // the tick cut out of it, so several times as much of it is ink.
+        val delivered = pixelsNear(deliveryTag(Delivery.Delivered), ink)
+        val read = pixelsNear(deliveryTag(Delivery.Read), ink)
+        assertTrue("delivered $delivered px of ink, read $read", delivered > 0 && read > 2 * delivered)
     }
 
     @Test
@@ -366,13 +405,96 @@ class ChatScreenTest {
         show(
             thread(
                 listOf(
+                    row(92, mine = true, kind = MessageKind.Call, body = null, call = callLine(92, ME, CallOutcome.Declined, kind = CallKind.Video)),
                     row(91, mine = false, kind = MessageKind.Call, body = null, sender = NEGAR, call = callLine(91, NEGAR, CallOutcome.Missed)),
                     row(90, mine = true, kind = MessageKind.Call, body = null, call = callLine(90, ME, CallOutcome.Completed, seconds = 125)),
                 ),
             ),
         )
-        compose.onNodeWithText("Missed voice call").assertIsDisplayed()
-        compose.onNodeWithText("Voice call · 2:05").assertIsDisplayed()
+        // One sentence each, from this side; the length in units, not "2:05".
+        compose.onNode(hasContentDescription("Missed voice call, Incoming, ", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Voice call, 2 minutes, 5 seconds, Outgoing, ", substring = true)).assertIsDisplayed()
+        // A declined call says it was a call, and which kind: the icon is not read.
+        val declined = compose.onNodeWithTag("call.line.92").fetchSemanticsNode().config[SemanticsProperties.ContentDescription].single()
+        assertTrue(declined, declined.startsWith("Video call, Declined, Outgoing, "))
+        compose.onNode(hasContentDescription("2:05", substring = true)).assertDoesNotExist()
+        compose.onNodeWithTag("call.line.90").assert(hasClickAction().not())
+    }
+
+    @Test
+    fun aCallLineCallsBackWithItsKindWhileBothAllowCalls() {
+        val back = mutableListOf<String>()
+        val rows = listOf(row(92, mine = false, kind = MessageKind.Call, body = null, sender = NEGAR, call = callLine(92, NEGAR, CallOutcome.Missed, kind = CallKind.Video)))
+        var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
+        compose.setContent {
+            AppTheme {
+                CompositionLocalProvider(
+                    LocalRemoteImages provides false,
+                    LocalChatCallBack provides { conversation, kind -> back += "${conversation.id}:${kind.wire}" },
+                ) {
+                    ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        compose.onNodeWithTag("call.line.92").assert(hasClickAction()).performClick()
+        assertEquals(listOf("${ChatTestData.CONVERSATION}:video"), back)
+
+        // Calls switched off by one of them: the line is only a record.
+        state = thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = false)))
+        compose.onNodeWithTag("call.line.92").assert(hasClickAction().not())
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun theCallBackButtonShowsOnlyWhileBothAllowCalls() {
+        // An answered call of one's own: nothing else on the line is drawn in the accent.
+        val rows = listOf(row(93, mine = true, kind = MessageKind.Call, body = null, call = callLine(93, ME, CallOutcome.Completed, seconds = 65)))
+        var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
+        compose.setContent {
+            AppTheme {
+                CompositionLocalProvider(LocalRemoteImages provides false, LocalChatCallBack provides { _, _ -> }) {
+                    ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        val accent = app.core.ui.theme.appColorScheme(dark = false).primary
+        val withButton = pixelsNear("call.line.93", accent)
+        state = thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = false)))
+        compose.waitForIdle()
+        val record = pixelsNear("call.line.93", accent)
+        assertTrue("the call-back button's phone in the accent: $withButton px", withButton > 40)
+        assertEquals("a record has no button", 0, record)
+    }
+
+    @Test
+    fun theIntroDoesNotSayTheDayOfTheSeparatorUnderItAgain() {
+        val matched = conversation(peerReadId = "101", peerDeliveredId = "102") // three days ago
+        val day = matched.createdAt.atZone(ChatTestData.zone).toLocalDate()
+        val clock = ChatClockText(Locale.US)
+        val weekday = clock.weekday(day)
+        show(thread(listOf(row(1, mine = false, body = "Hey", at = matched.createdAt.plusSeconds(600))), conversation = matched))
+        compose.onNodeWithText("You and ⁨Negar⁩ matched").assertIsDisplayed()
+        // Something has been said: no more advice on how to start.
+        compose.onNodeWithText(INTRO_HINT).assertDoesNotExist()
+        // One name for that day: the separator's; not the date over it as well.
+        compose.onAllNodesWithText(weekday).assertCountEquals(1)
+        compose.onNodeWithText(clock.day(day, LocalDate.now(ChatTestData.zone))).assertDoesNotExist()
+    }
+
+    @Test
+    fun anEmptyThreadSuggestsHowToStart() {
+        show(thread(emptyList()))
+        compose.onNodeWithText("You and ⁨Negar⁩ matched").assertIsDisplayed()
+        compose.onNodeWithText(INTRO_HINT).assertIsDisplayed()
+    }
+
+    @Test
+    fun theIntroSaysWhenTheyMatchedTheWayTheSeparatorsDo() {
+        val matched = conversation(peerReadId = "101", peerDeliveredId = "102")
+        val weekday = ChatClockText(Locale.US).weekday(matched.createdAt.atZone(ChatTestData.zone).toLocalDate())
+        show(thread(listOf(row(1, mine = false, body = "Hey", at = minutesAgo(1))), conversation = matched))
+        compose.onNodeWithText("Today").assertIsDisplayed()
+        compose.onNodeWithText(weekday).assertIsDisplayed()
     }
 
     @Test
@@ -415,6 +537,7 @@ class ChatScreenTest {
         val description = mine.config[SemanticsProperties.ContentDescription].single()
         assertTrue(description, description.none { it in '0'..'9' })
         assertTrue(description, description.any { it in '۰'..'۹' })
-        compose.onNode(hasText("۲:۰۵", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("۲ دقیقه و ۵ ثانیه", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("۲:۰۵", substring = true)).assertDoesNotExist()
     }
 }

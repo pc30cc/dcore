@@ -55,6 +55,17 @@ class BubbleField(private val density: Float, private val words: Int = 3, seed: 
 
     /** The radius at rest. */
     val baseR = FloatArray(CAPACITY)
+
+    /**
+     * The word bubble's smallest radius (px), so its word is never smaller
+     * than readable text at the phone's text size ([BubbleArt.wordRadiusFor]);
+     * read at the next [layout]. 0: the size from the spec alone.
+     */
+    var wordMinRadius = 0f
+
+    /** The word bubble's radius at rest (px), for the opening bubble's word; 0 before [layout]. */
+    var wordRadius = 0f
+        private set
     val homeX = FloatArray(CAPACITY)
     val homeY = FloatArray(CAPACITY)
     val phase = FloatArray(CAPACITY)
@@ -174,8 +185,10 @@ class BubbleField(private val density: Float, private val words: Int = 3, seed: 
         }
         count = n
         for (i in 0 until n) {
-            baseR[i] = SPEC_R[i] * dp * scale
             kind[i] = SPEC_KIND[i]
+            val word = labelIn(kind[i]) >= 0
+            baseR[i] = if (word) max(SPEC_R[i] * dp * scale, wordMinRadius) else SPEC_R[i] * dp * scale
+            if (word) wordRadius = baseR[i]
             if (first) {
                 phase[i] = nextFloat() * TWO_PI
                 freq[i] = 0.45f + nextFloat() * 0.5f

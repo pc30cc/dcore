@@ -2,8 +2,10 @@ package app.core.feature.call
 
 import android.Manifest
 import android.os.Build
+import app.core.common.runCatchingUnlessCancelled
 import app.core.model.CallKind
 import app.core.model.Id
+import app.core.model.Photo
 import app.core.push.IncomingCallLink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,6 +40,8 @@ class CallController(
     /** An incoming call ended on this phone: its ring comes down, as a missed call when it was one. */
     private val onRingEnded: (callId: Id, end: CallEnd) -> Unit = { _, _ -> },
     private val lingerMs: Long = END_LINGER_MS,
+    /** The match's photo as the chat's cache has it for a conversation, or null (signed out, not stored). */
+    private val cachedFace: suspend (conversationId: Id) -> Photo? = { null },
 ) {
     private val _session = MutableStateFlow<MatchCallSession?>(null)
 
@@ -115,6 +119,12 @@ class CallController(
         if (liveSession != null) return false
         val session = start(link.kind)
         session.ring(link.callId, CallPeer(link.conversationId, link.peerName, link.peerPhotoUrl), link.kind, link.expiresAt)
+        // The ring carries a photo URL at most: the blurhash (and the photo, if
+        // the ring had none) come from the conversation the phone has stored.
+        scope.launch {
+            val face = runCatchingUnlessCancelled { cachedFace(link.conversationId) }.getOrNull() ?: return@launch
+            session.knowFace(link.conversationId, face.url, face.blurhash)
+        }
         return true
     }
 

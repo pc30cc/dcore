@@ -36,17 +36,6 @@
     <string name="chat_preview_you_unsent">Bir mesajı geri aldın</string>
     <string name="chat_preview_reaction">Tepki: %1$s</string>
 
-    <!-- Call lines -->
-    <string name="chat_call_back">Geri ara</string>
-    <string name="chat_line_call_audio_length">Sesli arama · %1$s</string>
-    <string name="chat_line_call_video_length">Görüntülü arama · %1$s</string>
-    <string name="chat_line_call_audio_unanswered">Sesli arama, yanıt yok</string>
-    <string name="chat_line_call_video_unanswered">Görüntülü arama, yanıt yok</string>
-    <string name="chat_line_call_audio_missed">Cevapsız sesli arama</string>
-    <string name="chat_line_call_video_missed">Cevapsız görüntülü arama</string>
-    <string name="chat_line_call_audio_failed">Sesli arama bağlanamadı</string>
-    <string name="chat_line_call_video_failed">Görüntülü arama bağlanamadı</string>
-
     <!-- A thread -->
     <string name="chat_view_profile">Profili gör</string>
     <string name="chat_mute">Bildirimleri sessize al</string>

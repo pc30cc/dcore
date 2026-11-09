@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -156,6 +157,9 @@ fun AuthRoute() {
     val art = rememberBubbleArt(content.pictures, labels, persian)
     val density = LocalDensity.current.density
     val field = remember(density, labels.size) { BubbleField(density, words = labels.size) }
+    // The word bubble's word is never under 13 sp at the phone's text size: the bubble grows instead.
+    val wordText = with(LocalDensity.current) { WORD_TEXT_MIN.toPx() }
+    SideEffect { field.wordMinRadius = art.wordRadiusFor(wordText) }
     val sheetOpen = state.stage != AuthStage.Welcome
 
     SceneSystemBars(lightIcons = sheetOpen)
@@ -195,6 +199,9 @@ fun AuthRoute() {
 }
 
 private const val INTEGRITY_WAIT_MS = 3_000L
+
+/** The smallest the word bubble's word may be: readable text. */
+private val WORD_TEXT_MIN = 13.sp
 
 /** The phone, as sign-in names it: model, Android version, app version and language. Nothing about its holder. */
 internal fun deviceInfo(language: String) = DeviceInfo(

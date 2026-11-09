@@ -3,13 +3,13 @@
     <!-- The chat list -->
     <string name="chat_list_browse">دیدن آدم‌ها</string>
     <string name="chat_list_loading">در حال بارگذاری گفتگوها</string>
-    <string name="chat_new_matches">هم‌پسندی‌های تازه</string>
+    <string name="chat_new_matches">مچ‌های تازه</string>
     <string name="chat_messages">پیام‌ها</string>
-    <string name="chat_say_hi_hint">به یکی از هم‌پسندهای تازه‌تان سلام کنید. سخت‌ترین پیام همیشه پیام اول است.</string>
-    <string name="chat_new_match_open">%1$s، هم‌پسندی تازه. باز کردن گفتگو.</string>
+    <string name="chat_say_hi_hint">به یکی از مچ‌های تازه‌تان سلام کنید. سخت‌ترین پیام همیشه پیام اول است.</string>
+    <string name="chat_new_match_open">%1$s، مچ تازه. باز کردن گفتگو.</string>
     <string name="chat_requests">درخواست‌های پیام</string>
     <string name="chat_requests_count">درخواست‌های پیام: %1$s</string>
-    <string name="chat_requests_hint">کسانی که پیش از هم‌پسندی برایتان نوشته‌اند</string>
+    <string name="chat_requests_hint">کسانی که پیش از مچ برایتان نوشته‌اند</string>
     <string name="chat_status_offline">آفلاین هستید. آنچه روی همین گوشی هست نشان داده می‌شود.</string>
     <string name="chat_status_reconnecting">در حال اتصال دوباره…</string>
     <string name="chat_status_connecting">در حال اتصال…</string>
@@ -27,8 +27,8 @@
     <!-- Previews in the list -->
     <string name="chat_preview_you">شما: %1$s</string>
     <string name="chat_preview_message">پیام</string>
-    <string name="chat_preview_like_note">پروفایلتان را پسندید: %1$s</string>
-    <string name="chat_preview_liked">پروفایلتان را پسندید</string>
+    <string name="chat_preview_like_note">پروفایلتان را لایک کرد: %1$s</string>
+    <string name="chat_preview_liked">پروفایلتان را لایک کرد</string>
     <string name="chat_preview_photo">عکس</string>
     <string name="chat_preview_voice">پیام صوتی</string>
     <string name="chat_preview_call">تماس</string>
@@ -36,24 +36,13 @@
     <string name="chat_preview_you_unsent">پیامی را پس گرفتید</string>
     <string name="chat_preview_reaction">واکنش: %1$s</string>
 
-    <!-- Call lines -->
-    <string name="chat_call_back">تماس دوباره</string>
-    <string name="chat_line_call_audio_length">تماس صوتی، %1$s</string>
-    <string name="chat_line_call_video_length">تماس تصویری، %1$s</string>
-    <string name="chat_line_call_audio_unanswered">تماس صوتی، بی‌پاسخ</string>
-    <string name="chat_line_call_video_unanswered">تماس تصویری، بی‌پاسخ</string>
-    <string name="chat_line_call_audio_missed">تماس صوتی از دست رفته</string>
-    <string name="chat_line_call_video_missed">تماس تصویری از دست رفته</string>
-    <string name="chat_line_call_audio_failed">تماس صوتی وصل نشد</string>
-    <string name="chat_line_call_video_failed">تماس تصویری وصل نشد</string>
-
     <!-- A thread -->
     <string name="chat_view_profile">دیدن پروفایل</string>
     <string name="chat_mute">بی‌صدا کردن اعلان‌ها</string>
     <string name="chat_unmute">باصدا کردن اعلان‌ها</string>
     <string name="chat_report">گزارش</string>
     <string name="chat_block">مسدود کردن</string>
-    <string name="chat_unmatch">لغو هم‌پسندی</string>
+    <string name="chat_unmatch">لغو مچ</string>
     <string name="chat_composer_hint">پیام</string>
     <string name="chat_send">فرستادن</string>
     <string name="chat_counter">%1$s/%2$s</string>
@@ -66,15 +55,15 @@
     <string name="chat_loading_messages">در حال بارگذاری پیام‌ها</string>
     <string name="chat_older_failed">پیام‌های قبلی بارگذاری نشدند</string>
     <string name="chat_jump_newest">رفتن به تازه‌ترین پیام</string>
-    <string name="chat_intro_matched">شما و %1$s همدیگر را پسندیدید</string>
+    <string name="chat_intro_matched">شما و %1$s مچ شدید</string>
     <string name="chat_intro_request">گفتگوی شما و %1$s با یک درخواست پیام شروع شد</string>
     <string name="chat_intro_hint">درباره‌ی پروفایلش چیزی بگویید؛ ساده‌ترین راه شروع است.</string>
     <string name="chat_you">شما</string>
     <string name="chat_unsent_mine">این پیام را پس گرفتید</string>
     <string name="chat_unsent_theirs">این پیام پس گرفته شد</string>
     <string name="chat_removed">این پیام حذف شد</string>
-    <string name="chat_like_note_theirs">پروفایلتان را پسندید</string>
-    <string name="chat_like_note_mine">پروفایلش را پسندیدید</string>
+    <string name="chat_like_note_theirs">پروفایلتان را لایک کرد</string>
+    <string name="chat_like_note_mine">پروفایلش را لایک کردید</string>
     <string name="chat_photo">عکس</string>
     <string name="chat_voice">پیام صوتی، %1$s</string>
     <string name="chat_voice_unavailable">پخش پیام صوتی در این نسخه هنوز ممکن نیست.</string>
@@ -107,7 +96,7 @@
     <string name="chat_action_offline">آفلاین هستید. وقتی وصل شدید دوباره امتحان کنید.</string>
 
     <!-- Safety -->
-    <string name="chat_unmatch_title">هم‌پسندی با %1$s لغو شود؟</string>
+    <string name="chat_unmatch_title">مچ با %1$s لغو شود؟</string>
     <string name="chat_unmatch_body">این گفتگو برای هر دوی شما تمام می‌شود و دیگر همدیگر را نمی‌بینید.</string>
     <string name="chat_block_title">%1$s مسدود شود؟</string>
     <string name="chat_block_body">دیگر شما را نمی‌بیند و نمی‌تواند برایتان بنویسد، و این گفتگو تمام می‌شود. به او خبر داده نمی‌شود.</string>
@@ -152,20 +141,20 @@
     <string name="requests_loading">در حال بارگذاری درخواست‌های پیام</string>
     <string name="requests_report_note">پیامش همراه گزارش فرستاده می‌شود و درخواست رد می‌شود.</string>
     <string name="requests_empty_inbox_title">درخواست پیامی ندارید</string>
-    <string name="requests_empty_inbox_body">وقتی کسی پیش از هم‌پسندی برایتان بنویسد، این‌جا نشان داده می‌شود.</string>
+    <string name="requests_empty_inbox_body">وقتی کسی پیش از مچ برایتان بنویسد، این‌جا نشان داده می‌شود.</string>
     <string name="requests_empty_sent_title">چیزی نفرستاده‌اید</string>
-    <string name="requests_empty_sent_body">پیام‌هایی که پیش از هم‌پسندی می‌فرستید تا وقت پاسخ این‌جا می‌مانند.</string>
+    <string name="requests_empty_sent_body">پیام‌هایی که پیش از مچ می‌فرستید تا وقت پاسخ این‌جا می‌مانند.</string>
     <string name="request_write_to">نوشتن به او</string>
     <string name="request_send_title">نوشتن به %1$s</string>
-    <string name="request_send_body">پیش از هم‌پسندی پیام شما را می‌بیند. اگر بپذیرد، می‌توانید گفتگو را ادامه دهید.</string>
+    <string name="request_send_body">پیش از مچ پیام شما را می‌بیند. اگر بپذیرد، می‌توانید گفتگو را ادامه دهید.</string>
     <string name="request_send_hint">درباره‌ی پروفایلش چیزی بگویید</string>
     <string name="request_send">فرستادن</string>
     <string name="request_sent">فرستاده شد. اگر بپذیرد، گفتگو در بخش گفتگوها پیدا می‌شود.</string>
     <string name="request_already">پیش‌تر به %1$s نوشته‌اید.</string>
-    <string name="request_matched">همدیگر را پسندیده‌اید؛ در گفتگویتان بنویسید.</string>
+    <string name="request_matched">مچ شده‌اید؛ در گفتگویتان بنویسید.</string>
     <string name="request_open_chat">باز کردن گفتگو</string>
-    <string name="request_quota">پیام‌های امروزتان به کسانی که هنوز هم‌پسند نشده‌اید تمام شده است.</string>
-    <string name="request_quota_at">پیام‌های امروزتان به کسانی که هنوز هم‌پسند نشده‌اید تمام شده است. ساعت %1$s دوباره می‌شود.</string>
+    <string name="request_quota">پیام‌های امروزتان به کسانی که هنوز با آن‌ها مچ نشده‌اید تمام شده است.</string>
+    <string name="request_quota_at">پیام‌های امروزتان به کسانی که هنوز با آن‌ها مچ نشده‌اید تمام شده است. ساعت %1$s دوباره می‌شود.</string>
     <string name="request_refused">این پیام فرستاده نمی‌شود. مهربان و محترمانه بنویسید.</string>
     <string name="request_unavailable">این پروفایل در دسترس نیست.</string>
     <string name="request_failed">فرستاده نشد. دوباره امتحان کنید.</string>

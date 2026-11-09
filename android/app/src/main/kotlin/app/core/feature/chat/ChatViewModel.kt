@@ -66,8 +66,13 @@ sealed interface ChatItem {
         override val key: String get() = "day:$date"
     }
 
-    /** The top of a thread: who matched, and when. */
-    data class Intro(val conversation: Conversation) : ChatItem {
+    /**
+     * The top of a thread: who matched, and when. [showDate] is false when the
+     * day separator right under it already names that day ("Yesterday" under
+     * "7 November" said the same day twice). [hint] (how to start) only while
+     * nothing has been said yet.
+     */
+    data class Intro(val conversation: Conversation, val showDate: Boolean = true, val hint: Boolean = true) : ChatItem {
         override val key: String get() = "intro"
     }
 }
@@ -421,7 +426,14 @@ internal fun buildTranscript(
         val olderDay = older?.at?.atZone(zone)?.toLocalDate()
         if (olderDay != day) out += ChatItem.Day(day)
     }
-    if (atTop && conversation != null) out += ChatItem.Intro(conversation)
+    if (atTop && conversation != null) {
+        val oldestDay = (out.lastOrNull { it is ChatItem.Day } as? ChatItem.Day)?.date
+        out += ChatItem.Intro(
+            conversation,
+            showDate = oldestDay != conversation.createdAt.atZone(zone).toLocalDate(),
+            hint = rows.none { it.kind != MessageKind.Reaction && it.kind != MessageKind.Unsend },
+        )
+    }
     return out
 }
 

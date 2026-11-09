@@ -22,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -209,6 +210,15 @@ class MatchCallSession(
         rang(callId)
         listen()
         watch()
+    }
+
+    /**
+     * The face the chat's cache knows for this call's conversation, for a
+     * ring that brought only a photo URL ([CallPeer.withCachedFace]). Only
+     * for this call's own conversation.
+     */
+    fun knowFace(conversationId: Id, photoUrl: String?, blurhash: String?) {
+        _peer.update { peer -> if (peer.conversationId == conversationId) peer.withCachedFace(photoUrl, blurhash) else peer }
     }
 
     /** The microphone was refused before anybody was rung: nothing is placed. */

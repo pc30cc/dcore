@@ -3,15 +3,13 @@ package app.core.feature.chat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import app.core.R
+import app.core.feature.call.callLinePreview
 import app.core.feature.card.currentLocale
 import app.core.feature.card.isolate
 import app.core.i18n.AppLanguage
 import app.core.i18n.Digits
 import app.core.i18n.JalaliDates
 import app.core.i18n.brandString
-import app.core.model.CallKind
-import app.core.model.CallLine
-import app.core.model.CallOutcome
 import app.core.model.Message
 import app.core.model.MessageKind
 import java.time.Instant
@@ -103,42 +101,14 @@ fun listTime(clock: ChatClockText, at: Instant, today: LocalDate): String {
     }
 }
 
-/** A call's length: "0:42", "12:05", "1:02:09", in the reader's digits. */
-fun callLength(clock: ChatClockText, seconds: Long): String {
-    val s = seconds.coerceAtLeast(0)
-    val h = s / 3600
-    val m = (s % 3600) / 60
-    val r = s % 60
-    val text = if (h > 0) "%d:%02d:%02d".format(Locale.ROOT, h, m, r) else "%d:%02d".format(Locale.ROOT, m, r)
-    return clock.digits(text)
-}
-
-/** What a call line says, from the side of whoever reads it. */
-@Composable
-fun callLineText(call: CallLine, mine: Boolean, clock: ChatClockText): String {
-    val video = call.kind == CallKind.Video
-    return when (call.outcome) {
-        CallOutcome.Completed -> brandString(
-            if (video) R.string.chat_line_call_video_length else R.string.chat_line_call_audio_length,
-            callLength(clock, call.durationSeconds),
-        )
-        CallOutcome.Missed, CallOutcome.Declined, CallOutcome.Cancelled ->
-            if (mine) {
-                brandString(if (video) R.string.chat_line_call_video_unanswered else R.string.chat_line_call_audio_unanswered)
-            } else {
-                brandString(if (video) R.string.chat_line_call_video_missed else R.string.chat_line_call_audio_missed)
-            }
-        else -> brandString(if (video) R.string.chat_line_call_video_failed else R.string.chat_line_call_audio_failed)
-    }
-}
-
 /**
  * A conversation's preview line: the last message as text, from the reader's
  * side ("You: …"), with unsent messages, calls and media named rather than
- * shown.
+ * shown. [spoken] for TalkBack: a call's length with its units spelt out
+ * ("Video call, 12 minutes, 34 seconds"); the rest reads as it is shown.
  */
 @Composable
-fun previewText(message: Message?, me: String?, clock: ChatClockText): String? {
+fun previewText(message: Message?, me: String?, spoken: Boolean = false): String? {
     message ?: return null
     val mine = message.senderId == me
     val core = when (message.kind) {
@@ -148,7 +118,7 @@ fun previewText(message: Message?, me: String?, clock: ChatClockText): String? {
             ?: brandString(R.string.chat_preview_liked)
         MessageKind.Image -> brandString(R.string.chat_preview_photo)
         MessageKind.Voice -> brandString(R.string.chat_preview_voice)
-        MessageKind.Call -> message.call?.let { callLineText(it, mine = it.caller == me, clock = clock) } ?: brandString(R.string.chat_preview_call)
+        MessageKind.Call -> message.call?.let { callLinePreview(it, me, spoken) } ?: brandString(R.string.chat_preview_call)
         MessageKind.Unsend -> return brandString(if (mine) R.string.chat_preview_you_unsent else R.string.chat_preview_unsent)
         MessageKind.Reaction -> brandString(R.string.chat_preview_reaction, message.body.orEmpty())
         MessageKind.Unknown -> brandString(R.string.chat_preview_message)
