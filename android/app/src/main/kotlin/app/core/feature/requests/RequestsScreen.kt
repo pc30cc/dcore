@@ -150,9 +150,12 @@ fun RequestsScreen(state: RequestsUiState, actions: RequestsActions, catalog: Ca
         Column(Modifier.fillMaxSize().padding(padding)) {
             val number = rememberNumbers()
             PrimaryTabRow(selectedTabIndex = if (state.box == RequestBox.Inbox) 0 else 1) {
+                // The tab not shown in the quieter colour: the accent alone marks the open box.
+                val unselected = MaterialTheme.colorScheme.onSurfaceVariant
                 Tab(
                     selected = state.box == RequestBox.Inbox,
                     onClick = { actions.select(RequestBox.Inbox) },
+                    unselectedContentColor = unselected,
                     text = {
                         val n = state.inbox.items.size
                         Text(if (n > 0) brandString(R.string.requests_inbox_count, number(n)) else brandString(R.string.requests_inbox))
@@ -161,6 +164,7 @@ fun RequestsScreen(state: RequestsUiState, actions: RequestsActions, catalog: Ca
                 Tab(
                     selected = state.box == RequestBox.Sent,
                     onClick = { actions.select(RequestBox.Sent) },
+                    unselectedContentColor = unselected,
                     text = { Text(brandString(R.string.requests_sent)) },
                 )
             }

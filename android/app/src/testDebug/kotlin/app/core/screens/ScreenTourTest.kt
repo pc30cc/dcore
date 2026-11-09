@@ -461,7 +461,13 @@ class ScreenTourTest {
             compose.waitForIdle()
             if (done()) return
             if (System.currentTimeMillis() >= end) {
-                if (timeoutMs >= 5_000) throw AssertionError("still waiting after $timeoutMs ms")
+                if (timeoutMs >= 5_000) {
+                    if (DEBUG_DUMP) {
+                        capture("debug")
+                        println(compose.onAllNodes(isRoot())[0].printToString(Int.MAX_VALUE))
+                    }
+                    throw AssertionError("still waiting after $timeoutMs ms")
+                }
                 return
             }
             Thread.sleep(STEP_MS)

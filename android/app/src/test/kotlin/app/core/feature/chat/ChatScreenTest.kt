@@ -1,6 +1,9 @@
 package app.core.feature.chat
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -156,6 +159,31 @@ class ChatScreenTest {
         compose.onNodeWithText("Yesterday").assertIsDisplayed()
         compose.onNodeWithText("Today").assertIsDisplayed()
         compose.onNodeWithText("Good morning").assertIsDisplayed()
+    }
+
+    @Test
+    fun theFirstLineOfANewDayComesIntoViewWhenTheReaderWasAtTheNewest() {
+        // A long yesterday, read down to its newest line.
+        val yesterday = (40 downTo 1).map { n ->
+            row(n.toLong(), mine = n % 2 == 0, body = "Yesterday $n", at = minutesAgo(60L * 24 + 41 - n))
+        }
+        var state by mutableStateOf(thread(yesterday))
+        compose.setContent {
+            AppTheme {
+                CompositionLocalProvider(LocalRemoteImages provides false) {
+                    ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        compose.onNodeWithText("Yesterday 40").assertIsDisplayed()
+
+        // Today's first line from the other person: it brings its own "Today" separator,
+        // so the line that was newest is two rows up. The thread still follows it.
+        state = thread(listOf(row(41, mine = false, body = "Good morning", at = minutesAgo(1))) + yesterday)
+        compose.waitForIdle()
+        compose.onNodeWithText("Good morning").assertIsDisplayed()
+        compose.onNodeWithText("Today").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Go to the newest message").assertDoesNotExist()
     }
 
     @Test

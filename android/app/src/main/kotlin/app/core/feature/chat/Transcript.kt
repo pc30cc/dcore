@@ -92,17 +92,24 @@ internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (Chat
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clock = rememberChatClock()
-    val today = remember { LocalDate.now() }
     val items = state.items
     val newest = items.firstOrNull()?.key
+    // Read again with each new line: a thread left open past midnight calls the new day "Today".
+    val today = remember(newest) { LocalDate.now() }
     val rows = items.count { it is ChatItem.Bubble || it is ChatItem.Call }
 
     // Stay at the newest message when one arrives and the person was there
-    // already, or wrote it; otherwise offer a way down.
+    // already (the line that was newest is still on screen), or wrote it;
+    // otherwise offer a way down. The first line of a new day brings its day
+    // separator with it, so the old newest line is then two rows up, not one.
     val atBottom by remember { derivedStateOf { list.firstVisibleItemIndex <= 1 } }
+    val shown = remember { ShownNewest() }
     LaunchedEffect(newest) {
         val mine = (items.firstOrNull() as? ChatItem.Bubble)?.message?.mine == true
-        if (atBottom || mine) list.animateScrollToItem(0)
+        val previous = shown.key
+        val wasThere = previous == null || list.layoutInfo.visibleItemsInfo.any { it.key == previous }
+        shown.key = newest
+        if (wasThere || atBottom || mine) list.animateScrollToItem(0)
     }
     LaunchedEffect(list, rows) {
         snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
@@ -158,6 +165,11 @@ internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (Chat
 }
 
 private const val TOP_MARGIN = 4
+
+/** The newest line the transcript last showed, read when the next one arrives (not drawn). */
+private class ShownNewest {
+    var key: Any? = null
+}
 
 @Composable
 private fun DayRow(text: String) {
@@ -365,9 +377,11 @@ private fun DeliveryMark(delivery: Delivery, content: Color) {
         Delivery.Sent -> R.drawable.ic_chat_sent to content.copy(alpha = 0.75f)
         Delivery.Delivered -> R.drawable.ic_chat_read to content.copy(alpha = 0.75f)
         Delivery.Read -> R.drawable.ic_chat_read to AppTheme.colors.success.let { if (content == MaterialTheme.colorScheme.onPrimary) content else it }
-        Delivery.Failed, Delivery.Confirm -> R.drawable.ic_chat_error to MaterialTheme.colorScheme.error
+        // In the bubble's own content colour: the error red on a filled bubble
+        // was all but invisible (under 2:1). The red line under the bubble says why.
+        Delivery.Failed, Delivery.Confirm -> R.drawable.ic_chat_error to content
     }
-    val emphasis = if (delivery == Delivery.Read) Modifier else Modifier.alpha(0.9f)
+    val emphasis = if (delivery == Delivery.Read || delivery == Delivery.Failed || delivery == Delivery.Confirm) Modifier else Modifier.alpha(0.9f)
     Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = Modifier.size(14.dp).then(emphasis))
 }
 
