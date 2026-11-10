@@ -115,6 +115,8 @@ data class SettingsPatch(
     val acceptCalls: Boolean? = null,
     val modeRomance: Boolean? = null,
     val snoozed: Boolean? = null,
+    /** `default` or a template id. */
+    val template: String? = null,
 )
 
 @Serializable

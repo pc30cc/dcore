@@ -66,6 +66,14 @@ export class StatementCounter {
     return this.storage.run(tally, fn);
   }
 
+  /**
+   * Runs `fn` (and everything it starts) outside any tally: work a request
+   * starts but does not wait for is not counted against its budget.
+   */
+  detached<T>(fn: () => T): T {
+    return this.storage.exit(fn);
+  }
+
   /** The tally of the current async context, if any. */
   current(): StatementTally | undefined {
     return this.storage.getStore();

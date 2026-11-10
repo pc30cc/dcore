@@ -11,12 +11,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Every text colour passes WCAG AA (4.5:1) on what it sits on, and every
- * icon and outline 3:1, in the dark and the light theme, for the brand this
- * build was made from: the design's contrast table (tokens.json
- * `color.<theme>.contrast`) recomputed from the live theme objects, plus the
- * pairs older screens still draw. A brand whose colours cannot pass is a
- * failed build, not a shipped screen.
+ * The colours screens written before the templates read (Material's scheme
+ * and the older [AppColors] names, both derived from the template drawn)
+ * pass WCAG AA (4.5:1 for text, 3:1 for icons and outlines) in the dark
+ * template (`neon`, for the brand this build was made from) and the light
+ * one (`white`). The templates' own table is [TemplateContrastTest]. A
+ * brand whose colours cannot pass is a failed build, not a shipped screen.
  *
  * Photo cases assume the worst: a pure white photo pixel under the layer.
  */
@@ -79,8 +79,9 @@ class ContrastTest {
         // Display text in the text gradient (24 sp and up: 3:1).
         pair("$theme textGradientStart/background", a.textGradientStart, s.background, Contrast.AA_LARGE)
         pair("$theme textGradientEnd/background", a.textGradientEnd, s.background, Contrast.AA_LARGE)
-        // Marks and outlines (non-text, 3:1); the verified check is text-sized: 4.5.
-        pair("$theme onVerified/verified", a.onVerified, a.verified)
+        // Marks and outlines (non-text, 3:1); the verified badge's check is an icon (the
+        // template contract classes it so: 3:1 at every stop of its fill).
+        pair("$theme onVerified/verified", a.onVerified, a.verified, Contrast.AA_LARGE)
         pair("$theme verified/background", a.verified, s.background, Contrast.AA_LARGE)
         pair("$theme like/background", a.like, s.background, Contrast.AA_LARGE)
         pair("$theme pass/background", a.pass, s.background, Contrast.AA_LARGE)
@@ -118,7 +119,7 @@ class ContrastTest {
         pair("$theme tab label selected/bar over list", s.onSurface, a.tabBarFallback.compositeOver(s.background))
     }
 
-    private fun olderScreens(theme: String, s: ColorScheme, a: AppColors) {
+    private fun olderScreens(theme: String, s: ColorScheme, a: AppColors, template: AppTemplate) {
         pair("$theme danger/background", a.danger, s.background)
         pair("$theme danger/surfaceContainerHigh (call line)", a.danger, s.surfaceContainerHigh)
         pair("$theme success/background", a.success, s.background)
@@ -126,28 +127,31 @@ class ContrastTest {
         pair("$theme onSemantic/like", a.onSemantic, a.like)
         pair("$theme onSemantic/superLike", a.onSemantic, a.superLike)
         pair("$theme onSemantic/danger", a.onSemantic, a.danger)
-        // A bubble's quieter text (time, like note label), blended as drawn.
-        pair("$theme own bubble time/primary", bubbleQuietColor(s.onPrimary, onGrey = false).compositeOver(s.primary), s.primary)
+        // A bubble's quieter text (time, like note label), blended as drawn: your own bubble is the
+        // template's `--bubble-out` (its middle colour where it is a gradient).
+        val out = template.paints.bubbleOut.stop(1)
+        pair("$theme own bubble time/bubble-out", bubbleQuietColor(template.colors.onBubbleOut, onGrey = false).compositeOver(out), out)
         pair("$theme their bubble time/surfaceContainerHigh", bubbleQuietColor(s.onSurface, onGrey = true).compositeOver(s.surfaceContainerHigh), s.surfaceContainerHigh)
         pair("$theme their like note label/surfaceContainerHigh", bubbleQuietColor(s.onSurface, onGrey = true, alpha = NOTE_LABEL_ALPHA).compositeOver(s.surfaceContainerHigh), s.surfaceContainerHigh)
         pair("$theme unsent bubble time/background", bubbleQuietColor(s.onSurfaceVariant, onGrey = false).compositeOver(s.background), s.background)
         // The new gradient bubble: its 75 % meta line on the gradient's lightest stop.
         pair("$theme gradient bubble meta/end stop", a.onGradient.copy(alpha = 0.75f).compositeOver(a.gradientStops.end), a.gradientStops.end, Contrast.AA_LARGE)
-        val callBack = s.primary.copy(alpha = 0.12f).compositeOver(s.surfaceContainerHigh)
-        pair("$theme call-back icon/its disc", s.primary, callBack, Contrast.AA_LARGE)
+        val accent = template.colors.primary
+        val callBack = accent.copy(alpha = 0.12f).compositeOver(s.surfaceContainerHigh)
+        pair("$theme call-back icon/its disc", accent, callBack, Contrast.AA_LARGE)
     }
 
     @Test
     fun `the dark theme passes AA for this build's brand`() {
         design("dark", appColorScheme(dark = true), AppColors.of(dark = true))
-        olderScreens("dark", appColorScheme(dark = true), AppColors.of(dark = true))
+        olderScreens("dark", appColorScheme(dark = true), AppColors.of(dark = true), Templates.of(Templates.NEON))
         assertNoFailures()
     }
 
     @Test
     fun `the light theme passes AA for this build's brand`() {
         design("light", appColorScheme(dark = false), AppColors.of(dark = false))
-        olderScreens("light", appColorScheme(dark = false), AppColors.of(dark = false))
+        olderScreens("light", appColorScheme(dark = false), AppColors.of(dark = false), Templates.White)
         assertNoFailures()
     }
 
@@ -161,20 +165,24 @@ class ContrastTest {
     }
 
     @Test
-    fun `the design's colours come through unchanged`() {
+    fun `the older names carry the template's colours`() {
         val dark = appColorScheme(dark = true, BrandColors.Design)
         val light = appColorScheme(dark = false, BrandColors.Design)
-        assertEquals(Color(0xFFB48CFF), dark.primary)
-        assertEquals(Color(0xFF6A1FF0), light.primary)
+        // Dark: the accent text colour leads Material's scheme; the container is the gradient's first stop.
+        assertEquals(Color(0xFFDD6BF2), dark.primary)
         assertEquals(Color(0xFF7B2BFF), dark.primaryContainer)
         assertEquals(Color(0xFF0A090E), dark.background)
-        assertEquals(Color(0xFFF6F4F9), light.background)
-        assertEquals(Color(0xFFC6FF33), dark.tertiary)
-        assertEquals(Color(0xFF4F6B00), light.tertiary)
-        assertEquals(Color(0xFFC6FF33), light.tertiaryContainer)
-        // The light container is a pale tint of the gradient's first stop (#EFE6FF in the design).
-        val tint = light.primaryContainer
-        assertTrue("light primaryContainer $tint", Contrast.ratio(tint, Color(0xFFEFE6FF)) < 1.02)
+        // Light: ink leads every control, the accent is tertiary.
+        assertEquals(Color(0xFF111114), light.primary)
+        assertEquals(Color(0xFF5B2FD9), light.tertiary)
+        assertEquals(Color(0xFFFFFFFF), light.background)
+        val a = AppColors.of(Templates.White)
+        assertEquals(Color(0xFF5B2FD9), a.like)
+        assertEquals(Color(0xFFF0ECFC), a.aliveTint)
+        assertEquals(Templates.White.paints.likeFill, a.gradient)
+        val n = AppColors.of(Templates.Neon)
+        assertEquals(GradientStops(Color(0xFF7B2BFF), Color(0xFFC21FD0), Color(0xFFE0157A)), n.gradientStops)
+        assertNotEquals(a.gradient, n.gradient)
     }
 
     @Test

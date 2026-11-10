@@ -17,4 +17,11 @@
     <string name="ui_loading">Loading</string>
     <string name="ui_unread">%1$s unread</string>
     <string name="ui_logo">Logo</string>
+    <!-- The remove button on a photo slot. -->
+    <string name="ui_remove_photo">Remove</string>
+    <!-- The template picker in Settings: its title and the three options. -->
+    <string name="settings_template">Template</string>
+    <string name="template_default">Default</string>
+    <string name="template_neon">Dark</string>
+    <string name="template_white">White</string>
 </resources>

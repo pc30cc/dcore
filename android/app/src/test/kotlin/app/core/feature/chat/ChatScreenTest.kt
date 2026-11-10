@@ -1,9 +1,7 @@
 package app.core.feature.chat
 
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -57,6 +55,8 @@ import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
 import java.time.LocalDate
 import java.util.Locale
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 /** Every state of a thread: loading, failed, gone, ended, sending, failed sends, marks, typing, actions, safety. */
 @RunWith(AndroidJUnit4::class)
@@ -235,7 +235,7 @@ class ChatScreenTest {
     fun readIsToldFromDeliveredByItsShapeNotAShade() {
         show(thread(listOf(row(102, mine = true, body = "Second", at = minutesAgo(3)), row(101, mine = true, body = "First", at = minutesAgo(4))),
             conversation = conversation(peerReadId = "101", peerDeliveredId = "102")))
-        val ink = app.core.ui.theme.appColorScheme(dark = false).onPrimary
+        val ink = app.core.ui.theme.Templates.White.colors.onBubbleOut
         // Delivered: the double tick's thin strokes on the bubble. Read: a disc of the same ink with
         // the tick cut out of it, so several times as much of it is ink.
         val delivered = pixelsNear(deliveryTag(Delivery.Delivered), ink)
@@ -457,7 +457,7 @@ class ChatScreenTest {
                 }
             }
         }
-        val accent = app.core.ui.theme.appColorScheme(dark = false).primary
+        val accent = app.core.ui.theme.Templates.White.colors.primary
         val withButton = pixelsNear("call.line.93", accent)
         state = thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = false)))
         compose.waitForIdle()

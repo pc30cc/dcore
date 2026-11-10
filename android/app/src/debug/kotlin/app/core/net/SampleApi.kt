@@ -193,6 +193,8 @@ class SampleApi(
     private val answerAfterMs: Long? = 4_000,
     /** New profiles wait for a review before they are shown (the panel's waitlist). */
     private val waitlist: Boolean = false,
+    /** Hears the account's settings in every answer that carries them, as from the server. */
+    private val settingsTap: SettingsTap = SettingsTap.None,
 ) : ServerApi, BlobTransport, ExternalSignIn, SmsCodeReceiver, RealtimeTransport, SamplePeer {
 
     private val lock = Mutex()
@@ -716,10 +718,13 @@ class SampleApi(
         )
     }
 
-    override suspend fun me(): Fetched<Me> = route("me") {
-        advanceBackground()
-        val me = meNow()
-        fetched("me:${me.id}", meVersion, me)
+    override suspend fun me(): Fetched<Me> {
+        val begun = settingsTap.begin()
+        return route("me") {
+            advanceBackground()
+            val me = meNow()
+            fetched("me:${me.id}", meVersion, me)
+        }.also { fetched -> fetched.value.profile?.let { settingsTap.received(begun, it.settings) } }
     }
 
     override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile = route("me.basics") {
@@ -828,11 +833,18 @@ class SampleApi(
         preferences
     }
 
-    override suspend fun updateSettings(patch: SettingsPatch): Settings = route("me.settings") {
+    override suspend fun updateSettings(patch: SettingsPatch): Settings {
+        val begun = settingsTap.begin()
+        return updateSettingsNow(patch).also { settingsTap.received(begun, it) }
+    }
+
+    private suspend fun updateSettingsNow(patch: SettingsPatch): Settings = route("me.settings") {
         val me = full()
         if (patch.incognito == true && !currentEntitlements().features.incognito) {
             fail(403, ProblemCodes.ENTITLEMENT_REQUIRED, "feature" to "incognito")
         }
+        // As the server: `default` or a template it knows.
+        if (patch.template != null && patch.template !in TEMPLATE_CHOICES) fail(400, ProblemCodes.VALIDATION_FAILED)
         val s = profile.settings
         val next = Settings(
             incognito = patch.incognito ?: s.incognito,
@@ -842,6 +854,7 @@ class SampleApi(
             acceptCalls = patch.acceptCalls ?: s.acceptCalls,
             modeRomance = patch.modeRomance ?: s.modeRomance,
             snoozed = patch.snoozed ?: s.snoozed,
+            template = patch.template ?: s.template,
         )
         profile = profile.copy(settings = next)
         if (patch.snoozed != null && me.status in setOf(AccountStatus.Active, AccountStatus.Snoozed)) {
@@ -1885,6 +1898,9 @@ class SampleApi(
 
         const val RING_SECONDS = 45L
         const val CONFIRM_TOKEN = "cf_sample"
+
+        /** The template choices the sample server takes. */
+        private val TEMPLATE_CHOICES = setOf("default", "neon", "white")
 
         private const val OTP_TTL_MS = 300_000L
         private const val RESEND_AFTER_MS = 60_000L

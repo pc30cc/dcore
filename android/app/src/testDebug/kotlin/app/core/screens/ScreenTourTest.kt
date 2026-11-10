@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
@@ -96,6 +95,7 @@ import app.core.net.Backend
 import app.core.net.SampleApi
 import app.core.ui.nav.AppNavHost
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import app.core.push.CallNotifications
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -111,6 +111,7 @@ import java.time.LocalDate
 import java.util.Locale
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWindowManagerImpl
+import androidx.compose.runtime.getValue
 
 /**
  * The whole app on the sample backend, driven as a person would, in Persian
@@ -127,6 +128,8 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
  * environment variable `SCREENS_DIR` set, every screen is also written there
  * as a PNG (`<store>-<language>-<theme>-<flow><nn>-<screen>.png`); without it
  * nothing is written. The images are for looking at, never committed.
+ * `SCREENS_TEMPLATE` (`neon`, `white`) runs every tour in that template, and
+ * `GALLERY_PHOTOS` draws real photos ([TourPhotos]).
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -1048,13 +1051,15 @@ class ScreenTourTest {
             )
             compose.runOnUiThread { hooks = CallActivityHooks(compose.activity, graph.calls) { graph.realtime }.also { it.onCreate(null) } }
         }
+        TourPhotos.install(app)
         compose.setContent {
             val config by graph.config.config.collectAsStateWithLifecycle()
-            AppTheme(dark = isSystemInDarkTheme()) {
+            val template = TourPhotos.template ?: Templates.of(if (isSystemInDarkTheme()) Templates.NEON else Templates.WHITE)
+            AppTheme(template = template) {
                 CompositionLocalProvider(
                     LocalAppGraph provides graph,
                     LocalAppName provides AppBrand.appName,
-                    LocalRemoteImages provides false,
+                    LocalRemoteImages provides TourPhotos.enabled,
                 ) {
                     if (calls) {
                         // As MainActivity draws it: the call over everything.
@@ -1157,7 +1162,8 @@ class ScreenTourTest {
         val dir = outDir ?: return
         dir.mkdirs()
         val scale = app.resources.configuration.fontScale
-        val theme = (if (dark) "dark" else "light") + (if (scale > 1f) String.format(Locale.ROOT, "-text%.1f", scale) else "")
+        val theme = (TourPhotos.template?.let { it.id + if (dark) "-night" else "" } ?: if (dark) "dark" else "light") +
+            (if (scale > 1f) String.format(Locale.ROOT, "-text%.1f", scale) else "")
         val file = File(dir, String.format(Locale.ROOT, "%s-%s-%s-%s%02d-%s.png", BuildConfig.STORE, language, theme, flow, ++shot, name))
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

@@ -36,6 +36,7 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['PUT', '/v1/me/consents/{kind}', '200', true],
   ['PATCH', '/v1/me/profile', '200', true],
   ['PATCH', '/v1/me/preferences', '200', true],
+  ['GET', '/v1/me/settings', '200', true],
   ['PATCH', '/v1/me/settings', '200', true],
   ['PATCH', '/v1/me/notifications', '200', true],
   ['PUT', '/v1/me/location', '200', true],
@@ -143,6 +144,9 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['PATCH', '/v1/admin/store-products/{id}', '200', true],
   ['POST', '/v1/admin/store-products/{id}/activate', '200', true],
   ['POST', '/v1/admin/store-products/{id}/deactivate', '200', true],
+  // The visual templates: the default and the ones offered
+  ['GET', '/v1/admin/appearance', '200', true],
+  ['PUT', '/v1/admin/appearance', '200', true],
 ];
 
 describe('the route registry', () => {

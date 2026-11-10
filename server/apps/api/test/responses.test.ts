@@ -48,6 +48,7 @@ const ACCOUNT_ROUTES: [method: string, path: string, status: string][] = [
   ['put', '/v1/me/basics', '200'],
   ['patch', '/v1/me/profile', '200'],
   ['patch', '/v1/me/preferences', '200'],
+  ['get', '/v1/me/settings', '200'],
   ['patch', '/v1/me/settings', '200'],
   ['patch', '/v1/me/notifications', '200'],
   ['get', '/v1/me/consents', '200'],

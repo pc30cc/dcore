@@ -10,6 +10,7 @@ export const PlanEditorPage = lazy(() => import('@/pages/plans/PlanEditorPage').
 export const ProductsPage = lazy(() => import('@/pages/products/ProductsPage').then((m) => ({ default: m.ProductsPage })));
 export const AdminsPage = lazy(() => import('@/pages/admins/AdminsPage').then((m) => ({ default: m.AdminsPage })));
 export const SecurityPage = lazy(() => import('@/pages/account/SecurityPage').then((m) => ({ default: m.SecurityPage })));
+export const AppearancePage = lazy(() => import('@/pages/appearance/AppearancePage').then((m) => ({ default: m.AppearancePage })));
 export const HostsPage = lazy(() => import('@/pages/HostsPage').then((m) => ({ default: m.HostsPage })));
 
 export function Loading({ children }: { children: ReactNode }) {

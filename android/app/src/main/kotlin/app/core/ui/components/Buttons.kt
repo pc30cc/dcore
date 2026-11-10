@@ -1,42 +1,34 @@
 package app.core.ui.components
 
-import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.innerShadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -45,31 +37,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import app.core.R
-import app.core.ui.icons.AppIcons
-import app.core.ui.theme.AppColors
 import app.core.ui.theme.AppTheme
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
-
-/**
- * The glow under the primary button and the like button (tokens.json
- * `elevation.glowPrimary`: pink below, violet close in). Two at most on a
- * screen. Blurred shadows need Android 9; below that there is no glow.
- */
-fun Modifier.glow(shape: Shape, colors: AppColors, pressed: Boolean = false, enabled: Boolean = true): Modifier {
-    if (!enabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return this
-    val pinkAlpha = if (colors.dark) 0.55f else 0.50f
-    val violetAlpha = if (colors.dark) 0.45f else 0.38f
-    return if (pressed) {
-        dropShadow(shape, Shadow(radius = 18.dp, color = colors.gradientStops.end, spread = (-6).dp, offset = DpOffset(0.dp, 6.dp), alpha = if (colors.dark) 0.70f else 0.60f))
-    } else {
-        dropShadow(shape, Shadow(radius = 28.dp, color = colors.gradientStops.end, spread = (-8).dp, offset = DpOffset(0.dp, 10.dp), alpha = pinkAlpha))
-            .dropShadow(shape, Shadow(radius = 14.dp, color = colors.gradientStops.start, spread = (-4).dp, offset = DpOffset(0.dp, 4.dp), alpha = violetAlpha))
-    }
-}
+import app.core.ui.theme.insetShadow
+import app.core.ui.theme.outerShadow
+import androidx.compose.runtime.getValue
 
 /** A press scale (0.97 in 90 ms, spring back), or nothing with reduced motion. */
 @Composable
@@ -84,139 +59,116 @@ internal fun pressScale(pressed: Boolean, to: Float = 0.97f): Float {
     return scale
 }
 
+/** The button corner of the template (`--r-button`: a pill, or a rounded rectangle). */
+@Composable
+internal fun buttonShape(): Shape = RoundedCornerShape(AppTheme.template.radii.button)
+
 /**
- * The primary button: the gradient, a white label, the glow, a forward
- * arrow when it moves on (pointing left in Persian). One per screen; inside
- * sheets it has no glow ([glow] false). Loading keeps its width, hides the
- * label behind a spinner and drops the glow; disabled is flat grey.
+ * The one primary button: `--primary-fill` (the gradient in neon, ink in
+ * white) with `--on-primary`, `--btn-highlight` and no glow, a label and
+ * no icon. One per screen. Loading keeps its width and shows a spinner;
+ * disabled is `--surface-3` with `--text-3`. [small] is the 48 dp form that
+ * hugs its label («ویرایش پروفایل»).
  */
 @Composable
-fun GradientButton(
+fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
-    forward: Boolean = false,
-    icon: ImageVector? = null,
-    glow: Boolean = true,
-    fullWidth: Boolean = true,
+    small: Boolean = false,
+    fullWidth: Boolean = !small,
 ) {
-    val colors = AppTheme.colors
+    val t = AppTheme.template
+    val shape = buttonShape()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale = pressScale(pressed && enabled && !loading)
     val active = enabled && !loading
+    val scale = pressScale(pressed && active)
     val loadingLabel = stringResource(R.string.ui_loading)
+    val content = if (enabled) t.colors.onPrimary else t.colors.text3
     Box(
         modifier = modifier
             .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
-            .heightIn(min = 56.dp)
+            .heightIn(min = if (small) 48.dp else t.sizes.buttonH)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .glow(CircleShape, colors, pressed = pressed, enabled = glow && active)
-            .clip(CircleShape)
+            .clip(shape)
             .then(
                 if (enabled) {
-                    Modifier
-                        .background(colors.gradient, CircleShape)
-                        .innerShadow(CircleShape, Shadow(radius = 0.dp, color = Color.White, offset = DpOffset(0.dp, 1.dp), alpha = 0.28f))
+                    Modifier.background(t.paints.primaryFill, shape).insetShadow(shape, t.shadows.btnHighlight)
                 } else {
-                    Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
+                    Modifier.background(t.colors.surface3, shape)
                 },
             )
             .then(if (pressed && active) Modifier.drawWithContent { drawContent(); drawRect(Color.White.copy(alpha = 0.08f)) } else Modifier)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = active,
-                role = Role.Button,
-                onClick = onClick,
-            )
+            .clickable(interactionSource = interaction, indication = null, enabled = active, role = Role.Button, onClick = onClick)
             .then(if (loading) Modifier.semantics { stateDescription = loadingLabel } else Modifier)
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = if (small) 18.dp else 24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        val content = if (enabled) colors.onGradient else colors.textTertiary
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
+        Text(
+            text,
+            style = if (small) t.type.labelSm else t.type.label,
+            color = content,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.alpha(if (loading) 0f else 1f),
-        ) {
-            if (icon != null) Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
-            Text(text, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (forward) Icon(AppIcons.Forward, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
-        }
+        )
         if (loading) {
-            CircularProgressIndicator(color = colors.onGradient, trackColor = colors.onGradient.copy(alpha = 0.3f), strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+            CircularProgressIndicator(color = t.colors.onPrimary, trackColor = t.colors.onPrimary.copy(alpha = 0.3f), strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
         }
     }
 }
 
-/** The secondary button: no fill, a 1.5 dp ring, the theme's text colour. */
+/**
+ * The secondary button: no fill, a 1.5 dp `--line-strong` edge, the text
+ * colour. [destructive] draws the edge and the label in `--error`
+ * («حسابم رو پاک کن»). There is no tonal or inverse button.
+ */
 @Composable
-fun OutlineButton(
+fun SecondaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    icon: ImageVector? = null,
-    fullWidth: Boolean = true,
+    small: Boolean = false,
+    fullWidth: Boolean = !small,
+    destructive: Boolean = false,
 ) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.5.dp, AppTheme.colors.hairlineStrong),
-        modifier = modifier.then(if (fullWidth) Modifier.fillMaxWidth() else Modifier).heightIn(min = 56.dp),
+    val t = AppTheme.template
+    val shape = buttonShape()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = pressScale(pressed && enabled)
+    val color = if (destructive) t.colors.error else t.colors.text
+    Box(
+        modifier = modifier
+            .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
+            .heightIn(min = if (small) 48.dp else t.sizes.buttonH)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .border(1.5.dp, if (destructive) t.colors.error else t.colors.lineStrong, shape)
+            .then(if (pressed && enabled) Modifier.background(t.colors.text.copy(alpha = 0.06f), shape) else Modifier)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = if (small) 18.dp else 24.dp)
+            .alpha(if (enabled) 1f else 0.4f),
+        contentAlignment = Alignment.Center,
     ) {
-        ButtonContent(text, icon, PaddingValues(horizontal = 24.dp), enabled)
+        Text(text, style = if (small) t.type.labelSm else t.type.label, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** The tonal button: a neutral action ("photo from gallery"), 56 dp or [compact] 48 dp. */
-@Composable
-fun TonalButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    icon: ImageVector? = null,
-    compact: Boolean = false,
-    fullWidth: Boolean = true,
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.then(if (fullWidth) Modifier.fillMaxWidth() else Modifier).heightIn(min = if (compact) 48.dp else 56.dp),
-    ) {
-        ButtonContent(text, icon, PaddingValues(horizontal = 24.dp), enabled)
-    }
-}
-
-@Composable
-private fun ButtonContent(text: String, icon: ImageVector?, padding: PaddingValues, enabled: Boolean) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(padding).alpha(if (enabled) 1f else 0.4f),
-    ) {
-        if (icon != null) Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-        Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/** What a text button does: move on (accent), something neutral, or remove something (error). */
+/** What a text button does: move on (the accent), something neutral, or remove something (error). */
 enum class TextActionKind { Primary, Neutral, Destructive }
 
-/** A text button: 48 dp tall, hugging its label. Destructive actions are never on the gradient. */
+/** A text button (`--type-link`): 48 dp tall, hugging its label; never an icon. */
 @Composable
 fun TextAction(
     text: String,
@@ -224,66 +176,37 @@ fun TextAction(
     modifier: Modifier = Modifier,
     kind: TextActionKind = TextActionKind.Primary,
     enabled: Boolean = true,
-    icon: ImageVector? = null,
 ) {
+    val t = AppTheme.template
     val color = when (kind) {
-        TextActionKind.Primary -> MaterialTheme.colorScheme.primary
-        TextActionKind.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
-        TextActionKind.Destructive -> MaterialTheme.colorScheme.error
+        TextActionKind.Primary -> t.colors.primary
+        TextActionKind.Neutral -> t.colors.text2
+        TextActionKind.Destructive -> t.colors.error
     }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Box(
         modifier = modifier
-            .minimumInteractiveComponentSize()
             .heightIn(min = 48.dp)
-            .clip(CircleShape)
+            .widthIn(min = 48.dp)
+            .clip(buttonShape())
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp)
             .alpha(if (enabled) 1f else 0.4f),
-    ) {
-        if (icon != null) Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
-        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontSize = MaterialTheme.typography.labelLarge.fontSize * 0.94f), color = color, maxLines = 1)
-    }
-}
-
-/** The small inverse pill ("Edit" on your own profile): 44 dp to see, 48 dp to touch. */
-@Composable
-fun InverseButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier
-            .heightIn(min = 48.dp)
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .heightIn(min = 44.dp)
-                .background(scheme.inverseSurface, CircleShape)
-                .padding(horizontal = 18.dp),
-        ) {
-            if (icon != null) Icon(icon, contentDescription = null, tint = scheme.inverseOnSurface, modifier = Modifier.size(18.dp))
-            Text(text, style = MaterialTheme.typography.labelMedium.copy(fontWeight = AppTheme.type.kicker.fontWeight), color = scheme.inverseOnSurface, maxLines = 1)
-        }
+        Text(text, style = t.type.link, color = color, maxLines = 1)
     }
 }
 
-/** How a bare icon button looks. Every kind is a 48 dp target. */
+/**
+ * How a bare icon button looks. Every kind is a 48 dp target.
+ * [Glass] sits on photos: `--glass-fill` blurred (glass on) or
+ * `--glass-solid` with `--glass-shadow` (glass off).
+ */
 enum class IconButtonKind { Plain, Tonal, Line, Glass }
 
 /**
  * An icon button: 48 × 48 always ([size] is what is drawn; the touch area
  * never shrinks below 48 dp), with its [contentDescription] for TalkBack.
- * [IconButtonKind.Glass] sits on photos: dark glass in dark, white in light.
  */
 @Composable
 fun AppIconButton(
@@ -298,19 +221,14 @@ fun AppIconButton(
     backdrop: GlassBackdrop? = null,
     enabled: Boolean = true,
 ) {
-    val colors = AppTheme.colors
-    val scheme = MaterialTheme.colorScheme
+    val t = AppTheme.template
     val iconTint = tint ?: when (kind) {
-        IconButtonKind.Glass -> if (colors.dark) Color.White else scheme.onSurface
-        else -> scheme.onSurface
+        IconButtonKind.Glass -> t.colors.onGlass
+        else -> t.colors.text
     }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = pressScale(pressed && enabled, 0.94f)
-    val click = Modifier
-        .clip(CircleShape)
-        .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-        .semantics { this.contentDescription = contentDescription }
     Box(
         modifier = modifier
             .minimumInteractiveComponentSize()
@@ -319,7 +237,9 @@ fun AppIconButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .then(click),
+            // Not clipped: the glass kind's `--glass-shadow` draws outside the disc.
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
         val inner = Modifier.size(size)
@@ -327,25 +247,84 @@ fun AppIconButton(
             IconButtonKind.Plain -> Box(inner, contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
             }
-            IconButtonKind.Tonal -> Box(inner.background(scheme.surfaceContainerHigh, CircleShape), contentAlignment = Alignment.Center) {
+            IconButtonKind.Tonal -> Box(inner.background(t.colors.surface2, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
             }
-            IconButtonKind.Line -> Surface(
-                shape = CircleShape,
-                color = Color.Transparent,
-                border = BorderStroke(1.5.dp, colors.hairlineStrong),
-                modifier = inner,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
-                }
+            IconButtonKind.Line -> Box(inner.border(1.5.dp, t.colors.lineStrong, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
             }
-            IconButtonKind.Glass -> GlassBox(CircleShape, GlassStyle.photoChrome(colors), inner, backdrop) {
+            IconButtonKind.Glass -> GlassBox(CircleShape, GlassStyle.photoChrome(), inner, backdrop) {
                 Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
             }
         }
         if (pressed && kind != IconButtonKind.Glass) {
-            Box(Modifier.size(size).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.12f)))
+            Box(Modifier.size(size).clip(CircleShape).background(t.colors.text.copy(alpha = 0.10f)))
         }
     }
 }
+
+/** How a call button looks; the same in every template. */
+enum class CallButtonKind {
+    /** At rest: `--call-btn-fill`, blurred, with a hairline. */
+    Secondary,
+
+    /** Toggled (microphone off, camera off): `--call-btn-on-fill`. */
+    Toggled,
+
+    /** Hang up or decline: `--call-end`. */
+    End,
+
+    /** Answer: `--call-accept` (the gradient in neon, green in white). */
+    Accept,
+}
+
+/** A call button (68 dp, or 56 dp in the video row), always a 48 dp target at least; never a glow. */
+@Composable
+fun CallButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    kind: CallButtonKind = CallButtonKind.Secondary,
+    size: Dp = 68.dp,
+    backdrop: GlassBackdrop? = null,
+) {
+    val t = AppTheme.template
+    val c = t.colors
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = pressScale(pressed, 0.94f)
+    val inner = Modifier.size(size)
+    val iconSize = if (size >= 68.dp) 28.dp else 24.dp
+    Box(
+        modifier = modifier
+            .size(maxOf(size, 48.dp))
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (kind) {
+            CallButtonKind.Secondary -> GlassBox(CircleShape, GlassStyle.callButton(), inner, backdrop) {
+                Icon(icon, contentDescription = null, tint = c.onCallBtn, modifier = Modifier.size(iconSize))
+            }
+            CallButtonKind.Toggled -> Box(inner.background(c.callBtnOnFill, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = c.onCallBtnOn, modifier = Modifier.size(iconSize))
+            }
+            CallButtonKind.End -> Box(inner.background(c.callEnd, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = c.onCallEnd, modifier = Modifier.size(iconSize))
+            }
+            CallButtonKind.Accept -> Box(inner.background(t.paints.callAccept, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = c.onCallAccept, modifier = Modifier.size(iconSize))
+            }
+        }
+    }
+}
+
+/** The deck like button's shadow (`--glow-like`): the only glow a template draws. */
+@Composable
+internal fun Modifier.likeGlow(shape: Shape): Modifier = outerShadow(shape, AppTheme.template.shadows.glowLike)

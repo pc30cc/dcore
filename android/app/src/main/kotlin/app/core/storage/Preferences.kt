@@ -5,7 +5,7 @@ import java.util.UUID
 /**
  * The choices and markers that must survive a restart. Plain values, not
  * credentials. The language and the theme are not here: they must be known
- * before the first frame (see `AppLocales` and [AppearanceStore]).
+ * before the first frame (see `AppLocales` and `TemplateStore`).
  *
  * Key names are fixed neutral constants, never derived from the brand.
  */

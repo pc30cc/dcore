@@ -210,6 +210,48 @@ describe.skipIf(!hasInfrastructure)('GET /v1/deck', () => {
     expect(deckPageSchema.parse(again.json()).cards[0]!).not.toHaveProperty('distance');
   });
 
+  it('leaves prepared decks alone when a person changes only their template, or sends a settings change that changes nothing', async () => {
+    const me = await viewer();
+    const picky = await person({ name: 'Picks a look' });
+    await queue(me.id, [{ userId: picky.id, version: picky.version, km: 5, flags: 0 }]);
+    await call(h, '/v1/deck', { token: me.token });
+    expect(statements(await call(h, '/v1/deck', { token: me.token }))).toBe(0);
+    const stamp = () => h.redis.zscore(h.app.keys.profilesChanged(), picky.id);
+    const mev = () => h.redis.get(h.app.keys.meVersion(picky.id));
+
+    for (const body of [{ template: 'white' }, { template: 'neon' }]) {
+      const res = await call(h, '/v1/me/settings', { method: 'PATCH', token: picky.token, body });
+      expect(res.statusCode, res.body).toBe(200);
+    }
+    expect(await stamp()).toBeNull();
+    const after = await call(h, '/v1/deck', { token: me.token });
+    expect(statements(after)).toBe(0);
+    expect(deckPageSchema.parse(after.json()).cards[0]).toMatchObject({ name: 'Picks a look', v: picky.version });
+
+    // Nothing written: the account's version (its ETag) stays, so its cached view stays warm.
+    const me1 = await call(h, '/v1/me', { token: picky.token });
+    const version = await mev();
+    for (const body of [{ template: 'neon' }, { hideAge: false, incognito: false }, {}]) {
+      expect((await call(h, '/v1/me/settings', { method: 'PATCH', token: picky.token, body })).statusCode).toBe(200);
+    }
+    expect(await mev()).toBe(version);
+    expect(await stamp()).toBeNull();
+    const me2 = await call(h, '/v1/me', { token: picky.token });
+    expect(statements(me2)).toBe(0);
+    expect(me2.headers.etag).toBe(me1.headers.etag);
+    // The push switches are not on the card either.
+    expect((await call(h, '/v1/me/notifications', { method: 'PATCH', token: picky.token, body: { likes: false } })).statusCode).toBe(200);
+    expect(await stamp()).toBeNull();
+    expect(statements(await call(h, '/v1/deck', { token: me.token }))).toBe(0);
+
+    // A switch that is on the card still reaches the decks.
+    expect((await call(h, '/v1/me/settings', { method: 'PATCH', token: picky.token, body: { hideAge: true } })).statusCode).toBe(200);
+    expect(await stamp()).not.toBeNull();
+    expect(Number(await mev())).toBeGreaterThan(Number(version));
+    const card = deckPageSchema.parse((await call(h, '/v1/deck', { token: me.token })).json()).cards[0]!;
+    expect(card.age).toBeUndefined();
+  });
+
   it('skips and drops people hidden since the queue was built and people who left the pool', async () => {
     const me = await viewer();
     const stays = await person({ name: 'Stays' });

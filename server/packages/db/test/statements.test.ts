@@ -112,6 +112,23 @@ describe.skipIf(!hasDatabase)('statement counter (PostgreSQL)', () => {
     }
   });
 
+  it('does not charge a tally for work it starts detached, also when that work runs later', async () => {
+    const tally = StatementCounter.tally(1);
+    let later: Promise<unknown> = Promise.resolve();
+    await statementCounter.run(tally, async () => {
+      await one(pool, sql`SELECT 1 AS v`);
+      statementCounter.detached(() => {
+        later = new Promise((resolve) => setTimeout(resolve, 5)).then(async () => {
+          await one(pool, sql`SELECT 2 AS v`);
+          await one(pool, sql`SELECT 3 AS v`);
+        });
+      });
+    });
+    await later;
+    expect(tally.statements).toBe(1);
+    expect(tally.exceeded).toBeUndefined();
+  });
+
   it('instruments a pool once', async () => {
     expect(instrumentPool(pool)).toBe(pool);
     const { tally } = await statementCounter.measure(() => one(pool, sql`SELECT 1 AS v`));

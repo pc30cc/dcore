@@ -42,6 +42,7 @@ import { securityPlugin } from './plugins/security.js';
 import { storePlugin, type StoreOptions } from './plugins/store.js';
 import { accountRoutes } from './routes/account.js';
 import { adminAccountRoutes } from './routes/adminAccounts.js';
+import { adminAppearanceRoutes } from './routes/adminAppearance.js';
 import { adminAuthRoutes } from './routes/adminAuth.js';
 import { adminCatalogRoutes } from './routes/adminCatalog.js';
 import { adminOriginsRoutes } from './routes/adminOrigins.js';
@@ -320,6 +321,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(adminAuthRoutes);
   await app.register(adminAccountRoutes);
   await app.register(adminCatalogRoutes);
+  await app.register(adminAppearanceRoutes);
   await app.register(adminRtcRoutes);
   await app.register(originsRoutes);
   await app.register(adminOriginsRoutes);

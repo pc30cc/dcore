@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { localeSchema } from '../locale.js';
+import { templateIdSchema } from '../templates.js';
 import { appStoreNameSchema, httpUrl } from './common.js';
 
 /**
@@ -70,6 +71,19 @@ export const welcomeConfigSchema = z.object({
 });
 export type WelcomeConfig = z.infer<typeof welcomeConfigSchema>;
 
+/**
+ * The visual templates the panel offers, in display order, and its default
+ * (always among them). Ids are strings: an app shows a template it does not
+ * ship as the default, and the default it does not ship as `neon`.
+ */
+export const uiConfigSchema = z
+  .object({
+    defaultTemplate: templateIdSchema,
+    templates: z.array(templateIdSchema).min(1),
+  })
+  .refine((ui) => ui.templates.includes(ui.defaultTemplate), { message: 'templates must hold defaultTemplate', path: ['templates'] });
+export type UiConfig = z.infer<typeof uiConfigSchema>;
+
 export const configSchema = z.object({
   /** The document's version counter (`cfg:v`). */
   v: z.number().int().nonnegative(),
@@ -114,5 +128,6 @@ export const configSchema = z.object({
   strings: z.record(z.string(), z.string()),
   /** Absent when neither brand.json nor the panel sets a welcome. */
   welcome: welcomeConfigSchema.optional(),
+  ui: uiConfigSchema,
 });
 export type Config = z.infer<typeof configSchema>;

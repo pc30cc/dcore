@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { originsSettingsSchema } from './api/origins.js';
 import { welcomeOverrideSchema } from './brand.js';
 import { localeSchema } from './locale.js';
+import { uiTemplatesConfigSchema } from './templates.js';
 
 /**
  * The typed keys of `app_config` (panel-editable settings). The database
@@ -100,6 +101,8 @@ export const appConfigSchemas = {
   'origins.hosts': originsSettingsSchema.nullable(),
   /** The panel's overrides of brand.json's `welcome` (texts per locale, colours, picture URLs). */
   'brand.welcome': welcomeOverrideSchema,
+  /** The visual templates: the default and the ones offered to people (templates.ts). */
+  'ui.templates': uiTemplatesConfigSchema,
 } as const;
 
 export type AppConfigKey = keyof typeof appConfigSchemas;

@@ -16,4 +16,11 @@
     <string name="ui_loading">در حال بارگذاری</string>
     <string name="ui_unread">%1$s پیام نخونده</string>
     <string name="ui_logo">نشانه</string>
+    <!-- The remove button on a photo slot. -->
+    <string name="ui_remove_photo">حذف</string>
+    <!-- The template picker in Settings: its title and the three options. -->
+    <string name="settings_template">قالب</string>
+    <string name="template_default">پیش‌فرض</string>
+    <string name="template_neon">تیره</string>
+    <string name="template_white">سفید</string>
 </resources>

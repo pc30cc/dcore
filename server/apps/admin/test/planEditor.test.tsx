@@ -187,7 +187,7 @@ describe('the plan editor', () => {
     await user.click(screen.getByRole('switch', { name: 'Unlimited: Super likes per week' }));
     expect(screen.getByText('Unsaved changes')).toBeTruthy();
     await user.click(save);
-    await screen.findByText('Saved. The app shows it within seconds.');
+    await screen.findByText('Saved.');
     expect(patched).toEqual({ descriptions: { en: 'More likes.' }, quotas: { weekly_superlikes: -1 } });
 
     await router.navigate('/revenue/plans/free');

@@ -416,7 +416,7 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       const off = await call(h, '/v1/me/settings', { method: 'PATCH', token: user.token, body: { acceptCalls: false, hideAge: true, modeRomance: false } });
       expect(off.statusCode).toBe(200);
       expect(statements(off)).toBeLessThanOrEqual(2);
-      expect(strict(settingsSchema, off.json())).toEqual({ incognito: false, hideAge: true, hideDistance: false, showOnline: true, acceptCalls: false, modeRomance: false, snoozed: false });
+      expect(strict(settingsSchema, off.json())).toEqual({ incognito: false, hideAge: true, hideDistance: false, showOnline: true, acceptCalls: false, modeRomance: false, snoozed: false, template: 'default' });
       const bit = user.id === lo ? 1 : 2;
       expect((await row<{ flags: number }>(db, 'SELECT flags FROM matches WHERE id = $1', [matchId])).flags).toBe(3 & ~bit);
       expect(await h.redis.exists(`${h.prefix}mt:${matchId}`)).toBe(0);

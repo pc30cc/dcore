@@ -7,18 +7,13 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
@@ -26,8 +21,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import app.core.i18n.AppLanguage
-import app.core.storage.Appearance
-import app.core.storage.AppearanceStore
+import app.core.template.TemplateStore
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 /** True when the system's "remove animations" is on: motion is then cut to short fades or nothing. */
 val LocalReducedMotion = staticCompositionLocalOf { false }
@@ -39,63 +35,68 @@ val LocalReducedMotion = staticCompositionLocalOf { false }
  */
 val LocalGlass = compositionLocalOf { false }
 
-private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(Radius.xs),
-    small = RoundedCornerShape(Radius.sm),
-    medium = RoundedCornerShape(Radius.md),
-    large = RoundedCornerShape(Radius.xl),
-    extraLarge = RoundedCornerShape(Radius.xxl),
-)
-
-/** Whether the app draws dark: the person's choice ([AppearanceStore]), dark unless they picked otherwise. */
+/** The template the app draws now: the effective one ([TemplateStore]), following every change at once. */
 @Composable
-fun appearanceIsDark(): Boolean {
+fun currentTemplate(): AppTemplate {
     val context = LocalContext.current
-    val appearance by remember(context) { AppearanceStore.flow(context) }.collectAsState()
-    return when (appearance) {
-        Appearance.DARK -> true
-        Appearance.LIGHT -> false
-        Appearance.SYSTEM -> isSystemInDarkTheme()
-    }
+    val id by remember(context) { TemplateStore.get(context).effective }.collectAsState()
+    return remember(id) { Templates.of(id) }
 }
 
 /**
- * The app's theme: Material 3 from the design tokens and the brand's
- * colours, dark (the default look) or light, Persian type when the app
- * speaks Persian, plus the app's own colours ([AppTheme.colors]), styles
- * ([AppTheme.type]) and whether glass may blur ([LocalGlass]).
+ * The app's theme: the visual [template] (its tokens through
+ * [AppTheme.template], Material 3's scheme, type and shapes derived from
+ * them), Persian type when the app speaks Persian, the older app colours
+ * ([AppTheme.colors], mapped onto the template) and whether glass may blur
+ * ([LocalGlass], never when the template's glass switch is off).
  *
  * The layout direction is not set here: it comes from the configuration's
  * locale (`AppLocales.wrap`), so Persian is right to left in Compose and in
  * everything the platform draws alike.
  *
- * No Material You wallpaper colours: the colour belongs to the brand.
+ * No Material You wallpaper colours: the colour belongs to the template.
  */
 @Composable
 fun AppTheme(
-    dark: Boolean = appearanceIsDark(),
-    brand: BrandColors = BrandColors.Build,
+    template: AppTemplate = currentTemplate(),
     content: @Composable () -> Unit,
 ) {
     val locale = LocalConfiguration.current.locales[0]
     val persian = AppLanguage.fromTag(locale?.toLanguageTag()) == AppLanguage.FA
-    val scheme = remember(dark, brand) { appColorScheme(dark, brand) }
-    val colors = remember(dark, brand) { AppColors.of(dark, brand) }
-    val typography = remember(persian) { appTypography(persian) }
-    val type = remember(persian) { AppType.of(persian) }
+    val scripted = remember(template, persian) { template.inScript(persian) }
+    val scheme = remember(template) { templateColorScheme(template) }
+    val colors = remember(template) { AppColors.of(template) }
+    val typography = remember(scripted) { templateTypography(scripted) }
+    val shapes = remember(template) { templateShapes(template) }
+    val type = remember(scripted) { AppType.of(scripted) }
     val context = LocalContext.current
     val reducedMotion = remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
-    val glass = rememberGlassAvailable(context)
+    val glass = rememberGlassAvailable(context) && template.switches.glass
     CompositionLocalProvider(
+        LocalAppTemplate provides scripted,
         LocalAppColors provides colors,
         LocalAppType provides type,
         LocalReducedMotion provides reducedMotion,
         LocalGlass provides glass,
     ) {
-        MaterialTheme(colorScheme = scheme, typography = typography, shapes = AppShapes, content = content)
+        MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }
+}
+
+/**
+ * The dark (`neon`, with [brand]'s gradient) or the light (`white`)
+ * template: for tests and previews that pin one.
+ */
+@Composable
+fun AppTheme(
+    dark: Boolean,
+    brand: BrandColors = BrandColors.Build,
+    content: @Composable () -> Unit,
+) {
+    val template = remember(dark, brand) { Templates.of(if (dark) Templates.NEON else Templates.WHITE, brand) }
+    AppTheme(template = template, content = content)
 }
 
 /** Android 12+ and battery saver off, following battery saver as it changes. */
@@ -123,6 +124,16 @@ private fun rememberGlassAvailable(context: Context): Boolean {
 
 /** What Material has no role for, read like `MaterialTheme.colorScheme`. */
 object AppTheme {
+    /**
+     * The template being drawn: its id, switches and every token, its type
+     * already in the screen's script. Screens read colours, paints, type,
+     * radii and sizes from here and branch on `template.switches` where the
+     * structure differs.
+     */
+    val template: AppTemplate
+        @Composable @ReadOnlyComposable get() = LocalAppTemplate.current
+
+    /** The older colour names, mapped onto [template]; new code reads [template]. */
     val colors: AppColors
         @Composable @ReadOnlyComposable get() = LocalAppColors.current
 

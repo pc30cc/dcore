@@ -12,4 +12,5 @@ export * from './plans.js';
 export * from './problem.js';
 export * from './push.js';
 export * from './realtime.js';
+export * from './templates.js';
 export * from './visibility.js';

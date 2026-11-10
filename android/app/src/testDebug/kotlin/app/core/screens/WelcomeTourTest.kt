@@ -39,6 +39,7 @@ import app.core.media.LocalRemoteImages
 import app.core.net.Backend
 import app.core.net.SampleApi
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -189,7 +190,7 @@ class WelcomeTourTest {
         }
         graph.config.start()
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = TourPhotos.template ?: Templates.White) {
                 CompositionLocalProvider(
                     LocalAppGraph provides graph,
                     LocalAppName provides AppBrand.appName,
@@ -221,7 +222,7 @@ class WelcomeTourTest {
         val bitmap = compose.onAllNodes(isRoot())[0].captureToImage().asAndroidBitmap()
         dir.mkdirs()
         val scale = app.resources.configuration.fontScale
-        val theme = "light" + (if (scale > 1f) String.format(Locale.ROOT, "-text%.1f", scale) else "")
+        val theme = (TourPhotos.template?.id ?: "light") + (if (scale > 1f) String.format(Locale.ROOT, "-text%.1f", scale) else "")
         val file = File(dir, String.format(Locale.ROOT, "%s-%s-%s-w%02d-%s.png", BuildConfig.STORE, language, theme, ++shot, name))
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

@@ -26,6 +26,8 @@ import app.core.model.CallKind
 import app.core.push.CallNotifications
 import app.core.push.IncomingCallLink
 import app.core.realtime.RealtimeCoordinator
+import app.core.ui.theme.BarIcons
+import app.core.ui.theme.SystemBarsOverride
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -150,6 +152,8 @@ fun CallHost(hooks: CallActivityHooks?) {
         FloatingCallBubble(state, room, remote, onOpen = controller::expand)
         return
     }
+    // The call is dark in every template: light bar icons while it covers the app.
+    SystemBarsOverride(BarIcons(lightStatus = true, lightNavigation = true))
     BackHandler {
         when {
             state.ringingHere -> actions.decline()

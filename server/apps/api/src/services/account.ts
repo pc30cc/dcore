@@ -8,7 +8,8 @@ import { z } from 'zod';
 /**
  * The own-account view behind `GET /v1/me`, cached in Valkey under its
  * version: `mev:<uid>` (a version counter, also the ETag; kv-core) and
- * `me:<uid>:<mev>` (the `account_view()` result, deflated, 24 h; kv-cache). A warm
+ * `me:<uid>:<mev>:s<shape>` (the `account_view()` result, deflated, 24 h;
+ * kv-cache; {@link ME_VIEW_SHAPE}). A warm
  * read costs two Valkey round trips and no SQL; a miss costs one statement.
  *
  * Every write to the account bumps `mev` after it is durable, so the next
@@ -21,6 +22,15 @@ import { z } from 'zod';
  */
 
 export const ME_VIEW_TTL_SECONDS = 24 * 3_600;
+
+/**
+ * The generation of the cached view's form, part of its key
+ * (`me:<uid>:<mev>:s<shape>`). Raise it whenever `account_view()` gains or
+ * loses a key this build reads: during a rolling deploy the old and the new
+ * build share `mev`, and a view one of them parsed (dropping what it does
+ * not know) must never be served by the other. 2: `profile.uiTemplate`.
+ */
+export const ME_VIEW_SHAPE = 2;
 
 const cachedSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('account'), view: accountViewSchema }),
@@ -40,6 +50,15 @@ export interface LoadedAccount {
 export interface FreshView {
   since: number | null;
   result: AccountViewResult;
+}
+
+export interface ChangeOptions {
+  /**
+   * Whether the change may show on the person's card (default true): then
+   * prepared decks holding the card build it again. A change the card does
+   * not carry (the template, the push switches) passes false.
+   */
+  card?: boolean | undefined;
 }
 
 export interface AccountStoreOptions {
@@ -83,7 +102,7 @@ export class AccountStore {
    */
   async view(userId: string, version: number | null): Promise<LoadedAccount> {
     if (version !== null) {
-      const key = this.keys.meView(userId, version);
+      const key = this.keys.meView(userId, version, ME_VIEW_SHAPE);
       try {
         const stored = await this.cache.getBuffer(key);
         if (stored) {
@@ -118,7 +137,7 @@ export class AccountStore {
    * stored (the next read rebuilds). When Valkey cannot be written the old
    * view may be served until it expires (24 h); that is logged as an error.
    */
-  async changed(userId: string, fresh?: FreshView): Promise<number | null> {
+  async changed(userId: string, fresh?: FreshView, options: ChangeOptions = {}): Promise<number | null> {
     const key = this.keys.meVersion(userId);
     let version: number;
     let store = false;
@@ -135,9 +154,11 @@ export class AccountStore {
       return null;
     }
     // Prepared decks holding this person's card at an older version build it again.
-    await markProfilesChanged(this.redis, this.keys, [userId]).catch((error: unknown) =>
-      this.log.warn({ err: error }, 'account: card change not noted; prepared decks may show the old card until their next refill'),
-    );
+    if (options.card !== false) {
+      await markProfilesChanged(this.redis, this.keys, [userId]).catch((error: unknown) =>
+        this.log.warn({ err: error }, 'account: card change not noted; prepared decks may show the old card until their next refill'),
+      );
+    }
     if (fresh && store) await this.store(userId, version, fresh.result);
     return version;
   }
@@ -145,7 +166,7 @@ export class AccountStore {
   private async store(userId: string, version: number, result: AccountViewResult): Promise<void> {
     try {
       const body = deflateRawSync(Buffer.from(JSON.stringify(result)));
-      await this.cache.set(this.keys.meView(userId, version), body, 'EX', ME_VIEW_TTL_SECONDS);
+      await this.cache.set(this.keys.meView(userId, version, ME_VIEW_SHAPE), body, 'EX', ME_VIEW_TTL_SECONDS);
     } catch (error) {
       this.log.warn({ err: error }, 'account: view not cached');
     }

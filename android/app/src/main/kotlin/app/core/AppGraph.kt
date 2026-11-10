@@ -38,7 +38,10 @@ import app.core.billing.PurchaseSyncWorker
 import app.core.billing.Purchases
 import app.core.billing.ServerStoreApi
 import app.core.feature.paywall.PaywallController
+import app.core.model.SettingsPatch
 import app.core.model.SwipeOutcome
+import app.core.template.TemplateController
+import app.core.template.TemplateStore
 import app.core.store.AgeSignalsCheck
 import app.core.store.RatingPacing
 import app.core.store.StoreBilling
@@ -142,15 +145,31 @@ class AppGraph(private val app: Application) {
      * in-memory sample backend ([Backend] decides; release builds cannot).
      */
     val api: ServerApi by lazy {
-        Backend.create(app, clock) {
+        Backend.create(app, clock, settingsTap = templates) {
             HttpServerApi(
                 client = http,
                 session = session,
                 device = AndroidDeviceIdentity(app, preferences),
                 store = AppBrand.store.id,
                 clock = clock,
+                settingsTap = templates,
             )
         }
+    }
+
+    /**
+     * The visual template: the person's choice, the admin's `config.ui`,
+     * kept in step with the account's settings (template/). The theme reads
+     * the same store, so the first frame is drawn before any of this runs.
+     */
+    val templates: TemplateController by lazy {
+        TemplateController(
+            store = TemplateStore.get(app),
+            send = { choice -> api.updateSettings(SettingsPatch(template = choice)) },
+            signedIn = { api.sessionUser() != null },
+            scope = appScope,
+            diag = diag,
+        )
     }
 
     val config: ConfigRepository by lazy { ConfigRepository(api, appScope, diag, ::language) }
@@ -163,6 +182,7 @@ class AppGraph(private val app: Application) {
         AuthGate(api, store.externalSignIn, store.smsCodes, appScope, diag).also { gate ->
             // Another account's plan, quotas and purchase in progress are never shown to the next one.
             gate.onSignOut(after = {
+                templates.onSignedOut()
                 entitlements.clear()
                 if (purchasesHolder.isInitialized()) purchases.clear()
             })

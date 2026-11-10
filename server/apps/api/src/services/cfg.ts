@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { configSnapshot, type ConfigSnapshotRows, type Pool } from '@app/db';
+import { configSnapshot, statementCounter, type ConfigSnapshotRows, type Pool } from '@app/db';
 import {
   FREE_PLAN_KEY,
   appStores,
@@ -11,11 +11,13 @@ import {
   planDisplayName,
   reportReason,
   store as storeCodes,
+  uiSettingsOf,
   type AppConfig,
   type AppStore,
   type Brand,
   type Config,
   type Locale,
+  type UiSettings,
 } from '@app/shared';
 import type { KeyBuilder } from '@app/shared/server';
 import type { Redis } from 'ioredis';
@@ -33,11 +35,13 @@ import { welcomeFor } from './welcome.js';
  * request paths only read the snapshot, never PostgreSQL.
  *
  * The admin panel bumps `cfg:v` and publishes the new version on
- * `cfg:changed` after every save ({@link publishConfigChange}). Each process
- * reloads on that message, and also when a poll of `cfg:v` (one GET a
- * minute) finds a version it has not loaded, which covers a message missed
- * while Valkey was unreachable. Until the first load succeeds the routes
- * that need the snapshot answer 503.
+ * `cfg:changed` after every save ({@link ConfigService.announce}). Each
+ * process reloads on that message, and also when a poll of `cfg:v` (one GET
+ * a minute) finds a version it has not loaded, which covers a message missed
+ * while Valkey was unreachable. A save whose announcement fails is loaded
+ * by its own process at once and announced again in the background until
+ * `cfg:v` moves. Until the first load succeeds the routes that need the
+ * snapshot answer 503.
  *
  * `GET /v1/config` documents are built once per load, for each store and
  * locale, with their ETag (the version and a hash of the body), so serving
@@ -124,6 +128,8 @@ export interface ConfigSnapshot {
   flags: readonly FeatureFlagDefinition[];
   /** store_products, inactive rows included (the store catalogue is built from them). */
   storeProducts: ConfigSnapshotRows['storeProducts'];
+  /** The visual templates offered and the default (app_config `ui.templates`, ids this build knows). */
+  ui: UiSettings;
   documents: ReadonlyMap<string, ConfigDocument>;
   /** The keys of app_config this build does not know (a newer panel). */
   unknownKeys: readonly string[];
@@ -286,6 +292,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
   }));
   const prompts: PromptDefinition[] = rows.prompts.map((p) => ({ id: p.id, voice: p.kind === 2, active: p.active, sort: p.sort, i18n: p.i18n }));
   const plans: PlanDefinition[] = rows.plans.map((p) => ({ ...p }));
+  const ui = uiSettingsOf(app['ui.templates']);
   const bannedTerms = new BannedTerms(rows.bannedTerms);
   if (bannedTerms.invalid.length > 0) log.warn({ ids: bannedTerms.invalid }, 'config: banned terms skipped (pattern does not compile)');
 
@@ -349,6 +356,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
         calls: app['calls.enabled'],
         strings: appStrings(own),
         ...(welcome ? { welcome } : {}),
+        ui: { defaultTemplate: ui.defaultTemplate, templates: [...ui.templates] },
       };
       // The document is what every client parses: refuse to serve one the contract does not accept.
       const checked = configSchema.parse(document);
@@ -374,6 +382,7 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
     bannedTerms,
     flags: rows.flags,
     storeProducts: rows.storeProducts,
+    ui,
     documents,
     unknownKeys: unknown,
   };
@@ -391,6 +400,9 @@ export class ConfigService {
   private retry: NodeJS.Timeout | null = null;
   private stopped = false;
   private failures = 0;
+  private announceTimer: NodeJS.Timeout | null = null;
+  private announceFailures = 0;
+  private announcePending = false;
   private readonly listeners: ((snapshot: ConfigSnapshot) => void)[] = [];
   private readonly options: ConfigServiceOptions;
 
@@ -442,8 +454,13 @@ export class ConfigService {
     this.stopped = true;
     if (this.poll) clearInterval(this.poll);
     if (this.retry) clearTimeout(this.retry);
+    if (this.announceTimer) clearTimeout(this.announceTimer);
+    if (this.announcePending) {
+      this.options.log.error('config: stopping with a saved change not yet announced; other processes load it at the next change or restart');
+    }
     this.poll = null;
     this.retry = null;
+    this.announceTimer = null;
     const subscriber = this.subscriber;
     this.subscriber = null;
     if (subscriber) {
@@ -454,6 +471,57 @@ export class ConfigService {
       subscriber.disconnect();
     }
     await this.loading?.catch(() => undefined);
+  }
+
+  /**
+   * After a save is committed: a new `cfg:v`, announced on `cfg:changed`, so
+   * every process (this one too) loads the configuration again. When Valkey
+   * does not take it, this process loads the saved value now (its documents
+   * and ETags change at once) and the announcement is retried in the
+   * background until it goes through; `cfg:v` then moves and the others
+   * follow through the message or their poll. Never throws; false when the
+   * announcement is still pending.
+   */
+  async announce(): Promise<boolean> {
+    try {
+      await publishConfigChange(this.options.redis, this.options.keys);
+      // A change still pending is covered too: every process loads everything again.
+      this.announcePending = false;
+      return true;
+    } catch (error) {
+      this.options.log.error({ err: error }, 'config: a saved change was not announced; this process loads it now and the announcement is retried');
+      // Outside the request that saved: neither the load nor the retries count against its statement budget.
+      statementCounter.detached(() => {
+        this.announcePending = true;
+        void this.reload();
+        this.scheduleAnnounce();
+      });
+      return false;
+    }
+  }
+
+  private scheduleAnnounce(): void {
+    if (this.stopped || this.announceTimer) return;
+    const delay = Math.min(30_000, 500 * 2 ** Math.min(this.announceFailures, 6));
+    this.announceTimer = setTimeout(() => {
+      this.announceTimer = null;
+      void this.announceAgain();
+    }, delay);
+    this.announceTimer.unref();
+  }
+
+  private async announceAgain(): Promise<void> {
+    if (this.stopped || !this.announcePending) return;
+    try {
+      const version = await publishConfigChange(this.options.redis, this.options.keys);
+      this.announcePending = false;
+      this.announceFailures = 0;
+      this.options.log.info({ version }, 'config: the pending change is announced');
+    } catch (error) {
+      this.announceFailures += 1;
+      this.options.log.warn({ err: error, failures: this.announceFailures }, 'config: announcing the pending change failed again; retrying');
+      this.scheduleAnnounce();
+    }
   }
 
   /** Loads a new snapshot; concurrent calls share one load and ask for one more after it. */

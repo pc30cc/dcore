@@ -130,6 +130,8 @@ class HttpServerApi(
     /** The store this build is for (`bazaar`, `play`): config is per store. */
     private val store: String,
     private val clock: Clock = Clock.System,
+    /** Hears the account's settings in every answer that carries them. */
+    private val settingsTap: SettingsTap = SettingsTap.None,
 ) : ServerApi {
 
     override val events: Flow<ApiEvent> get() = client.events
@@ -230,19 +232,23 @@ class HttpServerApi(
     // MARK: - Me, profile, photos, location
 
     override suspend fun me(): Fetched<Me> {
+        val begun = settingsTap.begin()
         val fetched = client.revalidate("me", "v1/me", Me.serializer(), cacheKey = personal("me"))
         if (fetched.changed) {
             val me = fetched.value
             session.updateAccount(AuthUser(me.id, me.status, me.onboardingStep))
         }
+        fetched.value.profile?.let { settingsTap.received(begun, it.settings) }
         return fetched
     }
 
-    override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile =
-        client.send(
+    override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile {
+        val begun = settingsTap.begin()
+        return client.send(
             "me.basics", HttpMethod.Put, "v1/me/basics",
             BasicsRequest(birthDate, gender, consents), BasicsRequest.serializer(), OwnProfile.serializer(), Idempotency.IDEMPOTENT,
-        ).value
+        ).value.also { settingsTap.received(begun, it.settings) }
+    }
 
     override suspend fun consents(): List<ConsentRecord> =
         client.get("me.consents", "v1/me/consents", ConsentList.serializer()).value.consents
@@ -253,11 +259,13 @@ class HttpServerApi(
             ConsentUpdate(version, accepted), ConsentUpdate.serializer(), Idempotency.IDEMPOTENT,
         )
 
-    override suspend fun updateProfile(patch: ProfilePatch): OwnProfile =
-        client.send(
+    override suspend fun updateProfile(patch: ProfilePatch): OwnProfile {
+        val begun = settingsTap.begin()
+        return client.send(
             "me.profile", HttpMethod.Patch, "v1/me/profile",
             patch, ProfilePatch.serializer(), OwnProfile.serializer(), Idempotency.IDEMPOTENT,
-        ).value
+        ).value.also { settingsTap.received(begun, it.settings) }
+    }
 
     override suspend fun updatePreferences(patch: PreferencesPatch): DiscoveryPreferences =
         client.send(
@@ -265,11 +273,13 @@ class HttpServerApi(
             patch, PreferencesPatch.serializer(), DiscoveryPreferences.serializer(), Idempotency.IDEMPOTENT,
         ).value
 
-    override suspend fun updateSettings(patch: SettingsPatch): Settings =
-        client.send(
+    override suspend fun updateSettings(patch: SettingsPatch): Settings {
+        val begun = settingsTap.begin()
+        return client.send(
             "me.settings", HttpMethod.Patch, "v1/me/settings",
             patch, SettingsPatch.serializer(), Settings.serializer(), Idempotency.IDEMPOTENT,
-        ).value
+        ).value.also { settingsTap.received(begun, it) }
+    }
 
     override suspend fun updateNotifications(patch: NotificationPrefsPatch): NotificationPrefs =
         client.send(

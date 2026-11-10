@@ -13,9 +13,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * The design tokens (tokens.json), in code. Colours are in `Color.kt`; this
- * file holds the sizes, corners, type sizes and motion. All brand-free: a
- * rebrand changes colours and fonts, never these.
+ * Sizes, corners, type sizes and motion that do not change between
+ * templates. All brand-free: a rebrand changes colours and fonts, never
+ * these. [Radius], [TabBarTokens] and [GlassTokens] are the older,
+ * dark-template values the screens written before the templates still
+ * use; new code reads `AppTheme.template.radii` and `.sizes` instead, and
+ * the screen jobs move each use over.
  */
 object Space {
     /** The 4 dp grid: 0, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. */
@@ -96,7 +99,7 @@ object TypeScale {
     val hero: TextUnit = 40.sp
 }
 
-/** The floating tab bar's place (tokens.json `spacing.tabBar`). */
+/** The floating tab bar's place in the dark template (the template's `sizes` hold both). */
 object TabBarTokens {
     val height: Dp = 66.dp
     val sideInset: Dp = 12.dp
@@ -120,7 +123,7 @@ object DeckActionTokens {
     val bottomOffset: Dp = 100.dp
 }
 
-/** Glass (tokens.json `glass`): blur radii; colours are in [AppColors]. */
+/** Glass blur radii of the dark template; colours are in [AppColors]. */
 object GlassTokens {
     val photoChromeBlur: Dp = 24.dp
     val chipBlur: Dp = 20.dp
@@ -129,7 +132,7 @@ object GlassTokens {
 }
 
 /**
- * Motion (tokens.json `motion`). With the system's "remove animations" on
+ * Motion. With the system's "remove animations" on
  * ([LocalReducedMotion]) everything becomes a [Motion.REDUCED_MS] crossfade:
  * no rotation, particles, confetti or drift.
  */

@@ -20,7 +20,7 @@ object Backend {
     fun isSample(context: Context?): Boolean = false
 
     @Suppress("UNUSED_PARAMETER")
-    fun create(context: Context, clock: Clock, real: () -> ServerApi): ServerApi = real()
+    fun create(context: Context, clock: Clock, settingsTap: SettingsTap, real: () -> ServerApi): ServerApi = real()
 
     @Suppress("UNUSED_PARAMETER")
     fun billing(context: Context, real: () -> StoreBilling): StoreBilling = real()

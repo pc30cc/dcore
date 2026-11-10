@@ -14,7 +14,6 @@ import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { nextId } from '../auth/sessions.js';
 import { HttpProblem } from '../lib/problem.js';
-import { publishConfigChange } from '../services/cfg.js';
 
 /**
  * The hosts of the signed origins document, from the admin panel (superadmin):
@@ -131,9 +130,7 @@ export const adminOriginsRoutes: FastifyPluginAsyncZod = async (app) => {
       if (outcome.changed) {
         // This process serves the new document now; the others reload on cfg:changed.
         app.origins.update(outcome.saved);
-        await publishConfigChange(app.redis, app.keys).catch((error: unknown) =>
-          request.log.error({ err: error }, 'origins: saved, but the other processes were not told; they reload within a minute'),
-        );
+        if (!(await app.cfg.announce())) request.log.warn('origins: saved; the announcement to the other processes is retried in the background');
         await app.jobs
           .add('system', 'origins-publish', jobId('origins-publish', outcome.saved.version), { version: outcome.saved.version }, { attempts: 8, backoffMs: 1_000 })
           .catch((error: unknown) => request.log.warn({ err: error }, 'origins: the publish job was not queued; the worker publishes on its next round'));

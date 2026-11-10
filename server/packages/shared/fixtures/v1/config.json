@@ -194,5 +194,12 @@
       "https://cdn.example.com/brand/welcome/w1.webp",
       "https://cdn.example.com/brand/welcome/w2.webp"
     ]
+  },
+  "ui": {
+    "defaultTemplate": "neon",
+    "templates": [
+      "neon",
+      "white"
+    ]
   }
 }

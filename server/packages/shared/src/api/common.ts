@@ -15,6 +15,7 @@ import {
   appealStatus,
   walletItem,
 } from '../codes.js';
+import { templateChoiceSchema } from '../templates.js';
 
 /**
  * The objects many routes share (wire format: JSON, camelCase, lowercase
@@ -183,6 +184,7 @@ export const ownPromptSchema = profilePromptSchema.extend({
 /**
  * The privacy and visibility switches. `modeRomance` is the deck switch
  * (`profiles.mode_match`): off keeps the person out of discovery.
+ * `template` is the visual template chosen (`default` follows the panel's).
  */
 export const settingsSchema = z.object({
   incognito: z.boolean(),
@@ -192,6 +194,7 @@ export const settingsSchema = z.object({
   acceptCalls: z.boolean(),
   modeRomance: z.boolean(),
   snoozed: z.boolean(),
+  template: templateChoiceSchema,
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

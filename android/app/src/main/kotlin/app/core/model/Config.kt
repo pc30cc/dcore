@@ -31,7 +31,30 @@ data class Config(
     val push: PushOptions = PushOptions(),
     /** The signed-out welcome's copy, colours and pictures, when the admin panel sets them; the brand's own otherwise. */
     val welcome: WelcomeConfig? = null,
+    /** The visual templates the admin offers and the default one; absent from a server older than templates. */
+    val ui: UiConfig? = null,
 )
+
+/**
+ * `config.ui`: the template a person on `default` gets ([defaultTemplate])
+ * and the ids offered to choose from, in display order ([templates], which
+ * always holds the default). Ids are neutral (`neon`, `white`); an id this
+ * build does not ship is skipped by the effective-template rule
+ * (`TemplateRule`), never an error.
+ */
+@Serializable
+data class UiConfig(
+    val defaultTemplate: String = DEFAULT_TEMPLATE,
+    val templates: List<String> = DEFAULT_OFFERED,
+) {
+    companion object {
+        const val DEFAULT_TEMPLATE: String = "neon"
+        val DEFAULT_OFFERED: List<String> = listOf("neon", "white")
+
+        /** What the server sends when the admin never set anything (and what a server without `ui` means). */
+        val Default: UiConfig = UiConfig()
+    }
+}
 
 /**
  * The welcome screen's overrides, for the requested locale only (like

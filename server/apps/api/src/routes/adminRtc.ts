@@ -5,7 +5,6 @@ import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { nextId } from '../auth/sessions.js';
 import { HttpProblem } from '../lib/problem.js';
-import { publishConfigChange } from '../services/cfg.js';
 
 /**
  * The admin panel's RTC settings (`config.providers`, superadmin):
@@ -118,9 +117,7 @@ export const adminRtcRoutes: FastifyPluginAsyncZod = async (app) => {
         return merged;
       });
       const settings = app.calls.rtc.set(saved.value);
-      await publishConfigChange(app.redis, app.keys).catch((error: unknown) =>
-        request.log.error({ err: error }, 'rtc: saved, but the other processes were not told; they reload within a minute'),
-      );
+      if (!(await app.cfg.announce())) request.log.warn('rtc: saved; the announcement to the other processes is retried in the background');
       request.log.info({ changed: saved.changed }, 'rtc settings saved');
       return viewOf(app, settings);
     },

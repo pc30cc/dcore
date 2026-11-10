@@ -2,6 +2,7 @@ package app.core.net
 
 import app.core.brand.AppBrand
 import app.core.model.AuthMethod
+import app.core.model.UiConfig
 import app.core.model.AuthOptions
 import app.core.model.BillingPeriod
 import app.core.model.CallSwitches
@@ -214,7 +215,7 @@ internal object SampleData {
         fields = listOf(ProfileFieldValue(1, number = 181), ProfileFieldValue(2, option = 22), ProfileFieldValue(3, options = listOf(31, 33))),
         completeness = 78,
         birthDate = LocalDate.of(1996, 9, 14),
-        settings = Settings(acceptCalls = true),
+        settings = Settings(acceptCalls = true, template = "default"),
     )
 
     val preferences = DiscoveryPreferences(
@@ -304,6 +305,7 @@ internal object SampleData {
             ),
             limits = Limits(messageMax = 2000),
             calls = CallSwitches(audio = true, video = true),
+            ui = UiConfig.Default,
         )
     }
 

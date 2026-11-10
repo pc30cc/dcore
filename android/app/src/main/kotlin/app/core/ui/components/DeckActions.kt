@@ -15,14 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -35,15 +32,19 @@ import app.core.R
 import app.core.ui.icons.AppIcons
 import app.core.ui.theme.AppTheme
 import app.core.ui.theme.DeckActionTokens
+import app.core.ui.theme.Space
+import app.core.ui.theme.insetShadow
+import app.core.ui.theme.outerShadow
+import androidx.compose.runtime.getValue
 
 /** One of the deck's five actions. */
 enum class DeckAction { Rewind, Pass, SuperLike, Like, Boost }
 
 /**
- * The deck's action row: rewind, pass, super-like, like, boost, from left to
- * right in every language (pass on the left, like on the right), so only
- * this row is laid out left to right inside a Persian screen. Glass over the
- * photo ([backdrop]); like is the gradient with the glow.
+ * The deck's action row: rewind 48, pass 68, super like 56, like 68,
+ * boost 48, from left to right in every language (pass on the left, like
+ * on the right), so only this row is laid out left to right inside a
+ * Persian screen; inside the 20 dp gutter.
  *
  * A null handler leaves that button out (no rewind or boost on a plan
  * without them), keeping the others where they are.
@@ -60,7 +61,7 @@ fun DeckActions(
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
-            modifier = modifier.fillMaxWidth().padding(horizontal = DeckActionTokens.gutter),
+            modifier = modifier.fillMaxWidth().padding(horizontal = Space.gutter),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -78,7 +79,14 @@ private fun Slot(size: Dp, content: @Composable () -> Unit) {
     Box(Modifier.size(maxOf(size, 48.dp)), contentAlignment = Alignment.Center) { content() }
 }
 
-/** One deck action, at its own size (tokens.json `spacing.deckActions`). */
+/**
+ * One deck action at its size: like is `--like-fill` with `--on-like` and
+ * `--glow-like` (the only glow); super like `--super-fill` with a 1.5 dp
+ * `--super-line` and `--super-icon`; rewind, pass and boost `--act-fill`
+ * (blurred over [backdrop] where glass is on) with a 1 dp `--act-line`,
+ * `--act-icon` (boost: `--boost-icon`). Neon puts them on the photo, white
+ * on the page with `--act-shadow`; the tokens carry the difference.
+ */
 @Composable
 fun DeckActionButton(
     action: DeckAction,
@@ -86,7 +94,8 @@ fun DeckActionButton(
     modifier: Modifier = Modifier,
     backdrop: GlassBackdrop? = null,
 ) {
-    val colors = AppTheme.colors
+    val t = AppTheme.template
+    val c = t.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = pressScale(pressed, if (action == DeckAction.Like) 0.90f else 0.94f)
@@ -98,18 +107,12 @@ fun DeckActionButton(
         DeckAction.Boost -> Triple(DeckActionTokens.boost, AppIcons.Bolt, R.string.ui_boost)
     }
     val description = stringResource(label)
-    val iconSize = when (action) {
-        DeckAction.Pass -> 32.dp
-        DeckAction.Like -> 32.dp
-        DeckAction.SuperLike -> 26.dp
-        else -> 22.dp
-    }
+    val iconSize = if (size >= 68.dp) 30.dp else 24.dp
     val tint: Color = when (action) {
-        DeckAction.Like -> colors.onGradient
-        DeckAction.SuperLike -> if (colors.dark) colors.alive else colors.onSuperLike
-        DeckAction.Boost -> colors.boost
-        DeckAction.Rewind -> colors.rewind
-        DeckAction.Pass -> colors.pass
+        DeckAction.Like -> c.onLike
+        DeckAction.SuperLike -> c.superIcon
+        DeckAction.Boost -> c.boostIcon
+        DeckAction.Rewind, DeckAction.Pass -> c.actIcon
     }
     Box(
         modifier = modifier
@@ -118,25 +121,27 @@ fun DeckActionButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .then(if (action == DeckAction.Like) Modifier.glow(CircleShape, colors, pressed) else Modifier)
-            .clip(CircleShape)
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            action == DeckAction.Like -> Box(Modifier.size(size).background(colors.gradient, CircleShape))
-            action == DeckAction.SuperLike && !colors.dark -> Box(Modifier.size(size).softShadow(CircleShape).background(colors.superLikeFill, CircleShape))
-            else -> GlassBox(CircleShape, GlassStyle.photoChrome(colors), Modifier.size(size), backdrop) {}
+        when (action) {
+            DeckAction.Like -> Box(
+                Modifier
+                    .size(size)
+                    .likeGlow(CircleShape)
+                    .background(t.paints.likeFill, CircleShape)
+                    .insetShadow(CircleShape, t.shadows.btnHighlight),
+            )
+            DeckAction.SuperLike -> Box(
+                Modifier
+                    .size(size)
+                    .outerShadow(CircleShape, t.shadows.actShadow)
+                    .background(c.superFill, CircleShape)
+                    .border(1.5.dp, c.superLine, CircleShape),
+            )
+            else -> GlassBox(CircleShape, GlassStyle.deckAction(), Modifier.size(size), backdrop) {}
         }
-        if (action == DeckAction.SuperLike && colors.dark) {
-            Box(Modifier.size(size).border(1.5.dp, colors.alive.copy(alpha = 0.55f), CircleShape))
-        }
-        DeckIcon(icon, tint, iconSize)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(iconSize))
     }
-}
-
-@Composable
-private fun DeckIcon(icon: ImageVector, tint: Color, size: Dp) {
-    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(size))
 }

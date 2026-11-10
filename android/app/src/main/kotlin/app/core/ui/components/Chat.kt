@@ -4,75 +4,55 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.core.ui.icons.AppIcons
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.Radius
-import app.core.ui.theme.brushTint
 
 /**
- * A chat bubble: theirs on the start side (the right in Persian) on the
- * high container, yours on the end side on the gradient with white text;
- * 22 dp corners with a 6 dp one at the top on the speaker's side. [meta] is
- * the time and state joined with «،» («۱۸:۲۵، دیده شد»), never a middle dot.
+ * A chat bubble (`--type-body`, `--r-bubble`, at most 286 dp): theirs on the
+ * start side (the right in Persian) in `--bubble-in`, yours on the end side
+ * in `--bubble-out` with `--on-bubble-out`; the corner at the top on the
+ * speaker's side is `--r-bubble-tail`. [meta] is the time and state joined
+ * with «،» («۱۸:۲۵، دیده شد»), in `--on-bubble-out-2` on yours.
  */
 @Composable
 fun ChatBubble(text: String, meta: String?, mine: Boolean, modifier: Modifier = Modifier) {
-    val colors = AppTheme.colors
-    val scheme = MaterialTheme.colorScheme
+    val t = AppTheme.template
+    val r = t.radii.bubble
+    val tail = t.radii.bubbleTail
     val shape = if (mine) {
-        RoundedCornerShape(topStart = Radius.bubble, topEnd = Radius.bubbleTail, bottomEnd = Radius.bubble, bottomStart = Radius.bubble)
+        RoundedCornerShape(topStart = r, topEnd = tail, bottomEnd = r, bottomStart = r)
     } else {
-        RoundedCornerShape(topStart = Radius.bubbleTail, topEnd = Radius.bubble, bottomEnd = Radius.bubble, bottomStart = Radius.bubble)
+        RoundedCornerShape(topStart = tail, topEnd = r, bottomEnd = r, bottomStart = r)
     }
-    val ink = if (mine) colors.onGradient else scheme.onSurface
     Box(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
         Column(
             modifier
-                .widthIn(max = 300.dp)
-                .then(if (mine) Modifier.background(colors.gradient, shape) else Modifier.background(scheme.surfaceContainerHigh, shape))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .widthIn(max = 286.dp)
+                .then(if (mine) Modifier.background(t.paints.bubbleOut, shape) else Modifier.background(t.colors.bubbleIn, shape))
+                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 9.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 26.sp), color = ink)
+            Text(text, style = t.type.body, color = if (mine) t.colors.onBubbleOut else t.colors.onBubbleIn)
             if (meta != null) {
-                Text(meta, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal), color = ink.copy(alpha = 0.75f))
+                Text(meta, style = t.type.caption, color = if (mine) t.colors.onBubbleOut2 else t.colors.text3)
             }
         }
     }
 }
 
-/** A small centred line in a chat («۳ روز پیش مچ شدین») with a gradient mark. */
+/** A system line in a chat («۳ روز پیش مچ شدین»): centred, `--type-caption`, `--text-3`; no chip, no icon. */
 @Composable
-fun ChatInfoChip(text: String, modifier: Modifier = Modifier, icon: ImageVector = AppIcons.Heart) {
-    val colors = AppTheme.colors
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Row(
-            modifier
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(icon, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp).brushTint(colors.gradient))
-            Text(text, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), color = MaterialTheme.colorScheme.onSurface)
-        }
+fun ChatSystemLine(text: String, modifier: Modifier = Modifier) {
+    val t = AppTheme.template
+    Box(modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = t.type.caption, color = t.colors.text3)
     }
 }

@@ -1,8 +1,6 @@
 package app.core.ui.theme
 
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
@@ -19,7 +17,10 @@ data class GradientStops(val start: Color, val mid: Color, val end: Color)
  * The colours a brand sets (brand.json `colors`, through BuildConfig), in both
  * themes: the accent and its label (`brand`, `onBrand`), the "yes" gradient,
  * the "alive" accent and its text form. Optional roles the brand leaves out
- * take the design's own values ([Design]).
+ * take the design's own values ([Design]). The templates draw their accent
+ * group from them ([Templates.of]: `brand` and the gradients; a brand that
+ * keeps the design's values gets the templates exactly as designed); the
+ * alive roles feed the launcher and the website.
  */
 @Immutable
 data class BrandColors(
@@ -35,7 +36,7 @@ data class BrandColors(
     val aliveTextDark: Color = Design.aliveTextDark,
 ) {
     companion object {
-        /** The design system's own colours (tokens.json). */
+        /** The design's own colours. */
         val Design = BrandColors(
             brandLight = Color(0xFF6A1FF0),
             brandDark = Color(0xFFB48CFF),
@@ -78,208 +79,48 @@ data class BrandColors(
     }
 }
 
-/** Text on lime and on other light accents: near-black ink. */
+/** Text on light accents in the dark template: near-black ink. */
 val Ink: Color = Color(0xFF0B0A10)
 
 /**
- * The fixed colours of each theme (tokens.json `color.<theme>`): every
- * Material role that is not the brand's, and the app's own roles. Dark
- * ("Ink") is the default look; light ("Paper") is drawn to the same rules.
- */
-@Immutable
-class Palette(
-    val secondary: Color,
-    val onSecondary: Color,
-    val secondaryContainer: Color,
-    val onSecondaryContainer: Color,
-    val tertiaryContainer: Color?,
-    val onTertiaryContainer: Color,
-    val onTertiary: Color,
-    val onPrimaryContainer: Color?,
-    val background: Color,
-    val onBackground: Color,
-    val surfaceVariant: Color,
-    val onSurfaceVariant: Color,
-    val surfaceDim: Color,
-    val surfaceBright: Color,
-    val surfaceContainerLowest: Color,
-    val surfaceContainerLow: Color,
-    val surfaceContainer: Color,
-    val surfaceContainerHigh: Color,
-    val surfaceContainerHighest: Color,
-    val outline: Color,
-    val outlineVariant: Color,
-    val inverseSurface: Color,
-    val inverseOnSurface: Color,
-    val error: Color,
-    val onError: Color,
-    val errorContainer: Color,
-    val onErrorContainer: Color,
-    // The app's roles.
-    val textTertiary: Color,
-    val hairlineStrong: Color,
-    val like: Color,
-    val pass: Color,
-    val rewind: Color,
-    val textGradientStart: Color,
-    val textGradientEnd: Color,
-    val glassFill: Color,
-    val glassStroke: Color,
-    val glassFallback: Color,
-    val tabBarFill: Color,
-    val tabBarFillOverPhoto: Color,
-    val tabBarFallback: Color,
-    val tabBarStroke: Color,
-    val skeleton: Color,
-    val skeletonHighlight: Color,
-    val snackbarAction: Color?,
-    val aliveTintAlpha: Float,
-    val aliveLine: Color?,
-) {
-    companion object {
-        val Dark = Palette(
-            secondary = Color(0xFFCFC3EA),
-            onSecondary = Color(0xFF251C3B),
-            secondaryContainer = Color(0xFF2B2540),
-            onSecondaryContainer = Color(0xFFECE4FF),
-            tertiaryContainer = Color(0xFF26330A),
-            onTertiaryContainer = Color(0xFFDDFF8A),
-            onTertiary = Ink,
-            onPrimaryContainer = Color(0xFFFFFFFF),
-            background = Color(0xFF0A090E),
-            onBackground = Color(0xFFF5F2FA),
-            surfaceVariant = Color(0xFF272331),
-            onSurfaceVariant = Color(0xFFB7B0C6),
-            surfaceDim = Color(0xFF0A090E),
-            surfaceBright = Color(0xFF2E2A38),
-            surfaceContainerLowest = Color(0xFF050408),
-            surfaceContainerLow = Color(0xFF121118),
-            surfaceContainer = Color(0xFF17151E),
-            surfaceContainerHigh = Color(0xFF1E1B27),
-            surfaceContainerHighest = Color(0xFF272331),
-            outline = Color(0xFF6B647A),
-            outlineVariant = Color(0xFF26232F),
-            inverseSurface = Color(0xFFF5F2FA),
-            inverseOnSurface = Color(0xFF17151E),
-            error = Color(0xFFFF6B81),
-            onError = Color(0xFF3D0010),
-            errorContainer = Color(0xFF4A1020),
-            onErrorContainer = Color(0xFFFFD9DE),
-            textTertiary = Color(0xFF8C8599),
-            hairlineStrong = Color(0xFF3A3547),
-            like = Color(0xFFFF2D87),
-            pass = Color(0xFFF5F2FA),
-            rewind = Color(0xFFFFFFFF),
-            textGradientStart = Color(0xFFB58CFF),
-            textGradientEnd = Color(0xFFFF5AA5),
-            glassFill = Color(16, 14, 22).copy(alpha = 0.40f),
-            glassStroke = Color.White.copy(alpha = 0.16f),
-            glassFallback = Color(16, 14, 22).copy(alpha = 0.78f),
-            tabBarFill = Color(20, 18, 27).copy(alpha = 0.62f),
-            tabBarFillOverPhoto = Color(14, 12, 20).copy(alpha = 0.52f),
-            tabBarFallback = Color(18, 16, 25).copy(alpha = 0.92f),
-            tabBarStroke = Color.White.copy(alpha = 0.12f),
-            skeleton = Color(0xFF1C1A24),
-            skeletonHighlight = Color(0xFF2A2735),
-            // The gradient's first stop, on the light snackbar.
-            snackbarAction = null,
-            aliveTintAlpha = 0.10f,
-            // The alive colour at 60 %.
-            aliveLine = null,
-        )
-
-        val Light = Palette(
-            secondary = Color(0xFF5D5470),
-            onSecondary = Color(0xFFFFFFFF),
-            secondaryContainer = Color(0xFFE8E1F5),
-            onSecondaryContainer = Color(0xFF221A33),
-            // Lime itself, as a fill.
-            tertiaryContainer = null,
-            onTertiaryContainer = Color(0xFF1A2400),
-            onTertiary = Color(0xFFFFFFFF),
-            onPrimaryContainer = Color(0xFF2A0870),
-            background = Color(0xFFF6F4F9),
-            onBackground = Color(0xFF15121D),
-            surfaceVariant = Color(0xFFE8E3F0),
-            onSurfaceVariant = Color(0xFF4E4760),
-            surfaceDim = Color(0xFFDFD9E9),
-            surfaceBright = Color(0xFFFFFFFF),
-            surfaceContainerLowest = Color(0xFFFFFFFF),
-            surfaceContainerLow = Color(0xFFFFFFFF),
-            surfaceContainer = Color(0xFFEFEBF5),
-            surfaceContainerHigh = Color(0xFFE8E3F0),
-            surfaceContainerHighest = Color(0xFFDFD9E9),
-            outline = Color(0xFF7A738A),
-            outlineVariant = Color(0xFFE2DDEA),
-            inverseSurface = Color(0xFF1E1B27),
-            inverseOnSurface = Color(0xFFF5F2FA),
-            error = Color(0xFFC4173F),
-            onError = Color(0xFFFFFFFF),
-            errorContainer = Color(0xFFFFDADF),
-            onErrorContainer = Color(0xFF5C0016),
-            textTertiary = Color(0xFF6A6378),
-            hairlineStrong = Color(0xFFCFC8DA),
-            like = Color(0xFFD4116E),
-            pass = Color(0xFF15121D),
-            rewind = Color(0xFF15121D),
-            textGradientStart = Color(0xFF6D28F0),
-            textGradientEnd = Color(0xFFC2177A),
-            glassFill = Color.White.copy(alpha = 0.74f),
-            glassStroke = Color.White.copy(alpha = 0.90f),
-            glassFallback = Color.White.copy(alpha = 0.95f),
-            tabBarFill = Color.White.copy(alpha = 0.80f),
-            tabBarFillOverPhoto = Color.White.copy(alpha = 0.84f),
-            tabBarFallback = Color.White.copy(alpha = 0.95f),
-            tabBarStroke = Color(21, 18, 29).copy(alpha = 0.08f),
-            skeleton = Color(0xFFECE8F2),
-            skeletonHighlight = Color(0xFFF7F5FA),
-            snackbarAction = Color(0xFFC9A9FF),
-            aliveTintAlpha = 0.28f,
-            aliveLine = Color(0xFF8DB800),
-        )
-    }
-}
-
-/**
- * The colours Material has no role for (tokens.json `app`), read as
- * `AppTheme.colors.like`.
- *
- * Two rules hold them together: the gradient ([gradient]) is the one "yes"
- * colour (primary buttons, like, match, the selected plan, unread counts,
- * your own bubbles), and [alive] marks only live signals (online,
- * super-like, shared interests, the new-likes count, best value), always
- * with [onAlive] ink on it.
+ * The older app colours (`AppTheme.colors`), mapped onto the template being
+ * drawn so the screens written before the templates keep compiling and
+ * follow the template. New code reads [AppTheme.template] instead; the
+ * screen jobs move each use over (the mapping is in [AppColors.of]).
  */
 @Immutable
 data class AppColors(
     val dark: Boolean,
+    /** The "yes" gradient's three stops (`--like-fill`'s colours). */
     val gradientStops: GradientStops,
-    /** White, on the gradient: button labels only (16 sp bold, 4.61:1 at worst). */
+    /** Text and icons on [gradient] (`--on-like`). */
     val onGradient: Color,
     val textGradientStart: Color,
     val textGradientEnd: Color,
-    /** The like heart and accents outside the gradient. */
+    /** `--like`. */
     val like: Color,
-    /** The pass ✕ as an icon on the theme's background. */
+    /** The pass icon on the page (`--text`). */
     val pass: Color,
-    /** The super-like star as text or an icon on the theme's surfaces (lime in dark, its text form in light). */
+    /** The super-like star as text or an icon on the page (`--primary`). */
     val superLike: Color,
-    /** The super-like button's fill in light (lime); in dark the button is glass with a lime ring. */
     val superLikeFill: Color,
     val onSuperLike: Color,
+    /** A filled accent pill (`--tag-fill`'s middle colour) with [onAlive] on it. */
     val alive: Color,
     val onAlive: Color,
-    /** Alive as text on the theme's background (shared-interest chips, «نوبت توئه»). */
+    /** Accent text on the page (`--primary`). */
     val aliveText: Color,
+    /** `--primary-tint`. */
     val aliveTint: Color,
     val aliveLine: Color,
     val verified: Color,
     val onVerified: Color,
     val boost: Color,
     val rewind: Color,
+    /** `--text-3`. */
     val textTertiary: Color,
+    /** `--line-strong`. */
     val hairlineStrong: Color,
-    /** Glass over photos (header buttons, deck actions). */
     val glassFill: Color,
     val glassStroke: Color,
     val glassFallback: Color,
@@ -290,103 +131,110 @@ data class AppColors(
     val skeleton: Color,
     val skeletonHighlight: Color,
     val snackbarAction: Color,
-    /** Errors and destructive actions (Material's `error`). */
+    /** Errors and destructive actions (`--error`). */
     val danger: Color,
-    /** A done state (a sent code, a read receipt). */
+    /** A done state (`--online-text`). */
     val success: Color,
     /** Text and icons on a filled [like], [superLike] or [danger]. */
     val onSemantic: Color,
+    /** The template's own `--like-fill`, when it is not the three stops at [GRADIENT_ANGLE]. */
+    val yesFill: Brush? = null,
 ) {
-    /** The gradient as a fill, at its 250° angle. */
-    val gradient: Brush get() = cssLinearGradient(GRADIENT_ANGLE, gradientStops)
+    /** The "yes" fill as a brush (`--like-fill`). */
+    val gradient: Brush get() = yesFill ?: cssLinearGradient(GRADIENT_ANGLE, gradientStops)
 
-    /** The gradient for display text and drawn strokes on the background (lighter in dark, deeper in light). */
-    val textGradient: Brush get() = cssLinearGradient(GRADIENT_ANGLE, listOf(textGradientStart, textGradientEnd))
+    /** Display text in the accent (`--accent-text`'s colours). */
+    val textGradient: Brush get() = cssLinearGradient(270f, listOf(textGradientStart, textGradientEnd))
 
     companion object {
         /** The gradient's CSS angle: violet from the top end, pink toward the bottom start. */
         const val GRADIENT_ANGLE: Float = 250f
 
-        // Photo layers: the same in both themes (text over photos is always white on the dark scrim).
+        // Photo layers: white text on a dark scrim in every template. Later screens read
+        // `--on-photo`, `--photo-scrim-*`, `--photo-chip-*` and `--story-*` from the template.
         val OnPhoto: Color = Color.White
         val OnPhotoVariant: Color = Color.White.copy(alpha = 0.88f)
         val StoryFill: Color = Color.White
         val StoryTrack: Color = Color.White.copy(alpha = 0.32f)
         val StoryEdge: Color = Color.Black.copy(alpha = 0.28f)
-        val ChipOnPhotoFill: Color = Color(16, 14, 22).copy(alpha = 0.50f)
-        val ChipOnPhotoFallback: Color = Color(16, 14, 22).copy(alpha = 0.72f)
-        val ChipOnPhotoStroke: Color = Color.White.copy(alpha = 0.16f)
+        val ChipOnPhotoFill: Color = Color(16, 14, 22).copy(alpha = 0.62f)
+        val ChipOnPhotoFallback: Color = Color(16, 14, 22).copy(alpha = 0.78f)
+        val ChipOnPhotoStroke: Color = Color.White.copy(alpha = 0.20f)
         val ToastOnPhotoFill: Color = Color(16, 14, 22).copy(alpha = 0.62f)
-        val Verified: Color = Color(0xFF8A4FFF)
 
-        /** The top scrim under a photo's chrome and story bars (200 dp tall). */
+        /** The top scrim under a photo's chrome and story bars (`--photo-scrim-top` of `neon`). */
         val PhotoScrimTop: Brush = Brush.verticalGradient(
-            0f to Color.Black.copy(alpha = 0.62f),
-            0.55f to Color.Black.copy(alpha = 0.30f),
+            0f to Color.Black.copy(alpha = 0.58f),
+            0.55f to Color.Black.copy(alpha = 0.26f),
             1f to Color.Transparent,
         )
 
-        /** The bottom scrim under a name, meta lines and chips (62-66 % of the photo). */
+        /** The bottom scrim under a name and its lines (`--photo-scrim-bottom` of `neon`). */
         val PhotoScrimBottom: Brush = Brush.verticalGradient(
             0f to Color.Transparent,
-            0.20f to Color.Black.copy(alpha = 0.20f),
-            0.42f to Color.Black.copy(alpha = 0.55f),
-            0.66f to Color.Black.copy(alpha = 0.82f),
+            0.22f to Color.Black.copy(alpha = 0.18f),
+            0.48f to Color.Black.copy(alpha = 0.55f),
+            0.74f to Color.Black.copy(alpha = 0.84f),
             1f to Color.Black.copy(alpha = 0.94f),
         )
 
-        fun of(dark: Boolean, brand: BrandColors = BrandColors.Build): AppColors {
-            val p = if (dark) Palette.Dark else Palette.Light
-            val scheme = appColorScheme(dark, brand)
-            val stops = if (dark) brand.gradientDark else brand.gradientLight
-            val alive = if (dark) brand.aliveDark else brand.aliveLight
-            val aliveText = if (dark) brand.aliveTextDark else brand.aliveTextLight
+        /** [template]'s tokens under the older names. */
+        fun of(template: AppTemplate): AppColors {
+            val c = template.colors
+            val p = template.paints
+            val like = p.likeFill
+            val accent = p.accentText
             return AppColors(
-                dark = dark,
-                gradientStops = stops,
-                onGradient = Color.White,
-                textGradientStart = p.textGradientStart,
-                textGradientEnd = p.textGradientEnd,
-                like = p.like,
-                pass = p.pass,
-                superLike = aliveText,
-                superLikeFill = alive,
-                onSuperLike = Ink,
-                alive = alive,
-                onAlive = Ink,
-                aliveText = aliveText,
-                aliveTint = alive.copy(alpha = p.aliveTintAlpha),
-                aliveLine = p.aliveLine ?: alive.copy(alpha = 0.60f),
-                verified = Verified,
-                onVerified = Color.White,
-                boost = scheme.primary,
-                rewind = p.rewind,
-                textTertiary = p.textTertiary,
-                hairlineStrong = p.hairlineStrong,
-                glassFill = p.glassFill,
-                glassStroke = p.glassStroke,
-                glassFallback = p.glassFallback,
-                tabBarFill = p.tabBarFill,
-                tabBarFillOverPhoto = p.tabBarFillOverPhoto,
-                tabBarFallback = p.tabBarFallback,
-                tabBarStroke = p.tabBarStroke,
-                skeleton = p.skeleton,
-                skeletonHighlight = p.skeletonHighlight,
-                snackbarAction = p.snackbarAction ?: stops.start,
-                danger = p.error,
-                success = aliveText,
-                onSemantic = if (dark) Ink else Color.White,
+                dark = template.dark,
+                gradientStops = GradientStops(like.stop(0), like.stop(1), like.stop(2)),
+                onGradient = c.onLike,
+                textGradientStart = accent.stop(0),
+                textGradientEnd = accent.stop(1),
+                like = c.like,
+                pass = c.text,
+                superLike = c.primary,
+                superLikeFill = c.primary,
+                onSuperLike = if (template.dark) Ink else c.onPrimary,
+                alive = p.tagFill.stop(1),
+                onAlive = c.onTag,
+                aliveText = c.primary,
+                aliveTint = c.primaryTint,
+                aliveLine = c.primary.copy(alpha = 0.40f),
+                verified = p.verified.stop(1),
+                onVerified = c.onVerified,
+                boost = c.boostIcon,
+                rewind = c.actIcon,
+                textTertiary = c.text3,
+                hairlineStrong = c.lineStrong,
+                glassFill = c.glassFill,
+                glassStroke = c.glassLine,
+                glassFallback = c.glassSolid,
+                tabBarFill = c.tabbarFill,
+                tabBarFillOverPhoto = c.tabbarFillPhoto,
+                tabBarFallback = c.tabbarFill,
+                tabBarStroke = c.tabbarLine,
+                skeleton = c.skeleton,
+                skeletonHighlight = c.skeletonHi,
+                snackbarAction = c.inverseAction,
+                danger = c.error,
+                success = c.onlineText,
+                onSemantic = if (template.dark) Ink else Color.White,
+                yesFill = like,
             )
         }
+
+        /** The dark (`neon`, with [brand]'s gradient) or light (`white`) template's, under the older names. */
+        fun of(dark: Boolean, brand: BrandColors = BrandColors.Build): AppColors =
+            of(Templates.of(if (dark) Templates.NEON else Templates.WHITE, brand))
     }
 }
 
-val LocalAppColors = staticCompositionLocalOf { AppColors.of(dark = true) }
+val LocalAppColors = staticCompositionLocalOf { AppColors.of(Templates.Neon) }
 
-/** The app colours of the dark theme (the default look). */
+/** The older app colours of `neon` (the dark template). */
 val DarkSemantic: AppColors by lazy { AppColors.of(dark = true) }
 
-/** The app colours of the light theme. */
+/** The older app colours of `white` (the light template). */
 val LightSemantic: AppColors by lazy { AppColors.of(dark = false) }
 
 /** Older name of [AppColors]. */
@@ -395,116 +243,9 @@ typealias SemanticColors = AppColors
 /** Older name of [LocalAppColors]. */
 val LocalSemanticColors get() = LocalAppColors
 
-/**
- * Material's scheme: the fixed palette of the theme with the brand's accent
- * (`primary`), its container (the gradient's first stop in dark, a pale tint
- * of it in light) and the alive accent as `tertiary`.
- *
- * The accent is used as given when it reads (AA) on every surface it is
- * drawn on as text; otherwise it is moved toward white (dark) or black
- * (light) just far enough ([Contrast.ensure]).
- */
-fun appColorScheme(dark: Boolean, brand: BrandColors = BrandColors.Build): ColorScheme {
-    val p = if (dark) Palette.Dark else Palette.Light
-    val accent = if (dark) brand.brandDark else brand.brandLight
-    val onAccent = if (dark) brand.onBrandDark else brand.onBrandLight
-    val primary = Contrast.ensure(
-        accent,
-        listOf(onAccent, p.background, p.surfaceContainerLow, p.surfaceContainer, p.surfaceContainerHigh),
-        Contrast.AA,
-        Contrast.awayFrom(onAccent),
-    )
-    val stops = if (dark) brand.gradientDark else brand.gradientLight
-    val primaryContainer = if (dark) stops.start else lerp(stops.start, Color.White, 0.88f)
-    val onPrimaryContainer = Contrast.ensure(
-        p.onPrimaryContainer ?: Color.White,
-        listOf(primaryContainer),
-        Contrast.AA,
-        if (dark) Color.White else Color.Black,
-    )
-    val alive = if (dark) brand.aliveDark else brand.aliveLight
-    val aliveText = if (dark) brand.aliveTextDark else brand.aliveTextLight
-    val tertiaryContainer = p.tertiaryContainer ?: alive
-    return if (dark) {
-        darkColorScheme(
-            primary = primary,
-            onPrimary = onAccent,
-            primaryContainer = primaryContainer,
-            onPrimaryContainer = onPrimaryContainer,
-            inversePrimary = brand.brandLight,
-            secondary = p.secondary,
-            onSecondary = p.onSecondary,
-            secondaryContainer = p.secondaryContainer,
-            onSecondaryContainer = p.onSecondaryContainer,
-            tertiary = aliveText,
-            onTertiary = p.onTertiary,
-            tertiaryContainer = tertiaryContainer,
-            onTertiaryContainer = p.onTertiaryContainer,
-            background = p.background,
-            onBackground = p.onBackground,
-            surface = p.background,
-            onSurface = p.onBackground,
-            surfaceVariant = p.surfaceVariant,
-            onSurfaceVariant = p.onSurfaceVariant,
-            surfaceTint = primary,
-            inverseSurface = p.inverseSurface,
-            inverseOnSurface = p.inverseOnSurface,
-            error = p.error,
-            onError = p.onError,
-            errorContainer = p.errorContainer,
-            onErrorContainer = p.onErrorContainer,
-            outline = p.outline,
-            outlineVariant = p.outlineVariant,
-            scrim = Color.Black,
-            surfaceBright = p.surfaceBright,
-            surfaceContainer = p.surfaceContainer,
-            surfaceContainerHigh = p.surfaceContainerHigh,
-            surfaceContainerHighest = p.surfaceContainerHighest,
-            surfaceContainerLow = p.surfaceContainerLow,
-            surfaceContainerLowest = p.surfaceContainerLowest,
-            surfaceDim = p.surfaceDim,
-        )
-    } else {
-        lightColorScheme(
-            primary = primary,
-            onPrimary = onAccent,
-            primaryContainer = primaryContainer,
-            onPrimaryContainer = onPrimaryContainer,
-            inversePrimary = brand.brandDark,
-            secondary = p.secondary,
-            onSecondary = p.onSecondary,
-            secondaryContainer = p.secondaryContainer,
-            onSecondaryContainer = p.onSecondaryContainer,
-            tertiary = aliveText,
-            onTertiary = p.onTertiary,
-            tertiaryContainer = tertiaryContainer,
-            onTertiaryContainer = p.onTertiaryContainer,
-            background = p.background,
-            onBackground = p.onBackground,
-            surface = p.background,
-            onSurface = p.onBackground,
-            surfaceVariant = p.surfaceVariant,
-            onSurfaceVariant = p.onSurfaceVariant,
-            surfaceTint = primary,
-            inverseSurface = p.inverseSurface,
-            inverseOnSurface = p.inverseOnSurface,
-            error = p.error,
-            onError = p.onError,
-            errorContainer = p.errorContainer,
-            onErrorContainer = p.onErrorContainer,
-            outline = p.outline,
-            outlineVariant = p.outlineVariant,
-            scrim = Color.Black,
-            surfaceBright = p.surfaceBright,
-            surfaceContainer = p.surfaceContainer,
-            surfaceContainerHigh = p.surfaceContainerHigh,
-            surfaceContainerHighest = p.surfaceContainerHighest,
-            surfaceContainerLow = p.surfaceContainerLow,
-            surfaceContainerLowest = p.surfaceContainerLowest,
-            surfaceDim = p.surfaceDim,
-        )
-    }
-}
+/** Material's scheme of the dark (`neon`, [brand]'s gradient) or the light (`white`) template ([templateColorScheme]). */
+fun appColorScheme(dark: Boolean, brand: BrandColors = BrandColors.Build): ColorScheme =
+    templateColorScheme(Templates.of(if (dark) Templates.NEON else Templates.WHITE, brand))
 
 /** WCAG 2.x contrast, on sRGB colours. */
 object Contrast {

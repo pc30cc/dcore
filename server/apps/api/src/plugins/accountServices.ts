@@ -15,7 +15,7 @@ import type { OwnPhotoUrl } from '../services/me.js';
  *   terms, feature flags, the `GET /v1/config` documents); it also keeps
  *   `app.clientPolicy` (minimum versions, maintenance) current;
  * - `app.cities`: the bundled city table;
- * - `app.account`: the cached own-account view (`mev:<uid>`, `me:<uid>:<mev>`);
+ * - `app.account`: the cached own-account view (`mev:<uid>`, `me:<uid>:<mev>:s<shape>`);
  * - `app.ownPhotoUrl`: signed links of a person's own photos (none until
  *   media storage is configured).
  *

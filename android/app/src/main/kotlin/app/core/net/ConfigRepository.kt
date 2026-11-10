@@ -29,11 +29,21 @@ class ConfigRepository(
     /** Null until a stored or fresh copy exists. */
     val config: StateFlow<Config?> = _config.asStateFlow()
 
+    private val _fresh = MutableStateFlow<Config?>(null)
+
+    /** The last copy the server itself sent in this process; null until one arrived (never the stored copy). */
+    val fresh: StateFlow<Config?> = _fresh.asStateFlow()
+
     private val started = AtomicBoolean(false)
 
     /** Asks again now (a "try again" on the maintenance screen): the fresh copy, or null when it could not be read. */
     suspend fun refresh(): Config? =
-        runCatchingUnlessCancelled { api.config(locale()).value }.getOrNull()?.also { _config.value = it }
+        runCatchingUnlessCancelled { api.config(locale()).value }.getOrNull()?.also(::received)
+
+    private fun received(config: Config) {
+        _config.value = config
+        _fresh.value = config
+    }
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
@@ -41,7 +51,7 @@ class ConfigRepository(
             val language = locale()
             runCatchingUnlessCancelled { api.cachedConfig(language) }.getOrNull()?.let { _config.value = it }
             runCatchingUnlessCancelled { api.config(language) }
-                .onSuccess { _config.value = it.value }
+                .onSuccess { received(it.value) }
                 .onFailure {
                     val kept = if (_config.value == null) "the build's defaults" else "the stored copy"
                     diag.info("Config", "refresh failed (${it.javaClass.simpleName}); keeping $kept")

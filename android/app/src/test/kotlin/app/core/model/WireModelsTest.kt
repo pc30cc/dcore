@@ -35,6 +35,7 @@ class WireModelsTest {
         "call-token" to CallToken.serializer(),
         "cities" to CityList.serializer(),
         "config" to Config.serializer(),
+        "config-ui" to Config.serializer(),
         "consents" to ConsentList.serializer(),
         "conversation" to Conversation.serializer(),
         "conversation-body" to ConversationBody.serializer(),
@@ -72,6 +73,7 @@ class WireModelsTest {
         "restore" to RestoreResult.serializer(),
         "restore-account" to RestoredAccount.serializer(),
         "settings" to Settings.serializer(),
+        "settings-template" to Settings.serializer(),
         "support-message" to SupportMessageBody.serializer(),
         "support-messages" to SupportMessages.serializer(),
         "support-ticket" to SupportTicketBody.serializer(),
@@ -108,6 +110,20 @@ class WireModelsTest {
         assertEquals("Nobody new nearby", config.strings["deck.empty"])
         assertEquals("#E8466A", config.colors?.brand?.light)
         assertFalse(config.calls.video)
+    }
+
+    @Test
+    fun templatesReadFromTheConfigAndTheSettings() {
+        // A server older than templates sends neither: the app keeps its own choice and the built-in default.
+        assertNull(Fixtures.decode("config", Config.serializer()).ui)
+        assertNull(Fixtures.decode("settings", Settings.serializer()).template)
+        val ui = Fixtures.decode("config-ui", Config.serializer()).ui!!
+        assertEquals("white", ui.defaultTemplate)
+        // An id this build does not ship stays in the list; the effective-template rule skips it.
+        assertEquals(listOf("white", "neon", "sepia"), ui.templates)
+        assertEquals("white", Fixtures.decode("settings-template", Settings.serializer()).template)
+        // The patch sends only the template.
+        assertEquals("""{"template":"neon"}""", Wire.json.encodeToString(SettingsPatch.serializer(), SettingsPatch(template = "neon")))
     }
 
     @Test

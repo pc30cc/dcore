@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -36,11 +34,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import app.core.ui.theme.AppColors
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.GlassTokens
 import app.core.ui.theme.LocalGlass
+import app.core.ui.theme.ShadowLayer
+import app.core.ui.theme.outerShadow
 import kotlin.math.ceil
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 /**
  * What glass blurs: the content of the element marked with [glassSource]
@@ -70,49 +70,54 @@ fun Modifier.glassSource(backdrop: GlassBackdrop): Modifier =
         }
 
 /**
- * A glass recipe (tokens.json `glass`): the tint over the blur, the colour
- * drawn instead where there is no blur, the blur radius and an edge stroke.
+ * A glass recipe: the tint drawn over the blur ([fill]), the colour drawn
+ * instead where nothing blurs ([fallback]: glass off, Android 11 and older,
+ * battery saver, no backdrop), the blur radius, a hairline inside the edge
+ * and the shadow layers under it.
  */
 data class GlassStyle(
     val fill: Color,
     val fallback: Color,
     val blur: Dp,
     val stroke: Color? = null,
-    /** A soft drop shadow under light glass over photos (the light theme's chrome). */
-    val shadow: Boolean = false,
+    val shadow: List<ShadowLayer> = emptyList(),
 ) {
     companion object {
-        /** Header buttons and deck actions over a photo: dark glass in dark, white in light. */
+        /** Header buttons on photos (`--glass-*`). */
         @Composable
-        fun photoChrome(colors: AppColors = AppTheme.colors): GlassStyle =
-            if (colors.dark) {
-                GlassStyle(colors.glassFill, colors.glassFallback, GlassTokens.photoChromeBlur, colors.glassStroke)
-            } else {
-                GlassStyle(Color.White.copy(alpha = 0.86f), Color.White.copy(alpha = 0.94f), GlassTokens.photoChromeBlur, null, shadow = true)
-            }
+        fun photoChrome(): GlassStyle {
+            val t = AppTheme.template
+            return GlassStyle(t.colors.glassFill, t.colors.glassSolid, t.sizes.glassBlur, t.colors.glassLine, t.shadows.glassShadow)
+        }
 
-        /** Chips and position labels on a photo: always dark glass (white text reads 5.14:1 at worst). */
-        val ChipOnPhoto = GlassStyle(AppColors.ChipOnPhotoFill, AppColors.ChipOnPhotoFallback, GlassTokens.chipBlur, AppColors.ChipOnPhotoStroke)
-
-        /** A toast over a photo. */
-        val ToastOnPhoto = GlassStyle(AppColors.ToastOnPhotoFill, AppColors.ChipOnPhotoFallback, GlassTokens.toastBlur, AppColors.ChipOnPhotoStroke)
-
-        /** The tab bar over the deck photo. */
+        /** Chips, pills, the remove button and toasts on photos (`--photo-chip-*`): white text on a dark fill in every template. */
         @Composable
-        fun tabBarOverPhoto(colors: AppColors = AppTheme.colors): GlassStyle =
-            GlassStyle(colors.tabBarFillOverPhoto, colors.tabBarFallback, GlassTokens.tabBarBlur, colors.tabBarStroke, shadow = true)
+        fun photoChip(): GlassStyle {
+            val t = AppTheme.template
+            return GlassStyle(t.colors.photoChipFill, t.colors.photoChipFill, t.sizes.glassBlur, t.colors.photoChipLine)
+        }
 
-        /** The tab bar over lists: the opaque fill, never a blur (text under it must not ghost through). */
+        /** A secondary call button at rest (`--call-btn-*`), the same in every template. */
         @Composable
-        fun tabBarOverList(colors: AppColors = AppTheme.colors): GlassStyle =
-            GlassStyle(colors.tabBarFallback, colors.tabBarFallback, 0.dp, colors.tabBarStroke, shadow = true)
+        fun callButton(): GlassStyle {
+            val t = AppTheme.template
+            return GlassStyle(t.colors.callBtnFill, t.colors.callBtnFill, t.sizes.callBlur, t.colors.callBtnLine)
+        }
+
+        /** The deck's rewind, pass and boost (`--act-*`): blurred where glass is on. */
+        @Composable
+        fun deckAction(): GlassStyle {
+            val t = AppTheme.template
+            return GlassStyle(t.colors.actFill, t.colors.actFill, t.sizes.glassBlur, t.colors.actLine, t.shadows.actShadow)
+        }
     }
 }
 
 /**
  * A box of glass: [backdrop] blurred behind [style]'s fill on Android 12+
- * (when [LocalGlass] allows), else the style's fallback colour, clipped to
- * [shape], with its edge stroke.
+ * when [LocalGlass] allows (never when the template's glass switch is off),
+ * else the style's fallback colour, clipped to [shape], with its edge
+ * stroke and shadow.
  */
 @Composable
 fun GlassBox(
@@ -129,7 +134,7 @@ fun GlassBox(
     val position = remember { PositionHolder() }
     Box(
         modifier = modifier
-            .then(if (style.shadow) Modifier.softShadow(shape) else Modifier)
+            .outerShadow(shape, style.shadow)
             .onGloballyPositioned { position.value = it.positionInRoot() }
             .drawBehind {
                 val outline = shape.createOutline(size, layoutDirection, this)
@@ -169,8 +174,9 @@ private fun Outline.asPath(): Path = when (this) {
 }
 
 /**
- * The soft shadow under floating layers in light theme (`0 6 18 -8` black
- * at 35 %), drawn on Android 9+ only (blurred shadows need it there).
+ * A soft shadow (`0 6 18 -8` black at [alpha]), drawn on Android 9+ only
+ * (blurred shadows need it there). Older screens use it; template code
+ * draws the template's shadow tokens ([outerShadow]).
  */
 fun Modifier.softShadow(shape: Shape, alpha: Float = 0.35f): Modifier =
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {

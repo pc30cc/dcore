@@ -74,6 +74,8 @@ export const accountViewSchema = z.object({
       hideDistance: z.boolean(),
       showOnline: z.boolean(),
       acceptCalls: z.boolean(),
+      /** profiles.ui_template (0025); absent in a view cached before it. */
+      uiTemplate: z.number().int().optional(),
     })
     .optional(),
   photos: z.array(photo),

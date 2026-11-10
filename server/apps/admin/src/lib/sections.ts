@@ -1,5 +1,6 @@
 import type { Permission } from '@app/shared';
 import {
+  Contrast,
   FileText,
   Globe,
   Layers,
@@ -55,6 +56,7 @@ export const sectionGroups: readonly SectionGroup[] = [
   {
     label: 'nav.group.product',
     items: [
+      { path: 'app/appearance', label: 'nav.appearance', icon: Contrast, permission: 'config.read' },
       { path: 'content', label: 'nav.content', icon: FileText, spec: 4 },
       { path: 'growth', label: 'nav.growth', icon: TrendingUp, spec: 6 },
       { path: 'brand', label: 'nav.brand', icon: Palette, spec: 7 },

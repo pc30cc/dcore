@@ -3,7 +3,6 @@ package app.core.ui.gallery
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -18,114 +17,108 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.interaction.FocusInteraction
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import app.core.feature.auth.welcome.GeneratedFaces
 import app.core.i18n.AppLanguage
 import app.core.i18n.Numerals
-import app.core.ui.components.AlivePill
+import app.core.ui.components.AddPhotoTile
+import app.core.ui.components.AppCheckbox
 import app.core.ui.components.AppIconButton
+import app.core.ui.components.AppRadio
+import app.core.ui.components.AppRangeSlider
+import app.core.ui.components.AppSlider
 import app.core.ui.components.AppSnackbar
+import app.core.ui.components.AppSwitch
+import app.core.ui.components.AppTabBar
 import app.core.ui.components.AppTextField
 import app.core.ui.components.Avatar
 import app.core.ui.components.BandFlag
-import app.core.ui.components.Benefit
-import app.core.ui.components.BenefitGrid
+import app.core.ui.components.BenefitList
+import app.core.ui.components.CallButton
+import app.core.ui.components.CallButtonKind
 import app.core.ui.components.ChatBubble
-import app.core.ui.components.ChatInfoChip
+import app.core.ui.components.ChatSystemLine
 import app.core.ui.components.ChipRow
 import app.core.ui.components.ChoiceChip
 import app.core.ui.components.ConversationRow
 import app.core.ui.components.DeckActions
 import app.core.ui.components.DialogCard
-import app.core.ui.components.EmptyState
 import app.core.ui.components.Fact
-import app.core.ui.components.FactChip
 import app.core.ui.components.FactRow
-import app.core.ui.components.FilterChoiceChip
-import app.core.ui.components.FloatingTabBar
 import app.core.ui.components.GlassBackdrop
-import app.core.ui.components.GradientButton
-import app.core.ui.components.GradientRangeSlider
-import app.core.ui.components.GradientSlider
-import app.core.ui.components.GradientSwitch
 import app.core.ui.components.IconButtonKind
-import app.core.ui.components.IconLine
 import app.core.ui.components.InterestChip
-import app.core.ui.components.InverseButton
-import app.core.ui.components.LikesTeaserTile
 import app.core.ui.components.LogoMark
+import app.core.ui.components.NameLine
+import app.core.ui.components.OptionRow
 import app.core.ui.components.MatchTile
 import app.core.ui.components.OtpCells
 import app.core.ui.components.OtpState
-import app.core.ui.components.OutlineButton
 import app.core.ui.components.PeriodOption
 import app.core.ui.components.PeriodRow
+import app.core.ui.components.PersonSilhouette
 import app.core.ui.components.PhoneField
-import app.core.ui.components.PhotoChip
-import app.core.ui.components.PhotoChipMark
-import app.core.ui.components.PhotoNameLine
-import app.core.ui.components.PhotoPullQuote
-import app.core.ui.components.PhotoScrimBottom
-import app.core.ui.components.PhotoScrimTop
+import app.core.ui.components.PhotoTile
 import app.core.ui.components.PhotoToast
-import app.core.ui.components.PlanBadge
+import app.core.ui.components.Pill
+import app.core.ui.components.PillKind
+import app.core.ui.components.PlanCard
 import app.core.ui.components.PlanOption
-import app.core.ui.components.PlanSelector
-import app.core.ui.components.PromptCard
+import app.core.ui.components.PrimaryButton
+import app.core.ui.components.ProgressBar
+import app.core.ui.components.PromptQuote
 import app.core.ui.components.RowEnd
-import app.core.ui.components.SafetyCard
-import app.core.ui.components.SectionKicker
+import app.core.ui.components.SecondaryButton
+import app.core.ui.components.SectionLabel
 import app.core.ui.components.SegmentedControl
+import app.core.ui.components.SettingsGroup
 import app.core.ui.components.SettingsRow
 import app.core.ui.components.SheetBody
-import app.core.ui.components.SheetChoiceRow
 import app.core.ui.components.SheetGrabber
-import app.core.ui.components.SkeletonCard
-import app.core.ui.components.SkeletonRow
-import app.core.ui.components.SliderLabel
-import app.core.ui.components.SmsCodeChip
-import app.core.ui.components.SnackbarKind
-import app.core.ui.components.StepsHeader
+import app.core.ui.components.sheetSurface
 import app.core.ui.components.StoryProgress
 import app.core.ui.components.TabBadge
 import app.core.ui.components.TabItem
+import app.core.ui.components.TemplatePicker
 import app.core.ui.components.TextAction
 import app.core.ui.components.TextActionKind
-import app.core.ui.components.TonalButton
+import app.core.ui.components.UnreadCount
 import app.core.ui.components.VerifiedBadge
 import app.core.ui.components.glassSource
 import app.core.ui.components.rememberGlassBackdrop
+import app.core.ui.components.templateCard
 import app.core.ui.icons.AppIcons
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.Radius
+import app.core.ui.theme.LatinFamily
+import app.core.ui.theme.insetShadow
 import java.io.File
 
 /**
- * Every component of the design system on a few pages, like the design's
- * own sheet (components.md, png/components.png): numbered sections, each a
- * card with its title, in the screen's language and theme. Photos come
- * from `GALLERY_PHOTOS` (a folder with `photos/` and `faces/` JPEGs, outside
- * the repository) when set, else from generated faces.
+ * The component library on one sheet laid out like the template design's
+ * component sheet (three columns, 1240 dp): every component reads the
+ * template it is drawn in. Photos come from `GALLERY_PHOTOS` (a folder
+ * with `photos/` and `faces/` images, outside the repository) when set,
+ * else from generated faces.
  */
 object ComponentGallery {
 
-    const val PAGES = 9
+    /** The sheet's width in dp. */
+    const val WIDTH = 1240
 
     private val photosDir: File? = System.getenv("GALLERY_PHOTOS")?.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isDirectory }
 
@@ -147,58 +140,83 @@ object ComponentGallery {
 
     fun face(index: Int): ImageBitmap = load("faces", index, 200)
 
+    /** The whole sheet in [language], in the template the theme provides. */
     @Composable
-    fun Page(page: Int, language: AppLanguage) {
-        val t = GalleryText(language)
-        Column(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 16.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            when (page) {
-                1 -> { Colours(t); Typography(t) }
-                2 -> { Buttons(t); IconButtons(t); DeckRow(t) }
-                3 -> { Chips(t); TextFields(t); Phone(t) }
-                4 -> { Otp(t); Segments(t); Switches(t) }
-                5 -> { Rows(t); Kickers(t); Facts(t); Prompts(t) }
-                6 -> { Story(t); TabBars(t); Sheet(t) }
-                7 -> { Dialog(t); Snackbars(t); Avatars(t); Verified(t) }
-                8 -> { Empty(t); Skeletons(t); Steps(t); Plans(t) }
-                9 -> { Paywall(t); Chat(t); Logo(t) }
+    fun Sheet(language: AppLanguage) {
+        val t = AppTheme.template
+        val x = Texts(language)
+        Column(Modifier.width(WIDTH.dp).background(t.colors.bg).padding(start = 32.dp, end = 32.dp, top = 36.dp, bottom = 40.dp)) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text("Components (v2)", style = TextStyle(fontFamily = LatinFamily, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 32.sp), color = t.colors.text)
+                    Text(
+                        "Every value comes from the template file. One selected treatment (ring, tint, checked radio at the start), one primary button.",
+                        style = TextStyle(fontFamily = LatinFamily, fontSize = 14.sp, lineHeight = 22.sp),
+                        color = t.colors.text3,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(26.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Colours(x)
+                    Type(x)
+                    Buttons(x)
+                    Deck(x)
+                    Chips(x)
+                }
+                Column(Modifier.weight(1f)) {
+                    Fields(x)
+                    Selection(x)
+                    Lists(x)
+                    Profile(x)
+                    TabBars(x)
+                }
+                Column(Modifier.weight(1f)) {
+                    Overlays(x)
+                    Paywall(x)
+                    Chat(x)
+                    Avatars(x)
+                    Extras(x)
+                }
             }
         }
     }
 
     @Composable
-    private fun Section(number: Int, title: String, english: String, content: @Composable ColumnScope.() -> Unit) {
-        val scheme = MaterialTheme.colorScheme
-        val language = app.core.i18n.screenLanguage()
+    private fun Card(title: String, content: @Composable ColumnScope.() -> Unit) {
+        val t = AppTheme.template
+        val shape = RoundedCornerShape(t.radii.card)
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(scheme.surfaceContainerLow, RoundedCornerShape(28.dp))
-                .border(1.dp, scheme.outlineVariant, RoundedCornerShape(28.dp))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .insetShadow(shape, listOf(app.core.ui.theme.ShadowLayer(0.dp, 0.dp, 0.dp, 1.dp, t.colors.line, inset = true)))
+                .padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 20.dp),
         ) {
-            // The sheet's own header (as in the design's sheet): the number, a rule, a title-sized name.
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(Numerals.twoDigits(number, language), style = AppTheme.type.kicker, color = scheme.primary)
-                Box(Modifier.width(24.dp).height(1.dp).background(scheme.onSurfaceVariant.copy(alpha = 0.7f)))
-                Text(title, style = MaterialTheme.typography.titleMedium, color = scheme.onSurface, modifier = Modifier.weight(1f))
-                Text(english, style = MaterialTheme.typography.labelSmall, color = AppTheme.colors.textTertiary)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Text(
+                    title.uppercase(),
+                    style = TextStyle(fontFamily = LatinFamily, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.06.em),
+                    color = t.colors.text3,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                )
             }
-            content()
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
         }
+        Spacer(Modifier.height(22.dp))
     }
 
     @Composable
     private fun Caption(text: String) {
-        Text(text, style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.textTertiary)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(text, style = TextStyle(fontFamily = LatinFamily, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 14.sp), color = AppTheme.template.colors.text3, modifier = Modifier.fillMaxWidth())
+        }
     }
 
     @Composable
-    private fun PhotoStrip(index: Int, height: Int, backdrop: GlassBackdrop?, content: @Composable BoxScope.() -> Unit) {
-        Box(Modifier.fillMaxWidth().height(height.dp).clip(RoundedCornerShape(22.dp))) {
+    private fun PhotoBox(index: Int, height: Int, backdrop: GlassBackdrop?, content: @Composable BoxScope.() -> Unit) {
+        Box(Modifier.fillMaxWidth().height(height.dp).clip(RoundedCornerShape(AppTheme.template.radii.md))) {
             Image(
                 photo(index),
                 contentDescription = null,
@@ -213,37 +231,35 @@ object ComponentGallery {
         Image(face(index), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 
-    // Page 1
+    private fun tilePhoto(index: Int): @Composable BoxScope.() -> Unit = {
+        Image(photo(index), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    }
+
+    // Column 1
 
     @Composable
-    private fun Colours(t: GalleryText) {
-        val s = MaterialTheme.colorScheme
-        val a = AppTheme.colors
-        Section(0, t.colours, "Colour roles") {
+    private fun Colours(x: Texts) {
+        val t = AppTheme.template
+        val c = t.colors
+        val p = t.paints
+        Card("Theme colours") {
             val swatches = listOf(
-                Triple("gradient", null, a.gradientStops.start),
-                Triple("primary", s.primary, s.onPrimary),
-                Triple("alive", a.alive, a.onAlive),
-                Triple("verified", a.verified, a.onVerified),
-                Triple("error", s.error, s.onError),
-                Triple("background", s.background, s.onBackground),
-                Triple("container high", s.surfaceContainerHigh, s.onSurface),
-                Triple("onSurface", s.onSurface, s.surface),
+                "--bg" to androidx.compose.ui.graphics.SolidColor(c.bg), "--surface-1" to androidx.compose.ui.graphics.SolidColor(c.surface1),
+                "--surface-2" to androidx.compose.ui.graphics.SolidColor(c.surface2), "--surface-3" to androidx.compose.ui.graphics.SolidColor(c.surface3),
+                "--text" to androidx.compose.ui.graphics.SolidColor(c.text), "--text-2" to androidx.compose.ui.graphics.SolidColor(c.text2),
+                "--text-3" to androidx.compose.ui.graphics.SolidColor(c.text3), "--line-strong" to androidx.compose.ui.graphics.SolidColor(c.lineStrong),
+                "--primary" to androidx.compose.ui.graphics.SolidColor(c.primary), "--primary-fill" to p.primaryFill,
+                "--primary-tint" to androidx.compose.ui.graphics.SolidColor(c.primaryTint), "--tag-fill" to p.tagFill,
+                "--online" to androidx.compose.ui.graphics.SolidColor(c.online), "--like" to androidx.compose.ui.graphics.SolidColor(c.like),
+                "--error" to androidx.compose.ui.graphics.SolidColor(c.error), "--call-end" to androidx.compose.ui.graphics.SolidColor(c.callEnd),
             )
             swatches.chunked(4).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { (name, fill, ink) ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(64.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .then(if (fill == null) Modifier.background(a.gradient) else Modifier.background(fill))
-                                .border(1.dp, a.hairlineStrong, RoundedCornerShape(14.dp))
-                                .padding(8.dp),
-                            contentAlignment = Alignment.BottomStart,
-                        ) {
-                            Text(name, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = if (fill == null) Color.White else ink, maxLines = 1)
+                    row.forEach { (name, fill) ->
+                        Column(Modifier.weight(1f)) {
+                            val shape = RoundedCornerShape(t.radii.sm)
+                            Box(Modifier.fillMaxWidth().height(52.dp).clip(shape).background(fill, shape).insetShadow(shape, listOf(app.core.ui.theme.ShadowLayer(0.dp, 0.dp, 0.dp, 1.dp, c.line, inset = true))))
+                            Caption(name)
                         }
                     }
                 }
@@ -252,475 +268,404 @@ object ComponentGallery {
     }
 
     @Composable
-    private fun Typography(t: GalleryText) {
-        val ty = MaterialTheme.typography
-        Section(0, t.typography, "Type") {
-            listOf(
-                ty.displayLarge to t.match,
-                ty.displayMedium to t.sayHi,
-                ty.displaySmall to t.nameAge,
-                ty.headlineLarge to t.whatsYourName,
-                ty.headlineMedium to t.likedYou,
-                ty.headlineSmall to t.chats,
-                ty.titleLarge to t.answer,
-                ty.titleMedium to t.filters,
-                ty.titleSmall to t.privacy,
-                ty.bodyLarge to t.about,
-                ty.bodyMedium to t.codeSent,
-                ty.bodySmall to t.meta,
-                ty.labelLarge to t.continueLabel,
-                ty.labelMedium to t.hiking,
-                ty.labelSmall to t.likes,
-            ).forEach { (style, text) ->
-                Text(text, style = style, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    private fun Type(x: Texts) {
+        val t = AppTheme.template
+        Card("Type") {
+            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                Text(x.sayHi, style = t.type.display, color = t.colors.text)
+                Text(x.screenTitle, style = t.type.h1, color = t.colors.text)
+                Text(x.cardTitle, style = t.type.h2, color = t.colors.text)
+                Text(x.rowTitle, style = t.type.h3, color = t.colors.text)
+                Text(x.aboutLarge, style = t.type.bodyLg, color = t.colors.text)
+                Text(x.body, style = t.type.body, color = t.colors.text)
+                Text(x.helper, style = t.type.bodySm, color = t.colors.text2)
+                Text(x.small, style = t.type.caption, color = t.colors.text3)
             }
-            Text("It’s a match! · Eşleştiniz! ğ ş ı İ", style = ty.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 
-    // Page 2
-
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
     @Composable
-    private fun Buttons(t: GalleryText) {
-        Section(1, t.buttons, "Buttons") {
-            GradientButton(t.continueLabel, {}, forward = true)
-            GradientButton(t.continueLabel, {}, loading = true)
-            GradientButton(t.continueLabel, {}, enabled = false)
-            OutlineButton(t.haveAccount, {})
-            TonalButton(t.fromGallery, {}, icon = AppIcons.Camera)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                TextAction(t.later, {})
-                InverseButton(t.edit, {}, icon = AppIcons.Pencil)
-                TextAction(t.removePhoto, {}, kind = TextActionKind.Destructive)
+    private fun Buttons(x: Texts) {
+        Card("Buttons") {
+            PrimaryButton(x.continueLabel, {})
+            SecondaryButton(x.signIn, {})
+            SecondaryButton(x.deleteAccount, {}, destructive = true)
+            PrimaryButton(x.continueLabel, {}, enabled = false)
+            androidx.compose.foundation.layout.FlowRow(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton(x.editProfile, {}, small = true)
+                SecondaryButton(x.preview, {}, small = true)
+                TextAction(x.later, {})
+                TextAction(x.block, {}, kind = TextActionKind.Destructive)
             }
         }
     }
 
     @Composable
-    private fun IconButtons(t: GalleryText) {
-        Section(2, t.iconButtons, "Icon buttons") {
+    private fun Deck(x: Texts) {
+        Card("Deck actions and photo chips") {
             val backdrop = rememberGlassBackdrop()
-            PhotoStrip(0, 110, backdrop) {
-                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    AppIconButton(AppIcons.ChevronDown, t.close, {}, kind = IconButtonKind.Glass, size = 44.dp, backdrop = backdrop)
-                    AppIconButton(AppIcons.More, t.more, {}, kind = IconButtonKind.Glass, size = 44.dp, backdrop = backdrop)
-                    AppIconButton(AppIcons.Tune, t.filters, {}, kind = IconButtonKind.Glass, size = 44.dp, backdrop = backdrop)
-                    AppIconButton(AppIcons.ChevronUp, t.close, {}, kind = IconButtonKind.Glass, size = 44.dp, backdrop = backdrop)
+            PhotoBox(0, 150, backdrop) {
+                Box(Modifier.fillMaxSize().background(AppTheme.template.paints.photoScrimBottom))
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp)) {
+                    DeckActions({}, {}, {}, {}, {}, backdrop = backdrop, modifier = Modifier.padding(horizontal = 0.dp))
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                AppIconButton(AppIcons.Back, t.back, {})
-                AppIconButton(AppIcons.Search, t.search, {}, kind = IconButtonKind.Tonal)
-                AppIconButton(AppIcons.Phone, t.call, {}, kind = IconButtonKind.Line)
-                AppIconButton(AppIcons.Video, t.video, {}, kind = IconButtonKind.Tonal)
-                AppIconButton(AppIcons.Close, t.close, {})
+            Caption("Physical LTR row: rewind, pass, super like, like, boost.")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppIconButton(AppIcons.Tune, x.filters, {}, kind = IconButtonKind.Glass)
+                AppIconButton(AppIcons.Search, x.search, {}, kind = IconButtonKind.Tonal)
+                AppIconButton(AppIcons.More, x.more, {}, kind = IconButtonKind.Line)
+                AppIconButton(AppIcons.Back, x.back, {})
+                AppIconButton(AppIcons.Close, x.close, {})
             }
         }
     }
 
     @Composable
-    private fun DeckRow(t: GalleryText) {
-        Section(3, t.deckActions, "Deck actions") {
-            val backdrop = rememberGlassBackdrop()
-            PhotoStrip(1, 150, backdrop) {
-                DeckActions({}, {}, {}, {}, {}, Modifier.align(Alignment.Center), backdrop = backdrop)
-            }
-            Caption(t.deckCaption)
-        }
-    }
-
-    // Page 3
-
-    @Composable
-    private fun Chips(t: GalleryText) {
-        Section(4, t.chips, "Chips") {
+    private fun Chips(x: Texts) {
+        Card("Chips and pills") {
             ChipRow {
-                ChoiceChip(t.serious, selected = true, onClick = {})
-                ChoiceChip(t.marriage, selected = false, onClick = {})
-                ChoiceChip(t.friendship, selected = false, onClick = {})
+                ChoiceChip(x.bachelor, selected = false, onClick = {})
+                ChoiceChip(x.master, selected = true, onClick = {})
             }
             ChipRow {
-                FilterChoiceChip(t.verifiedOnly, selected = true, onClick = {})
-                FilterChoiceChip(t.online, selected = false, onClick = {})
-                FilterChoiceChip(t.more, selected = false, onClick = {}, icon = AppIcons.Tune)
+                ChoiceChip(x.all, selected = true, onClick = {}, count = x.n(12))
+                ChoiceChip(x.superLike, selected = false, onClick = {}, count = x.n(2))
             }
             ChipRow {
-                InterestChip(t.books, icon = AppIcons.Book)
-                InterestChip(t.cinema, icon = AppIcons.Film)
-                InterestChip(t.hiking, shared = true)
+                InterestChip(x.hiking, shared = true)
+                InterestChip(x.cinema)
             }
-            ChipRow {
-                FactChip(t.libra, AppIcons.Libra)
-                FactChip(t.cat, AppIcons.Paw)
-                FactChip(t.noSmoking, AppIcons.NoSmoking)
-            }
-            val backdrop = rememberGlassBackdrop()
-            PhotoStrip(2, 80, backdrop) {
-                Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PhotoChip(t.onlineNow, mark = PhotoChipMark.Online, backdrop = backdrop)
-                    PhotoChip(t.sharedInterests, mark = PhotoChipMark.Shared, backdrop = backdrop)
-                }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Pill(x.subscription, kind = PillKind.Tint)
+                Pill(x.superLike)
+                UnreadCount(x.n(2))
             }
         }
     }
 
-    @Composable
-    private fun TextFields(t: GalleryText) {
-        Section(5, t.textField, "Text field") {
-            AppTextField("", {}, label = t.nickname, placeholder = t.example)
-            AppTextField(t.arash, {}, label = t.focusedCounter, maxLength = 20, helper = t.nameHelper, interactionSource = rememberFocused())
-            AppTextField(t.arash + "123", {}, label = t.errorLabel, error = t.nameError)
-        }
-    }
+    // Column 2
 
     @Composable
-    private fun Phone(t: GalleryText) {
-        Section(6, t.phone, "Phone field") {
-            PhoneField(
-                value = t.phoneDigits,
-                onValueChange = {},
-                dialCode = t.dialCode,
-                onCountryClick = {},
-                contentDescription = t.phone,
-                flag = { BandFlag(Color(0xFF239F40), Color.White, Color(0xFFDA0000)) },
-                trustLine = t.phoneTrust,
-                visualTransformation = app.core.feature.auth.PhoneVisualTransformation(app.core.feature.auth.PhoneNumbers.country("IR")!!, t.language),
-                interactionSource = rememberFocused(),
-            )
-        }
-    }
-
-    // Page 4
-
-    @Composable
-    private fun Otp(t: GalleryText) {
-        Section(7, t.otp, "OTP") {
-            OtpCells("482", 6, Modifier.align(Alignment.CenterHorizontally))
-            SmsCodeChip(t.fromSms, {}, Modifier.align(Alignment.CenterHorizontally))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconLine(AppIcons.Clock, t.resend, Modifier.weight(1f))
-                TextAction(t.changeNumber, {})
+    private fun Fields(x: Texts) {
+        Card("Fields") {
+            AppTextField("", {}, placeholder = x.yourName)
+            val focused = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            AppTextField(x.arash, {}, interactionSource = focused)
+            // Drawn focused: the field's own collector starts first, then the focus arrives.
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                kotlinx.coroutines.yield()
+                focused.emit(androidx.compose.foundation.interaction.FocusInteraction.Focus())
             }
-            SafetyCard(t.dontShare, t.neverAsk)
-            Caption(t.wrongCode)
-            OtpCells("482710", 6, Modifier.align(Alignment.CenterHorizontally), state = OtpState.Error)
-        }
-    }
-
-    @Composable
-    private fun Segments(t: GalleryText) {
-        Section(8, t.segmented, "Segmented control") {
-            SegmentedControl(listOf(t.plus, t.premium), 1, {}, icons = listOf(null, AppIcons.Crown))
-            SegmentedControl(listOf(t.all, t.online, t.newest), 0, {})
-        }
-    }
-
-    @Composable
-    private fun Switches(t: GalleryText) {
-        Section(9, t.switches, "Switch, slider") {
-            SettingsRow(t.incognito, subtitle = t.incognitoBody, end = RowEnd.Switch(true) {}, divider = true)
-            SettingsRow(t.showDistance, subtitle = t.showDistanceBody, end = RowEnd.Switch(false) {}, divider = false)
-            SliderLabel(t.maxDistance, t.km25)
-            GradientSlider(0.4f, {})
-            SliderLabel(t.ageRange, t.ages)
-            GradientRangeSlider(0.25f..0.55f, {})
-        }
-    }
-
-    // Page 5
-
-    @Composable
-    private fun Rows(t: GalleryText) {
-        Section(10, t.listRows, "List rows") {
-            Column {
-                SettingsRow(t.privacy, icon = AppIcons.Shield, onClick = {})
-                SettingsRow(t.languageRow, icon = AppIcons.Globe, value = t.persian, onClick = {})
-                SettingsRow(t.notifications, icon = AppIcons.Bell, subtitle = t.notificationsBody, end = RowEnd.Switch(true) {}, divider = false)
-            }
-            Caption(t.conversation)
-            Column {
-                ConversationRow(t.nazanin, t.typing, t.now, {}, verified = true, newMatch = true, typing = true, unread = 2, photo = facePhoto(12))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                ConversationRow(t.saman, t.teaOrCoffee, t.yesterday, {}, online = true, yourTurn = t.yourTurn, photo = facePhoto(0))
-            }
-        }
-    }
-
-    @Composable
-    private fun Kickers(t: GalleryText) {
-        Section(11, t.kicker, "Section kicker") {
-            SectionKicker(1, t.aboutMe)
-            SectionKicker(2, t.interests)
-            PhotoStrip(3, 64, null) {
-                PhotoScrimTop(Modifier.fillMaxSize())
-                SectionKicker(1, t.photoOf, Modifier.align(Alignment.CenterStart).padding(horizontal = 16.dp), onPhoto = true)
-            }
-        }
-    }
-
-    @Composable
-    private fun Facts(t: GalleryText) {
-        Section(12, t.factRow, "Fact row") {
-            FactRow(listOf(Fact(AppIcons.Height, t.height, t.cm178), Fact(AppIcons.Education, t.education, t.architecture), Fact(AppIcons.HeartLine, t.lookingFor, t.marriage)))
-            ChipRow {
-                FactChip(t.libra, AppIcons.Libra)
-                FactChip(t.cat, AppIcons.Paw)
-                FactChip(t.noSmoking, AppIcons.NoSmoking)
-            }
-        }
-    }
-
-    @Composable
-    private fun Prompts(t: GalleryText) {
-        Section(13, t.prompt, "Pull-quote prompt") {
-            PromptCard(t.weirdThing, t.answer, onLike = {})
-            PhotoStrip(4, 150, null) {
-                PhotoScrimBottom(Modifier.fillMaxSize())
-                PhotoPullQuote(t.darband, t.flask, Modifier.align(Alignment.BottomStart).padding(18.dp))
-            }
-            PhotoStrip(5, 120, null) {
-                PhotoScrimBottom(Modifier.fillMaxSize())
-                PhotoNameLine(t.taraneh, Numerals.format(22, t.language), Modifier.align(Alignment.BottomStart).padding(18.dp), verified = true)
-            }
-        }
-    }
-
-    // Page 6
-
-    @Composable
-    private fun Story(t: GalleryText) {
-        Section(14, t.story, "Story progress") {
-            PhotoStrip(5, 170, null) {
-                PhotoScrimTop(Modifier.fillMaxWidth())
-                Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StoryProgress(4, 3)
-                    StoryProgress(4, 1, progress = 0.5f)
-                    StoryProgress(6, 6)
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun TabBars(t: GalleryText) {
-        val tabs = listOf(
-            TabItem(t.discover, AppIcons.Discover, AppIcons.DiscoverSolid),
-            TabItem(t.likes, AppIcons.HeartLine, AppIcons.Heart, TabBadge.Count(Numerals.format(12, t.language), t.newLikes)),
-            TabItem(t.chats, AppIcons.Chat, AppIcons.ChatSolid, TabBadge.Dot(t.unreadDot)),
-            TabItem(t.profile, AppIcons.Profile, AppIcons.ProfileSolid),
-        )
-        Section(15, t.tabBar, "Floating glass tab bar") {
-            val backdrop = rememberGlassBackdrop()
-            PhotoStrip(1, 120, backdrop) {
-                FloatingTabBar(tabs, 0, {}, Modifier.align(Alignment.Center), overPhoto = true, backdrop = backdrop)
-            }
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.background).padding(vertical = 18.dp)) {
-                Column(Modifier.padding(horizontal = 30.dp).fillMaxWidth()) {
-                    SkeletonRow()
-                }
-                FloatingTabBar(tabs, 2, {}, Modifier.align(Alignment.BottomCenter))
-            }
-            Caption(t.tabCaption)
-        }
-    }
-
-    @Composable
-    private fun Sheet(t: GalleryText) {
-        Section(16, t.sheet, "Bottom sheet") {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(topStart = Radius.sheet, topEnd = Radius.sheet)),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                SheetGrabber()
-                SheetBody(t.reportTitle, body = t.reportBody, action = t.sendReport, onAction = {}) {
-                    SheetChoiceRow(t.fakeProfile, true, {})
-                    SheetChoiceRow(t.badMessage, false, {})
-                    SheetChoiceRow(t.money, false, {}, divider = false)
-                }
-            }
-        }
-    }
-
-    // Page 7
-
-    @Composable
-    private fun Dialog(t: GalleryText) {
-        Section(17, t.dialog, "Dialog") {
-            Box(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.56f), RoundedCornerShape(22.dp)).padding(20.dp)) {
-                DialogCard(t.unmatchTitle, t.unmatchBody, t.unmatch, {}, t.keep, {})
-            }
-        }
-    }
-
-    @Composable
-    private fun Snackbars(t: GalleryText) {
-        Section(18, t.snackbar, "Snackbar, toast") {
-            AppSnackbar(t.passed, action = t.undo, onAction = {})
-            AppSnackbar(t.photoAdded, kind = SnackbarKind.Success)
-            AppSnackbar(t.likeFailed, kind = SnackbarKind.Error)
-            val backdrop = rememberGlassBackdrop()
-            PhotoStrip(0, 90, backdrop) {
-                PhotoToast(t.superLikeSent, Modifier.align(Alignment.Center), backdrop = backdrop)
-            }
-        }
-    }
-
-    @Composable
-    private fun Avatars(t: GalleryText) {
-        Section(19, t.avatars, "Avatars, match tiles") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Avatar(48.dp)
-                Avatar(36.dp, photo = facePhoto(2))
-                Avatar(48.dp, photo = facePhoto(3))
-                Avatar(56.dp, online = true, photo = facePhoto(4))
-                Avatar(64.dp, newMatch = true, photo = facePhoto(5))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MatchTile(photo = facePhoto(6))
-                MatchTile(isNew = true, photo = facePhoto(7))
-                MatchTile(isNew = true, photo = facePhoto(8))
-                LikesTeaserTile(t.plus12, photo = facePhoto(9))
-            }
-            Caption(t.avatarCaption)
-        }
-    }
-
-    @Composable
-    private fun Verified(t: GalleryText) {
-        Section(20, t.verifiedBadge, "Verified badge") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(110.dp).height(56.dp).clip(RoundedCornerShape(18.dp))) {
-                    Image(photo(2), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    VerifiedBadge(28.dp, Modifier.align(Alignment.Center), onPhoto = true)
-                }
-                VerifiedBadge(28.dp)
-                VerifiedBadge(24.dp)
-                VerifiedBadge(20.dp)
-                VerifiedBadge(16.dp)
-            }
-        }
-    }
-
-    // Page 8
-
-    @Composable
-    private fun Empty(t: GalleryText) {
-        Section(21, t.emptyState, "Empty state") {
-            EmptyState(AppIcons.Compass, t.seenEveryone, t.newPeople, action = t.widen, onAction = {}, secondary = t.changeFilters, onSecondary = {})
-        }
-    }
-
-    @Composable
-    private fun Skeletons(t: GalleryText) {
-        Section(22, t.skeleton, "Skeleton loading") {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f)) {
-                    SkeletonRow()
-                    SkeletonRow()
-                }
-                SkeletonCard(Modifier.size(110.dp, 150.dp))
-            }
-        }
-    }
-
-    @Composable
-    private fun Steps(t: GalleryText) {
-        Section(23, t.steps, "Numbered steps") {
-            StepsHeader(3, 8, onBack = {})
-            SectionKicker(3, t.aboutYou)
-            Text(t.birthday, style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(t.birthdayHelper, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-
-    @Composable
-    private fun Plans(t: GalleryText) {
-        val l = t.language
-        fun plan(id: String, name: String, price: Int, badge: PlanBadge? = null) =
-            PlanOption(id, name, t.monthlyFrom, Numerals.format(price, l), t.toman, badge)
-        val three = listOf(
-            plan("plus", t.plus, 100_000),
-            plan("premium", t.premium, 180_000, PlanBadge(t.popular, alive = false)),
-            plan("gold", t.gold, 260_000, PlanBadge(t.newBadge, alive = true)),
-        )
-        Section(24, t.planSelector, "Plan selector") {
-            Caption(t.twoPlans)
-            PlanSelector(three.take(2), "premium", {})
-            Caption(t.threePlans)
-            PlanSelector(three, "premium", {})
-            Caption(t.manyPlans)
-            PlanSelector(
-                three + plan("vip", t.longPlanName, 420_000, PlanBadge(t.bestValue, alive = true)) + plan("week", t.week, 40_000),
-                "vip",
+            AppTextField(
+                x.partialPhone,
                 {},
+                error = x.wrongNumber,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
             )
-        }
-    }
-
-    // Page 9
-
-    @Composable
-    private fun Paywall(t: GalleryText) {
-        val l = t.language
-        Section(24, t.periods, "Periods, benefits") {
-            SectionKicker(1, t.whatPremiumGives)
-            BenefitGrid(
-                listOf(
-                    Benefit(t.seeLikes, AppIcons.Heart),
-                    Benefit(t.unlimitedLikes, AppIcons.HeartLine),
-                    Benefit(t.superLikes, AppIcons.Star),
-                    Benefit(t.rewind, AppIcons.Rewind),
-                    Benefit(t.boost, AppIcons.Bolt),
-                    Benefit(t.incognito),
-                    Benefit(t.filters, AppIcons.Tune),
-                ),
-                more = { t.moreBenefits(it) },
+            PhoneField(
+                value = x.phoneShown,
+                onValueChange = {},
+                dialCode = x.dial,
+                onCountryClick = {},
+                contentDescription = x.phone,
+                flag = { BandFlag(AppTheme.template.colors.flagGreen, AppTheme.template.colors.flagWhite, AppTheme.template.colors.flagRed) },
             )
-            SectionKicker(2, t.chooseLength)
-            PeriodRow(PeriodOption("12", t.months12, t.perMonth(100_000), Numerals.format(1_200_000, l), t.toman, Numerals.percent(44, l) + " " + t.less, PlanBadge(t.bestValue, alive = true)), true, {})
-            PeriodRow(PeriodOption("3", t.months3, t.perMonth(150_000), Numerals.format(450_000, l), t.toman, Numerals.percent(17, l) + " " + t.less), false, {})
-            PeriodRow(PeriodOption("1", t.months1, null, Numerals.format(180_000, l), t.toman), false, {})
-            GradientButton(t.continueWith(Numerals.format(1_200_000, l)), {})
-            AlivePill(t.yourTurn)
+            Box(Modifier.width(290.dp)) { OtpCells("48", 6) }
+            Box(Modifier.width(290.dp)) { OtpCells("482710", 6, state = OtpState.Error) }
         }
     }
 
     @Composable
-    private fun Chat(t: GalleryText) {
-        Section(25, t.chat, "Chat bits") {
-            ChatInfoChip(t.matchedAgo)
-            ChatBubble(t.hello, t.time1, mine = false)
-            ChatBubble(t.flask, t.time2Seen, mine = true)
-        }
-    }
-
-    @Composable
-    private fun Logo(t: GalleryText) {
-        Section(26, t.logo, "Logo mark, no name") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(88.dp).clip(RoundedCornerShape(26.dp)).background(AppTheme.colors.gradient), contentAlignment = Alignment.Center) {
-                    LogoMark(56.dp, mono = true)
-                }
-                Box(Modifier.size(88.dp).clip(RoundedCornerShape(26.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-                    LogoMark(56.dp)
-                }
-                LogoMark(44.dp)
-                LogoMark(24.dp)
+    private fun Selection(x: Texts) {
+        Card("Selection controls") {
+            SegmentedControl(listOf(x.superLike, x.boost), 0, {})
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppSwitch(false, null)
+                AppSwitch(true, null)
+                AppRadio(false)
+                AppRadio(true)
+                AppCheckbox(false)
+                AppCheckbox(true)
             }
-            Spacer(Modifier.height(4.dp))
+            AppSlider(0.4f, {})
+            AppRangeSlider(0.12f..0.45f, {})
+            ProgressBar(0.45f)
+            OptionRow(x.serious, selected = true, onClick = {})
+            OptionRow(x.friendship, selected = false, onClick = {})
         }
     }
-}
 
-/** An interaction source that says "focused" from the start, to draw a field focused without a keyboard. */
-private class FocusedSource : MutableInteractionSource {
-    override val interactions = kotlinx.coroutines.flow.flowOf<androidx.compose.foundation.interaction.Interaction>(FocusInteraction.Focus())
-    override suspend fun emit(interaction: androidx.compose.foundation.interaction.Interaction) = Unit
-    override fun tryEmit(interaction: androidx.compose.foundation.interaction.Interaction): Boolean = true
-}
+    @Composable
+    private fun Lists(x: Texts) {
+        Card("Lists") {
+            SectionLabel(x.account)
+            SettingsGroup {
+                SettingsRow(x.languageRow, value = x.persian, onClick = {})
+                SettingsRow(x.incognito, end = RowEnd.Switch(true) {}, divider = true)
+                SettingsRow(x.deleteRow, end = RowEnd.None, danger = true, divider = true, onClick = {})
+            }
+            ConversationRow(
+                name = x.mahsa,
+                preview = x.typing,
+                time = x.now,
+                onClick = {},
+                verified = true,
+                newMatch = true,
+                typing = true,
+                unread = 2,
+                photo = facePhoto(1),
+            )
+        }
+    }
 
-@Composable
-private fun rememberFocused(): MutableInteractionSource = remember { FocusedSource() }
+    @Composable
+    private fun Profile(x: Texts) {
+        val t = AppTheme.template
+        Card("Profile pieces") {
+            Box(Modifier.fillMaxWidth().height(92.dp).clip(RoundedCornerShape(t.radii.md))) {
+                Image(photo(1), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(t.paints.photoScrimBottom))
+                StoryProgress(4, 0, Modifier.padding(top = 12.dp))
+                Text(x.nazanin24, style = t.type.h2, color = t.colors.onPhoto, modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 10.dp))
+            }
+            FactRow(listOf(Fact(x.height, x.heightValue), Fact(x.education, x.bachelor), Fact(x.lookingFor, x.serious)))
+            PromptQuote(x.perfectDay, x.perfectDayAnswer, onLike = {})
+        }
+    }
+
+    @Composable
+    private fun TabBars(x: Texts) {
+        val t = AppTheme.template
+        Card("Tab bar (floating or docked by the theme)") {
+            val tabs = listOf(
+                TabItem(x.discover, AppIcons.Discover, AppIcons.DiscoverSolid),
+                TabItem(x.likes, AppIcons.HeartLine, AppIcons.Heart, TabBadge.Count(x.n(12), x.newLikes)),
+                TabItem(x.chats, AppIcons.Chat, AppIcons.ChatSolid, TabBadge.Dot(x.unreadChats)),
+                TabItem(x.profile, AppIcons.Profile, AppIcons.ProfileSolid),
+            )
+            Box(Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(t.radii.md)).background(t.colors.bg), contentAlignment = Alignment.BottomCenter) {
+                AppTabBar(tabs, 0, {}, safeArea = t.sizes.tabbarSafe, modifier = Modifier.padding(bottom = 0.dp))
+            }
+            val backdrop = rememberGlassBackdrop()
+            Box(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(t.radii.md)), contentAlignment = Alignment.BottomCenter) {
+                Image(photo(0), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().glassSource(backdrop))
+                AppTabBar(tabs, 1, {}, overPhoto = true, backdrop = backdrop, safeArea = t.sizes.tabbarSafe)
+            }
+        }
+    }
+
+    // Column 3
+
+    @Composable
+    private fun Overlays(x: Texts) {
+        val t = AppTheme.template
+        Card("Sheet, dialog, snackbar, toast") {
+            Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(t.radii.md)).background(t.colors.surface2)) {
+                Box(Modifier.fillMaxSize().background(t.colors.scrim))
+                Column(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .sheetSurface(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    SheetGrabber(Modifier.padding(top = 0.dp))
+                    SheetBody(x.filters, body = x.sheetLine, action = x.showMe, onAction = {}, modifier = Modifier.padding(bottom = 0.dp))
+                }
+            }
+            DialogCard(x.unmatchTitle, x.unmatchBody, x.unmatch, {}, x.keep, {})
+            AppSnackbar(x.passed, action = x.undo, onAction = {})
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(t.radii.md)).background(t.colors.photoPlaceholder).padding(12.dp)) {
+                PhotoToast(x.superSent)
+            }
+        }
+    }
+
+    @Composable
+    private fun Paywall(x: Texts) {
+        Card("Paywall") {
+            SegmentedControl(listOf(x.plus, x.premium, x.platinum), 1, {})
+            Caption("2 or 3 plans: segmented. 4 or more: the rail below (runs off the screen edge).")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PlanCard(PlanOption("plus", x.plus), selected = false, onClick = {}, modifier = Modifier.width(132.dp))
+                PlanCard(PlanOption("gold", x.summerGold), selected = true, onClick = {}, modifier = Modifier.width(132.dp))
+            }
+            BenefitList(listOf(x.seeWhoLiked, x.unlimitedLikes))
+            PeriodRow(PeriodOption("1m", x.oneMonth, x.price1, x.toman), selected = false, onClick = {})
+            PeriodRow(PeriodOption("12m", x.twelveMonths, x.price12, x.toman, saving = x.saving), selected = true, onClick = {})
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                TextAction(x.restore, {}, kind = TextActionKind.Neutral)
+                TextAction(x.terms, {}, kind = TextActionKind.Neutral)
+                TextAction(x.privacy, {}, kind = TextActionKind.Neutral)
+            }
+        }
+    }
+
+    @Composable
+    private fun Chat(x: Texts) {
+        Card("Chat") {
+            ChatSystemLine(x.matched3Days)
+            ChatBubble(x.theirMessage, null, mine = false)
+            ChatBubble(x.myMessage, x.myMeta, mine = true)
+        }
+    }
+
+    @Composable
+    private fun Avatars(x: Texts) {
+        Card("Avatars, badge, mark, tiles") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Avatar(56.dp, photo = facePhoto(0))
+                Avatar(48.dp, newMatch = true, photo = facePhoto(2))
+                Avatar(48.dp)
+                VerifiedBadge(24.dp)
+                LogoMark(40.dp)
+            }
+            // The strip of new matches: a fresh one ringed outside its photo, 4 dp of room for the ring.
+            Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MatchTile(isNew = true, photo = tilePhoto(0))
+                MatchTile(photo = tilePhoto(1))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PhotoTile(Modifier.width(96.dp), mainTag = x.mainTag, onRemove = {}, photo = tilePhoto(2))
+                PhotoTile(Modifier.width(96.dp), status = x.inReview, photo = tilePhoto(3))
+                AddPhotoTile({}, x.addPhoto, Modifier.width(96.dp))
+            }
+        }
+    }
+
+    /** What the design sheet leaves to the screens: the template picker, call buttons, the name line. */
+    @Composable
+    private fun Extras(x: Texts) {
+        val t = AppTheme.template
+        Card("Template picker, calls, name line") {
+            TemplatePicker(choice = "default", offered = listOf("neon", "white"), onChoose = {})
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(t.radii.md)).background(androidx.compose.ui.graphics.Color(0xFF2A2A30)).padding(12.dp)) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        CallButton(AppIcons.Close, x.decline, {}, kind = CallButtonKind.End)
+                        CallButton(AppIcons.Phone, x.audioOnly, {}, kind = CallButtonKind.Secondary)
+                        CallButton(AppIcons.Video, x.mute, {}, kind = CallButtonKind.Toggled, size = 56.dp)
+                        CallButton(AppIcons.Video, x.answer, {}, kind = CallButtonKind.Accept)
+                    }
+                }
+            }
+            Column(Modifier.fillMaxWidth().templateCard(RoundedCornerShape(t.radii.md)).padding(12.dp)) {
+                NameLine(x.nazanin, x.n(24), verified = true, online = true, onPhoto = false)
+                Text(x.cityDistance, style = t.type.body, color = t.colors.text2)
+            }
+            Box(Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(t.radii.md))) {
+                Image(photo(1), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(t.paints.photoScrimBottom))
+                NameLine(x.nazanin, x.n(24), Modifier.align(Alignment.BottomStart).padding(12.dp), verified = true, online = true)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { PersonSilhouette(48.dp) }
+            }
+        }
+    }
+
+    /** The sheet's sample texts (the design's own), Persian or English. */
+    class Texts(private val language: AppLanguage) {
+        private val fa = language == AppLanguage.FA
+        private fun p(persian: String, english: String) = if (fa) persian else english
+        fun n(value: Int) = Numerals.format(value, language)
+
+        val sayHi = p("سلام کن.", "Say hi.")
+        val screenTitle = p("عنوان صفحه", "Screen title")
+        val cardTitle = p("عنوان کارت", "Card title")
+        val rowTitle = p("عنوان ردیف", "Row title")
+        val aboutLarge = p("متن درباره‌ی من، بزرگ", "About me, large")
+        val body = p("متن معمولی", "Body text")
+        val helper = p("خط کوتاه کمکی", "A short helper line")
+        val small = p("برچسب کوچک", "Small label")
+        val continueLabel = p("ادامه", "Continue")
+        val signIn = p("ورود", "Sign in")
+        val deleteAccount = p("حسابم رو پاک کن", "Delete my account")
+        val deleteRow = p("حذف حساب", "Delete account")
+        val editProfile = p("ویرایش پروفایل", "Edit profile")
+        val preview = p("پیش‌نمایش", "Preview")
+        val later = p("بعداً", "Later")
+        val block = p("مسدودش کن", "Block")
+        val filters = p("فیلترها", "Filters")
+        val search = p("جستجو", "Search")
+        val more = p("بیشتر", "More")
+        val back = p("برگشت", "Back")
+        val close = p("بستن", "Close")
+        val bachelor = p("کارشناسی", "Bachelor’s")
+        val master = p("کارشناسی ارشد", "Master’s")
+        val all = p("همه", "All")
+        val superLike = p("سوپرلایک", "Super like")
+        val boost = p("بوست", "Boost")
+        val hiking = p("کوه‌نوردی", "Hiking")
+        val cinema = p("فیلم کلاسیک", "Classic films")
+        val subscription = p("اشتراک", "Subscription")
+        val yourName = p("اسمت", "Your name")
+        val arash = p("آرش", "Arash")
+        val partialPhone = p("۰۹۱۲ ۳۴۵", "0912 345")
+        val wrongNumber = p("این شماره درست نیست.", "That number isn’t right.")
+        val dial = p("+۹۸", "+98")
+        val phone = p("شماره موبایل", "Phone number")
+        val phoneShown = p("۹۱۲ ۳۴۵ ۶۷۸۹", "912 345 6789")
+        val serious = p("رابطه‌ی جدی", "Something serious")
+        val friendship = p("دوستی", "Friendship")
+        val account = p("حساب", "Account")
+        val languageRow = p("زبان", "Language")
+        val persian = p("فارسی", "Persian")
+        val incognito = p("حالت ناشناس", "Incognito")
+        val mahsa = p("مهسا", "Mahsa")
+        val typing = p("داره می‌نویسه…", "typing…")
+        val now = p("الان", "now")
+        val nazanin = p("نازنین", "Nazanin")
+        val nazanin24 = p("نازنین، ۲۴", "Nazanin, 24")
+        val height = p("قد", "Height")
+        val heightValue = p("۱۶۸ سانت", "168 cm")
+        val education = p("تحصیلات", "Education")
+        val lookingFor = p("دنبال", "Looking for")
+        val perfectDay = p("یه روز عالی یعنی…", "A perfect day is…")
+        val perfectDayAnswer = p("صبحونه تو دربند، شب یه چای داغ.", "Breakfast in the hills, a hot tea at night.")
+        val discover = p("کشف", "Discover")
+        val likes = p("لایک‌ها", "Likes")
+        val chats = p("گفتگوها", "Chats")
+        val profile = p("پروفایل", "Profile")
+        val newLikes = p("۱۲ لایک تازه", "12 new likes")
+        val unreadChats = p("پیام تازه", "New messages")
+        val sheetLine = p("یه خط کوتاه، فقط وقتی لازمه.", "One short line, only when needed.")
+        val showMe = p("نشونم بده", "Show me")
+        val unmatchTitle = p("مچ رو برمی‌داری؟", "Unmatch?")
+        val unmatchBody = p("گفتگوتون پاک می‌شه و دیگه همدیگه رو نمی‌بینین.", "Your chat is deleted and you won’t see each other again.")
+        val unmatch = p("برش دار", "Unmatch")
+        val keep = p("نه، بمونه", "Keep")
+        val passed = p("نازنین رو رد کردی.", "You passed on Nazanin.")
+        val undo = p("برگردون", "Undo")
+        val superSent = p("سوپرلایکت رفت", "Super like sent")
+        val plus = p("پلاس", "Plus")
+        val premium = p("پریمیوم", "Premium")
+        val platinum = p("پلاتینیوم", "Platinum")
+        val summerGold = p("طلایی ویژه‌ی تابستون", "Summer gold special")
+        val seeWhoLiked = p("ببین کی لایکت کرده", "See who liked you")
+        val unlimitedLikes = p("لایک نامحدود", "Unlimited likes")
+        val oneMonth = p("۱ ماهه", "1 month")
+        val twelveMonths = p("۱۲ ماهه", "12 months")
+        val price1 = p("۱۸۰٬۰۰۰", "180,000")
+        val price12 = p("۱٬۲۰۰٬۰۰۰", "1,200,000")
+        val toman = p("تومان", "Toman")
+        val saving = p("۴۴٪ کمتر", "44% less")
+        val restore = p("بازیابی خرید", "Restore")
+        val terms = p("قوانین", "Terms")
+        val privacy = p("حریم خصوصی", "Privacy")
+        val matched3Days = p("۳ روز پیش مچ شدین", "You matched 3 days ago")
+        val theirMessage = p("دارآباد! مسیرش قشنگ‌تره. تو چی؟", "Darabad! The trail is prettier. You?")
+        val myMessage = p("پس جمعه ساعت ۷؟", "Friday at 7, then?")
+        val myMeta = p("۱۸:۲۵، دیده شد", "18:25, seen")
+        val mainTag = p("اصلی", "Main")
+        val inReview = p("در حال بررسی", "In review")
+        val addPhoto = p("عکس اصلی", "Main photo")
+        val decline = p("رد", "Decline")
+        val audioOnly = p("فقط صدا", "Audio only")
+        val mute = p("دوربین خاموش", "Camera off")
+        val answer = p("تصویری", "Video")
+        val cityDistance = p("تهران، ۳ کیلومتر", "Tehran, 3 km")
+    }
+}

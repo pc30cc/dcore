@@ -14,6 +14,7 @@ import {
   preferenceFlags,
   store as storeCodes,
   textState,
+  uiTemplateChoice,
   wireTime,
   type AppStore,
   type LegalConsentKind,
@@ -86,6 +87,7 @@ export function settingsOf(view: AccountView): Settings {
     acceptCalls: p?.acceptCalls ?? true,
     modeRomance: p?.modeMatch ?? true,
     snoozed: view.status === accountStatus.code('snoozed'),
+    template: uiTemplateChoice.nameOrUndefined(p?.uiTemplate) ?? 'default',
   };
 }
 

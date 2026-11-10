@@ -2,18 +2,17 @@ package app.core
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.brand.AppBrand
@@ -24,8 +23,13 @@ import app.core.i18n.AppLocales
 import app.core.i18n.LocalAppName
 import app.core.push.OpenTargets
 import app.core.ui.nav.AppNavHost
+import app.core.template.TemplateStore
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.appearanceIsDark
+import app.core.ui.theme.ApplySystemBars
+import app.core.ui.theme.LocalSystemBars
+import app.core.ui.theme.SystemBarRequests
+import app.core.ui.theme.Templates
+import androidx.compose.runtime.getValue
 
 /**
  * The one activity. Compose draws everything, edge to edge, with predictive
@@ -43,10 +47,16 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The window (and, from the next launch on Android 13+, the system
+        // splash) in the template the last run drew, before the first frame.
+        val launchTemplate = TemplateStore.get(this).effective.value
+        setTheme(launchTheme(launchTemplate))
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val graph = appGraph
         graph.config.start()
+        // The template follows config.ui and sends a choice left pending.
+        graph.templates.start(graph.config.config, graph.config.fresh)
         // The origins list is checked alongside the config.
         graph.startOrigins()
         calls = CallActivityHooks(this, graph.calls) { graph.realtime }.also { it.onCreate(savedInstanceState) }
@@ -57,22 +67,20 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) openFrom(intent)
 
         setContent {
-            // Dark unless the person picked light or "follow the phone".
-            val dark = appearanceIsDark()
-            // The bar icons follow the theme every time it changes, not only
-            // the shade the phone had at launch.
-            DisposableEffect(dark) {
-                enableEdgeToEdge(
-                    statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
-                    navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
-                )
-                onDispose {}
-            }
+            val templateId by graph.templates.effective.collectAsStateWithLifecycle()
+            val template = remember(templateId) { Templates.of(templateId) }
+            // The bar icons have one owner: the template's scheme (light
+            // icons on a dark template, dark on a light one), unless a scene
+            // or a call drawn over everything asks for its own.
+            val bars = remember { SystemBarRequests() }
+            ApplySystemBars(this, template, bars)
+            // The next cold start's window and splash.
+            LaunchedEffect(templateId) { rememberLaunchTemplate(templateId) }
             val config by graph.config.config.collectAsStateWithLifecycle()
             val appName = config?.appName?.takeIf { it.isNotBlank() } ?: AppBrand.appName
 
-            AppTheme(dark = dark) {
-                CompositionLocalProvider(LocalAppGraph provides graph, LocalAppName provides appName) {
+            AppTheme(template = template) {
+                CompositionLocalProvider(LocalAppGraph provides graph, LocalAppName provides appName, LocalSystemBars provides bars) {
                     Box(Modifier.fillMaxSize()) {
                         Surface(Modifier.fillMaxSize()) {
                             // The conversations' call buttons and call-back lines.
@@ -95,6 +103,13 @@ class MainActivity : ComponentActivity() {
         openFrom(intent)
     }
 
+    /** The system splash of the next launch (Android 13+ keeps it for this activity). */
+    private fun rememberLaunchTemplate(id: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            runCatching { splashScreen.setSplashScreenTheme(launchTheme(id)) }
+        }
+    }
+
     private fun openFrom(intent: Intent?) {
         OpenTargets.fromIntent(intent)?.let(appGraph.push.links::open)
     }
@@ -110,8 +125,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        /** The scrims Android draws behind three-button navigation (androidx.activity's defaults). */
-        val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
-        val DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
+        /** The window theme drawn before the first frame for template [id]. */
+        fun launchTheme(id: String): Int = if (Templates.of(id).dark) R.style.Theme_App else R.style.Theme_App_Light
     }
 }

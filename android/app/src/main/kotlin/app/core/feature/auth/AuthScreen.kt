@@ -1,8 +1,6 @@
 package app.core.feature.auth
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.os.Build
 import android.telephony.TelephonyManager
 import androidx.activity.compose.BackHandler
@@ -20,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -32,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -46,7 +42,6 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -72,8 +67,10 @@ import app.core.i18n.brandText
 import app.core.model.DeviceInfo
 import app.core.store.IntegrityResult
 import app.core.store.Store
+import app.core.ui.theme.BarIcons
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.LocalSemanticColors
+import app.core.ui.theme.SystemBarsOverride
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -161,7 +158,11 @@ fun AuthRoute() {
     SideEffect { field.wordMinRadius = art.wordRadiusFor(wordText) }
     val sheetOpen = state.stage != AuthStage.Welcome
 
-    SceneSystemBars(lightIcons = sheetOpen)
+    // The bar icons over the scene: dark on its light sky while the welcome
+    // shows, light over the dimmed scene and the dark sheet; the navigation
+    // bar sits on the scene's dark bottom either way. The template's own
+    // icons, as the template is when sign-in is left, come back after it.
+    SystemBarsOverride(BarIcons(lightStatus = sheetOpen, lightNavigation = true))
 
     Box(Modifier.fillMaxSize()) {
         WelcomeLayout(
@@ -288,32 +289,3 @@ private fun LegalLine(termsUrl: String, privacyUrl: String) {
     )
 }
 
-/**
- * The bar icons over the scene: dark on its light sky while the welcome
- * shows, light over the dimmed scene and the dark sheet; the navigation bar
- * sits on the scene's dark bottom either way. The theme's own setting comes
- * back when sign-in is left.
- */
-@Composable
-private fun SceneSystemBars(lightIcons: Boolean) {
-    val view = LocalView.current
-    if (view.isInEditMode) return
-    DisposableEffect(lightIcons) {
-        val window = view.context.findActivity()?.window ?: return@DisposableEffect onDispose {}
-        val controller = WindowCompat.getInsetsController(window, view)
-        val status = controller.isAppearanceLightStatusBars
-        val navigation = controller.isAppearanceLightNavigationBars
-        controller.isAppearanceLightStatusBars = !lightIcons
-        controller.isAppearanceLightNavigationBars = false
-        onDispose {
-            controller.isAppearanceLightStatusBars = status
-            controller.isAppearanceLightNavigationBars = navigation
-        }
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}

@@ -289,6 +289,8 @@ export interface SettingsWrite {
   showOnline?: boolean | undefined;
   acceptCalls?: boolean | undefined;
   modeMatch?: boolean | undefined;
+  /** profiles.ui_template code (uiTemplateChoice). */
+  uiTemplate?: number | undefined;
   /** true: active → snoozed, false: snoozed → active. */
   snooze?: boolean | undefined;
 }
@@ -300,15 +302,21 @@ export const settingsRowSchema = z.object({
   show_online: z.boolean(),
   accept_calls: z.boolean(),
   mode_match: z.boolean(),
+  ui_template: z.number().int(),
   status: z.number().int(),
   matches: z.array(id),
+  /** Whether anything was written (the profile row or the status). */
+  written: z.boolean(),
+  /** Whether the card's version moved (profiles_touch: a switch the card shows). */
+  card: z.boolean(),
 });
 
 /**
- * The privacy switches, the snooze (users.status 3 ↔ 4) and, when
+ * The privacy switches, the template choice, the snooze (users.status 3 ↔ 4) and, when
  * accept_calls changes, the person's call bit in every active match (call
  * placement reads only the match flags). Returns the settings as they are
- * afterwards and the matches whose flags changed.
+ * afterwards, the matches whose flags changed, whether anything was written
+ * and whether the card's version moved.
  */
 export const writeSettings = defineQuery({ name: 'me.writeSettings', statements: 1 }, async (db, userId: string, w: SettingsWrite) => {
   const v = (value: boolean | undefined) => value ?? null;
@@ -316,7 +324,7 @@ export const writeSettings = defineQuery({ name: 'me.writeSettings', statements:
     db,
     sql`
 WITH cur AS (
-  SELECT p.incognito, p.hide_age, p.hide_distance, p.show_online, p.accept_calls, p.mode_match
+  SELECT p.incognito, p.hide_age, p.hide_distance, p.show_online, p.accept_calls, p.mode_match, p.ui_template, p.version
     FROM profiles p WHERE p.user_id = ${userId}::bigint
 ), next AS (
   SELECT coalesce(${v(w.incognito)}::boolean, c.incognito) AS incognito,
@@ -325,15 +333,18 @@ WITH cur AS (
          coalesce(${v(w.showOnline)}::boolean, c.show_online) AS show_online,
          coalesce(${v(w.acceptCalls)}::boolean, c.accept_calls) AS accept_calls,
          coalesce(${v(w.modeMatch)}::boolean, c.mode_match) AS mode_match,
+         coalesce(${w.uiTemplate ?? null}::smallint, c.ui_template) AS ui_template,
          c.accept_calls AS calls_before
     FROM cur c
 ), p AS (
   UPDATE profiles x SET incognito = n.incognito, hide_age = n.hide_age, hide_distance = n.hide_distance,
-                        show_online = n.show_online, accept_calls = n.accept_calls, mode_match = n.mode_match
+                        show_online = n.show_online, accept_calls = n.accept_calls, mode_match = n.mode_match,
+                        ui_template = n.ui_template
     FROM next n
    WHERE x.user_id = ${userId}::bigint
-     AND (x.incognito, x.hide_age, x.hide_distance, x.show_online, x.accept_calls, x.mode_match)
-         IS DISTINCT FROM (n.incognito, n.hide_age, n.hide_distance, n.show_online, n.accept_calls, n.mode_match)
+     AND (x.incognito, x.hide_age, x.hide_distance, x.show_online, x.accept_calls, x.mode_match, x.ui_template)
+         IS DISTINCT FROM (n.incognito, n.hide_age, n.hide_distance, n.show_online, n.accept_calls, n.mode_match, n.ui_template)
+  RETURNING x.version
 ), u AS (
   UPDATE users SET status = CASE WHEN ${v(w.snooze)}::boolean THEN 4 ELSE 3 END
    WHERE id = ${userId}::bigint AND ${v(w.snooze)}::boolean IS NOT NULL
@@ -349,9 +360,11 @@ WITH cur AS (
      AND (matches.user_lo = ${userId}::bigint OR matches.user_hi = ${userId}::bigint)
   RETURNING matches.id
 )
-SELECT n.incognito, n.hide_age, n.hide_distance, n.show_online, n.accept_calls, n.mode_match,
+SELECT n.incognito, n.hide_age, n.hide_distance, n.show_online, n.accept_calls, n.mode_match, n.ui_template,
        coalesce((SELECT u.status FROM u), (SELECT s.status FROM users s WHERE s.id = ${userId}::bigint)) AS status,
-       coalesce((SELECT array_agg(m.id::text) FROM m), '{}') AS matches
+       coalesce((SELECT array_agg(m.id::text) FROM m), '{}') AS matches,
+       EXISTS (SELECT 1 FROM p) OR EXISTS (SELECT 1 FROM u) AS written,
+       coalesce((SELECT p.version FROM p) <> (SELECT c.version FROM cur c), false) AS card
   FROM next n`,
   );
   return row ? settingsRowSchema.parse(row) : null;

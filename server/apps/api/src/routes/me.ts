@@ -38,6 +38,7 @@ import {
   settingsPatchSchema,
   settingsSchema,
   textState,
+  uiTemplateChoice,
   wireTime,
   type FieldIssue,
   type LegalConsentKind,
@@ -60,6 +61,7 @@ import {
   notificationsOf,
   ownProfileOf,
   preferencesOf,
+  settingsOf,
   type MeContext,
 } from '../services/me.js';
 import { requireScope, sessionOf, unauthorized, type AppSession } from '../services/session.js';
@@ -68,7 +70,7 @@ import { requireScope, sessionOf, unauthorized, type AppSession } from '../servi
  * `GET /v1/me` and the own-account edits: basics, profile,
  * preferences, settings, push switches and consents.
  *
- * `GET /v1/me` reads the cached view (`mev:<uid>` → `me:<uid>:<mev>`): no
+ * `GET /v1/me` reads the cached view (`mev:<uid>` → `me:<uid>:<mev>:s<shape>`): no
  * statement when warm, one (`account_view()`) on a miss, and a 304 decided
  * from the version alone. Every edit bumps the version after its
  * transaction commits; edits that answer with the profile build the fresh
@@ -485,6 +487,23 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
+  // ─── GET /v1/me/settings ────────────────────────────────────────────────
+  app.get(
+    '/v1/me/settings',
+    {
+      preHandler: restrictedOk,
+      // The cached view: none when warm, account_view() on a miss.
+      config: { pgBudget: 1 },
+      schema: { tags: ['me'], summary: 'Privacy and visibility switches and the template chosen', response: { 200: settingsSchema } },
+    },
+    async (request, reply) => {
+      const session = sessionOf(app, request);
+      const view = accountOf((await scrubbed(() => app.account.load(session.userId))).result);
+      reply.header('cache-control', 'private, no-cache');
+      return settingsOf(view);
+    },
+  );
+
   // ─── PATCH /v1/me/settings ──────────────────────────────────────────────
   app.patch(
     '/v1/me/settings',
@@ -517,11 +536,15 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           showOnline: body.showOnline,
           acceptCalls: body.acceptCalls,
           modeMatch: body.modeRomance,
+          uiTemplate: body.template === undefined ? undefined : uiTemplateChoice.code(body.template),
           snooze,
         }),
       );
       if (!row) throw fieldInvalid('Set the name first.', '');
-      await app.account.changed(session.userId);
+      // Nothing written: the cached view and every prepared deck still hold. Written: a new view, and the
+      // decks build the card again only when its version moved (the template and the other switches it
+      // does not show leave it as it is).
+      if (row.written) await app.account.changed(session.userId, undefined, { card: row.card });
       const pipeline = app.redis.pipeline();
       // Call placement reads the match flags from their cache: drop the copies that changed (and, for a moment,
       // keep a request that read them before this change from caching them again).
@@ -544,6 +567,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         acceptCalls: row.accept_calls,
         modeRomance: row.mode_match,
         snoozed: row.status === accountStatus.code('snoozed'),
+        template: uiTemplateChoice.nameOrUndefined(row.ui_template) ?? 'default',
       };
     },
   );
@@ -568,7 +592,8 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       }
       const flags = await writing(() => writeNotifyFlags(app.pg, session.userId, clear, set));
       if (flags === null) throw unauthorized();
-      if (clear !== 0) await app.account.changed(session.userId);
+      // The push switches are not on the card: prepared decks keep it.
+      if (clear !== 0) await app.account.changed(session.userId, undefined, { card: false });
       return notificationsOf(flags);
     },
   );

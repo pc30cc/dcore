@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -18,8 +17,9 @@ import app.core.R
 import app.core.ui.theme.AppTheme
 
 /**
- * The logo mark: two overlapping circles (violet and pink, from the brand's
- * gradient) with a white lens where they meet. 24 / 34 / 40 / 44 / 56 dp;
+ * The logo mark: two overlapping circles (`--mark-a*` violet and `--mark-b*`
+ * pink, the same in every template) with a `--mark-lens` lens where they
+ * meet. 24 / 34 / 40 / 44 / 56 dp;
  * keep a quarter of its size clear around it. [mono] is for the gradient or
  * a photo behind it: white circles at 55 % and a solid lens. Never shown
  * with a name or a placeholder label. Decorative unless [contentDescription]
@@ -27,7 +27,7 @@ import app.core.ui.theme.AppTheme
  */
 @Composable
 fun LogoMark(size: Dp, modifier: Modifier = Modifier, mono: Boolean = false, contentDescription: String? = null) {
-    val stops = AppTheme.colors.gradientStops
+    val c = AppTheme.template.colors
     val described = if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier
     Canvas(modifier.size(size).then(described)) {
         val w = this.size.width
@@ -42,10 +42,10 @@ fun LogoMark(size: Dp, modifier: Modifier = Modifier, mono: Boolean = false, con
             drawPath(a, Color.White.copy(alpha = 0.55f))
             drawPath(b, Color.White.copy(alpha = 0.55f))
         } else {
-            drawPath(a, Brush.linearGradient(listOf(lerp(stops.start, Color.White, 0.25f), lerp(stops.start, Color.Black, 0.1f)), start = Offset(left.x, cy - r), end = Offset(left.x, cy + r)))
-            drawPath(b, Brush.linearGradient(listOf(lerp(stops.end, Color.White, 0.25f), lerp(stops.end, Color.Black, 0.05f)), start = Offset(right.x, cy - r), end = Offset(right.x, cy + r)))
+            drawPath(a, Brush.linearGradient(listOf(c.markA1, c.markA2), start = Offset(left.x, cy - r), end = Offset(left.x, cy + r)))
+            drawPath(b, Brush.linearGradient(listOf(c.markB1, c.markB2), start = Offset(right.x, cy - r), end = Offset(right.x, cy + r)))
         }
-        drawPath(lens, Color.White)
+        drawPath(lens, c.markLens)
     }
 }
 

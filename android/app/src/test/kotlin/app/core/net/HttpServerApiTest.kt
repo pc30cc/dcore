@@ -33,6 +33,7 @@ import app.core.model.ReportRequest
 import app.core.model.RequestBox
 import app.core.model.RestorePurchase
 import app.core.model.SendMessageRequest
+import app.core.model.Settings
 import app.core.model.SettingsPatch
 import app.core.model.Swipe
 import app.core.model.SwipeAction
@@ -268,6 +269,41 @@ class HttpServerApiTest {
             } else {
                 assertNull("${case.method}: a public route sent the session", request.headers[HttpHeaders.Authorization])
             }
+        }
+    }
+
+    /** A [SettingsTap] that writes down each call, its token and how many requests had left by then. */
+    private class RecordingTap(private val requests: List<HttpRequestData>) : SettingsTap {
+        private var next = 100L
+        val events = mutableListOf<String>()
+
+        override fun begin(): Long = next++.also { events += "begin $it with ${requests.size} sent" }
+
+        override fun received(begun: Long, settings: Settings) {
+            events += "received $begun with ${requests.size} sent"
+        }
+    }
+
+    @Test
+    fun everyAnswerCarryingTheSettingsReachesTheTapWithTheTokenTakenBeforeItsRequest() = runTest {
+        signIn()
+        val tap = RecordingTap(requests)
+        val tapped = HttpServerApi(client, session, device, store = "play", clock = clock, settingsTap = tap)
+        val calls: List<Triple<String, String, suspend ServerApi.() -> Unit>> = listOf(
+            Triple("me", "me") { me() },
+            Triple("setBasics", "own-profile") { setBasics(LocalDate.of(1995, 4, 2), Gender.Woman, ConsentVersions(1, 1)) },
+            Triple("updateProfile", "own-profile") { updateProfile(ProfilePatch(about = "Hi")) },
+            Triple("updateSettings", "settings") { updateSettings(SettingsPatch(hideAge = true)) },
+        )
+        var token = 100L
+        for ((name, fixture, call) in calls) {
+            requests.clear()
+            tap.events.clear()
+            cache.clear()
+            answer = Triple(HttpStatusCode.OK, Fixtures.text(fixture), emptyMap())
+            tapped.call()
+            assertEquals(name, listOf("begin $token with 0 sent", "received $token with 1 sent"), tap.events)
+            token++
         }
     }
 

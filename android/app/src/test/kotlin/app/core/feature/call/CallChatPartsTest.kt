@@ -20,9 +20,7 @@ import app.core.model.CallLine
 import app.core.model.CallOutcome
 import app.core.model.CallSwitches
 import app.core.ui.theme.AppTheme
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import org.junit.Assert.assertEquals
@@ -34,6 +32,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
 import java.util.Locale
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 /** The call's parts in a conversation: the header's buttons, the match's call settings, and the call line. */
 @RunWith(AndroidJUnit4::class)
@@ -195,10 +195,10 @@ class CallChatPartsTest {
         assertTrue(label(line), label(line).startsWith("Voice call, Failed, Incoming, "))
     }
 
-    /** How many of [line]'s pixels are drawn in the accent (the call-back button's phone or camera). */
+    /** How many of [line]'s pixels are drawn in the template's accent (the call-back button's phone or camera). */
     private fun accentPixels(line: CallLine, dark: Boolean): Int {
         val image = compose.onNodeWithTag(callLineTag(line)).captureToImage().asAndroidBitmap()
-        val accent = app.core.ui.theme.appColorScheme(dark).primary
+        val accent = app.core.ui.theme.Templates.of(if (dark) app.core.ui.theme.Templates.NEON else app.core.ui.theme.Templates.WHITE).colors.primary
         val (r, g, b) = Triple((accent.red * 255).toInt(), (accent.green * 255).toInt(), (accent.blue * 255).toInt())
         var count = 0
         for (y in 0 until image.height) for (x in 0 until image.width) {

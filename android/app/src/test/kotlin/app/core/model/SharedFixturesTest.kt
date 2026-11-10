@@ -167,6 +167,50 @@ class SharedFixturesTest {
         assertTrue(config.catalog.fields.single { it.key == "religion" }.sensitive)
     }
 
+    /**
+     * The template fields (`config.ui`, `settings.template`) read strictly
+     * whether the server's fixtures carry them yet or not: each fixture is
+     * read as it is, with the fields taken out (a server older than
+     * templates) and with them put in, and the fields come back unchanged.
+     */
+    @Test
+    fun theTemplateFieldsReadWithAndWithoutThem() {
+        val ui = kotlinx.serialization.json.buildJsonObject {
+            put("defaultTemplate", JsonPrimitive("white"))
+            put("templates", kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("neon"), JsonPrimitive("white"))))
+        }
+        fun JsonObject.with(key: String, value: JsonElement?): JsonObject =
+            JsonObject(if (value == null) this - key else this + (key to value))
+        fun JsonObject.withSettings(value: JsonElement?): JsonObject =
+            with("settings", (this["settings"] as JsonObject).with("template", value))
+
+        val config = Wire.json.parseToJsonElement(text("v1", "config")).jsonObject
+        for ((variant, json) in listOf("as is" to config, "without ui" to config.with("ui", null), "with ui" to config.with("ui", ui))) {
+            // Read field by field from the JSON itself, so a renamed field cannot fall back to its default unseen.
+            val expected = (json["ui"] as? JsonObject)?.let { o ->
+                UiConfig(
+                    defaultTemplate = (o["defaultTemplate"] as JsonPrimitive).content,
+                    templates = (o["templates"] as kotlinx.serialization.json.JsonArray).map { (it as JsonPrimitive).content },
+                )
+            }
+            assertEquals("config $variant", expected, Wire.json.decodeFromString(Config.serializer(), json.toString()).ui)
+        }
+        assertEquals(UiConfig("white", listOf("neon", "white")), Wire.json.decodeFromString(Config.serializer(), config.with("ui", ui).toString()).ui)
+        assertEquals(null, Wire.json.decodeFromString(Config.serializer(), config.with("ui", null).toString()).ui)
+
+        val settings = Wire.json.parseToJsonElement(text("v1", "settings")).jsonObject
+        for (value in listOf(null, JsonPrimitive("default"), JsonPrimitive("white"))) {
+            val json = settings.with("template", value)
+            assertEquals("settings $value", json["template"], roundTrip(Settings.serializer(), json.toString()).jsonObject["template"])
+        }
+        val ownProfile = Wire.json.parseToJsonElement(text("v1", "own-profile")).jsonObject
+        assertEquals("neon", Wire.json.decodeFromString(OwnProfile.serializer(), ownProfile.withSettings(JsonPrimitive("neon")).toString()).settings.template)
+        assertEquals(null, Wire.json.decodeFromString(OwnProfile.serializer(), ownProfile.withSettings(null).toString()).settings.template)
+        val me = Wire.json.parseToJsonElement(text("v1", "me")).jsonObject
+        val meWith = me.with("profile", (me["profile"] as JsonObject).withSettings(JsonPrimitive("default")))
+        assertEquals("default", Wire.json.decodeFromString(Me.serializer(), meWith.toString()).profile!!.settings.template)
+    }
+
     @Test
     fun problemsCarryTheirMembers() {
         val expected = mapOf(

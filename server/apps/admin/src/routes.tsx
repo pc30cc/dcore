@@ -2,7 +2,7 @@ import { Navigate, type RouteObject } from 'react-router';
 import { AppShell } from '@/components/layout/AppShell';
 import { RequireAdmin, RequirePermission } from '@/components/layout/RequireAdmin';
 import { placeholderSections } from '@/lib/sections';
-import { AdminsPage, EnrollPage, HostsPage, Loading, PlanEditorPage, PlansPage, ProductsPage, SecurityPage, TotpPage } from '@/pages/lazy';
+import { AdminsPage, AppearancePage, EnrollPage, HostsPage, Loading, PlanEditorPage, PlansPage, ProductsPage, SecurityPage, TotpPage } from '@/pages/lazy';
 import { CredentialsPage } from '@/pages/login/CredentialsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { SectionPage } from '@/pages/SectionPage';
@@ -74,6 +74,17 @@ export const routes: RouteObject[] = [
           <RequirePermission permission="billing.read">
             <Loading>
               <ProductsPage />
+            </Loading>
+          </RequirePermission>
+        ),
+      },
+      { path: 'app', element: <Navigate to="/app/appearance" replace /> },
+      {
+        path: 'app/appearance',
+        element: (
+          <RequirePermission permission="config.read">
+            <Loading>
+              <AppearancePage />
             </Loading>
           </RequirePermission>
         ),

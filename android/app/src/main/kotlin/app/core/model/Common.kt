@@ -131,6 +131,12 @@ data class Settings(
     /** Shown to people looking for a partner; off keeps only the social side. */
     val modeRomance: Boolean = true,
     val snoozed: Boolean = false,
+    /**
+     * The visual template the person chose: `default` (follow the admin's
+     * default) or a template id. Null when the server does not say (a server
+     * older than templates): the choice on the phone is kept then.
+     */
+    val template: String? = null,
 )
 
 /** The account's own profile: the card plus everything only its holder sees. */

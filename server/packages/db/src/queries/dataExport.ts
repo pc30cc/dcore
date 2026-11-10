@@ -39,7 +39,7 @@ export const exportAccount = defineQuery({ name: 'dataExport.account', statement
                                 'displayName', p.display_name, 'about', p.about, 'jobTitle', p.job_title, 'intention', p.intention,
                                 'matching', p.mode_match, 'social', p.mode_social, 'incognito', p.incognito, 'hideAge', p.hide_age,
                                 'hideDistance', p.hide_distance, 'showOnline', p.show_online, 'acceptCalls', p.accept_calls,
-                                'updatedAt', p.updated_at))
+                                'uiTemplate', p.ui_template, 'updatedAt', p.updated_at))
                                FROM profiles p WHERE p.user_id = u.id),
                  'fields', (SELECT coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
                                 'field', d.key, 'number', v.num, 'option', v.opt, 'options', to_jsonb(v.opts), 'text', v.txt)) ORDER BY v.field_id), '[]'::jsonb)

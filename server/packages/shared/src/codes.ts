@@ -294,6 +294,17 @@ export const verificationStatus = codes('verifications', 'status', {
   lapsed: [6, 'lapsed'],
 });
 
+/**
+ * profiles.ui_template (0025): the visual template a person chose. `default`
+ * follows the admin panel's default; the other names are the ids of
+ * `uiTemplates` (templates.ts), held equal by a test. Codes never move.
+ */
+export const uiTemplateChoice = codes('profiles', 'ui_template', {
+  default: [0, 'default'],
+  neon: [1, 'neon'],
+  white: [2, 'white'],
+});
+
 // ─── Social (0005) ───────────────────────────────────────────────────────
 
 export const matchState = codes('matches', 'state', {
@@ -649,6 +660,7 @@ export const codeTables: readonly CodeTable<string>[] = [
   locationSource,
   verificationMethod,
   verificationStatus,
+  uiTemplateChoice,
   matchState,
   matchSource,
   matchFlags,

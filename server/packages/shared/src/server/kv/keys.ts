@@ -65,7 +65,8 @@ export function createKeys(prefix: string) {
 
     // Own account
     meVersion: (uid: string | bigint) => k('mev', uid),
-    meView: (uid: string | bigint, version: number) => k('me', uid, version),
+    /** `shape`: the generation of the cached view's form, so builds that read `account_view()` differently never share a view. */
+    meView: (uid: string | bigint, version: number, shape: number) => k('me', uid, version, `s${shape}`),
     location: (uid: string | bigint) => k('loc', uid),
     device: (did: string | bigint) => k('dev', did),
     upload: (photoId: string | bigint) => k('up', photoId),

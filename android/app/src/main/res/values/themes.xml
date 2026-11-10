@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compose draws everything; the window theme only gives the window its
-         background and transparent bars before the first frame. Dark in every
-         configuration (the app's default look); Android 12+ adds its splash
-         colour in values-v31. -->
+         background and transparent bars before the first frame. Theme.App is
+         the dark template's (the default, in every configuration);
+         MainActivity switches to Theme.App.Light before its first frame when
+         the last effective template is a light one. Android 12+ adds the
+         splash colour in values-v31. -->
     <style name="Theme.App.Base" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/launch_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
     <style name="Theme.App" parent="Theme.App.Base" />
+
+    <style name="Theme.App.Light.Base" parent="Theme.App.Base">
+        <item name="android:windowBackground">@color/launch_background_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <style name="Theme.App.Light" parent="Theme.App.Light.Base" />
 </resources>

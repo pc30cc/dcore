@@ -1,4 +1,4 @@
-import type { AdminAccount, AdminPlan, AdminProduct, AppStore, planFeatureCatalog } from '@app/shared';
+import type { AdminAccount, AdminAppearance, AdminPlan, AdminProduct, AppStore, planFeatureCatalog } from '@app/shared';
 import { QueryClient, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { apiRequest } from './api';
 import { ApiError } from './http';
@@ -33,6 +33,7 @@ export const queryKeys = {
   admins: ['admins'] as const,
   roles: ['roles'] as const,
   sessions: ['sessions'] as const,
+  appearance: ['appearance'] as const,
 };
 
 export interface PlanList {
@@ -42,6 +43,11 @@ export interface PlanList {
 
 export function usePlans() {
   return useQuery({ queryKey: queryKeys.plans, queryFn: ({ signal }) => apiRequest<PlanList>('/v1/admin/plans', { signal }) });
+}
+
+/** The default template and, for every template this build knows, whether people may choose it. */
+export function useAppearance() {
+  return useQuery({ queryKey: queryKeys.appearance, queryFn: ({ signal }) => apiRequest<AdminAppearance>('/v1/admin/appearance', { signal }) });
 }
 
 export function useProducts(store: AppStore) {

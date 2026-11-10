@@ -246,7 +246,8 @@ fun CallLineRow(line: CallLine, me: PublicUid?, at: Instant, onCallBack: (() -> 
                 if (onCallBack != null) {
                     // Says that a tap calls back (the whole line does), with the same kind.
                     // 40 dp, in its own 48 dp touch target; TalkBack has the line's action.
-                    val accent = MaterialTheme.colorScheme.primary
+                    // The template's accent (`--primary`): a link-like action, never the ink of controls.
+                    val accent = AppTheme.template.colors.primary
                     IconButton(
                         onClick = onCallBack,
                         colors = IconButtonDefaults.iconButtonColors(containerColor = accent.copy(alpha = 0.12f), contentColor = accent),

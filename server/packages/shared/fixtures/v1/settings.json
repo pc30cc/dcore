@@ -5,5 +5,6 @@
   "showOnline": true,
   "acceptCalls": true,
   "modeRomance": true,
-  "snoozed": false
+  "snoozed": false,
+  "template": "white"
 }

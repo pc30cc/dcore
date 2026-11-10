@@ -17,6 +17,7 @@ import {
   type AuthHarness,
   type TempDatabase,
 } from './authSupport.js';
+import { ME_VIEW_SHAPE } from '../src/services/account.js';
 import { REALTIME_SECRET } from './accountSupport.js';
 import { TEST_REDIS_URL, hasInfrastructure } from './support.js';
 
@@ -174,13 +175,14 @@ describe.skipIf(!hasInfrastructure)('W2 acceptance', () => {
         expect(statements(miss)).toBe(1);
         const version = await redis.get(`${split.prefix}mev:${userId}`);
         expect(version).not.toBeNull();
-        expect(await cache.exists(`${split.prefix}me:${userId}:${version}`)).toBe(1);
-        expect(await redis.exists(`${split.prefix}me:${userId}:${version}`)).toBe(0);
+        const view = `${split.prefix}me:${userId}:${version}:s${ME_VIEW_SHAPE}`;
+        expect(await cache.exists(view)).toBe(1);
+        expect(await redis.exists(view)).toBe(0);
         expect(await cache.exists(`${split.prefix}mev:${userId}`)).toBe(0);
         const warm = await split.app.inject({ method: 'GET', url: '/v1/me', headers });
         expect(statements(warm)).toBe(0);
         // Losing the cache costs one statement, never a wrong answer.
-        await cache.del(`${split.prefix}me:${userId}:${version}`);
+        await cache.del(view);
         const rebuilt = await split.app.inject({ method: 'GET', url: '/v1/me', headers });
         expect(statements(rebuilt)).toBe(1);
         expect(rebuilt.json()).toEqual(warm.json());

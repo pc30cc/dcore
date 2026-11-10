@@ -26,15 +26,16 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import app.core.ui.components.TemplatePicker
+import app.core.model.UiConfig
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.Role
@@ -58,6 +59,8 @@ import app.core.ui.theme.Space
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 
 /** This build's store's name: each store build has its own `store_name`, so neither names the other's. */
 @Suppress("UnusedReceiverParameter")
@@ -102,6 +105,16 @@ fun ProfileTab() {
             item { SectionHeader(brandString(R.string.settings_plans)) }
             item { PlansSection(snackbar) }
             item { SectionHeader(brandString(R.string.settings_section)) }
+            item {
+                // The stored choice is checked (never the template drawn); a pick applies at once.
+                val templates by graph.templates.state.collectAsStateWithLifecycle()
+                TemplatePicker(
+                    choice = templates.choice,
+                    offered = (templates.ui ?: UiConfig.Default).templates,
+                    onChoose = graph.templates::setChoice,
+                    modifier = Modifier.padding(horizontal = Space.gutter, vertical = Space.sm),
+                )
+            }
             item {
                 SettingsRow(brandString(R.string.settings_language), languageName(AppLocales.chosen(context), current)) {
                     showLanguages = true

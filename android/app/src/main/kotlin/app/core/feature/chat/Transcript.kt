@@ -44,7 +44,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -83,10 +82,12 @@ import app.core.model.Photo
 import app.core.model.ProblemCodes
 import app.core.sync.ChatErrors
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.stop
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Space
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import androidx.compose.runtime.getValue
 
 /** The transcript: newest at the bottom, older pages as the person scrolls up. */
 @Composable
@@ -248,15 +249,18 @@ private fun BubbleRow(
         RoundedCornerShape(topStart = if (item.joinsOlder) small else big, topEnd = big, bottomEnd = big, bottomStart = if (item.joinsNewer) small else big)
     }
     val colors = MaterialTheme.colorScheme
+    val template = AppTheme.template
     val unsent = item.unsent != null
+    // Your own bubbles are the template's `--bubble-out` (the gradient's colour in neon, the accent in
+    // white); the delivery mark reverses out of [container], so it stays a plain colour.
     val container = when {
         unsent -> Color.Transparent
-        mine -> colors.primary
+        mine -> template.paints.bubbleOut.stop(1)
         else -> colors.surfaceContainerHigh
     }
     val content = when {
         unsent -> colors.onSurfaceVariant
-        mine -> colors.onPrimary
+        mine -> template.colors.onBubbleOut
         else -> colors.onSurface
     }
     val time = clock.time(message.at)
@@ -277,7 +281,7 @@ private fun BubbleRow(
                 Modifier
                     .widthIn(max = maxWidth)
                     .clip(shape)
-                    .background(container)
+                    .then(if (mine && !unsent) Modifier.background(template.paints.bubbleOut) else Modifier.background(container))
                     .then(if (unsent) Modifier.border(1.dp, colors.outlineVariant, shape) else Modifier)
                     .combinedClickable(
                         onClick = { if (failed) onSheet(ChatSheet.Message(item)) },

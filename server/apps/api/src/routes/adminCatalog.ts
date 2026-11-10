@@ -59,7 +59,6 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { adminWrite } from '../admin/audit.js';
 import { dbErrorInfo } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
-import { publishConfigChange } from '../services/cfg.js';
 
 /**
  * Plans and store products in the admin panel: every field of a plan is
@@ -218,9 +217,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
 
   /** After the commit: every process loads the catalogue again (this one too, by the same message). */
   async function announce(request: FastifyRequest): Promise<void> {
-    await publishConfigChange(app.redis, app.keys).catch((error: unknown) =>
-      request.log.error({ err: error }, 'catalog: saved, but the other processes were not told; they load it at the next configuration change'),
-    );
+    if (!(await app.cfg.announce())) request.log.warn('catalog: saved; the announcement is retried in the background');
   }
 
   async function lockPlan(tx: PoolClient, key: string): Promise<CatalogPlanRow> {
