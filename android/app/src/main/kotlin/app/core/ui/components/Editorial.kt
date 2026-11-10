@@ -1,6 +1,10 @@
 package app.core.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +26,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import app.core.ui.theme.outerShadow
@@ -48,35 +53,70 @@ data class Fact(val label: String, val value: String)
 /**
  * Facts in rows of three (height, education, what they look for): the
  * label (`--type-caption`, `--text-3`) over the value (`--type-body-strong`),
- * hairlines between cells; values wrap rather than being cut.
+ * hairlines between cells; values wrap between words rather than being cut.
+ * A word never breaks: when the longest word of any label or value does not
+ * fit a third of the width (large text, long words), the rows hold two, or
+ * one, measured with the text as it will be drawn.
  */
 @Composable
 fun FactRow(facts: List<Fact>, modifier: Modifier = Modifier) {
     val t = AppTheme.template
-    Column(modifier.fillMaxWidth()) {
-        HorizontalDivider(thickness = 1.dp, color = t.colors.line)
-        facts.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                row.forEachIndexed { index, fact ->
-                    if (index > 0) VerticalDivider(Modifier.fillMaxHeight(), thickness = 1.dp, color = t.colors.line)
-                    Column(
-                        Modifier.weight(1f).padding(top = 12.dp, bottom = 11.dp, start = 6.dp, end = 6.dp).semantics(mergeDescendants = true) {},
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(fact.label, style = t.type.caption, color = t.colors.text3, textAlign = TextAlign.Center)
-                        Text(fact.value, style = t.type.bodyStrong, color = t.colors.text, textAlign = TextAlign.Center, maxLines = 2)
-                    }
-                }
-                repeat(3 - row.size) {
-                    VerticalDivider(Modifier.fillMaxHeight(), thickness = 1.dp, color = t.colors.line)
-                    Box(Modifier.weight(1f))
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val width = constraints.maxWidth
+        val columns = remember(facts, width, density, t) {
+            val words = facts.flatMap { fact ->
+                fact.label.split(WORD_BREAK).map { it to t.type.caption } + fact.value.split(WORD_BREAK).map { it to t.type.bodyStrong }
+            }.filter { it.first.isNotEmpty() }
+            val widest = words.maxOfOrNull { (word, style) -> measurer.measure(word, style, maxLines = 1, softWrap = false).size.width } ?: 0
+            val fitting = with(density) {
+                FACT_COLUMNS.filter { n ->
+                    val cell = (width - (n - 1) * 1.dp.toPx()) / n - (FACT_PAD_START + FACT_PAD_END).toPx()
+                    widest <= cell
                 }
             }
+            factColumns(facts.size, fitting)
+        }
+        Column(Modifier.fillMaxWidth()) {
             HorizontalDivider(thickness = 1.dp, color = t.colors.line)
+            // A short last row shares the whole width: no empty cell, no hairline before nothing.
+            facts.chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    row.forEachIndexed { index, fact ->
+                        if (index > 0) VerticalDivider(Modifier.fillMaxHeight(), thickness = 1.dp, color = t.colors.line)
+                        Column(
+                            Modifier.weight(1f).padding(top = 12.dp, bottom = 11.dp, start = FACT_PAD_START, end = FACT_PAD_END).semantics(mergeDescendants = true) {},
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(fact.label, style = t.type.caption, color = t.colors.text3, textAlign = TextAlign.Center)
+                            Text(fact.value, style = t.type.bodyStrong, color = t.colors.text, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                HorizontalDivider(thickness = 1.dp, color = t.colors.line)
+            }
         }
     }
 }
+
+/**
+ * How many facts a row holds: of the counts whose cells fit the longest word
+ * ([fitting], widest first), one that splits [count] into full rows (four
+ * facts as two and two, not three and one), else the widest; never more
+ * than there are facts.
+ */
+internal fun factColumns(count: Int, fitting: List<Int>): Int {
+    if (fitting.isEmpty() || count <= 0) return 1
+    if (count <= fitting.first()) return count
+    return fitting.firstOrNull { count % it == 0 } ?: fitting.first()
+}
+
+private val WORD_BREAK = Regex("\\s+")
+private val FACT_COLUMNS = listOf(3, 2)
+private val FACT_PAD_START = 6.dp
+private val FACT_PAD_END = 6.dp
 
 /**
  * A prompt and its answer as a pull quote: a 3 dp `--quote-bar` at the
@@ -96,15 +136,16 @@ fun PromptQuote(
         Box(Modifier.padding(vertical = 4.dp).width(3.dp).fillMaxHeight().clip(CircleShape).background(t.paints.quoteBar))
         Column(Modifier.weight(1f).padding(start = 15.dp, end = 12.dp, top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(question, style = t.type.section, color = t.colors.text2)
-            Text(answer, style = t.type.quote, color = t.colors.text)
+            // The whole width, so a Persian answer in an English page starts at the right, as it reads.
+            Text(answer, style = t.type.quote.copy(textDirection = TextDirection.Content), color = t.colors.text, modifier = Modifier.fillMaxWidth())
         }
         if (onLike != null) LikeAnswerButton(onLike)
     }
 }
 
-/** «لایک همین جواب»: a 48 dp ring (1.5 dp `--line-strong`) with the heart in `--like`. */
+/** «لایک همین جواب»: a 48 dp ring (1.5 dp `--line-strong`) with the heart in `--like`; also on a voice answer's card. */
 @Composable
-private fun LikeAnswerButton(onClick: () -> Unit) {
+fun LikeAnswerButton(onClick: () -> Unit) {
     val t = AppTheme.template
     val label = stringResource(R.string.ui_like_answer)
     Box(
@@ -117,19 +158,6 @@ private fun LikeAnswerButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(AppIcons.HeartLine, contentDescription = null, tint = t.colors.like, modifier = Modifier.size(22.dp))
-    }
-}
-
-/** A prompt over a photo: a 3 dp `--seam` bar at the start, the question in `--on-photo-2`, the answer in `--on-photo`. */
-@Composable
-fun PhotoPullQuote(question: String, answer: String, modifier: Modifier = Modifier) {
-    val t = AppTheme.template
-    Row(modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(15.dp)) {
-        Box(Modifier.padding(vertical = 4.dp).width(3.dp).fillMaxHeight().clip(CircleShape).background(t.paints.seam))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(question, style = t.type.section, color = t.colors.onPhoto2)
-            Text(answer, style = t.type.quote, color = t.colors.onPhoto)
-        }
     }
 }
 
@@ -200,7 +228,8 @@ fun NameLine(
     val onlineLabel = stringResource(R.string.ui_online)
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.foundation.text.BasicText(
-            text = name + if (age != null) comma else "",
+            // The name as a bidi isolate: a Persian name in an English line (or the reverse) keeps the comma after it.
+            text = "\u2068$name\u2069" + if (age != null) comma else "",
             style = style,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -226,8 +255,3 @@ fun NameLine(
     }
 }
 
-/** The older name of [NameLine] on a photo. */
-@Composable
-fun PhotoNameLine(name: String, age: String?, modifier: Modifier = Modifier, verified: Boolean = false) {
-    NameLine(name, age, modifier, verified = verified, onPhoto = true)
-}

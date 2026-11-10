@@ -218,6 +218,8 @@ data class CallPeer(
     val name: String,
     val photoUrl: String? = null,
     val blurhash: String? = null,
+    /** The match's verified mark, as the conversation carries it (a ring has none of its own). */
+    val verified: Boolean = false,
 ) {
     /**
      * This peer with the face the chat's cache knows for the conversation

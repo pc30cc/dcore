@@ -1,5 +1,6 @@
 package app.core.feature.call
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -24,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.LocalAppGraph
 import app.core.model.CallKind
 import app.core.push.CallNotifications
+import app.core.push.OpenTarget
 import app.core.push.IncomingCallLink
 import app.core.realtime.RealtimeCoordinator
 import app.core.ui.theme.BarIcons
@@ -84,9 +86,37 @@ class CallActivityHooks(
     }
 
     /**
+     * Runs [then] with the phone unlocked: at once when it is not locked, else
+     * once the person unlocks it (the system's bouncer, Android 8+). Cancelled
+     * or refused, nothing runs and the call screen stays. Android 7 has no
+     * such request: the screen leaves the lock screen first, so whatever
+     * [then] opens is behind the keyguard until the phone is unlocked.
+     */
+    fun unlockThen(then: () -> Unit) {
+        val keyguard = activity.getSystemService(KeyguardManager::class.java)
+        if (keyguard == null || !keyguard.isKeyguardLocked) {
+            then()
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            showOverLockScreen(false)
+            then()
+            return
+        }
+        keyguard.requestDismissKeyguard(
+            activity,
+            object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() = activity.runOnUiThread(then)
+            },
+        )
+    }
+
+    /**
      * Over the lock screen, and waking it, while a call is on: a phone rings
-     * and is answered without being unlocked. Off again when the call goes,
-     * so the rest of the app is never shown to whoever holds a locked phone.
+     * and is answered without being unlocked. Off again when the call goes or
+     * is minimised, so the rest of the app is never shown to whoever holds a
+     * locked phone; leaving the call screen for the app goes through
+     * [unlockThen].
      */
     fun showOverLockScreen(on: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -121,6 +151,8 @@ fun CallHost(hooks: CallActivityHooks?) {
             hooks?.pictureInPicture?.update(null)
         }
     }
+    // The bubble is drawn over the app: never over the lock screen.
+    LaunchedEffect(minimised) { if (minimised) hooks?.showOverLockScreen(false) }
     if (current == null) return
 
     val state = rememberCallScreenState(current)
@@ -158,7 +190,8 @@ fun CallHost(hooks: CallActivityHooks?) {
         when {
             state.ringingHere -> actions.decline()
             state.phase.isOver -> controller.dismiss()
-            else -> controller.minimise()
+            // The bubble leaves the rest of the app on screen: unlocked first.
+            else -> actions.unlockThen(controller::minimise)
         }
     }
     CallScreen(state, actions, room = room, remoteVideo = remote, localVideo = local)
@@ -195,15 +228,25 @@ private fun rememberCallScreenState(session: MatchCallSession): CallScreenState 
     )
 }
 
+/** The screen's actions, plus the unlock that leaving the call screen for the app goes through. */
+private interface HostCallActions : CallScreenActions {
+    fun unlockThen(then: () -> Unit)
+}
+
 @Composable
-private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hooks: CallActivityHooks?): CallScreenActions {
+private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hooks: CallActivityHooks?): HostCallActions {
     val context = LocalContext.current
     val controller = calls.controller
+    val links = LocalAppGraph.current.push.links
     val hold = { hooks?.pictureInPicture?.holdForPermission() ?: Unit }
     val toggleMic = rememberPermissionToggle(CallPermissions.MICROPHONE, asksWhen = { session.muted.value }, beforeAsk = hold, toggle = session::toggleMute)
     val toggleCamera = rememberPermissionToggle(CallPermissions.CAMERA, asksWhen = { !session.cameraOn.value }, beforeAsk = hold, toggle = session::toggleCamera)
-    return remember(session, toggleMic, toggleCamera) {
-        object : CallScreenActions {
+    return remember(session, toggleMic, toggleCamera, links, hooks) {
+        object : HostCallActions {
+            override fun unlockThen(then: () -> Unit) {
+                if (hooks != null) hooks.unlockThen(then) else then()
+            }
+
             override fun answer() = answerWith(true)
             override fun answerVoiceOnly() = answerWith(false)
 
@@ -229,6 +272,22 @@ private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hoo
             override fun done() = controller.dismiss()
             override fun retry() = controller.retry()
             override fun openSettings() = openAppSettings(context)
+
+            override fun message() {
+                fun ringing() = session.direction == MatchCallSession.Direction.INCOMING && session.phase.value == CallPhase.Ringing
+                // The ring goes quiet while the phone is being unlocked.
+                if (ringing()) session.callId?.let(calls::silenceRing)
+                // The chat is the rest of the app: never over the lock screen.
+                unlockThen {
+                    val conversationId = session.peer.value.conversationId
+                    when {
+                        ringing() -> decline()
+                        session.phase.value.isOver -> controller.dismiss()
+                        else -> controller.minimise()
+                    }
+                    if (conversationId.isNotBlank()) links.open(OpenTarget.Thread(conversationId))
+                }
+            }
         }
     }
 }

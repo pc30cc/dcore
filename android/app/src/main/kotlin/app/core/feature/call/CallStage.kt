@@ -1,5 +1,6 @@
 package app.core.feature.call
 
+import app.core.ui.theme.CallPalette
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,7 +58,7 @@ internal fun StageCardContent(picture: StagePicture<VideoTrack>?, room: LiveKitR
     if (picture != null) {
         VideoView(picture.track, room, Modifier.fillMaxSize(), mirror = picture.mirror)
     } else {
-        BoxWithConstraints(Modifier.fillMaxSize().background(CALL_TILE), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(Modifier.fillMaxSize().background(CallPalette.tile), contentAlignment = Alignment.Center) {
             face(maxWidth * 0.56f)
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -179,6 +180,7 @@ fun PhotoImage(
     modifier: Modifier = Modifier,
     blurredOnly: Boolean = false,
     scrim: Color = Color.Transparent,
+    alignment: Alignment = Alignment.Center,
 ) {
     val remote = LocalRemoteImages.current && !LocalInspectionMode.current && !blurredOnly
     val reduced = LocalReducedMotion.current
@@ -192,6 +194,7 @@ fun PhotoImage(
                 contentDescription = contentDescription,
                 imageLoader = ImageLoading.loader(context),
                 contentScale = ContentScale.Crop,
+                alignment = alignment,
                 modifier = Modifier.fillMaxSize(),
             )
         }

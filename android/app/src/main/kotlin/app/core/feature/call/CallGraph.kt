@@ -4,11 +4,11 @@ import android.app.Application
 import app.core.common.Clock
 import app.core.common.Diag
 import app.core.common.runCatchingUnlessCancelled
+import app.core.model.ConversationPeer
 import app.core.model.Call
 import app.core.model.CallKind
 import app.core.model.Conversation
 import app.core.model.Id
-import app.core.model.Photo
 import app.core.model.RealtimeEvent
 import app.core.net.ServerApi
 import app.core.realtime.RealtimeCoordinator
@@ -45,7 +45,7 @@ class CallGraph(
     private val clock: Clock,
     val diag: Diag,
     /** The match's photo as the chat's cache stores it for a conversation (the ring screen's face). */
-    private val cachedFace: suspend (conversationId: Id) -> Photo? = { null },
+    private val cachedFace: suspend (conversationId: Id) -> ConversationPeer? = { null },
 ) {
     fun api(): ServerApi = apiOf()
 

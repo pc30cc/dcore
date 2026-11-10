@@ -18,6 +18,10 @@ import app.core.model.Photo
 import app.core.model.PhotoStatus
 import app.core.model.PreferencesPatch
 import app.core.model.ProfileCard
+import app.core.model.PublicUid
+import app.core.model.ReportContext
+import app.core.model.ReportReason
+import app.core.model.ReportRequest
 import app.core.model.Settings
 import app.core.model.SettingsPatch
 import app.core.model.SwipeAction
@@ -46,12 +50,17 @@ interface DeckServices {
     suspend fun updatePreferences(patch: PreferencesPatch): DiscoveryPreferences
     suspend fun updateSettings(patch: SettingsPatch): Settings
     suspend fun boost(): BoostStarted
+
+    /** A report on someone from their profile (`POST /v1/reports`). */
+    suspend fun report(request: ReportRequest)
+
+    /** Blocks someone from their profile (`POST /v1/blocks`). */
+    suspend fun block(target: PublicUid)
 }
 
 /** A bottom sheet over the deck. */
 sealed interface DeckSheet {
     data class OutOfQuota(val action: SwipeAction, val resetsAt: Instant?) : DeckSheet
-    data object RewindUpsell : DeckSheet
     data object Filters : DeckSheet
     data class LikeItem(val target: LikeTarget) : DeckSheet
 }
@@ -66,9 +75,11 @@ data class MatchUi(val card: ProfileCard, val conversationId: Id?, val myPhoto: 
 /** A one-line message under the deck. */
 enum class DeckNotice {
     LikeOffline, LikeFailed, RateLimited, RewindNothing, Offline, BoostStarted, BoostNone, FiltersFailed, FiltersLimit, SnoozeFailed,
+    Reported, Blocked, SafetyFailed,
 }
 
-data class DeckMessage(val notice: DeckNotice, val id: Long, val at: Instant? = null)
+/** [name] is whom it is about (a block). */
+data class DeckMessage(val notice: DeckNotice, val id: Long, val at: Instant? = null, val name: String? = null)
 
 data class DeckUiState(
     val deck: DeckState = DeckState(),
@@ -81,8 +92,14 @@ data class DeckUiState(
     /** A filter change is being saved (the out-of-cards buttons or the sheet). */
     val saving: Boolean = false,
     val message: DeckMessage? = null,
+    /** The account's country (ISO), when known: the filters name it («هر جای ایران»). */
+    val country: String? = null,
 ) {
-    /** Super likes the account can still send, when the entitlements are known. */
+    /**
+     * Super likes the account can still send: null when the plan has no limit
+     * or while the entitlements are unknown ([entitlements] null tells the two
+     * apart).
+     */
     val superlikesLeft: Int?
         get() = entitlements?.let { e ->
             val quota = e.quotas.superlikes
@@ -97,6 +114,7 @@ data class DeckUiState(
 
 private data class Local(
     val preferences: DiscoveryPreferences? = null,
+    val country: String? = null,
     val myPhoto: Photo? = null,
     val details: ProfileCard? = null,
     val sheet: DeckSheet? = null,
@@ -116,7 +134,7 @@ class DeckViewModel(
     private val entitlements: EntitlementRepository,
     private val services: DeckServices,
     private val preloader: PhotoPreloader,
-    /** Opens the packs sheet when no boost is left to start. */
+    /** Opens the packs when no boost is left to start, and the plans for a rewind without the feature. */
     private val paywall: PaywallLauncher = PaywallLauncher.None,
 ) : ViewModel() {
 
@@ -134,6 +152,7 @@ class DeckViewModel(
             match = l.match,
             saving = l.saving,
             message = l.message,
+            country = l.country,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, DeckUiState(deck = deck.state.value, entitlements = entitlements.entitlements.value))
 
@@ -185,12 +204,15 @@ class DeckViewModel(
 
     fun openItemLike(target: LikeTarget) = local.update { it.copy(sheet = DeckSheet.LikeItem(target), itemLike = ItemLikeState()) }
 
-    /** A like on one photo or answer, with its comment. The sheet stays open until the server answered. */
-    fun sendItemLike(target: LikeTarget, comment: String) {
+    /**
+     * A like (or, with [action], a super like) on one photo or answer, with
+     * its comment. The sheet stays open until the server answered.
+     */
+    fun sendItemLike(target: LikeTarget, comment: String, action: SwipeAction = SwipeAction.Like) {
         if (local.value.itemLike.sending) return
         local.update { it.copy(itemLike = ItemLikeState(sending = true)) }
         viewModelScope.launch {
-            when (val outcome = deck.like(target.card, SwipeAction.Like, target.item, comment)) {
+            when (val outcome = deck.like(target.card, action, target.item, comment)) {
                 LikeOutcome.Sent, is LikeOutcome.Matched -> {
                     local.update { it.copy(sheet = null, details = null, itemLike = ItemLikeState()) }
                     handle(outcome)
@@ -203,13 +225,13 @@ class DeckViewModel(
         }
     }
 
-    /** Rewind: the last pass comes back, for accounts that have the feature. */
+    /** Rewind: the last pass comes back, for accounts that have the feature; without it, the plans. */
     fun rewind() {
         viewModelScope.launch {
             val known = entitlements.ensure()
             when {
                 known == null -> notice(DeckNotice.Offline)
-                !known.features.rewind -> local.update { it.copy(sheet = DeckSheet.RewindUpsell) }
+                !known.features.rewind -> paywall.plans(PaywallEntry.REWIND)
                 deck.rewind() == null -> notice(DeckNotice.RewindNothing)
             }
         }
@@ -286,6 +308,42 @@ class DeckViewModel(
         }
     }
 
+    /**
+     * Reports [card] from their profile (with [block], blocks them too): the
+     * profile closes and they leave the deck once the server has it. A report
+     * alone hides nobody on the server, so it also passes them: the pass
+     * keeps them out of later pages, and a rewind does not bring them back.
+     */
+    fun report(card: ProfileCard, reason: ReportReason, details: String?, block: Boolean) {
+        safety(card, DeckNotice.Reported, pass = !block) {
+            services.report(ReportRequest(target = card.id, context = ReportContext.Profile, reason = reason, details = details, block = block))
+        }
+    }
+
+    /** Blocks [card] from their profile: the profile closes and they leave the deck. */
+    fun block(card: ProfileCard) {
+        safety(card, DeckNotice.Blocked) { services.block(card.id) }
+    }
+
+    /**
+     * A failure leaves the profile open: its notice is drawn over the profile
+     * ([DeckUiState.message] while [DeckUiState.details] is up).
+     */
+    private fun safety(card: ProfileCard, done: DeckNotice, pass: Boolean = false, call: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                call()
+                local.update { if (it.details?.id == card.id) it.copy(details = null) else it }
+                deck.drop(card, pass = pass)
+                notice(done, name = card.name)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiError) {
+                notice(if (e is ApiError.Network) DeckNotice.Offline else DeckNotice.SafetyFailed)
+            }
+        }
+    }
+
     /** Snooze off, from the snoozed state. */
     fun wakeUp() {
         viewModelScope.launch {
@@ -318,8 +376,8 @@ class DeckViewModel(
         }
     }
 
-    private fun notice(notice: DeckNotice, at: Instant? = null) {
-        local.update { it.copy(message = DeckMessage(notice, ++messageIds, at)) }
+    private fun notice(notice: DeckNotice, at: Instant? = null, name: String? = null) {
+        local.update { it.copy(message = DeckMessage(notice, ++messageIds, at, name)) }
     }
 
     private fun loadMe() {
@@ -334,6 +392,7 @@ class DeckViewModel(
                 it.copy(
                     preferences = me.preferences ?: it.preferences,
                     myPhoto = me.profile?.photos?.let(::firstShownPhoto) ?: it.myPhoto,
+                    country = me.location?.country ?: it.country,
                 )
             }
         } catch (e: CancellationException) {

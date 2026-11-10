@@ -84,6 +84,15 @@ class CallRulesTest {
     }
 
     @Test
+    fun theTimerIsMinutesAndSecondsBothTwoDigitsUnderAnHour() {
+        assertEquals("00:05", callTimer(5, app.core.i18n.AppLanguage.EN))
+        assertEquals("04:12", callTimer(252, app.core.i18n.AppLanguage.TR))
+        assertEquals("۰۴:۱۲", callTimer(252, app.core.i18n.AppLanguage.FA))
+        assertEquals("59:59", callTimer(3599, app.core.i18n.AppLanguage.EN))
+        assertEquals("1:02:03", callTimer(3723, app.core.i18n.AppLanguage.EN))
+    }
+
+    @Test
     fun theCallLineReadsForEachSide() {
         fun line(outcome: CallOutcome, kind: CallKind = CallKind.Audio) =
             app.core.model.CallLine(callId = "1", kind = kind, outcome = outcome, placedAt = at(0), durationSeconds = 245, caller = "me")

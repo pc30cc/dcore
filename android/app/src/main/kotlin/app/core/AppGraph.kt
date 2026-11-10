@@ -61,6 +61,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import app.core.feature.profile.OwnPhotos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.map
@@ -185,6 +186,8 @@ class AppGraph(private val app: Application) {
                 templates.onSignedOut()
                 entitlements.clear()
                 if (purchasesHolder.isInitialized()) purchases.clear()
+                if (ownPhotosHolder.isInitialized()) ownPhotos.reset()
+                preferences.rememberSignIn(null)
             })
         }
     }
@@ -199,6 +202,11 @@ class AppGraph(private val app: Application) {
 
     /** Photos this phone uploaded, shown while the server processes them. */
     val photoCache: LocalPhotoCache by lazy { LocalPhotoCache(java.io.File(app.cacheDir, "own-photos")) }
+
+    private val ownPhotosHolder = lazy { OwnPhotos(api, photoUploader, photoCache, appScope, diag) }
+
+    /** The account's photos as the profile editor changes them: uploads outlive the editor (feature/profile). */
+    val ownPhotos: OwnPhotos by ownPhotosHolder
 
     /** Plan, features and quotas, read when a screen first needs them (sync/). */
     val entitlements: EntitlementRepository by lazy {
@@ -286,10 +294,10 @@ class AppGraph(private val app: Application) {
             scope = appScope,
             clock = clock,
             diag = diag,
-            // A ring names the conversation; the chat's cache has the match's photo and its blurhash.
+            // A ring names the conversation; the chat's cache has the match's photo, its blurhash and the verified mark.
             cachedFace = { conversationId ->
                 api.sessionUser()?.id?.let { account -> chat.conversations.get(account, conversationId) }
-                    ?.let { row -> ChatMapping.conversation(row).peer.photo }
+                    ?.let { row -> ChatMapping.conversation(row).peer }
             },
         )
     }

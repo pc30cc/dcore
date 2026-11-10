@@ -5,43 +5,42 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,13 +51,10 @@ import app.core.LocalAppGraph
 import app.core.R
 import app.core.brand.AppBrand
 import app.core.feature.auth.welcome.BrandWelcome
-import app.core.feature.auth.welcome.BubbleField
 import app.core.feature.auth.welcome.WelcomeContent
-import app.core.feature.auth.welcome.WelcomeLayout
-import app.core.feature.auth.welcome.WelcomePalette
-import app.core.feature.auth.welcome.WelcomeTexts
-import app.core.feature.auth.welcome.rememberBubbleArt
-import app.core.i18n.APP_NAME_PLACEHOLDER
+import app.core.feature.auth.welcome.WelcomeFaces
+import app.core.feature.auth.welcome.WelcomeScreen
+import app.core.feature.legal.PrivacyNoticeScreen
 import app.core.i18n.AppLanguage
 import app.core.i18n.AppLocales
 import app.core.i18n.LocalAppName
@@ -67,19 +63,21 @@ import app.core.i18n.brandText
 import app.core.model.DeviceInfo
 import app.core.store.IntegrityResult
 import app.core.store.Store
-import app.core.ui.theme.BarIcons
+import app.core.ui.components.AppDialog
+import app.core.ui.components.AppSnackbar
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.LocalReducedMotion
-import app.core.ui.theme.LocalSemanticColors
-import app.core.ui.theme.SystemBarsOverride
+import app.core.ui.theme.Motion
+import app.core.ui.theme.Space
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Sign-in: the welcome (the brand's scene with its floating bubbles, Sign in
- * and Sign up), then a sheet over it with the in-app privacy notice (before
- * anything is asked, once per install), the phone number and its code, or
- * Google in the Play build. Both buttons lead into the same steps: the server
- * decides whether the number is new. Where the account goes afterwards is
- * [AuthGate]'s to decide.
+ * Sign-in: the welcome (one title, Sign up and Sign in), then the in-app
+ * privacy summary (before anything is asked, once per install), the phone
+ * number and its code, with Google beside the number in the Play build, each
+ * a page of its own in the template. Both welcome buttons lead into the same
+ * pages: the server decides whether the number is new. Where the account
+ * goes afterwards is [AuthGate]'s to decide.
  */
 @Composable
 fun AuthRoute() {
@@ -107,6 +105,7 @@ fun AuthRoute() {
                     },
                     defaultCountry = defaultCountry(app, requestLanguage),
                     googleBuild = AppBrand.supportsGoogleSignIn,
+                    rememberSignIn = graph.preferences::rememberSignIn,
                 )
             }
         },
@@ -122,86 +121,49 @@ fun AuthRoute() {
 
     BackHandler(enabled = state.stage != AuthStage.Welcome) { model.back() }
 
-    var intent by rememberSaveable { mutableStateOf(SheetIntent.SignUp) }
-    // The opening plays once per visit, not again after a rotation.
-    var introPlayed by rememberSaveable { mutableStateOf(false) }
-    val intro = remember { !introPlayed }
-    LaunchedEffect(Unit) { introPlayed = true }
-
-    val reduced = LocalReducedMotion.current
-    val persian = language == AppLanguage.FA
-    val appName = LocalAppName.current
     val brand = remember { BrandWelcome.load(context.applicationContext) }
-    val fallbackEyebrow = brandString(R.string.welcome_eyebrow)
-    val fallbackSubtitle = brandString(R.string.auth_subtitle)
-    val content = remember(brand, config?.welcome, language) {
-        WelcomeContent.resolve(
-            brand = brand,
-            config = config?.welcome,
-            language = language.tag,
-            fallbackEyebrow = fallbackEyebrow,
-            // The name alone, emphasised.
-            fallbackHeadline = "*$APP_NAME_PLACEHOLDER*",
-            fallbackSubtitle = fallbackSubtitle,
-        )
-    }
-    val labels = listOf(
-        brandString(R.string.welcome_bubble_like),
-        brandString(R.string.welcome_bubble_match),
-        brandString(R.string.welcome_bubble_chat),
-    ).map { if (persian) it else it.uppercase(java.util.Locale.forLanguageTag(language.tag)) }
-    val art = rememberBubbleArt(content.pictures, labels, persian)
-    val density = LocalDensity.current.density
-    val field = remember(density, labels.size) { BubbleField(density, words = labels.size) }
-    // The word bubble's word is never under 13 sp at the phone's text size: the bubble grows instead.
-    val wordText = with(LocalDensity.current) { WORD_TEXT_MIN.toPx() }
-    SideEffect { field.wordMinRadius = art.wordRadiusFor(wordText) }
-    val sheetOpen = state.stage != AuthStage.Welcome
-
-    // The bar icons over the scene: dark on its light sky while the welcome
-    // shows, light over the dimmed scene and the dark sheet; the navigation
-    // bar sits on the scene's dark bottom either way. The template's own
-    // icons, as the template is when sign-in is left, come back after it.
-    SystemBarsOverride(BarIcons(lightStatus = sheetOpen, lightNavigation = true))
+    val pictures = remember(brand, config?.welcome) { WelcomeContent.pictures(brand, config?.welcome) }
+    // Signed in (or gone for another reason): the welcome's decoded pictures are not kept. An activity being made
+    // again (rotation, dark mode, font size, split screen) keeps them, so they do not decode and fade in again.
+    DisposableEffect(activity) { onDispose { if (activity?.isChangingConfigurations != true) WelcomeFaces.release() } }
+    val reduced = LocalReducedMotion.current
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     Box(Modifier.fillMaxSize()) {
-        WelcomeLayout(
-            colors = content.colors,
-            texts = WelcomeTexts(
-                eyebrow = brandText(content.eyebrow, appName),
-                headline = brandText(content.headline, appName),
-                subtitle = brandText(content.subtitle, appName),
-                signIn = brandString(R.string.welcome_sign_in),
-                signUp = brandString(R.string.welcome_sign_up),
-            ),
-            persian = persian,
-            language = language.tag,
-            field = field,
-            art = art,
-            sceneRunning = !sheetOpen,
-            intro = intro,
-            reduced = reduced,
-            onSignIn = {
-                intent = SheetIntent.SignIn
-                model.continueWithPhone()
+        AnimatedContent(
+            targetState = state.stage,
+            transitionSpec = {
+                if (reduced) {
+                    fadeIn(tween(Motion.REDUCED_MS)) togetherWith fadeOut(tween(Motion.REDUCED_MS))
+                } else {
+                    // Forward pages come in from the end side, as a pushed screen does.
+                    val forward = targetState.ordinal > initialState.ordinal
+                    val sign = (if (rtl) -1 else 1) * (if (forward) 1 else -1)
+                    (slideInHorizontally(Motion.screen) { it * sign / 4 } + fadeIn(tween(Motion.MEDIUM_MS))) togetherWith
+                        (slideOutHorizontally(Motion.screen) { -it * sign / 4 } + fadeOut(tween(Motion.SHORT_MS)))
+                }
             },
-            onSignUp = {
-                intent = SheetIntent.SignUp
-                model.continueWithPhone()
-            },
-            enabled = !state.googleBusy,
-        ) {
-            WelcomeFooter(state)
+            label = "authStage",
+        ) { stage ->
+            when (stage) {
+                AuthStage.Welcome -> WelcomeScreen(
+                    pictures = pictures,
+                    onSignUp = model::continueWithPhone,
+                    onSignIn = model::continueWithPhone,
+                    enabled = !state.googleBusy,
+                ) {
+                    LegalLine()
+                }
+                AuthStage.Privacy -> PrivacyNoticeScreen(onBack = { model.back() }, onAccept = model::acceptPrivacy)
+                AuthStage.Phone -> PhoneStep(state, model, language)
+                AuthStage.Code -> CodeStep(state, model, language)
+            }
         }
-        AuthSheet(state = state, model = model, intent = intent, language = language, art = art, reduced = reduced)
         Notices()
     }
 }
 
 private const val INTEGRITY_WAIT_MS = 3_000L
-
-/** The smallest the word bubble's word may be: readable text. */
-private val WORD_TEXT_MIN = 13.sp
 
 /** The phone, as sign-in names it: model, Android version, app version and language. Nothing about its holder. */
 internal fun deviceInfo(language: String) = DeviceInfo(
@@ -221,20 +183,7 @@ private fun defaultCountry(context: Context, language: AppLanguage): DialCountry
     )
 }
 
-/** Under the buttons: a Google message when the sheet is closed, and the terms line. */
-@Composable
-private fun WelcomeFooter(state: AuthUiState) {
-    val config by LocalAppGraph.current.config.config.collectAsStateWithLifecycle()
-    val legal = config?.legal
-    val termsUrl = legal?.termsUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.termsUrl
-    val privacyUrl = legal?.privacyUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.privacyUrl
-    CompositionLocalProvider(LocalSemanticColors provides WelcomePalette.SheetColors) {
-        InlineMessage(state.googleError?.takeIf { state.stage == AuthStage.Welcome }?.let { googleErrorText(it) })
-    }
-    LegalLine(termsUrl = termsUrl, privacyUrl = privacyUrl)
-}
-
-/** The session-ended note and the closed-account dialog, wherever sign-in was reached from. */
+/** The session-ended note and the closed-account notice, wherever sign-in was reached from. */
 @Composable
 private fun Notices() {
     val graph = LocalAppGraph.current
@@ -248,28 +197,39 @@ private fun Notices() {
         }
     }
     Box(Modifier.fillMaxSize()) {
-        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 8.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = Notes.snackbarTop, start = Space.gutter, end = Space.gutter)) { data ->
+            AppSnackbar(data.visuals.message)
+        }
     }
     if (notice == GateNotice.AccountClosed) {
-        AlertDialog(
-            onDismissRequest = { graph.auth.clearNotice() },
-            title = { Text(brandString(R.string.auth_closed_title)) },
-            text = { Text(brandString(R.string.auth_closed_body)) },
-            confirmButton = { TextButton(onClick = { graph.auth.clearNotice() }) { Text(brandString(R.string.action_ok)) } },
+        AppDialog(
+            title = brandString(R.string.auth_closed_title),
+            body = brandString(R.string.auth_closed_body),
+            confirm = brandString(R.string.action_ok),
+            onConfirm = { graph.auth.clearNotice() },
+            dismiss = null,
+            onDismiss = { graph.auth.clearNotice() },
+            destructive = false,
         )
     }
 }
 
-/** "By continuing you agree to the Terms and the Privacy Policy", both as links, in white on the scene. */
+private const val NO_BREAK_SPACE = '\u00A0'
+
+/** «با ادامه، قوانین و حریم خصوصی رو قبول می‌کنی.», both as links (`--text-2`, underlined) in `--type-legal`, `--text-3`. */
 @Composable
-private fun LegalLine(termsUrl: String, privacyUrl: String) {
+private fun LegalLine() {
+    val t = AppTheme.template
+    val config by LocalAppGraph.current.config.config.collectAsStateWithLifecycle()
+    val legal = config?.legal
+    val termsUrl = legal?.termsUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.termsUrl
+    val privacyUrl = legal?.privacyUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.privacyUrl
     // A link's words stay on one line (no-break spaces): a link split over two lines reads as two.
-    val terms = brandString(R.string.legal_terms).replace(' ', '\u00A0')
-    val privacy = brandString(R.string.legal_privacy).replace(' ', '\u00A0')
-    // The raw template, unformatted: its %1$s and %2$s become links below. Formatting it
-    // with no arguments (brandString) throws MissingFormatArgumentException.
+    val terms = brandString(R.string.legal_terms).replace(' ', NO_BREAK_SPACE)
+    val privacy = brandString(R.string.legal_privacy).replace(' ', NO_BREAK_SPACE)
+    // The raw template, unformatted: its %1$s and %2$s become links below.
     val template = brandText(stringResource(R.string.auth_legal_notice_links), LocalAppName.current)
-    val linkStyle = TextLinkStyles(SpanStyle(color = WelcomePalette.Headline, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline))
+    val linkStyle = TextLinkStyles(SpanStyle(color = t.colors.text2, textDecoration = TextDecoration.Underline))
     val text = buildAnnotatedString {
         val parts = template.split("%1\$s", "%2\$s")
         val order = Regex("%([12])\\\$s").findAll(template).map { it.groupValues[1] }.toList()
@@ -282,10 +242,16 @@ private fun LegalLine(termsUrl: String, privacyUrl: String) {
     }
     Text(
         text,
-        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 1.45.em, lineBreak = LineBreak.Heading),
-        color = WelcomePalette.Terms,
+        style = t.type.legal.copy(lineBreak = LineBreak.Heading),
+        color = t.colors.text3,
         textAlign = TextAlign.Center,
-        modifier = Modifier.widthIn(max = 320.dp).padding(top = 4.dp, start = 8.dp, end = 8.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = Notes.legalMaxWidth),
     )
 }
 
+/** The route's own sizes. */
+private object Notes {
+    /** The terms line wraps at this width on a wide screen, so it stays two short lines at most. */
+    val legalMaxWidth = 360.dp
+    val snackbarTop = 8.dp
+}

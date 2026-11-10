@@ -1,5 +1,9 @@
 package app.core.feature.paywall
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+import app.core.ui.theme.Space
+import app.core.ui.components.LocalBottomBarRoom
+import app.core.ui.components.AppSnackbar
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -110,7 +114,7 @@ fun StorePrompts(root: Root, config: Config?, modifier: Modifier = Modifier) {
                     val check = graph.store.updates.check()
                     val started = check is UpdateCheck.Available && check.flexibleAllowed &&
                         graph.store.updates.start(host, updateLauncher, check, UpdateMode.FLEXIBLE)
-                    if (!started && snackbar.showSnackbar(updateText, updateAction, withDismissAction = true) == SnackbarResult.ActionPerformed) {
+                    if (!started && snackbar.showSnackbar(updateText, updateAction, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
                         graph.store.info.openAppPage(host)
                     }
                     return@launch
@@ -120,7 +124,7 @@ fun StorePrompts(root: Root, config: Config?, modifier: Modifier = Modifier) {
                     when (graph.store.info.store) {
                         // Play forbids a question before its sheet; the sheet may show nothing (its quota).
                         Store.PLAY -> graph.store.rating.requestRating(host)
-                        Store.BAZAAR -> if (snackbar.showSnackbar(ratePrompt, rateAction, withDismissAction = true) == SnackbarResult.ActionPerformed) {
+                        Store.BAZAAR -> if (snackbar.showSnackbar(ratePrompt, rateAction, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
                             graph.store.rating.requestRating(host)
                         }
                     }
@@ -130,5 +134,16 @@ fun StorePrompts(root: Root, config: Config?, modifier: Modifier = Modifier) {
         onPauseOrDispose { job?.cancel() }
     }
 
-    SnackbarHost(snackbar, modifier.padding(bottom = 96.dp))
+    // The template's snackbar (text and one action, no icon), above the tab bar while the tabs are up,
+    // else above the navigation bar.
+    val bar = LocalBottomBarRoom.current.height
+    val bottom = if (bar > 0.dp) Modifier.padding(bottom = bar + PromptLayout.gap) else Modifier.navigationBarsPadding().padding(bottom = PromptLayout.gap)
+    SnackbarHost(snackbar, modifier.then(bottom).padding(horizontal = Space.gutter)) { data ->
+        AppSnackbar(data.visuals.message, action = data.visuals.actionLabel, onAction = data::performAction)
+    }
+}
+
+private object PromptLayout {
+    /** Between the prompt and the bar (or the screen's bottom) under it. */
+    val gap = 8.dp
 }

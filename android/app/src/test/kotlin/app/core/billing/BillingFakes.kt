@@ -6,13 +6,15 @@ import app.core.model.BoostKind
 import app.core.model.BoostStarted
 import app.core.model.ConsumableProduct
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.model.PurchaseRecord
 import app.core.model.PurchaseResult
 import app.core.model.RestorePurchase
 import app.core.model.RestoreResult
 import app.core.model.RestoredPurchase
+import app.core.model.PlanFlags
+import app.core.model.PlanQuotas
 import app.core.model.StoreName
+import app.core.model.StorePlan
 import app.core.model.StoreProducts
 import app.core.model.SubscriptionProduct
 import app.core.model.WalletItem
@@ -193,14 +195,29 @@ class FakeStoreApi(private val store: Store) : StoreApi {
         /** The account's reference in [catalogueOf]: what its purchases carry. */
         const val BILLING_REF = "k7wq2m4zx5p3a"
 
+        /** The plans on sale, as the server describes them: Premium ranks above Plus. */
+        val PLANS = listOf(
+            StorePlan(
+                key = "plus", rank = 1, sort = 1, name = "Plus",
+                features = PlanFlags(seeLikes = true, rewind = true),
+                quotas = PlanQuotas(dailyLikes = PlanQuotas.UNLIMITED, weeklySuperlikes = 3, monthlyBoosts = 1),
+            ),
+            StorePlan(
+                key = "premium", rank = 2, sort = 2, name = "Premium",
+                features = PlanFlags(seeLikes = true, rewind = true, readReceipts = true, incognito = true, travelMode = true, priorityLikes = true),
+                quotas = PlanQuotas(dailyLikes = PlanQuotas.UNLIMITED, weeklySuperlikes = 5, dailyDm = PlanQuotas.UNLIMITED, monthlyBoosts = 4),
+            ),
+        )
+
         fun catalogueOf(store: Store): StoreProducts = if (store == Store.PLAY) {
             StoreProducts(
                 store = StoreName.Play,
                 billingRef = BILLING_REF,
+                plans = PLANS,
                 subscriptions = listOf(
-                    SubscriptionProduct("sub.plus", "m1", Plan.Plus, BillingPeriod.Month, "popular", 11),
-                    SubscriptionProduct("sub.plus", "m3", Plan.Plus, BillingPeriod.ThreeMonths, "best_value", 12),
-                    SubscriptionProduct("sub.premium", "m1", Plan.Premium, BillingPeriod.Month, null, 21),
+                    SubscriptionProduct("sub.plus", "m1", "plus", BillingPeriod.Month, "popular", 11),
+                    SubscriptionProduct("sub.plus", "m3", "plus", BillingPeriod.ThreeMonths, "best_value", 12),
+                    SubscriptionProduct("sub.premium", "m1", "premium", BillingPeriod.Month, null, 21),
                 ),
                 consumables = listOf(ConsumableProduct("cons.superlike.5", WalletItem.Superlike, 5, null, 30)),
             )
@@ -208,9 +225,10 @@ class FakeStoreApi(private val store: Store) : StoreApi {
             StoreProducts(
                 store = StoreName.Bazaar,
                 billingRef = BILLING_REF,
+                plans = PLANS,
                 subscriptions = listOf(
-                    SubscriptionProduct("sub.plus.1m", null, Plan.Plus, BillingPeriod.Month, "popular", 11),
-                    SubscriptionProduct("sub.premium.1m", null, Plan.Premium, BillingPeriod.Month, null, 21),
+                    SubscriptionProduct("sub.plus.1m", null, "plus", BillingPeriod.Month, "popular", 11),
+                    SubscriptionProduct("sub.premium.1m", null, "premium", BillingPeriod.Month, null, 21),
                 ),
                 consumables = listOf(ConsumableProduct("cons.superlike.5", WalletItem.Superlike, 5, null, 30)),
             )

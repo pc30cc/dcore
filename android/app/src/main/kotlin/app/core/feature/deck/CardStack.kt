@@ -39,13 +39,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.util.lerp
 import app.core.R
 import app.core.feature.card.cardDescription
 import app.core.i18n.brandString
-import app.core.model.Catalog
 import app.core.model.ProfileCard
 import app.core.model.SwipeAction
 import app.core.sync.ReturnSide
@@ -141,13 +142,14 @@ private data class FlyingCard(val card: ProfileCard, val state: SwipeCardState, 
 fun CardStack(
     cards: List<ProfileCard>,
     returning: ReturningCard?,
-    catalog: Catalog,
     number: (Int) -> String,
     controller: DeckController,
     onSwiped: (ProfileCard, SwipeAction) -> Unit,
     onOpenDetails: (ProfileCard) -> Unit,
     onReturnShown: (String) -> Unit,
     modifier: Modifier = Modifier,
+    infoBottom: Dp = 0.dp,
+    storyTop: Dp = DeckLayout.storyInset,
 ) {
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -206,11 +208,12 @@ fun CardStack(
             key(next.id) {
                 StackCard(
                     card = next,
-                    catalog = catalog,
                     number = number,
                     photoIndex = photoIndexes[next.id] ?: 0,
                     onPhotoIndex = {},
                     interactive = false,
+                    infoBottom = infoBottom,
+                    storyTop = storyTop,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -233,7 +236,7 @@ fun CardStack(
                 LaunchedEffect(top.id) {
                     if (reduced) grow.snapTo(1f) else grow.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 500f))
                 }
-                val description = cardDescription(top, number, catalog)
+                val description = cardDescription(top, number)
                 val photoPosition = brandString(
                     R.string.deck_photo_position,
                     number((photoIndexes[top.id] ?: 0) + 1),
@@ -309,13 +312,14 @@ fun CardStack(
                 ) {
                     StackCard(
                         card = top,
-                        catalog = catalog,
                         number = number,
                         photoIndex = photoIndexes[top.id] ?: 0,
                         onPhotoIndex = { photoIndexes[top.id] = it },
                         interactive = true,
-                        onOpenDetails = { openDetails(top) },
                         state = topState,
+                        infoBottom = infoBottom,
+                        storyTop = storyTop,
+                        onOpenInfo = { openDetails(top) },
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
@@ -332,12 +336,13 @@ fun CardStack(
             key("flying", ghost.card.id) {
                 StackCard(
                     card = ghost.card,
-                    catalog = catalog,
                     number = number,
                     photoIndex = ghost.photoIndex,
                     onPhotoIndex = {},
                     interactive = false,
                     state = ghost.state,
+                    infoBottom = infoBottom,
+                    storyTop = storyTop,
                     modifier = Modifier.fillMaxSize().semantics { },
                 )
             }
@@ -348,14 +353,15 @@ fun CardStack(
 @Composable
 private fun StackCard(
     card: ProfileCard,
-    catalog: Catalog,
     number: (Int) -> String,
     photoIndex: Int,
     onPhotoIndex: (Int) -> Unit,
     interactive: Boolean,
     modifier: Modifier = Modifier,
-    onOpenDetails: () -> Unit = {},
     state: SwipeCardState? = null,
+    infoBottom: Dp = 0.dp,
+    storyTop: Dp = DeckLayout.storyInset,
+    onOpenInfo: (() -> Unit)? = null,
 ) {
     val reduced = LocalReducedMotion.current
     val moved = if (state != null) {
@@ -375,12 +381,11 @@ private fun StackCard(
         card = card,
         photoIndex = photoIndex,
         onPhotoIndex = onPhotoIndex,
-        catalog = catalog,
         number = number,
-        onOpenDetails = onOpenDetails,
         interactive = interactive,
-        progress = { state?.progress ?: 0f },
-        upProgress = { state?.upProgress ?: 0f },
+        infoBottom = infoBottom,
+        storyTop = storyTop,
+        onOpenInfo = onOpenInfo,
         modifier = modifier.then(moved),
     )
 }

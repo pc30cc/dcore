@@ -1,7 +1,6 @@
 package app.core.billing
 
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.store.PlanChangeKind
 import app.core.store.Store
 import app.core.store.StoreProduct
@@ -30,9 +29,9 @@ internal object PlanChanges {
      */
     fun backing(
         owned: List<StorePurchase>,
-        plan: Plan,
+        plan: String,
         billingRef: String,
-        planOf: (String) -> Plan?,
+        planOf: (String) -> String?,
         productId: String? = null,
     ): StorePurchase? {
         if (billingRef.isEmpty()) return null
@@ -83,20 +82,27 @@ internal object PlanChanges {
     /**
      * How [target] replaces the owned subscription of [ownedProductId] (on
      * [currentPlan]); [ownedOptions] are the base plans whose price is the
-     * bar ([bar]), with the store's prices.
+     * bar ([bar]), with the store's prices; [rankOf] is the server's upgrade
+     * rank of a plan key, null when it is not known.
      *
      * - another base plan of the same subscription: [PlanChangeKind.CHARGE_FULL]
      *   (between base plans of one subscription Play takes only that or
      *   `WITHOUT_PRORATION`);
-     * - a lower tier: [PlanChangeKind.AT_RENEWAL];
+     * - a lower tier (both ranks known): [PlanChangeKind.AT_RENEWAL];
      * - otherwise [PlanChangeKind.CHARGE_DIFFERENCE] when [target] costs more
      *   per unit of time (the only case Play takes it in), else
      *   [PlanChangeKind.CREDIT_TIME] (a higher tier on a longer, cheaper
      *   per-week period, or prices that cannot be compared).
      */
-    fun kind(currentPlan: Plan, ownedProductId: String, ownedOptions: List<PlanOption>, target: PlanOption): PlanChangeKind = when {
+    fun kind(
+        currentPlan: String,
+        ownedProductId: String,
+        ownedOptions: List<PlanOption>,
+        target: PlanOption,
+        rankOf: (String) -> Int?,
+    ): PlanChangeKind = when {
         target.productId == ownedProductId -> PlanChangeKind.CHARGE_FULL
-        rank(target.plan) < rank(currentPlan) -> PlanChangeKind.AT_RENEWAL
+        lower(rankOf(target.plan), rankOf(currentPlan)) -> PlanChangeKind.AT_RENEWAL
         costsMorePerUnitOfTime(ownedOptions, target) -> PlanChangeKind.CHARGE_DIFFERENCE
         else -> PlanChangeKind.CREDIT_TIME
     }
@@ -140,5 +146,5 @@ internal object PlanChanges {
         return if (shortest <= 0) null else shortest..longest
     }
 
-    private fun rank(plan: Plan): Int = CatalogueJoin.PLANS.indexOf(plan)
+    private fun lower(target: Int?, current: Int?): Boolean = target != null && current != null && target < current
 }

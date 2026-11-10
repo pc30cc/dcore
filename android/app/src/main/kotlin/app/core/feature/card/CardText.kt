@@ -58,13 +58,13 @@ fun isolate(text: String): String = "\u2068$text\u2069"
 fun nameAndAge(card: ProfileCard, number: (Int) -> String): String =
     card.age?.let { brandString(R.string.deck_name_age, isolate(card.name), number(it)) } ?: card.name
 
-/** "4 km away", "Less than 2 km away", or null when the person hides their distance. */
+/** «۴ کیلومتر», «کمتر از ۲ کیلومتر», or null when the person hides their distance. */
 @Composable
 fun distanceText(distance: Distance?, number: (Int) -> String): String? = distance?.let {
     if (it.lessThan) brandString(R.string.deck_distance_less, number(it.km)) else brandString(R.string.deck_distance_km, number(it.km))
 }
 
-/** "Tehran · 4 km away", either part alone, or null. */
+/** The card's one line, «تهران، ۴ کیلومتر», either part alone, or null. */
 @Composable
 fun locationLine(card: ProfileCard, number: (Int) -> String): String? {
     val distance = distanceText(card.distance, number)
@@ -90,14 +90,15 @@ fun intentionLabel(intention: Intention?, catalog: Catalog): String? {
     )
 }
 
-/** The whole card in one sentence, for TalkBack. */
+/**
+ * The whole card in one sentence, for TalkBack: what the card shows (name,
+ * age, badge, online, city and distance) and whether they already like you.
+ */
 @Composable
-fun cardDescription(card: ProfileCard, number: (Int) -> String, catalog: Catalog): String = buildList {
+fun cardDescription(card: ProfileCard, number: (Int) -> String): String = buildList {
     add(nameAndAge(card, number))
     if (card.verified) add(brandString(R.string.deck_verified))
+    if (card.activeRecently) add(brandString(R.string.ui_online))
     if (card.superliked) add(brandString(R.string.deck_superliked_you)) else if (card.likesYou) add(brandString(R.string.deck_likes_you))
-    intentionLabel(card.intention, catalog)?.let(::add)
-    card.job?.takeIf { it.isNotBlank() }?.let(::add)
     locationLine(card, number)?.let(::add)
-    if (card.activeRecently) add(brandString(R.string.deck_active_recently))
 }.joinToString(". ")

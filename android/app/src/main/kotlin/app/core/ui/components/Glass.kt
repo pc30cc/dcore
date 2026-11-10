@@ -172,15 +172,3 @@ private fun Outline.asPath(): Path = when (this) {
     is Outline.Rounded -> Path().apply { addRoundRect(roundRect) }
     is Outline.Rectangle -> Path().apply { addRect(rect) }
 }
-
-/**
- * A soft shadow (`0 6 18 -8` black at [alpha]), drawn on Android 9+ only
- * (blurred shadows need it there). Older screens use it; template code
- * draws the template's shadow tokens ([outerShadow]).
- */
-fun Modifier.softShadow(shape: Shape, alpha: Float = 0.35f): Modifier =
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-        this
-    } else {
-        dropShadow(shape, Shadow(radius = 18.dp, color = Color.Black, spread = (-8).dp, offset = DpOffset(0.dp, 6.dp), alpha = alpha))
-    }

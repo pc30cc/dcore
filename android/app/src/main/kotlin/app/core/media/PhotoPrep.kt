@@ -73,7 +73,7 @@ class PreparedPhoto(val bytes: ByteArray, val width: Int, val height: Int) {
 
 /**
  * Turns a picked picture into what is uploaded: upright (EXIF orientation
- * applied), cropped to the profile's 4:5, at most [TARGET_LONG_SIDE] tall,
+ * applied), cropped to the profile's 3:4, at most [TARGET_LONG_SIDE] tall,
  * JPEG. Decoding re-encodes the pixels only, so nothing of the original file
  * (camera, time, position) travels; the server strips again anyway.
  */
@@ -130,8 +130,8 @@ class PhotoPrep(private val context: Context) {
     }
 
     companion object {
-        /** Profile photos are 4:5, portrait. */
-        const val ASPECT: Float = 4f / 5f
+        /** Profile photos are 3:4, portrait: the crop window and the photo tiles. */
+        const val ASPECT: Float = 3f / 4f
         const val TARGET_LONG_SIDE = 1600
         const val PREVIEW_LONG_SIDE = 2400
         const val QUALITY = 86

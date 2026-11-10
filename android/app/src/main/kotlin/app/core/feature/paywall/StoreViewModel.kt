@@ -4,8 +4,8 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.core.billing.Catalogue
-import app.core.billing.CatalogueJoin
 import app.core.billing.CatalogueLoad
+import app.core.billing.PackOption
 import app.core.billing.PurchaseFailure
 import app.core.billing.PurchaseStep
 import app.core.billing.PurchaseTarget
@@ -14,7 +14,8 @@ import app.core.billing.RestoreOutcome
 import app.core.billing.failure
 import app.core.billing.storePlan
 import app.core.model.Entitlements
-import app.core.model.Plan
+import app.core.model.PlanKey
+import app.core.model.WalletItem
 import app.core.store.StorePurchase
 import app.core.sync.EntitlementRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +43,7 @@ sealed interface StoreLoad {
     data object Failed : StoreLoad
 }
 
-/** The restore button's last answer, shown once. */
+/** The restore link's last answer, said on the line under the button until the person chooses or buys something. */
 enum class RestoreNotice {
     /** Something that gives access was added to the account by this restore. */
     RESTORED,
@@ -98,10 +99,13 @@ fun RestoreOutcome.notice(): RestoreNotice = when (this) {
 
 data class StoreUiState(
     val load: StoreLoad = StoreLoad.Loading,
-    /** The plan tab shown. */
-    val plan: Plan = Plan.Plus,
+    /** The key of the plan shown; null until the catalogue is read (or when it sells none). */
+    val plan: String? = null,
     /** The chosen period ([app.core.billing.PlanOption.key]) of [plan]. */
     val selected: String? = null,
+    /** The packs sheet's item (super likes, boosts…) and its chosen pack ([PackOption.key]). */
+    val item: WalletItem = WalletItem.Superlike,
+    val selectedPack: String? = null,
     val step: PurchaseStep = PurchaseStep.Idle,
     val restoring: Boolean = false,
     val restoreNotice: RestoreNotice? = null,
@@ -128,8 +132,14 @@ data class StoreUiState(
             step is PurchaseStep.Verifying || step is PurchaseStep.Restoring
 
     /** The plans this catalogue sells, in order. */
-    val plans: List<Plan> get() = catalogue?.plans?.map { it.plan }.orEmpty()
+    val plans: List<String> get() = catalogue?.plans?.map { it.plan }.orEmpty()
 }
+
+/** The pack a sheet of [item] opens on: the one the server marks popular, else best value, else the first. */
+fun List<PackOption>.startPack(): PackOption? =
+    firstOrNull { it.badge == app.core.billing.ProductBadge.POPULAR }
+        ?: firstOrNull { it.badge == app.core.billing.ProductBadge.BEST_VALUE }
+        ?: firstOrNull()
 
 /**
  * The paywall's and the packs sheet's state: the catalogue (the server's,
@@ -144,8 +154,10 @@ class StoreViewModel(
 
     private data class Local(
         val load: StoreLoad = StoreLoad.Loading,
-        val plan: Plan,
+        val plan: String?,
         val selected: String? = null,
+        val item: WalletItem,
+        val selectedPack: String? = null,
         val restoring: Boolean = false,
         val restoreNotice: RestoreNotice? = null,
         /** The subscriptions the store account on this phone holds; null until asked, or when it could not be. */
@@ -154,7 +166,9 @@ class StoreViewModel(
         val checking: Boolean = false,
     )
 
-    private val local = MutableStateFlow(Local(plan = (request as? PaywallRequest.Plans)?.plan ?: request.entry.plan))
+    private val local = MutableStateFlow(
+        Local(plan = (request as? PaywallRequest.Plans)?.plan, item = (request as? PaywallRequest.Packs)?.item ?: WalletItem.Superlike),
+    )
 
     val state: StateFlow<StoreUiState> = combine(local, purchases.step, entitlementRepository.entitlements, purchases.waiting) { l, step, e, waiting ->
         val catalogue = (l.load as? StoreLoad.Ready)?.catalogue
@@ -162,6 +176,8 @@ class StoreViewModel(
             load = l.load,
             plan = l.plan,
             selected = l.selected,
+            item = l.item,
+            selectedPack = l.selectedPack,
             step = step,
             restoring = l.restoring,
             restoreNotice = l.restoreNotice,
@@ -176,7 +192,7 @@ class StoreViewModel(
         viewModelScope,
         SharingStarted.Eagerly,
         entitlementRepository.entitlements.value.let { e ->
-            StoreUiState(plan = local.value.plan, entitlements = e, subscriptionLocked = purchases.subscriptionLocked(e))
+            StoreUiState(plan = local.value.plan, item = local.value.item, entitlements = e, subscriptionLocked = purchases.subscriptionLocked(e))
         },
     )
 
@@ -212,8 +228,14 @@ class StoreViewModel(
             val owned = if (sellsPlans(load)) purchases.ownedSubscriptions() else null
             local.update { l ->
                 val catalogue = (load as? StoreLoad.Ready)?.catalogue
-                val plan = catalogue?.let { startPlan(it, l.plan, current) } ?: l.plan
-                l.copy(load = load, plan = plan, selected = catalogue?.startOption(plan, current, purchases.now())?.key, owned = owned)
+                val plan = catalogue?.startPlan(l.plan, request.entry.need, current) ?: l.plan
+                l.copy(
+                    load = load,
+                    plan = plan,
+                    selected = plan?.let { catalogue?.startOption(it, current, purchases.now())?.key },
+                    selectedPack = catalogue?.packsFor(l.item)?.startPack()?.key,
+                    owned = owned,
+                )
             }
         }
     }
@@ -233,6 +255,8 @@ class StoreViewModel(
      * another device meanwhile.
      */
     fun resumed() {
+        // Back from installing the store or signing in to it: read the catalogue again.
+        if (local.value.load is StoreLoad.Unavailable) return load()
         if (!sellsPlans(local.value.load)) return
         val e = entitlementRepository.entitlements.value
         if (e?.storePlan(purchases.store) != true || e.productId == null) return
@@ -253,30 +277,49 @@ class StoreViewModel(
         }
     }
 
-    /**
-     * The tab to open on: the one asked for when it is sold; a person on Plus
-     * sees Premium (Plus is what they have); otherwise the first sold.
-     */
-    private fun startPlan(catalogue: Catalogue, asked: Plan, current: Entitlements?): Plan {
-        val sold = catalogue.plans.map { it.plan }
-        if (sold.isEmpty()) return asked
-        if (current?.plan == Plan.Plus && asked == Plan.Plus && Plan.Premium in sold) return Plan.Premium
-        return if (asked in sold) asked else sold.first()
-    }
-
-    fun selectPlan(plan: Plan) {
+    fun selectPlan(plan: String) {
+        if (busy()) return
         val current = entitlementRepository.entitlements.value
+        clearNotices()
         local.update { l -> l.copy(plan = plan, selected = (l.load as? StoreLoad.Ready)?.catalogue?.startOption(plan, current, purchases.now())?.key) }
     }
 
     fun select(key: String) {
+        if (busy()) return
+        clearNotices()
         local.update { it.copy(selected = key) }
+    }
+
+    /** The packs sheet's other item (super likes or boosts), on its own start pack. */
+    fun selectItem(item: WalletItem) {
+        if (busy()) return
+        clearNotices()
+        local.update { l -> l.copy(item = item, selectedPack = (l.load as? StoreLoad.Ready)?.catalogue?.packsFor(item)?.startPack()?.key) }
+    }
+
+    fun selectPack(key: String) {
+        if (busy()) return
+        clearNotices()
+        local.update { it.copy(selectedPack = key) }
+    }
+
+    /**
+     * A purchase or a restore is under way: the choice stays what is being
+     * bought or checked (read from the engine itself, never a frame behind).
+     */
+    private fun busy(): Boolean = StoreUiState(step = purchases.step.value, restoring = local.value.restoring).busy
+
+    /** A failed purchase's line and a restore's answer go once the person chooses something else. */
+    private fun clearNotices() {
+        if (purchases.step.value is PurchaseStep.Failed) purchases.acknowledge()
+        if (local.value.restoreNotice != null) local.update { it.copy(restoreNotice = null) }
     }
 
     /** Buys the period or pack [key]: the store's sheet over [activity], then the server. */
     fun buy(activity: ComponentActivity, key: String) {
         val catalogue = state.value.catalogue ?: return
-        if (state.value.busy) return
+        if (busy()) return
+        local.update { it.copy(restoreNotice = null) }
         val target = catalogue.option(key)?.let { PurchaseTarget.Subscription(it) }
             ?: catalogue.pack(key)?.let { PurchaseTarget.Pack(it) }
             ?: return
@@ -284,7 +327,7 @@ class StoreViewModel(
     }
 
     fun restore() {
-        if (state.value.busy) return
+        if (busy()) return
         local.update { it.copy(restoring = true, restoreNotice = null) }
         viewModelScope.launch {
             val notice = purchases.restore(manual = true).notice()
@@ -294,15 +337,13 @@ class StoreViewModel(
         }
     }
 
-    fun restoreShown() = local.update { it.copy(restoreNotice = null) }
-
     /** A finished step was shown and dismissed. */
     fun stepShown() = purchases.acknowledge()
 
     /** The current plan's product, for the store's subscription page (Play names it): the server's, else the catalogue's. */
     fun currentProductId(): String? {
         val e = state.value.entitlements
-        val plan = e?.plan?.takeIf { it in CatalogueJoin.PLANS } ?: return null
+        val plan = e?.plan?.takeIf(PlanKey::isPaid) ?: return null
         return e.productId ?: state.value.catalogue?.plan(plan)?.options?.firstOrNull()?.productId
     }
 

@@ -1,5 +1,6 @@
 package app.core.feature.onboarding
 
+import app.core.ui.components.keepTyped
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import app.core.common.Diag
 import app.core.common.runCatchingUnlessCancelled
 import app.core.feature.auth.AuthGate
 import app.core.feature.auth.GateNotice
+import app.core.feature.auth.Root
 import app.core.feature.legal.LegalAcceptance
 import app.core.media.LocalPhotoCache
 import app.core.media.PhotoUploader
@@ -26,6 +28,7 @@ import app.core.model.LegalVersions
 import app.core.model.LocationSource
 import app.core.model.LocationUpdate
 import app.core.model.Me
+import app.core.model.NotificationPrefsPatch
 import app.core.model.OnboardingCodes
 import app.core.model.OwnProfile
 import app.core.model.PreferencesPatch
@@ -88,6 +91,8 @@ data class OnboardingUiState(
     val error: StepError? = null,
     /** Sign-up is being finished (the last step's answer is in). */
     val finishing: Boolean = false,
+    /** Sign-up is finished on the server: the done screen, until the person moves on ([OnboardingViewModel.leave]). */
+    val done: AuthUser? = null,
 
     val name: String = "",
     val birthDate: LocalDate? = null,
@@ -174,6 +179,8 @@ class OnboardingViewModel(
 
     /** Reads the account again (photos processing, a change on another phone). */
     fun refresh(quiet: Boolean = false) {
+        // Finished: the done screen stays until the person moves on.
+        if (_state.value.done != null) return
         viewModelScope.launch {
             runCatchingUnlessCancelled { api.me() }.onSuccess { fetched ->
                 if (fetched.changed || me == null) adopt(fetched.value, initial = false)
@@ -189,6 +196,8 @@ class OnboardingViewModel(
     private fun emptyFacts() = OnboardingFacts(0, "", false, Gender.Unknown, emptyList(), null, 0, 2, false, false, true, privacyAccepted, notificationsAskable(), false, false)
 
     private fun adopt(fresh: Me, initial: Boolean) {
+        // Finished: the done screen stays until the person moves on (a late read never moves the app under it).
+        if (_state.value.done != null) return
         me = fresh
         storedStep = maxOf(storedStep, fresh.onboardingStep)
         if (fresh.status != AccountStatus.Onboarding && fresh.status != AccountStatus.Unknown) {
@@ -324,12 +333,12 @@ class OnboardingViewModel(
 
     // MARK: - Name
 
-    fun nameChanged(value: String) = _state.update { it.copy(name = value.take(NAME_MAX), error = null) }
+    fun nameChanged(value: String) = _state.update { it.copy(name = keepTyped(value, it.name, NAME_MAX), error = null) }
 
     /** A first name: letters (any script), spaces, hyphens and apostrophes, no digits or contact details. */
     fun nameValid(name: String = _state.value.name): Boolean {
         val trimmed = name.trim()
-        return trimmed.length in 1..NAME_MAX && trimmed.none { it.isDigit() || it == '@' || it == '/' || it == ':' } && trimmed.any { it.isLetter() }
+        return trimmed.length in 1..NAME_ACCEPTED && trimmed.none { it.isDigit() || it == '@' || it == '/' || it == ':' } && trimmed.any { it.isLetter() }
     }
 
     fun submitName() {
@@ -432,10 +441,16 @@ class OnboardingViewModel(
     }
 
     fun promptAnswered(promptId: Int, answer: String) = _state.update {
-        it.copy(prompts = it.prompts.map { p -> if (p.promptId == promptId) p.copy(answer = answer.take(PROMPT_MAX)) else p }, error = null)
+        it.copy(prompts = it.prompts.map { p -> if (p.promptId == promptId) p.copy(answer = keepTyped(answer, p.answer, PROMPT_MAX)) else p }, error = null)
     }
 
     fun promptRemoved(promptId: Int) = _state.update { it.copy(prompts = it.prompts.filterNot { p -> p.promptId == promptId }) }
+
+    /** «عوض کن»: [promptId]'s place (and its answer) goes to the question [to]. */
+    fun promptReplaced(promptId: Int, to: Int) = _state.update {
+        if (promptId == to || it.prompts.any { p -> p.promptId == to }) it
+        else it.copy(prompts = it.prompts.map { p -> if (p.promptId == promptId) p.copy(promptId = to) else p })
+    }
 
     fun submitPrompts(skip: Boolean = false) {
         val answered = if (skip) emptyList() else _state.value.prompts.filter { it.answer.isNotBlank() }
@@ -496,6 +511,8 @@ class OnboardingViewModel(
                     _state.update {
                         it.copy(busy = false, location = LocationPhase.Set(result.city, result.country), cityQuery = "", cityResults = emptyList())
                     }
+                    // The area is the whole step: on to the next one.
+                    submitLocation()
                 }
                 .onFailure { e ->
                     // A refusal puts the step back where it was (a device fix that failed: the city list).
@@ -541,6 +558,20 @@ class OnboardingViewModel(
         submit({ writeStep(OnboardingStep.Notifications.passedCode) }) { advance(OnboardingStep.Notifications) }
     }
 
+    /**
+     * «روشن کن» with the two switches: what is switched off is saved on the
+     * account first (both kinds of each pair), then [then] asks the phone.
+     */
+    fun turnOnNotifications(matches: Boolean, messages: Boolean, then: () -> Unit) {
+        if (matches && messages) {
+            then()
+            return
+        }
+        submit({
+            api.updateNotifications(NotificationPrefsPatch(matches = matches, likes = matches, messages = messages, calls = messages))
+        }) { then() }
+    }
+
     // MARK: - Guidelines and the finish
 
     fun acceptGuidelines() {
@@ -571,7 +602,10 @@ class OnboardingViewModel(
                     _state.update { it.copy(finishing = false, error = StepError.Incomplete) }
                     goTo(OnboardingPlan.resume(facts()) ?: OnboardingStep.Guidelines)
                 } else {
-                    gate.signedIn(AuthUser(fresh.id, fresh.status, fresh.onboardingStep))
+                    // Nothing more to wait for here: a photo still in review is the app's to follow from now on.
+                    poll?.cancel()
+                    poll = null
+                    _state.update { it.copy(done = AuthUser(fresh.id, fresh.status, fresh.onboardingStep)) }
                 }
             }.onFailure { e ->
                 _state.update { it.copy(finishing = false) }
@@ -588,14 +622,28 @@ class OnboardingViewModel(
         }
     }
 
-    /** "Sign out" from the sign-up's menu. */
+    /**
+     * From the done screen into the app: the account's own place (the deck,
+     * or the review screen while the profile waits for one); [profile] opens
+     * the Profile tab there, where there is one.
+     */
+    fun leave(profile: Boolean = false, openProfile: () -> Unit = {}) {
+        val user = _state.value.done ?: return
+        if (profile && Root.of(user) == Root.Main) openProfile()
+        gate.signedIn(user)
+    }
+
+    /** Sign-up left from its first step (back, then «خروج»). */
     fun signOut() {
         viewModelScope.launch { gate.signOut() }
     }
 
     companion object {
-        const val NAME_MAX = 30
-        const val PROMPT_MAX = 200
+        /** What a new name or answer may be typed up to (the design's counters). */
+        const val NAME_MAX = 20
+        const val PROMPT_MAX = 150
+        /** A name the server accepts (`displayName` max 40): one kept from an older, longer limit still goes through. */
+        const val NAME_ACCEPTED = 40
         private const val AREA = "Onboarding"
         private const val KEY_STEP = "onboarding.step"
         private const val KEY_BIRTH = "onboarding.birth"

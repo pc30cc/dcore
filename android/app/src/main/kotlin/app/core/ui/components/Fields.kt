@@ -37,11 +37,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +55,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.offset
 import app.core.R
+import app.core.i18n.AppLanguage
 import app.core.i18n.Numerals
 import app.core.i18n.screenLanguage
 import app.core.ui.icons.AppIcons
@@ -84,7 +88,9 @@ fun Modifier.fieldFrame(radius: Dp, focused: Boolean, error: Boolean): Modifier 
 @Composable
 fun HelperLine(text: String, modifier: Modifier = Modifier, error: Boolean = false) {
     val t = AppTheme.template
-    Text(text, style = t.type.bodySm, color = if (error) t.colors.error else t.colors.text3, modifier = modifier)
+    // An error is announced as it appears (a live region); a hint is read with its field.
+    val live = if (error) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier
+    Text(text, style = t.type.bodySm, color = if (error) t.colors.error else t.colors.text3, modifier = modifier.then(live))
 }
 
 /** The clear button inside a field: a 36 dp `--surface-2` disc with a 16 dp ✕, 48 dp to touch. */
@@ -150,7 +156,7 @@ fun AppTextField(
         }
         BasicTextField(
             value = value,
-            onValueChange = { next -> onValueChange(if (maxLength != null) next.take(maxLength) else next) },
+            onValueChange = { next -> onValueChange(if (maxLength != null) keepTyped(next, value, maxLength) else next) },
             enabled = enabled,
             singleLine = singleLine,
             textStyle = textStyle,
@@ -200,6 +206,74 @@ fun AppTextField(
     }
 }
 
+/**
+ * A text area (`.field.area`): at least [minHeight], the field's frame, the
+ * text in `--type-body` from the top, the placeholder in `--text-3`, and the
+ * count («۰ / ۵۰۰») under the text at the end. TalkBack reads it by its
+ * placeholder.
+ */
+@Composable
+fun AppTextArea(
+    value: String,
+    onValueChange: (String) -> Unit,
+    maxLength: Int,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    minHeight: Dp = 120.dp,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+) {
+    val t = AppTheme.template
+    val language = screenLanguage()
+    val focused by interactionSource.collectIsFocusedAsState()
+    BasicTextField(
+        value = value,
+        onValueChange = { next -> onValueChange(keepTyped(next, value, maxLength)) },
+        enabled = enabled,
+        textStyle = t.type.body.copy(color = t.colors.text),
+        cursorBrush = SolidColor(t.colors.caret),
+        interactionSource = interactionSource,
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { if (placeholder != null) contentDescription = placeholder },
+        decorationBox = { inner ->
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = minHeight)
+                    .fieldFrame(t.radii.field, focused, error = false)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(Modifier.fillMaxWidth()) {
+                    if (value.isEmpty() && placeholder != null) Text(placeholder, style = t.type.body, color = t.colors.text3)
+                    inner()
+                }
+                Text(
+                    Numerals.digits("${value.length} / $maxLength", language),
+                    style = t.type.bodySm,
+                    // Text written under an older, longer limit is kept whole; the count says it is over.
+                    color = if (value.length > maxLength) t.colors.error else t.colors.text3,
+                    modifier = Modifier.align(Alignment.End),
+                )
+            }
+        },
+    )
+}
+
+/**
+ * What a field keeps of an edit [next] of [current] under [limit]: typing or
+ * pasting past the limit is cut at it, but text that is already longer (kept
+ * from an older, larger limit) is never shortened by the field; it can only
+ * be made shorter by the person.
+ */
+fun keepTyped(next: String, current: String, limit: Int): String = when {
+    next.length <= limit -> next
+    current.length <= limit -> next.take(limit)
+    next.length <= current.length -> next
+    else -> current
+}
+
 /** Keyboards whose text is figures only: laid out left to right in every language. */
 private val DigitKeyboards = setOf(KeyboardType.Phone, KeyboardType.Number, KeyboardType.NumberPassword, KeyboardType.Decimal)
 
@@ -208,6 +282,9 @@ private val DigitKeyboards = setOf(KeyboardType.Phone, KeyboardType.Number, Keyb
  * pill first (44 dp, `--r-sm`, `--surface-2`; a 48 dp target that opens the
  * country list), the digits in the reader's numerals («۹۱۲ ۳۴۵ ۶۷۸۹»
  * through [visualTransformation]), the clear button at the far right.
+ * [errorFrame] draws the error border (by default whenever there is an
+ * [error] line; off for an error about something other than the number);
+ * [fieldModifier] reaches the text field itself (focus, autofill).
  */
 @Composable
 fun PhoneField(
@@ -223,6 +300,9 @@ fun PhoneField(
     error: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
+    imeAction: ImeAction = ImeAction.Done,
+    errorFrame: Boolean = error != null,
+    fieldModifier: Modifier = Modifier,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
     val t = AppTheme.template
@@ -238,11 +318,11 @@ fun PhoneField(
                 singleLine = true,
                 textStyle = textStyle,
                 cursorBrush = SolidColor(t.colors.caret),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = imeAction),
                 keyboardActions = keyboardActions,
                 visualTransformation = visualTransformation,
                 interactionSource = interactionSource,
-                modifier = Modifier.fillMaxWidth().semantics {
+                modifier = fieldModifier.fillMaxWidth().semantics {
                     this.contentDescription = contentDescription
                     if (error != null) error(error)
                 },
@@ -251,8 +331,9 @@ fun PhoneField(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 60.dp)
-                            .fieldFrame(t.radii.field, focused, error != null)
-                            .padding(start = 8.dp, end = 6.dp),
+                            .fieldFrame(t.radii.field, focused, errorFrame)
+                            // The pill 10 dp in, plus the 2 dp focus border it sits inside.
+                            .padding(start = if (focused && !errorFrame) 12.dp else 10.dp, end = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
@@ -309,7 +390,7 @@ enum class OtpState { Normal, Error }
  * The code's cells (50 × 62, `--r-md`, left to right in every language):
  * empty (`--field-line`), filled (`--otp-filled` added), the next one
  * active (a 2 dp `--primary-ring` border and the caret, no halo), or all in
- * `--error`.
+ * `--error`. The digits are in [language]'s numerals.
  */
 @Composable
 fun OtpCells(
@@ -318,9 +399,9 @@ fun OtpCells(
     modifier: Modifier = Modifier,
     focused: Boolean = true,
     state: OtpState = OtpState.Normal,
+    language: AppLanguage = screenLanguage(),
 ) {
     val t = AppTheme.template
-    val language = screenLanguage()
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(modifier) {
             // 50 × 62 each, narrower (same proportions) when six do not fit.
@@ -363,52 +444,3 @@ fun OtpCells(
     }
 }
 
-/**
- * The code input: a hidden text field drawn as [OtpCells], digits only. A
- * wrong code shakes the row (6 dp, three times in 240 ms; not with reduced
- * motion).
- */
-@Composable
-fun OtpField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    contentDescription: String,
-    modifier: Modifier = Modifier,
-    length: Int = 6,
-    isError: Boolean = false,
-    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-) {
-    val focused by interactionSource.collectIsFocusedAsState()
-    val shake = remember { Animatable(0f) }
-    val reduced = LocalReducedMotion.current
-    LaunchedEffect(isError) {
-        if (isError && !reduced) {
-            shake.animateTo(
-                0f,
-                keyframes {
-                    durationMillis = 240
-                    6f at 40
-                    -6f at 80
-                    6f at 120
-                    -6f at 160
-                    6f at 200
-                },
-            )
-        }
-    }
-    BasicTextField(
-        value = value,
-        onValueChange = { next -> onValueChange(next.filter { it.isDigit() }.take(length)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-        interactionSource = interactionSource,
-        textStyle = TextStyle(color = Color.Transparent),
-        cursorBrush = SolidColor(Color.Transparent),
-        modifier = modifier
-            .offset { IntOffset(shake.value.dp.roundToPx(), 0) }
-            .semantics { this.contentDescription = contentDescription },
-        decorationBox = { _ ->
-            OtpCells(value, length, focused = focused, state = if (isError) OtpState.Error else OtpState.Normal)
-        },
-    )
-}

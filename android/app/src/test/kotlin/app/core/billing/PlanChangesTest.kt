@@ -3,7 +3,6 @@ package app.core.billing
 import app.core.model.BillingPeriod
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.store.PlanChangeKind
 import app.core.store.ProductType
 import app.core.store.Store
@@ -19,7 +18,10 @@ import java.time.Instant
 /** Which owned subscription a Play plan change replaces, and the replacement mode it may use. */
 class PlanChangesTest {
 
-    private fun option(productId: String, basePlan: String, plan: Plan, period: BillingPeriod, micros: Long?, currency: String? = "EUR") =
+    /** The server's upgrade ranks: Premium above Plus. */
+    private val ranks = mapOf("plus" to 1, "premium" to 2)
+
+    private fun option(productId: String, basePlan: String, plan: String, period: BillingPeriod, micros: Long?, currency: String? = "EUR") =
         PlanOption(
             plan = plan,
             period = period,
@@ -28,34 +30,43 @@ class PlanChangesTest {
             product = StoreProduct(productId, ProductType.SUBSCRIPTION, productId, "", "x", micros, currency, basePlanId = basePlan, billingPeriod = period.wire),
         )
 
-    private val plusWeek = option("sub.plus", "w1", Plan.Plus, BillingPeriod.Week, 2_990_000)
-    private val plusMonth = option("sub.plus", "m1", Plan.Plus, BillingPeriod.Month, 4_990_000)
-    private val premiumMonth = option("sub.premium", "m1", Plan.Premium, BillingPeriod.Month, 9_990_000)
-    private val premiumSixMonths = option("sub.premium", "m6", Plan.Premium, BillingPeriod.SixMonths, 29_990_000)
+    private val plusWeek = option("sub.plus", "w1", "plus", BillingPeriod.Week, 2_990_000)
+    private val plusMonth = option("sub.plus", "m1", "plus", BillingPeriod.Month, 4_990_000)
+    private val premiumMonth = option("sub.premium", "m1", "premium", BillingPeriod.Month, 9_990_000)
+    private val premiumSixMonths = option("sub.premium", "m6", "premium", BillingPeriod.SixMonths, 29_990_000)
 
     @Test
     fun anotherBasePlanOfTheSameSubscriptionIsChargedInFull() {
-        assertEquals(PlanChangeKind.CHARGE_FULL, PlanChanges.kind(Plan.Plus, "sub.plus", listOf(plusWeek, plusMonth), plusMonth))
+        assertEquals(PlanChangeKind.CHARGE_FULL, PlanChanges.kind("plus", "sub.plus", listOf(plusWeek, plusMonth), plusMonth, ranks::get))
     }
 
     @Test
     fun aLowerTierWaitsForTheRenewal() {
-        assertEquals(PlanChangeKind.AT_RENEWAL, PlanChanges.kind(Plan.Premium, "sub.premium", listOf(premiumMonth), plusMonth))
+        assertEquals(PlanChangeKind.AT_RENEWAL, PlanChanges.kind("premium", "sub.premium", listOf(premiumMonth), plusMonth, ranks::get))
+        // Any key the admin made ranks by the server's number, not by a list in the app.
+        val gold = mapOf("gold" to 7, "plus" to 1)
+        assertEquals(PlanChangeKind.AT_RENEWAL, PlanChanges.kind("gold", "sub.gold", listOf(premiumMonth), plusMonth, gold::get))
+        // A rank the server did not give is never read as lower: the prices decide.
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("retired", "sub.retired", listOf(premiumMonth), plusMonth, ranks::get))
+        // A plan taken off sale has neither a rank nor a price here (the catalogue lists only plans on sale), so a
+        // move from it, down or up, is never made to wait for the renewal: it starts now with the time left credited.
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("retired", "sub.retired", emptyList(), plusMonth, ranks::get))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("retired", "sub.retired", emptyList(), premiumMonth, ranks::get))
     }
 
     @Test
     fun aHigherTierIsProratedOnlyWhenItCostsMorePerUnitOfTime() {
-        assertEquals(PlanChangeKind.CHARGE_DIFFERENCE, PlanChanges.kind(Plan.Plus, "sub.plus", listOf(plusMonth), premiumMonth))
+        assertEquals(PlanChangeKind.CHARGE_DIFFERENCE, PlanChanges.kind("plus", "sub.plus", listOf(plusMonth), premiumMonth, ranks::get))
         // Plus weekly to Premium for six months: dearer tier, cheaper per week. Play refuses a prorated charge.
-        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind(Plan.Plus, "sub.plus", listOf(plusMonth), premiumSixMonths))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("plus", "sub.plus", listOf(plusMonth), premiumSixMonths, ranks::get))
         // The base plan a Play purchase is on is not known: the dearest of the owned product's is the bar.
-        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind(Plan.Plus, "sub.plus", listOf(plusWeek, plusMonth), premiumMonth))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("plus", "sub.plus", listOf(plusWeek, plusMonth), premiumMonth, ranks::get))
     }
 
     @Test
     fun pricesThatCannotBeComparedAreNeverProrated() {
-        val noPrice = option("sub.plus", "m1", Plan.Plus, BillingPeriod.Month, null)
-        val dollars = option("sub.plus", "m1", Plan.Plus, BillingPeriod.Month, 1_000, "USD")
+        val noPrice = option("sub.plus", "m1", "plus", BillingPeriod.Month, null)
+        val dollars = option("sub.plus", "m1", "plus", BillingPeriod.Month, 1_000, "USD")
         assertFalse(PlanChanges.costsMorePerUnitOfTime(listOf(noPrice), premiumMonth))
         assertFalse(PlanChanges.costsMorePerUnitOfTime(listOf(dollars), premiumMonth))
         assertFalse(PlanChanges.costsMorePerUnitOfTime(emptyList(), premiumMonth))
@@ -71,8 +82,8 @@ class PlanChangesTest {
         assertNull(PlanChanges.periodDays("P0D"))
         assertNull(PlanChanges.periodDays("monthly"))
         // A month plan barely dearer than four weeks is not "more per unit of time" on every reading.
-        val week = option("sub.plus", "w1", Plan.Plus, BillingPeriod.Week, 1_000_000)
-        val month = option("sub.premium", "m1", Plan.Premium, BillingPeriod.Month, 4_200_000)
+        val week = option("sub.plus", "w1", "plus", BillingPeriod.Week, 1_000_000)
+        val month = option("sub.premium", "m1", "premium", BillingPeriod.Month, 4_200_000)
         assertFalse(PlanChanges.costsMorePerUnitOfTime(listOf(week), month))
     }
 
@@ -80,28 +91,28 @@ class PlanChangesTest {
     fun theBasePlanThePersonIsOnIsTheBarWhenTheServerNamesIt() {
         val owned = listOf(plusWeek, plusMonth)
         // On monthly Plus: Premium monthly costs more per day than that, so the difference is charged.
-        assertEquals(PlanChangeKind.CHARGE_DIFFERENCE, PlanChanges.kind(Plan.Plus, "sub.plus", PlanChanges.bar(owned, "m1"), premiumMonth))
+        assertEquals(PlanChangeKind.CHARGE_DIFFERENCE, PlanChanges.kind("plus", "sub.plus", PlanChanges.bar(owned, "m1"), premiumMonth, ranks::get))
         // On weekly Plus (dearer per day than Premium monthly): the time left is credited instead.
-        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind(Plan.Plus, "sub.plus", PlanChanges.bar(owned, "w1"), premiumMonth))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("plus", "sub.plus", PlanChanges.bar(owned, "w1"), premiumMonth, ranks::get))
         // Not named (an older server): the dearest of the product's base plans, weekly, is the bar.
         assertEquals(owned, PlanChanges.bar(owned, null))
-        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind(Plan.Plus, "sub.plus", PlanChanges.bar(owned, null), premiumMonth))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("plus", "sub.plus", PlanChanges.bar(owned, null), premiumMonth, ranks::get))
         // Named but no longer sold: no price to compare, so never a prorated charge.
         assertEquals(emptyList<PlanOption>(), PlanChanges.bar(owned, "y1"))
-        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind(Plan.Plus, "sub.plus", PlanChanges.bar(owned, "y1"), premiumMonth))
+        assertEquals(PlanChangeKind.CREDIT_TIME, PlanChanges.kind("plus", "sub.plus", PlanChanges.bar(owned, "y1"), premiumMonth, ranks::get))
     }
 
     @Test
     fun theServersProductPicksTheSubscriptionThatIsReplaced() {
         val billing = FakeBilling(Store.PLAY)
         // Both products read as Plus in a catalogue that sells two Plus products; the server names the one it counts.
-        val planOf = { _: String -> Plan.Plus }
+        val planOf = { _: String -> "plus" }
         val older = billing.purchase("sub.plus", "t-plus", purchaseTimeMillis = 1)
         val later = billing.purchase("sub.plus.extra", "t-extra", purchaseTimeMillis = 9)
         val ref = FakeStoreApi.BILLING_REF
-        assertEquals(later, PlanChanges.backing(listOf(older, later), Plan.Plus, ref, planOf))
-        assertEquals(older, PlanChanges.backing(listOf(older, later), Plan.Plus, ref, planOf, productId = "sub.plus"))
-        assertNull(PlanChanges.backing(listOf(later), Plan.Plus, ref, planOf, productId = "sub.plus"))
+        assertEquals(later, PlanChanges.backing(listOf(older, later), "plus", ref, planOf))
+        assertEquals(older, PlanChanges.backing(listOf(older, later), "plus", ref, planOf, productId = "sub.plus"))
+        assertNull(PlanChanges.backing(listOf(later), "plus", ref, planOf, productId = "sub.plus"))
     }
 
     @Test
@@ -109,7 +120,7 @@ class PlanChangesTest {
         val play = FakeBilling(Store.PLAY)
         val ref = FakeStoreApi.BILLING_REF
         val now = Instant.parse("2026-11-09T12:00:00Z")
-        val plus = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1", planExpiresAt = now.plusSeconds(86_400))
+        val plus = Entitlements(plan = "plus", source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1", planExpiresAt = now.plusSeconds(86_400))
         fun held(owned: List<app.core.store.StorePurchase>?, e: Entitlements? = plus, store: Store = Store.PLAY, billingRef: String = ref) =
             PlanChanges.heldElsewhere(store, e, owned, billingRef, now)
 
@@ -135,7 +146,7 @@ class PlanChangesTest {
         // Cafe Bazaar's list can be empty or short for the account that holds the plan: only another
         // reference's token of the product says the plan is on another Bazaar account.
         val bazaar = FakeBilling(Store.BAZAAR)
-        val bazaarPlus = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, productId = "sub.plus.1m", planExpiresAt = now.plusSeconds(86_400))
+        val bazaarPlus = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, productId = "sub.plus.1m", planExpiresAt = now.plusSeconds(86_400))
         assertFalse("an empty list says nothing", held(emptyList(), bazaarPlus, Store.BAZAAR))
         assertFalse("nor one without the product", held(listOf(bazaar.purchase("sub.premium.1m", "b0")), bazaarPlus, Store.BAZAAR))
         assertFalse("nor a refunded one", held(listOf(bazaar.purchase("sub.plus.1m", "b9", StorePurchaseState.REFUNDED)), bazaarPlus, Store.BAZAAR))
@@ -147,7 +158,7 @@ class PlanChangesTest {
     @Test
     fun onlyThisAccountsPaidSubscriptionOfItsPlanIsReplaced() {
         val billing = FakeBilling(Store.PLAY)
-        val planOf = { id: String -> if (id == "sub.premium") Plan.Premium else Plan.Plus }
+        val planOf = { id: String -> if (id == "sub.premium") "premium" else "plus" }
         val theirs = billing.purchase("sub.plus", "t-theirs", accountRef = "otheraccount2")
         val noRef = billing.purchase("sub.plus", "t-none", accountRef = null)
         val held = billing.purchase("sub.plus", "t-held", suspended = true)
@@ -155,8 +166,8 @@ class PlanChangesTest {
         val mine = billing.purchase("sub.plus", "t-mine", purchaseTimeMillis = 5)
         val premium = billing.purchase("sub.premium", "t-premium", purchaseTimeMillis = 9)
         val ref = FakeStoreApi.BILLING_REF
-        assertEquals(mine, PlanChanges.backing(listOf(theirs, noRef, held, older, mine, premium), Plan.Plus, ref, planOf))
-        assertNull(PlanChanges.backing(listOf(theirs, noRef, held), Plan.Plus, ref, planOf))
-        assertNull("no reference, no replacement", PlanChanges.backing(listOf(mine), Plan.Plus, "", planOf))
+        assertEquals(mine, PlanChanges.backing(listOf(theirs, noRef, held, older, mine, premium), "plus", ref, planOf))
+        assertNull(PlanChanges.backing(listOf(theirs, noRef, held), "plus", ref, planOf))
+        assertNull("no reference, no replacement", PlanChanges.backing(listOf(mine), "plus", "", planOf))
     }
 }

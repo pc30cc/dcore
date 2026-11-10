@@ -2,7 +2,6 @@ package app.core.sync
 
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.model.RealtimeEvent
 import app.core.model.StoreName
 import app.core.net.Fetched
@@ -24,10 +23,10 @@ import org.junit.Test
 class EntitlementEventsTest {
 
     /** What the server answers this build's `GET /v1/me/entitlements` with. */
-    private val read = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, manageUrl = "https://example.com/subscriptions")
+    private val read = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, manageUrl = "https://example.com/subscriptions")
 
     /** The same account as the other build sees it: its own store's plan. */
-    private val playView = Entitlements(plan = Plan.Premium, source = EntitlementSource.Play)
+    private val playView = Entitlements(plan = "premium", source = EntitlementSource.Play)
 
     private class Rig(scope: TestScope, answer: Entitlements) {
         var reads = 0
@@ -50,7 +49,7 @@ class EntitlementEventsTest {
         val renewed = read.copy(autoRenew = true, manageUrl = null)
         r.events.onEvent(event(renewed, StoreName.Bazaar))
         advanceUntilIdle()
-        assertEquals(Plan.Plus, r.repo.entitlements.value?.plan)
+        assertEquals("plus", r.repo.entitlements.value?.plan)
         assertEquals(true, r.repo.entitlements.value?.autoRenew)
         assertEquals("no request", 0, r.reads)
     }
@@ -58,7 +57,7 @@ class EntitlementEventsTest {
     @Test
     fun aViewOfNoStoreIsApplied() = runTest {
         val r = Rig(this, read)
-        val grant = Entitlements(plan = Plan.Premium, source = EntitlementSource.Grant)
+        val grant = Entitlements(plan = "premium", source = EntitlementSource.Grant)
         r.events.onEvent(event(grant, store = null))
         advanceUntilIdle()
         assertEquals(grant, r.repo.entitlements.value)

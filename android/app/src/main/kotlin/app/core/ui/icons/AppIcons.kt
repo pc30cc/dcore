@@ -24,6 +24,11 @@ object AppIcons {
     private fun line(d: String) = Spec(d, fill = false)
     private fun solid(d: String) = Spec(d, fill = true)
 
+    /** The line width on the 24-unit grid; a few small glyphs are drawn heavier, as the design draws them. */
+    private const val LINE = 1.8f
+    private const val LINE_BOLD = 2.4f
+    private const val LINE_HEAVY = 3f
+
     /** A circle as path data. */
     private fun circle(cx: Float, cy: Float, r: Float): String =
         "M${cx - r},${cy}a$r,$r 0 1,0 ${2 * r},0a$r,$r 0 1,0 ${-2 * r},0z"
@@ -32,7 +37,9 @@ object AppIcons {
 
     private fun icon(name: String, vararg parts: Spec): ImageVector = build(name, false, parts)
 
-    private fun build(name: String, mirror: Boolean, parts: Array<out Spec>): ImageVector {
+    private fun weighted(name: String, width: Float, vararg parts: Spec): ImageVector = build(name, false, parts, width)
+
+    private fun build(name: String, mirror: Boolean, parts: Array<out Spec>, width: Float = LINE): ImageVector {
         val builder = ImageVector.Builder(
             name = name,
             defaultWidth = 24.dp,
@@ -48,7 +55,7 @@ object AppIcons {
                 builder.addPath(
                     pathData = addPathNodes(part.d),
                     stroke = SolidColor(Color.Black),
-                    strokeLineWidth = 1.8f,
+                    strokeLineWidth = width,
                     strokeLineCap = StrokeCap.Round,
                     strokeLineJoin = StrokeJoin.Round,
                 )
@@ -61,6 +68,9 @@ object AppIcons {
         "M12,20.2c0,0 -7.6,-4.4 -9.3,-9.3C1.5,7.4 3.8,4.3 7.2,4.3c2,0 3.5,1.1 4.8,2.9c1.3,-1.8 2.8,-2.9 4.8,-2.9c3.4,0 5.7,3.1 4.5,6.6c-1.7,4.9 -9.3,9.3 -9.3,9.3z"
     private const val STAR =
         "M12,2.9l2.8,5.7l6.3,0.9l-4.6,4.4l1.1,6.3L12,17.2l-5.6,3l1.1,-6.3L2.9,9.5l6.3,-0.9z"
+    private const val CLOSE_A = "M6,6l12,12"
+    private const val CLOSE_B = "M18,6L6,18"
+    private const val CHECK = "M5,12.5l4.5,4.5L19,7.5"
     private const val SHIELD = "M12,3l7,2.8v5.4c0,4.4 -2.9,7.9 -7,9.8c-4.1,-1.9 -7,-5.4 -7,-9.8V5.8z"
 
     // Direction.
@@ -76,19 +86,43 @@ object AppIcons {
     }
 
     // Actions.
-    val Close: ImageVector by lazy { icon("close", line("M6,6l12,12"), line("M18,6L6,18")) }
-    val Check: ImageVector by lazy { icon("check", line("M5,12.5l4.5,4.5L19,7.5")) }
+    /** A quarter turn to the left: the crop's rotate. */
+    val Rotate: ImageVector by lazy { icon("rotate", line("M4,12a8,8 0 1,0 8,-8a8.7,8.7 0 0,0 -6,2.4L4,8.5"), line("M4,4v4.5h4.5")) }
+    val Close: ImageVector by lazy { icon("close", line(CLOSE_A), line(CLOSE_B)) }
+
+    /** The remove mark on a photo tile (16 dp): 2.4 units. */
+    val CloseBold: ImageVector by lazy { weighted("closeBold", LINE_BOLD, line(CLOSE_A), line(CLOSE_B)) }
+    val Check: ImageVector by lazy { icon("check", line(CHECK)) }
+
+    /** A chosen chip's check (17 dp): 2.4 units. */
+    val CheckBold: ImageVector by lazy { weighted("checkBold", LINE_BOLD, line(CHECK)) }
+
+    /** The check on a filled radio or checkbox (15-16 dp): 3 units. */
+    val CheckHeavy: ImageVector by lazy { weighted("checkHeavy", LINE_HEAVY, line(CHECK)) }
     val Plus: ImageVector by lazy { icon("plus", line("M12,5v14"), line("M5,12h14")) }
     val Search: ImageVector by lazy { icon("search", line(circle(11f, 11f, 7f)), line("M20,20l-3.8,-3.8")) }
     val Pencil: ImageVector by lazy { icon("pencil", line("M14.5,5.5l4,4L8,20H4v-4z"), line("M12.5,7.5l4,4")) }
-    val Send: ImageVector by lazy { mirrored("send", line("M4.5,12L20,4.5L15.5,20l-3,-6.5z"), line("M12.5,13.5L20,4.5")) }
 
     /** Three solid dots. */
     val More: ImageVector by lazy {
         icon("more", solid(circle(5f, 12f, 2f)), solid(circle(12f, 12f, 2f)), solid(circle(19f, 12f, 2f)))
     }
+    /** The voice answer's play: a solid triangle, never mirrored. */
+    val Play: ImageVector by lazy { icon("play", solid("M8,5.2v13.6l10.8,-6.8z")) }
     val Tune: ImageVector by lazy {
         icon("tune", line("M4,7h9"), line("M19,7h1"), line(circle(16f, 7f, 2.5f)), line("M4,17h1"), line("M11,17h9"), line(circle(8f, 17f, 2.5f)))
+    }
+
+    /** The settings gear: a twelve-step outline round a 2.8-unit hub. */
+    val Settings: ImageVector by lazy {
+        icon(
+            "settings",
+            line(
+                "M10.3,3.5h3.4l0.5,2.4l1.6,0.9l2.3,-0.8l1.7,2.9l-1.8,1.6v1.9l1.8,1.6l-1.7,2.9l-2.3,-0.8l-1.6,0.9l-0.5,2.4h-3.4" +
+                    "l-0.5,-2.4l-1.6,-0.9l-2.3,0.8l-1.7,-2.9l1.8,-1.6v-1.9L4.2,8.9l1.7,-2.9l2.3,0.8l1.6,-0.9z",
+            ),
+            line(circle(12f, 12f, 2.8f)),
+        )
     }
 
     // Swipe.
@@ -121,6 +155,38 @@ object AppIcons {
     val Camera: ImageVector by lazy { icon("camera", line("M4.5,8h3l2,-3h5l2,3h3a1.5,1.5 0 0,1 1.5,1.5v9a1.5,1.5 0 0,1 -1.5,1.5h-15A1.5,1.5 0 0,1 3,18.5v-9A1.5,1.5 0 0,1 4.5,8z"), line(circle(12f, 13.5f, 3.5f))) }
     val Phone: ImageVector by lazy { icon("phone", line("M5,4h3.5l1.5,4l-2,1.5a12,12 0 0,0 6.5,6.5l1.5,-2l4,1.5V19a2,2 0 0,1 -2,2A16,16 0 0,1 3,6a2,2 0 0,1 2,-2z")) }
     val Video: ImageVector by lazy { icon("video", line("M5,6.5h8a2,2 0 0,1 2,2v7a2,2 0 0,1 -2,2H5a2,2 0 0,1 -2,-2v-7a2,2 0 0,1 2,-2z"), line("M15,10.5l6,-3.5v10l-6,-3.5")) }
+    val VideoOff: ImageVector by lazy {
+        icon("videoOff", line("M3.5,3.5l17,17"), line("M9,6.5h3.9a2.6,2.6 0 0,1 2.6,2.6v3.4l5,-3.1v7.2"), line("M15.5,15.4v0.5a2.6,2.6 0 0,1 -2.6,2.6H5.6A2.6,2.6 0 0,1 3,15.9V9.1c0,-1.2 0.8,-2.2 1.9,-2.5"))
+    }
+    val Mic: ImageVector by lazy { icon("mic", line("M12,3.5a3,3 0 0,1 3,3v5a3,3 0 0,1 -6,0v-5a3,3 0 0,1 3,-3z"), line("M5.6,11.5a6.4,6.4 0 0,0 12.8,0"), line("M12,18v2.6")) }
+    val MicOff: ImageVector by lazy {
+        icon(
+            "micOff",
+            line("M3.5,3.5l17,17"),
+            line("M9,9v2.5a3,3 0 0,0 5,2.2"),
+            line("M15,10.6V6.5a3,3 0 0,0 -5.6,-1.5"),
+            line("M5.6,11.5a6.4,6.4 0 0,0 10.2,5.1"),
+            line("M18.4,11.5c0,0.9 -0.2,1.7 -0.5,2.5"),
+            line("M12,18v2.6"),
+        )
+    }
+    /** Hang up: the handset turned down (filled), never mirrored. */
+    val PhoneDown: ImageVector by lazy { icon("phoneDown", solid("M3.2,13.6c4.9,-4.4 12.7,-4.4 17.6,0l-1.6,2.9l-3.5,-0.6l-0.5,-2.4a9.3,9.3 0 0,0 -6.4,0l-0.5,2.4l-3.5,0.6z")) }
+    val FlipCamera: ImageVector by lazy {
+        icon(
+            "flipCamera",
+            line("M4,8.6A2.6,2.6 0 0,1 6.6,6h1.7l1.5,-2h4.4l1.5,2h1.7A2.6,2.6 0 0,1 20,8.6v7.8A2.6,2.6 0 0,1 17.4,19H6.6A2.6,2.6 0 0,1 4,16.4z"),
+            line("M9.2,11.6a3,3 0 0,1 5.3,-1"),
+            line("M14.8,13.2a3,3 0 0,1 -5.3,1"),
+            line("M14.6,8.9v1.9h-1.9"),
+            line("M9.4,15.9v-1.9h1.9"),
+        )
+    }
+    val Speaker: ImageVector by lazy { icon("speaker", line("M4,9.5h3.2L12,5.5v13l-4.8,-4H4z"), line("M15.5,9.2a4,4 0 0,1 0,5.6"), line("M18,6.8a7.4,7.4 0 0,1 0,10.4")) }
+    /** A message (the call screen's way back to the chat). */
+    val Message: ImageVector by lazy {
+        mirrored("message", line("M6.8,4.4h10.4a3,3 0 0,1 3,3v6.9a3,3 0 0,1 -3,3h-6.1l-4.6,3.5v-3.5h0.3a3,3 0 0,1 -3,-3V7.4a3,3 0 0,1 3,-3z"))
+    }
 
     // Safety and trust.
     val Shield: ImageVector by lazy { icon("shield", line(SHIELD), line("M9,12l2,2l4,-4")) }

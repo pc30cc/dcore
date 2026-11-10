@@ -9,8 +9,8 @@
     <!-- The call screen: the line under the name -->
     <string name="call_status_calling">Calling…</string>
     <string name="call_status_ringing">Ringing…</string>
-    <string name="call_status_incoming_audio">Incoming voice call</string>
-    <string name="call_status_incoming_video">Incoming video call</string>
+    <string name="call_status_incoming_audio">Voice call</string>
+    <string name="call_status_incoming_video">Video call</string>
     <string name="call_status_connecting">Connecting…</string>
     <string name="call_status_reconnecting">Reconnecting…</string>
     <string name="call_status_peer_away">Waiting for %1$s to reconnect…</string>
@@ -42,29 +42,27 @@
     <string name="call_end_no_microphone">Calls need the microphone</string>
     <string name="call_end_connection_lost">Call dropped</string>
     <string name="call_end_failed">Couldn\'t connect the call</string>
-    <string name="call_end_no_microphone_body">Allow the microphone for {appName} in your phone\'s settings, then call again.</string>
+    <string name="call_end_no_microphone_body">Allow the microphone in your phone’s settings, then call again.</string>
 
     <!-- The call screen: buttons -->
     <string name="call_action_answer">Answer</string>
     <string name="call_action_answer_video">Answer with video</string>
     <string name="call_action_answer_audio">Answer with voice only</string>
     <string name="call_action_answer_video_short">Video</string>
-    <string name="call_action_answer_audio_short">Voice</string>
+    <string name="call_action_answer_audio_short">Audio only</string>
     <string name="call_action_decline">Decline</string>
-    <string name="call_action_hang_up">End</string>
     <string name="call_action_hang_up_full">End call</string>
     <string name="call_action_mute">Mute</string>
     <string name="call_action_unmute">Unmute</string>
+    <string name="call_action_mic">Microphone</string>
     <string name="call_action_camera">Camera</string>
-    <string name="call_action_camera_on">Turn camera on</string>
-    <string name="call_action_camera_off">Turn camera off</string>
-    <string name="call_action_flip">Flip</string>
-    <string name="call_action_flip_full">Switch camera</string>
+    <string name="call_action_flip_full">Flip camera</string>
     <string name="call_action_speaker">Speaker</string>
-    <string name="call_action_audio">Audio</string>
-    <string name="call_action_minimise">Minimise call</string>
     <string name="call_action_done">Close</string>
     <string name="call_action_retry">Call again</string>
+    <string name="call_action_reply">Reply with a message</string>
+    <string name="call_action_message">Message</string>
+    <string name="call_mic_off">Your mic is off</string>
 
     <!-- Where the sound goes -->
     <string name="call_route_title">Play the call on</string>
@@ -87,13 +85,13 @@
     <!-- Notifications -->
     <string name="call_notify_incoming_audio">Incoming voice call</string>
     <string name="call_notify_incoming_video">Incoming video call</string>
-    <string name="call_notify_incoming_public">Incoming call on {appName}</string>
+    <string name="call_notify_incoming_public">Incoming call</string>
     <string name="call_notify_missed_audio">Missed voice call</string>
     <string name="call_notify_missed_video">Missed video call</string>
-    <string name="call_notify_missed_public">Missed call on {appName}</string>
+    <string name="call_notify_missed_public">Missed call</string>
     <string name="call_notify_ongoing_audio">Voice call</string>
     <string name="call_notify_ongoing_video">Video call</string>
-    <string name="call_notify_ongoing_public">Call in progress on {appName}</string>
+    <string name="call_notify_ongoing_public">Call in progress</string>
 
     <!-- The chat header and the match's call settings -->
     <string name="call_header_audio">Voice call with %1$s</string>

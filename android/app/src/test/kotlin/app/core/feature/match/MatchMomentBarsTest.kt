@@ -8,25 +8,28 @@ import app.core.R
 import app.core.feature.card.ScreenTestData
 import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Templates
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.shadows.ShadowDialog
 
-/** The match moment is dark in every template: its own window shows light bar icons, in white too. */
+/**
+ * The match moment's own window shows the bars with the icons its template
+ * needs, whatever the activity's theme gave it: light over neon's photos and
+ * dark page, dark on white's page (two portrait cards on white).
+ */
 @RunWith(AndroidJUnit4::class)
 class MatchMomentBarsTest {
 
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test
-    fun `the match moment's window has light bar icons in white`() {
-        // The activity as a white launch themes it: dark bar icons, which a dialog's window starts with.
-        compose.runOnUiThread { compose.activity.setTheme(R.style.Theme_App_Light) }
+    private fun icons(launch: Int, template: app.core.ui.theme.AppTemplate): Pair<Boolean, Boolean> {
+        // The activity as a launch in the other template themes it, which a dialog's window starts with.
+        compose.runOnUiThread { compose.activity.setTheme(launch) }
         compose.setContent {
-            AppTheme(template = Templates.White) {
+            AppTheme(template = template) {
                 MatchMomentDialog(ScreenTestData.negar, myPhoto = null, onSendMessage = {}, onDismiss = {})
             }
         }
@@ -35,7 +38,16 @@ class MatchMomentBarsTest {
         assertNotNull("the match moment is shown", dialog)
         val window = dialog.window!!
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        assertFalse("status bar icons are light", controller.isAppearanceLightStatusBars)
-        assertFalse("navigation bar icons are light", controller.isAppearanceLightNavigationBars)
+        return controller.isAppearanceLightStatusBars to controller.isAppearanceLightNavigationBars
+    }
+
+    @Test
+    fun `the match moment's window has dark bar icons in white after a neon launch`() {
+        assertEquals("dark status and navigation icons", true to true, icons(R.style.Theme_App, Templates.White))
+    }
+
+    @Test
+    fun `the match moment's window has light bar icons in neon after a white launch`() {
+        assertEquals("light status and navigation icons", false to false, icons(R.style.Theme_App_Light, Templates.Neon))
     }
 }

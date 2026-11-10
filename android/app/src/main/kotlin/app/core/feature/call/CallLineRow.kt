@@ -1,37 +1,25 @@
 package app.core.feature.call
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.core.R
 import app.core.feature.chat.rememberChatClock
@@ -42,7 +30,7 @@ import app.core.model.CallLine
 import app.core.model.CallOutcome
 import app.core.model.PublicUid
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.Space
+import app.core.ui.components.overhangingTarget
 import java.time.Instant
 
 /*
@@ -131,52 +119,46 @@ fun callLinePreview(line: CallLine, me: PublicUid?, spoken: Boolean = false): St
     val language = rememberLanguage()
     val words = line.words(viewerIsCaller = line.caller == me).map { brandString(it) }
     val length = line.lengthSeconds()?.let { if (spoken) lengths.spoken(it) else lengths.line(it) }
-    return (words + listOfNotNull(length)).joinToString(if (spoken) spokenComma(language) else " · ")
+    return (words + listOfNotNull(length)).joinToString(spokenComma(language))
 }
 
-/** The comma TalkBack's sentences are joined with: Persian's own «،». */
+/** The comma TalkBack's sentences (and a call's words on screen) are joined with: Persian's own «،». */
 internal fun spokenComma(language: AppLanguage): String = if (language == AppLanguage.FA) "، " else ", "
 
 /**
- * One call in the conversation: the phone or the camera, the title (missed in
- * the danger colour), an arrow out (for the caller) or in (for the callee)
- * with the length of a completed call ("2 min, 5 sec", never `2:05`) or the
- * direction, and the time it was made, apart and quieter, where a bubble
- * keeps its own. When [onCallBack] is given (the caller passes it only while
- * both allow calls) a round call-back button with the same kind ends the
- * line, and a tap anywhere on it calls back; without it the line is only a
- * record and shows no button. Nothing in it is text anyone wrote, so it
- * cannot be replied to, copied or reported on its own. TalkBack reads it as
- * one sentence, the kind always named: "Voice call, 2 minutes, 5 seconds,
- * Outgoing, 5:57 PM", "Video call, Declined, Outgoing, 11:10 AM".
+ * One call in the conversation, as a system line (m10): centred, in
+ * `--type-caption` `--text-3`, its words and the length of a completed call
+ * («تماس صوتی، ۱۲ دقیقه»; missed, for the person it rang, in `--error`).
+ * When [onCallBack] is given (the caller passes it only while both allow
+ * calls) «زنگ بزن» follows in `--type-caption-strong` and the accent, a
+ * 48 dp target over its 28 dp line, with the same kind; without it the line
+ * is only a record. No icon, no direction arrow, no time of its own: the
+ * day separators place it. Nothing in it is text anyone wrote, so it cannot
+ * be replied to, copied or reported on its own. TalkBack reads it as one
+ * sentence, the kind always named and the time it was made: "Voice call,
+ * 2 minutes, 5 seconds, Outgoing, 5:57 PM", "Video call, Declined, Outgoing,
+ * 11:10 AM".
  */
 @Composable
 fun CallLineRow(line: CallLine, me: PublicUid?, at: Instant, onCallBack: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val t = AppTheme.template
     val viewerIsCaller = line.caller == me
     val missed = line.isMissedFor(viewerIsCaller)
     val language = rememberLanguage()
     val lengths = rememberCallLengths()
     val time = rememberChatClock().time(at)
-    // On the line the icon says voice or video, so the title stays short ("Declined").
-    val title = brandString(line.title(viewerIsCaller).text)
     val words = line.words(viewerIsCaller).map { brandString(it) }
     val seconds = line.lengthSeconds()
+    val shown = (words + listOfNotNull(seconds?.let(lengths::line))).joinToString(spokenComma(language))
     val direction = brandString(if (viewerIsCaller) R.string.call_line_outgoing else R.string.call_line_incoming)
     val label = (words + listOfNotNull(seconds?.let(lengths::spoken), direction, time)).joinToString(spokenComma(language))
     val callBack = brandString(R.string.call_line_call_back)
-    val danger = AppTheme.colors.danger
-    val tint = if (missed) danger else MaterialTheme.colorScheme.onSurface
-    val quiet = MaterialTheme.colorScheme.onSurfaceVariant
-    val kindIcon = if (line.kind == CallKind.Video) R.drawable.ic_call_videocam else R.drawable.ic_call_phone
-    Box(modifier.fillMaxWidth().padding(vertical = Space.xs), contentAlignment = Alignment.Center) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(20.dp),
-            onClick = onCallBack ?: {},
-            enabled = onCallBack != null,
-            modifier = Modifier
-                .widthIn(max = 360.dp)
+    // The line is centred in the thread's width; only what is drawn takes a tap, never the empty room beside it.
+    Box(modifier.fillMaxWidth().padding(vertical = CallLineLayout.margin), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier
+                // A tap anywhere on the line's words calls back too; only the link shows it is pressed.
+                .then(if (onCallBack != null) Modifier.clickable(interactionSource = null, indication = null, onClick = onCallBack) else Modifier)
                 .clearAndSetSemantics {
                     testTag = callLineTag(line)
                     contentDescription = label
@@ -188,77 +170,42 @@ fun CallLineRow(line: CallLine, me: PublicUid?, at: Instant, onCallBack: (() -> 
                         }
                     }
                 },
+            horizontalArrangement = Arrangement.spacedBy(CallLineLayout.gap, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                // The call-back button's touch target brings its own room at the end.
-                Modifier.padding(start = Space.sm, end = if (onCallBack != null) Space.xs else Space.md, top = Space.sm, bottom = Space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(tint.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painterResource(kindIcon),
-                        contentDescription = null,
-                        tint = tint,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Column(
-                    Modifier.padding(start = Space.md).weight(1f, fill = false),
-                    verticalArrangement = Arrangement.spacedBy(Space.xxs),
-                ) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = if (missed) danger else Color.Unspecified,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painterResource(if (viewerIsCaller) R.drawable.ic_call_made else R.drawable.ic_call_received),
-                            contentDescription = null,
-                            tint = if (missed) danger else quiet,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Text(
-                            seconds?.let(lengths::line) ?: direction,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = quiet,
-                            modifier = Modifier.padding(start = Space.xs),
-                        )
-                    }
-                }
-                // The time it was made: apart from the length, and quieter, like a bubble's.
+            Text(
+                shown,
+                style = t.type.caption,
+                color = if (missed) t.colors.error else t.colors.text3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (onCallBack != null) {
+                // The accent (`--primary`): a link-like action, never the ink of controls.
                 Text(
-                    time,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = quiet,
+                    callBack,
+                    style = t.type.captionStrong,
+                    color = t.colors.primary,
                     maxLines = 1,
-                    modifier = Modifier.align(Alignment.Bottom).padding(start = Space.lg),
+                    modifier = Modifier
+                        .overhangingTarget(onCallBack)
+                        .heightIn(min = CallLineLayout.linkHeight)
+                        .wrapContentHeight(Alignment.CenterVertically)
+                        .padding(horizontal = CallLineLayout.linkPad),
                 )
-                if (onCallBack != null) {
-                    // Says that a tap calls back (the whole line does), with the same kind.
-                    // 40 dp, in its own 48 dp touch target; TalkBack has the line's action.
-                    // The template's accent (`--primary`): a link-like action, never the ink of controls.
-                    val accent = AppTheme.template.colors.primary
-                    IconButton(
-                        onClick = onCallBack,
-                        colors = IconButtonDefaults.iconButtonColors(containerColor = accent.copy(alpha = 0.12f), contentColor = accent),
-                        modifier = Modifier.padding(start = Space.sm),
-                    ) {
-                        Icon(painterResource(kindIcon), contentDescription = null, modifier = Modifier.size(20.dp))
-                    }
-                }
             }
         }
     }
+}
+
+private object CallLineLayout {
+    /** `.callline{margin:8px 0}`. */
+    val margin = 8.dp
+    val gap = 4.dp
+
+    /** «زنگ بزن» as `.btn-txt` on the line: 28 dp tall, 6 dp each side. */
+    val linkHeight = 28.dp
+    val linkPad = 6.dp
 }
 
 /** The tag of a call line, for tests. */

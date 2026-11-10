@@ -101,4 +101,14 @@ class PhoneNumbersTest {
         val typedWithCode = PhoneVisualTransformation(homeIr, AppLanguage.EN).filter(AnnotatedString("+905321234567"))
         assertEquals("+905321234567", typedWithCode.text.text)
     }
+
+    @Test
+    fun `the code step shows a number as its holder writes it at home`() {
+        // +98 and +90 numbers are written with a leading 0; the rest stay international.
+        assertEquals("0912 123 4567", PhoneNumbers.displayNational("+989121234567"))
+        assertEquals("0532 123 45 67", PhoneNumbers.displayNational("+905321234567"))
+        assertEquals("+44 7700 900123", PhoneNumbers.displayNational("+447700900123"))
+        // A calling code the picker does not list is shown as it came.
+        assertEquals("+999123456789", PhoneNumbers.displayNational("+999123456789"))
+    }
 }

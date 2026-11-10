@@ -1,59 +1,96 @@
 package app.core.feature.paywall
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
+import app.core.ui.theme.AppTemplate
+import app.core.ui.theme.BrandColors
 import app.core.ui.theme.Contrast
-import app.core.ui.theme.DarkSemantic
-import app.core.ui.theme.LightSemantic
-import app.core.ui.theme.appColorScheme
+import app.core.ui.theme.CssLinearGradient
+import app.core.ui.theme.CssRadialGradients
+import app.core.ui.theme.Templates
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The colour pairs the paywall and the packs sheet add, in both themes, for this build's brand. */
+/**
+ * The colour pairs the paywall and the packs sheet draw, read from the
+ * live templates with this build's brand: text 4.5:1, the title's large
+ * highlighted word 3:1, in `neon` and in `white`.
+ */
 class PaywallContrastTest {
 
+    private val failures = mutableListOf<String>()
+
     private fun pair(name: String, foreground: Color, background: Color, min: Double = Contrast.AA) {
-        val ratio = Contrast.ratio(foreground, background)
-        assertTrue("$name: ${"%.2f".format(ratio)}:1 is below ${"%.1f".format(min)}:1", ratio >= min)
+        val ratio = Contrast.ratio(foreground.compositeOver(background), background)
+        if (ratio < min) failures += "$name: ${"%.2f".format(ratio)}:1 is below ${"%.1f".format(min)}:1"
     }
 
-    private fun check(dark: Boolean) {
-        val s = appColorScheme(dark = dark)
-        val semantic = if (dark) DarkSemantic else LightSemantic
-        val theme = if (dark) "dark" else "light"
-        // The hero: the brand at 16 % over the background, under the headline and its line.
-        val hero = s.primary.copy(alpha = 0.16f).compositeOver(s.background)
-        pair("$theme headline/hero", s.onBackground, hero)
-        pair("$theme hero line/hero", s.onSurfaceVariant, hero)
-        // Badges.
-        pair("$theme popular badge", s.onPrimaryContainer, s.primaryContainer)
-        pair("$theme new badge", s.onTertiaryContainer, s.tertiaryContainer)
-        // Benefits card: text and its check marks (non-text, 3:1).
-        pair("$theme benefit/surfaceContainer", s.onSurface, s.surfaceContainer)
-        pair("$theme benefit tick/surfaceContainer", s.primary, s.surfaceContainer, Contrast.AA_LARGE)
-        // An option: its border when chosen (non-text), its "every month" line.
-        pair("$theme chosen border/background", s.primary, s.background, Contrast.AA_LARGE)
-        pair("$theme period line/background", s.onSurfaceVariant, s.background)
-        // Step cards and their buttons (the card's own text colour).
-        pair("$theme step card", s.onSurface, s.surfaceContainerHigh)
-        pair("$theme failed card", s.onErrorContainer, s.errorContainer)
-        // The bottom bar: links and the store's terms.
-        pair("$theme links/surface", s.primary, s.surface)
-        pair("$theme terms/background", s.onSurfaceVariant, s.background)
-        // The done disc.
-        pair("$theme done tick/its disc", semantic.success, semantic.success.copy(alpha = 0.16f).compositeOver(s.background), Contrast.AA_LARGE)
-        // The current plan card, the "Current plan" badge on its period and the line in place of the button.
-        pair("$theme current plan", s.onSecondaryContainer, s.secondaryContainer)
-        // Bottom sheets (Material draws them on surfaceContainerLow): "Not now", "See plans", "Clear",
-        // the packs sheet's "You have N", "Or get a plan", "Restore purchases", and its restore notice.
-        pair("$theme sheet text buttons/surfaceContainerLow", s.primary, s.surfaceContainerLow)
-        pair("$theme sheet notice/surfaceContainerLow", s.onSurfaceVariant, s.surfaceContainerLow)
-        // The restricted screen's purchases card: "Manage subscription" and "Restore purchases".
-        pair("$theme restricted card buttons/surfaceContainer", s.primary, s.surfaceContainer)
-        pair("$theme restricted card notice/surfaceContainer", s.onSurfaceVariant, s.surfaceContainer)
+    private fun Brush.colors(): List<Color> = when (this) {
+        is SolidColor -> listOf(value)
+        is CssLinearGradient -> colors
+        else -> emptyList()
     }
 
-    @Test fun `the paywall passes AA in the light theme`() = check(dark = false)
+    private fun check(name: String, t: AppTemplate) {
+        val c = t.colors
+        val chosen = c.primaryTint.compositeOver(c.surface1)
+        // The title and its highlighted count («۱۲ نفر»), large text.
+        pair("$name title/page", c.text, c.bg)
+        t.paints.accentText.colors().forEach { pair("$name highlighted count/page", it, c.bg, Contrast.AA_LARGE) }
+        // The segmented selector: the others on the track, the chosen one on its thumb.
+        pair("$name plan segment/track", c.text2, c.surface2)
+        pair("$name chosen segment/thumb", c.onSegThumb, c.segThumb.compositeOver(c.surface2))
+        // A plan card of the rail, chosen or not.
+        pair("$name plan card name", c.text, c.surface1)
+        pair("$name chosen plan card name", c.text, chosen)
+        // The benefits on the page.
+        pair("$name benefit/page", c.text, c.bg)
+        // A period row: its name, saving, total and currency word, chosen or not.
+        for ((state, fill) in listOf("period" to c.surface1, "chosen period" to chosen)) {
+            pair("$name name/$state", c.text, fill)
+            pair("$name saving or current/$state", c.primary, fill)
+            pair("$name currency word/$state", c.text3, fill)
+        }
+        // The store line, a failure on it, and the links.
+        pair("$name store line/page", c.text3, c.bg)
+        pair("$name failure line/page", c.error, c.bg)
+        pair("$name links/page", c.text2, c.bg)
+        // With the glow on, the hero light is behind the top of the block (the title, its count and the benefits when
+        // the block is tall): each light at full strength over the page, alone and together where they overlap. The
+        // lines and links under the button rest at the bottom, clear of it.
+        if (t.switches.glow) {
+            for ((light, under) in heroLights(t)) {
+                pair("$name title/$light", c.text, under)
+                t.paints.accentText.colors().forEach { pair("$name highlighted count/$light", it, under, Contrast.AA_LARGE) }
+                pair("$name benefit/$light", c.text, under)
+            }
+        }
+        // The packs sheet: the balance, a pack's price chosen or not, its terms line.
+        pair("$name balance/sheet", c.text3, c.surfaceSheet)
+        pair("$name pack count/card", c.text, c.surface1)
+        pair("$name pack price/card", c.text2, c.surface1)
+        pair("$name pack price/chosen card", c.text2, chosen)
+        pair("$name terms/sheet", c.text3, c.surfaceSheet)
+        pair("$name failure/sheet", c.error, c.surfaceSheet)
+    }
 
-    @Test fun `the paywall passes AA in the dark theme`() = check(dark = true)
+    /** The hero light's brightest points over the page: each light's centre alone, then all of them stacked. */
+    private fun heroLights(t: AppTemplate): List<Pair<String, Color>> {
+        val bg = t.colors.bg
+        val layers = (t.paints.heroBg as? CssRadialGradients)?.layers ?: return listOf("hero" to (t.paints.heroBg.colors().firstOrNull()?.compositeOver(bg) ?: bg))
+        val centres = layers.map { layer -> layer.stops.first().second }
+        val alone = centres.mapIndexed { i, colour -> "hero light ${i + 1}" to colour.compositeOver(bg) }
+        // CSS paints the first layer on top.
+        val stacked = centres.reversed().fold(bg) { under, colour -> colour.compositeOver(under) }
+        return alone + ("hero lights stacked" to stacked)
+    }
+
+    @Test
+    fun `the paywall and the packs pass AA in both templates`() {
+        check("neon", Templates.of(Templates.NEON, BrandColors.Build))
+        check("white", Templates.of(Templates.WHITE, BrandColors.Build))
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
 }

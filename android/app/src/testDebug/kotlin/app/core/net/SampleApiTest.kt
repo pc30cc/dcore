@@ -19,7 +19,7 @@ import app.core.model.MessagesPage
 import app.core.model.OtpStartRequest
 import app.core.model.PhotoMime
 import app.core.model.PhotoStatus
-import app.core.model.Plan
+import app.core.model.PlanKey
 import app.core.model.PlayPurchaseRequest
 import app.core.model.PreferencesPatch
 import app.core.model.ProblemCodes
@@ -365,7 +365,7 @@ class SampleApiTest {
 
         val pending = bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("sub.plus.1m", "pending-1", "{}", "sig", PurchaseKind.Subscription))
         assertTrue(pending.purchase.pending)
-        assertEquals("a pending purchase grants nothing", Plan.Free, bazaar.entitlements().value.plan)
+        assertEquals("a pending purchase grants nothing", PlanKey.FREE, bazaar.entitlements().value.plan)
         expectProblem(422, ProblemCodes.PURCHASE_INVALID) {
             bazaar.verifyBazaarPurchase(BazaarPurchaseRequest("no.such", "tok-2", "{}", "sig", PurchaseKind.Subscription))
         }

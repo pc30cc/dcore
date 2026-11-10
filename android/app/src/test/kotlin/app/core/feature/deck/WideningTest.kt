@@ -28,11 +28,4 @@ class WideningTest {
         assertTrue(Widening.ageIsWidest(DiscoveryPreferences(ageMin = 18, ageMax = 99)))
         assertFalse(Widening.ageIsWidest(DiscoveryPreferences(ageMin = 18, ageMax = 60)))
     }
-
-    @Test
-    fun planNamesReadPlusThenPremium() {
-        assertEquals("Plus / Premium", planLine(mapOf("premium" to "Premium", "plus" to "Plus")))
-        assertEquals("Gold", planLine(mapOf("gold" to "Gold")))
-        assertEquals(null, planLine(emptyMap()))
-    }
 }

@@ -29,7 +29,7 @@ data class Config(
     val strings: Map<String, String> = emptyMap(),
     /** Push for the store in the query; used only by a build that has no Firebase project of its own. */
     val push: PushOptions = PushOptions(),
-    /** The signed-out welcome's copy, colours and pictures, when the admin panel sets them; the brand's own otherwise. */
+    /** The signed-out welcome's block from the admin panel; the app reads its pictures (the brand's own otherwise). */
     val welcome: WelcomeConfig? = null,
     /** The visual templates the admin offers and the default one; absent from a server older than templates. */
     val ui: UiConfig? = null,
@@ -57,19 +57,20 @@ data class UiConfig(
 }
 
 /**
- * The welcome screen's overrides, for the requested locale only (like
- * [Config.strings]). Every field is optional: what is missing comes from the
- * brand (`brand.json`'s `welcome`), then from the app's defaults.
+ * The welcome screen's block, for the requested locale only (like
+ * [Config.strings]). Every field is optional. The welcome draws [images]
+ * (the brand's own pictures when there are none); its title is the app's
+ * own string, so the texts and the gradient are read but not drawn.
  */
 @Serializable
 data class WelcomeConfig(
     /** The small line above the headline. */
     val eyebrow: String? = null,
-    /** The headline; the words between asterisks are set in the emphasis face. */
+    /** The headline (words between asterisks were the emphasis). */
     val headline: String? = null,
     val subtitle: String? = null,
     val gradient: WelcomeGradient? = null,
-    /** Picture URLs for the bubbles (brand pictures, never a member's photo); cached like photos. */
+    /** Picture URLs for the welcome (brand pictures, never a member's photo); cached like photos. */
     val images: List<String> = emptyList(),
 )
 

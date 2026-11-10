@@ -1,64 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The call screen: the line under the name -->
-    <string name="call_status_calling">در حال تماس…</string>
-    <string name="call_status_ringing">در حال زنگ خوردن…</string>
-    <string name="call_status_incoming_audio">تماس صوتی ورودی</string>
-    <string name="call_status_incoming_video">تماس تصویری ورودی</string>
-    <string name="call_status_connecting">در حال وصل شدن…</string>
-    <string name="call_status_reconnecting">در حال وصل شدن دوباره…</string>
-    <string name="call_status_peer_away">منتظر وصل شدن دوبارهٔ %1$s…</string>
-    <string name="call_peer_fallback">مچ شما</string>
+    <string name="call_status_calling">داره زنگ می‌زنه…</string>
+    <string name="call_status_ringing">زنگ می‌خوره…</string>
+    <string name="call_status_incoming_audio">تماس صوتی</string>
+    <string name="call_status_incoming_video">تماس تصویری</string>
+    <string name="call_status_connecting">داره وصل می‌شه…</string>
+    <string name="call_status_reconnecting">دوباره داره وصل می‌شه…</string>
+    <string name="call_status_peer_away">منتظر %1$s…</string>
+    <string name="call_peer_fallback">مچت</string>
 
     <!-- The call screen: notices -->
-    <string name="call_notice_weak">اتصال ضعیف است</string>
-    <string name="call_notice_on_hold">تا وقتی تماس دیگری صدا را در اختیار دارد، این تماس در انتظار است</string>
-    <string name="call_notice_relay">ممکن است شبکهٔ شما جلوی تماس را بگیرد. اگر وصل نشد، شبکهٔ دیگری را امتحان کنید.</string>
-    <string name="call_degraded_microphone">میکروفون شما کار نمی‌کند، برای همین صدایتان قطع است.</string>
-    <string name="call_degraded_camera">دوربین روشن نشد. تماس به‌صورت صوتی ادامه پیدا می‌کند.</string>
+    <string name="call_notice_weak">اتصال ضعیفه</string>
+    <string name="call_notice_on_hold">تا وقتی یه تماس دیگه صدا رو داره، این تماس منتظر می‌مونه</string>
+    <string name="call_notice_relay">شاید شبکه‌ت جلوی تماس رو بگیره. اگه وصل نشد، یه شبکه‌ی دیگه رو امتحان کن.</string>
+    <string name="call_degraded_microphone">میکروفونت کار نمی‌کنه، برای همین صدات قطعه.</string>
+    <string name="call_degraded_camera">دوربین روشن نشد. تماس صوتی ادامه پیدا می‌کنه.</string>
 
     <!-- The call screen: how it ended -->
-    <string name="call_end_ended">تماس تمام شد</string>
+    <string name="call_end_ended">تماس تموم شد</string>
     <string name="call_end_declined">رد شد</string>
     <string name="call_end_cancelled">تماس لغو شد</string>
-    <string name="call_end_no_answer">پاسخی نداد</string>
+    <string name="call_end_no_answer">جواب نداد</string>
     <string name="call_end_missed_audio">تماس صوتی بی‌پاسخ</string>
     <string name="call_end_missed_video">تماس تصویری بی‌پاسخ</string>
-    <string name="call_end_answered_elsewhere">روی دستگاه دیگری پاسخ داده شد</string>
-    <string name="call_end_caller_busy">الان در تماس دیگری هستید</string>
-    <string name="call_end_not_allowed">اول باید هر دو نفر تماس را مجاز کنید</string>
+    <string name="call_end_answered_elsewhere">روی یه دستگاه دیگه جواب دادی</string>
+    <string name="call_end_caller_busy">الان یه تماس دیگه داری</string>
+    <string name="call_end_not_allowed">اول هر دو باید تماس رو مجاز کنین</string>
     <string name="call_end_calls_off">تماس فعلاً در دسترس نیست</string>
-    <string name="call_end_needs_plan">تماس در اشتراک شما نیست</string>
+    <string name="call_end_needs_plan">تماس تو اشتراکت نیست</string>
     <string name="call_end_unavailable">این تماس ممکن نیست</string>
-    <string name="call_end_limit">خطوط تماس الان شلوغ است. کمی بعد دوباره امتحان کنید.</string>
-    <string name="call_end_rate_limited">تعداد تماس‌ها زیاد بود. یک دقیقهٔ دیگر امتحان کنید.</string>
-    <string name="call_end_offline">به اینترنت وصل نیستید</string>
-    <string name="call_end_no_microphone">برای تماس به میکروفون نیاز است</string>
+    <string name="call_end_limit">خطوط شلوغه. کمی بعد دوباره امتحان کن.</string>
+    <string name="call_end_rate_limited">تماس‌ها زیاد بود. یه دقیقه‌ی دیگه امتحان کن.</string>
+    <string name="call_end_offline">اینترنت قطعه</string>
+    <string name="call_end_no_microphone">برای تماس، میکروفون لازمه</string>
     <string name="call_end_connection_lost">تماس قطع شد</string>
     <string name="call_end_failed">تماس وصل نشد</string>
-    <string name="call_end_no_microphone_body">در تنظیمات گوشی، اجازهٔ میکروفون را به {appName} بدهید و دوباره تماس بگیرید.</string>
+    <string name="call_end_no_microphone_body">تو تنظیمات گوشی اجازه‌ی میکروفون رو بده و دوباره زنگ بزن.</string>
 
     <!-- The call screen: buttons -->
-    <string name="call_action_answer">پاسخ</string>
+    <string name="call_action_answer">جواب بده</string>
     <string name="call_action_answer_video">پاسخ با تصویر</string>
     <string name="call_action_answer_audio">پاسخ فقط با صدا</string>
     <string name="call_action_answer_video_short">تصویری</string>
-    <string name="call_action_answer_audio_short">صوتی</string>
+    <string name="call_action_answer_audio_short">فقط صدا</string>
     <string name="call_action_decline">رد</string>
-    <string name="call_action_hang_up">قطع</string>
-    <string name="call_action_hang_up_full">قطع تماس</string>
+    <string name="call_action_hang_up_full">قطع</string>
     <string name="call_action_mute">بی‌صدا</string>
     <string name="call_action_unmute">باصدا</string>
+    <string name="call_action_mic">میکروفون</string>
     <string name="call_action_camera">دوربین</string>
-    <string name="call_action_camera_on">روشن کردن دوربین</string>
-    <string name="call_action_camera_off">خاموش کردن دوربین</string>
-    <string name="call_action_flip">چرخش</string>
-    <string name="call_action_flip_full">عوض کردن دوربین</string>
+    <string name="call_action_flip_full">چرخش دوربین</string>
     <string name="call_action_speaker">بلندگو</string>
-    <string name="call_action_audio">صدا</string>
-    <string name="call_action_minimise">کوچک کردن تماس</string>
     <string name="call_action_done">بستن</string>
     <string name="call_action_retry">تماس دوباره</string>
+    <string name="call_action_reply">با یه پیام جواب بده</string>
+    <string name="call_action_message">پیام</string>
+    <string name="call_mic_off">میکروفونت خاموشه</string>
 
     <!-- Where the sound goes -->
     <string name="call_route_title">پخش تماس روی</string>
@@ -68,45 +66,45 @@
     <string name="call_route_selected">انتخاب‌شده</string>
 
     <!-- The small picture on a video call -->
-    <string name="call_self_yours">دوربین شما</string>
+    <string name="call_self_yours">دوربینت</string>
     <string name="call_self_theirs">دوربین %1$s</string>
     <string name="call_self_swap">جابه‌جا کردن تصویرها</string>
-    <string name="call_self_move">بردن به گوشهٔ بعدی</string>
+    <string name="call_self_move">بردن به گوشه‌ی بعدی</string>
     <string name="call_self_smaller">کوچک‌تر</string>
     <string name="call_self_larger">بزرگ‌تر</string>
-    <string name="call_self_you_large">تصویر شما تمام صفحه است</string>
-    <string name="call_self_they_large">تصویر %1$s تمام صفحه است</string>
+    <string name="call_self_you_large">تصویرت تمام‌صفحه‌ست</string>
+    <string name="call_self_they_large">تصویر %1$s تمام‌صفحه‌ست</string>
     <string name="call_bubble_return">برگشت به تماس با %1$s</string>
 
     <!-- Notifications -->
     <string name="call_notify_incoming_audio">تماس صوتی ورودی</string>
     <string name="call_notify_incoming_video">تماس تصویری ورودی</string>
-    <string name="call_notify_incoming_public">تماس ورودی در {appName}</string>
+    <string name="call_notify_incoming_public">تماس ورودی</string>
     <string name="call_notify_missed_audio">تماس صوتی بی‌پاسخ</string>
     <string name="call_notify_missed_video">تماس تصویری بی‌پاسخ</string>
-    <string name="call_notify_missed_public">تماس بی‌پاسخ در {appName}</string>
+    <string name="call_notify_missed_public">تماس بی‌پاسخ</string>
     <string name="call_notify_ongoing_audio">تماس صوتی</string>
     <string name="call_notify_ongoing_video">تماس تصویری</string>
-    <string name="call_notify_ongoing_public">تماس در جریان در {appName}</string>
+    <string name="call_notify_ongoing_public">تماس در جریان</string>
 
     <!-- The chat header and the match's call settings -->
     <string name="call_header_audio">تماس صوتی با %1$s</string>
     <string name="call_header_video">تماس تصویری با %1$s</string>
-    <string name="call_header_off">تماس با %1$s خاموش است. برای تغییر بزنید.</string>
+    <string name="call_header_off">تماس با %1$s خاموشه. برای عوض کردن بزن.</string>
     <string name="call_settings_title">تماس با %1$s</string>
-    <string name="call_settings_toggle">اجازهٔ تماس با %1$s</string>
-    <string name="call_settings_body">تماس فقط وقتی برقرار می‌شود که هر دو اجازه داده باشید. شمارهٔ تلفن شما هرگز نشان داده نمی‌شود.</string>
-    <string name="call_settings_both">می‌توانید با هم تماس بگیرید.</string>
-    <string name="call_settings_waiting">%1$s هنوز اجازهٔ تماس نداده است.</string>
-    <string name="call_settings_off">این را روشن کنید تا بتوانید با هم تماس بگیرید.</string>
-    <string name="call_settings_saving">در حال ذخیره…</string>
-    <string name="call_settings_failed">ذخیره نشد. اتصال را بررسی کنید و دوباره امتحان کنید.</string>
+    <string name="call_settings_toggle">اجازه‌ی تماس با %1$s</string>
+    <string name="call_settings_body">تماس فقط وقتی برقرار می‌شه که هر دو اجازه داده باشین. شماره‌ت هیچ‌وقت نشون داده نمی‌شه.</string>
+    <string name="call_settings_both">می‌تونین با هم تماس بگیرین.</string>
+    <string name="call_settings_waiting">%1$s هنوز اجازه‌ی تماس نداده.</string>
+    <string name="call_settings_off">روشنش کن تا بتونین با هم تماس بگیرین.</string>
+    <string name="call_settings_saving">داره ذخیره می‌شه…</string>
+    <string name="call_settings_failed">ذخیره نشد. اینترنتت رو چک کن و دوباره امتحان کن.</string>
     <string name="call_settings_unavailable">تماس فعلاً در دسترس نیست.</string>
     <string name="call_settings_voice">تماس صوتی</string>
     <string name="call_settings_video">تماس تصویری</string>
-    <string name="call_ready_notifications">اعلان‌ها را روشن کنید تا تماس‌ها زنگ بخورند.</string>
+    <string name="call_ready_notifications">اعلان‌ها رو روشن کن تا تماس‌ها زنگ بخورن.</string>
     <string name="call_ready_notifications_action">روشن کردن</string>
-    <string name="call_ready_full_screen">تماس‌ها به‌صورت نوار اعلان زنگ می‌خورند. برای دیدن تماس روی صفحهٔ قفل، تماس تمام‌صفحه را مجاز کنید.</string>
+    <string name="call_ready_full_screen">تماس‌ها فقط تو نوار اعلان زنگ می‌خورن. برای دیدن تماس روی صفحه‌ی قفل، تماس تمام‌صفحه رو مجاز کن.</string>
     <string name="call_ready_full_screen_action">مجاز کردن</string>
 
     <!-- The call in the chat -->
@@ -121,7 +119,7 @@
     <string name="call_line_failed_after_kind">ناموفق</string>
     <string name="call_line_outgoing">خروجی</string>
     <string name="call_line_incoming">ورودی</string>
-    <string name="call_line_call_back">تماس دوباره</string>
+    <string name="call_line_call_back">زنگ بزن</string>
     <!-- A call's length, only if the platform's unit formats fail (the line and TalkBack use those). -->
     <plurals name="call_length_hours">
         <item quantity="one">%d ساعت</item>

@@ -8,12 +8,17 @@ import app.core.feature.deck.DeckViewModel
 import app.core.feature.deck.ItemLikeError
 import app.core.feature.deck.ItemLikeState
 import app.core.feature.deck.MatchUi
+import app.core.model.Id
 import app.core.model.LikeItem
 import app.core.model.LikeKind
 import app.core.model.LikesPage
 import app.core.model.Me
 import app.core.model.Photo
 import app.core.model.ProfileCard
+import app.core.model.PublicUid
+import app.core.model.ReportContext
+import app.core.model.ReportReason
+import app.core.model.ReportRequest
 import app.core.model.SwipeAction
 import app.core.net.ApiError
 import app.core.sync.DeckRepository
@@ -32,13 +37,22 @@ import java.time.Instant
 interface LikesServices {
     suspend fun likes(cursor: String?, limit: Int): LikesPage
     suspend fun me(): Me
+
+    /** A report on someone from their profile (`POST /v1/reports`). */
+    suspend fun report(request: ReportRequest)
+
+    /** Blocks someone from their profile (`POST /v1/blocks`). */
+    suspend fun block(target: PublicUid)
 }
 
 enum class LikesStatus { Loading, Ready, Offline, Failed }
 
-enum class LikesNotice { LikeOffline, LikeFailed, RateLimited, Passed }
+enum class LikesNotice { LikeOffline, LikeFailed, RateLimited, Passed, Reported, Blocked, Offline, SafetyFailed }
 
 data class LikesMessage(val notice: LikesNotice, val id: Long, val name: String? = null)
+
+/** How many like the account, as last heard (a likes page or a `like` event); [capped]: at least [count]. */
+data class LikesTotal(val count: Int, val capped: Boolean = false)
 
 data class LikesUiState(
     val status: LikesStatus = LikesStatus.Loading,
@@ -58,6 +72,8 @@ data class LikesUiState(
     val quota: Pair<SwipeAction, Instant?>? = null,
     val match: MatchUi? = null,
     val message: LikesMessage? = null,
+    /** The likers whose like back is on its way: their tiles' buttons wait for the answer. */
+    val liking: Set<Id> = emptySet(),
 ) {
     /** True when at least one like is hidden: the plan does not include seeing them. */
     val anyHidden: Boolean get() = items.any { it.liker == null }
@@ -179,7 +195,31 @@ class LikesViewModel(
     fun likeBack() {
         val card = _state.value.details ?: return
         _state.update { it.copy(details = null) }
-        viewModelScope.launch { handle(card, deck.like(card, SwipeAction.Like)) }
+        send(card)
+    }
+
+    /**
+     * The like button on an open tile: the same like back, without opening
+     * the profile. A hidden like has none. A second tap (or TalkBack's second
+     * activation) while the first is on its way does nothing; the tile goes
+     * when it is sent and stays, its button back, when it was not.
+     */
+    fun likeBack(item: LikeItem) {
+        val card = item.liker ?: return
+        send(card)
+    }
+
+    private fun send(card: ProfileCard) {
+        if (card.id in _state.value.liking) return
+        _state.update { it.copy(liking = it.liking + card.id) }
+        viewModelScope.launch {
+            val outcome = try {
+                deck.like(card, SwipeAction.Like)
+            } finally {
+                _state.update { it.copy(liking = it.liking - card.id) }
+            }
+            handle(card, outcome)
+        }
     }
 
     /** Pass from the open profile: the like leaves the list. */
@@ -187,6 +227,42 @@ class LikesViewModel(
         val card = _state.value.details ?: return
         deck.pass(card)
         _state.update { s -> s.without(card).copy(details = null, message = LikesMessage(LikesNotice.Passed, ++messageIds, card.name)) }
+    }
+
+    /**
+     * Reports [card] from their profile (with [block], blocks them too): the
+     * profile closes and their like leaves the list once the server has it.
+     * A report alone hides nobody on the server, so it also passes them, as
+     * from the deck. A failure leaves the profile open and says so over it.
+     */
+    fun report(card: ProfileCard, reason: ReportReason, details: String?, block: Boolean) {
+        safety(card, LikesNotice.Reported, pass = !block) {
+            services.report(ReportRequest(target = card.id, context = ReportContext.Profile, reason = reason, details = details, block = block))
+        }
+    }
+
+    /** Blocks [card] from their profile: the profile closes and their like leaves the list. */
+    fun block(card: ProfileCard) {
+        safety(card, LikesNotice.Blocked) { services.block(card.id) }
+    }
+
+    private fun safety(card: ProfileCard, done: LikesNotice, pass: Boolean = false, call: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                call()
+                deck.drop(card, pass = pass)
+                _state.update { s ->
+                    s.without(card).copy(
+                        details = s.details?.takeIf { it.id != card.id },
+                        message = LikesMessage(done, ++messageIds, card.name),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiError) {
+                notice(if (e is ApiError.Network) LikesNotice.Offline else LikesNotice.SafetyFailed)
+            }
+        }
     }
 
     fun openItemLike(target: LikeTarget) = _state.update { it.copy(itemLike = target, itemLikeState = ItemLikeState()) }

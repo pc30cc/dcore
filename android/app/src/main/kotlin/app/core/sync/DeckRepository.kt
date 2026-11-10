@@ -276,6 +276,20 @@ class DeckRepository(
     }
 
     /**
+     * [card] leaves the deck after a block or a report, and is no longer the
+     * pass a rewind brings back. A block needs nothing more (the server keeps
+     * the two apart); with [pass] (a report without a block, which hides
+     * nobody on the server) a pass goes out with the next batch, so later
+     * pages leave them out too.
+     */
+    fun drop(card: ProfileCard, pass: Boolean = false) {
+        queue.remove(card.id)
+        if (pass) outbox.pass(card.id, rewindable = false)
+        if (lastPassed?.id == card.id) lastPassed = null
+        afterSwipe()
+    }
+
+    /**
      * A like or a super like on [card], optionally on one photo or prompt
      * ([item]) with a [comment]. The card leaves the queue at once; if the
      * like does not go through it comes back on top.

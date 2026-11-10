@@ -87,6 +87,25 @@ class TemplatePickerTest {
         assertEquals(1, tops.distinct().size)
     }
 
+    @Test
+    @Config(qualifiers = "fa-w360dp-h800dp", fontScale = 1.5f)
+    fun `at a large font scale every radio keeps its name beside it`() {
+        picker(choice = "default", offered = listOf("neon", "white"), width = 360)
+        for (name in listOf("پیش‌فرض", "تیره", "سفید")) {
+            // The option (its radio and its name) is one line: the name never drops under the radio.
+            val option = compose.onNodeWithText(name).fetchSemanticsNode().boundsInRoot
+            val text = compose.onNodeWithText(name, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertEquals("$name is on one line", 1, layoutOf(name).lineCount)
+            // Under the radio would put it below the swatch (58 + 4), the gap (10) and the radio (20).
+            val belowRadio = (58 + 4 + 10 + 20) * compose.density.density
+            assertTrue("$name sits beside its radio, not under it ($text in $option)", text.top - option.top < belowRadio)
+        }
+        // Every option the same way: either all in a row or all one a row.
+        val tops = listOf("پیش‌فرض", "تیره", "سفید").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top }
+        val lefts = listOf("پیش‌فرض", "تیره", "سفید").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left }
+        assertTrue("aligned: tops $tops, lefts $lefts", tops.distinct().size == 1 || lefts.map { it.toInt() / 8 }.distinct().size == 1)
+    }
+
     private fun layoutOf(text: String): TextLayoutResult {
         val node = compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode()
         val results = mutableListOf<TextLayoutResult>()

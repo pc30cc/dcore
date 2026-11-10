@@ -1,39 +1,18 @@
 package app.core.feature.onboarding
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,131 +25,182 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.selectableGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.core.R
-import app.core.feature.auth.screenLanguage
-import app.core.feature.auth.FlowScaffold
-import app.core.feature.auth.InlineMessage
-import app.core.feature.auth.NoteCard
-import app.core.feature.auth.PrimaryButton
 import app.core.i18n.AppLanguage
 import app.core.i18n.Digits
-import app.core.i18n.JalaliDate
 import app.core.i18n.JalaliDates
+import app.core.i18n.Numerals
 import app.core.i18n.brandString
+import app.core.i18n.screenLanguage
 import app.core.model.Gender
 import app.core.model.Intention
-import app.core.ui.theme.Radius
-import app.core.ui.theme.Space
+import app.core.ui.components.AppDialog
+import app.core.ui.components.OptionRow
+import app.core.ui.components.PrimaryButton
+import app.core.ui.theme.AppTheme
 import java.time.LocalDate
-import java.time.format.TextStyle
 import java.util.Locale
-
-/** A sign-up step's frame: progress, back, the menu, then the step. */
-@Composable
-fun OnboardingFrame(
-    chrome: StepChrome,
-    title: String,
-    subtitle: String? = null,
-    actions: @Composable ColumnScope.() -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    FlowScaffold(
-        title = title,
-        subtitle = subtitle,
-        onBack = chrome.onBack,
-        topBarExtra = { StepProgress(chrome) },
-        trailingTopBar = { StepMenu(chrome) },
-        actions = actions,
-        content = content,
-    )
-}
 
 // MARK: - Name
 
+/**
+ * The first name, typed on a line (`--type-h1`) over a 2 dp
+ * `--primary-fill` rule, the count («۳ / ۲۰») at its end; the keyboard
+ * comes up at once and «ادامه» rides above it.
+ */
 @Composable
 fun NameStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: StepChrome) {
+    val t = AppTheme.template
+    val language = screenLanguage()
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     val valid = model.nameValid(state.name)
     val showInvalid = state.name.isNotBlank() && !valid
-    OnboardingFrame(
+    val title = brandString(R.string.onboarding_name_title)
+    OnboardingPage(
         chrome = chrome,
-        title = brandString(R.string.onboarding_name_title),
-        subtitle = brandString(R.string.onboarding_name_body),
-        actions = { PrimaryButton(brandString(R.string.action_next), onClick = model::submitName, enabled = valid, busy = state.busy) },
+        title = title,
+        error = if (showInvalid) brandString(R.string.onboarding_name_invalid) else stepErrorText(state.error),
+        actions = { PrimaryButton(brandString(R.string.onboarding_continue), model::submitName, enabled = valid, loading = state.busy) },
     ) {
-        OutlinedTextField(
-            value = state.name,
-            onValueChange = model::nameChanged,
-            singleLine = true,
-            label = { Text(brandString(R.string.onboarding_name_label)) },
-            isError = showInvalid || state.error != null,
-            supportingText = {
-                Text(Digits.localize("${state.name.trim().length}/${OnboardingViewModel.NAME_MAX}", screenLanguage()))
-            },
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { if (valid) model.submitName() }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focus)
-                .semantics { contentType = ContentType.PersonFirstName },
-        )
-        InlineMessage(if (showInvalid) brandString(R.string.onboarding_name_invalid) else stepErrorText(state.error))
+        Gap(OnboardingLayout.nameTop)
+        Box(Modifier.fillMaxWidth().height(NameLayout.height)) {
+            Row(
+                Modifier.fillMaxWidth().height(NameLayout.height).padding(bottom = NameLayout.ruleGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicTextField(
+                    value = state.name,
+                    onValueChange = model::nameChanged,
+                    singleLine = true,
+                    textStyle = t.type.h1.copy(color = t.colors.text),
+                    cursorBrush = SolidColor(t.colors.caret),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (valid) model.submitName() }),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focus)
+                        .semantics {
+                            contentDescription = title
+                            contentType = ContentType.PersonFirstName
+                        },
+                )
+                Text(
+                    brandString(
+                        R.string.onboarding_name_count,
+                        Numerals.format(state.name.trim().length, language),
+                        Numerals.format(OnboardingViewModel.NAME_MAX, language),
+                    ),
+                    style = t.type.bodySm,
+                    color = if (state.name.trim().length > OnboardingViewModel.NAME_MAX) t.colors.error else t.colors.text3,
+                    modifier = Modifier.padding(start = NameLayout.countGap),
+                )
+            }
+            // The rule under the name: the accent (the gradient in neon, ink in white); red while the name is refused.
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(NameLayout.rule)
+                    .then(
+                        if (showInvalid || state.error != null) {
+                            Modifier.background(t.colors.error, CircleShape)
+                        } else {
+                            Modifier.background(t.paints.primaryFill, CircleShape)
+                        },
+                    ),
+            )
+        }
     }
+}
+
+private object NameLayout {
+    val height = 68.dp
+    val ruleGap = 4.dp
+    val rule = 2.dp
+    val countGap = 12.dp
 }
 
 // MARK: - Birth date
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The birth date on three wheels; once one has moved, the age and that it
+ * is kept for good, in one line («۲۵ سالته. بعداً عوض نمی‌شه.»).
+ * «ادامه» asks once more (the age and the date) before the date is kept: it
+ * cannot be changed later, and an age under the minimum closes the account.
+ */
 @Composable
 fun BirthDateStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: StepChrome) {
+    val t = AppTheme.template
     val language = screenLanguage()
     val today = model.today()
-    var confirm by rememberSaveable { mutableStateOf(false) }
     val age = state.age(today)
-    OnboardingFrame(
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    OnboardingPage(
         chrome = chrome,
         title = brandString(R.string.onboarding_birthday_title),
-        subtitle = brandString(R.string.onboarding_birthday_body),
-        actions = { PrimaryButton(brandString(R.string.action_next), onClick = { confirm = true }, enabled = state.birthDate != null && !state.busy) },
+        error = stepErrorText(state.error),
+        actions = {
+            PrimaryButton(
+                brandString(R.string.onboarding_continue),
+                onClick = { confirming = true },
+                enabled = state.birthDate != null,
+                loading = state.busy,
+            )
+        },
     ) {
-        BirthDatePicker(date = state.birthDate, today = today, language = language, onChange = model::birthDateChanged)
+        Gap(OnboardingLayout.wheelsTop)
+        BirthdayWheels(date = state.birthDate, today = today, language = language, onChange = model::birthDateChanged)
         if (age != null) {
-            NoteCard {
-                Text(
-                    brandString(R.string.onboarding_birthday_age, age),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(brandString(R.string.onboarding_birthday_fixed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Gap(BirthdayLayout.ageTop)
+            val ageText = brandString(R.string.onboarding_birthday_age, Numerals.format(age, language))
+            val locked = brandString(R.string.onboarding_locked)
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(color = t.colors.text, fontWeight = t.type.h3.fontWeight)) { append(ageText) }
+                    append(" ")
+                    append(locked)
+                },
+                style = t.type.bodyStrong,
+                color = t.colors.text2,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        InlineMessage(stepErrorText(state.error))
     }
-    if (confirm && age != null) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text(brandString(R.string.onboarding_birthday_confirm_title, age)) },
-            text = { Text(brandString(R.string.onboarding_birthday_confirm_body, formatDate(state.birthDate!!, language))) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirm = false
-                    model.submitBirthDate()
-                }) { Text(brandString(R.string.action_confirm)) }
+    val birth = state.birthDate
+    if (confirming && birth != null && age != null) {
+        AppDialog(
+            title = brandString(R.string.onboarding_birthday_confirm_title, Numerals.format(age, language)),
+            body = brandString(R.string.onboarding_birthday_confirm_body, formatDate(birth, language)),
+            confirm = brandString(R.string.onboarding_birthday_confirm_yes),
+            onConfirm = {
+                confirming = false
+                model.submitBirthDate()
             },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(brandString(R.string.action_edit)) } },
+            dismiss = brandString(R.string.onboarding_birthday_confirm_edit),
+            onDismiss = { confirming = false },
+            destructive = false,
         )
     }
+}
+
+private object BirthdayLayout {
+    val ageTop = 26.dp
 }
 
 /** A date for reading back: Jalali in Persian, the language's long form otherwise. */
@@ -181,146 +211,23 @@ fun formatDate(date: LocalDate, language: AppLanguage): String = if (language ==
     java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.LONG).withLocale(Locale.forLanguageTag(language.tag)).format(date)
 }
 
-/** The Solar Hijri month names, Farvardin to Esfand (calendar data, the same in every UI language that shows them). */
-internal val JALALI_MONTHS = listOf(
-    "فروردین", "اردیبهشت", "خرداد",
-    "تیر", "مرداد", "شهریور",
-    "مهر", "آبان", "آذر",
-    "دی", "بهمن", "اسفند",
-)
-
-/**
- * Day, month and year as three lists: the Solar Hijri calendar in Persian,
- * the Gregorian one otherwise. Lists rather than a wheel or a calendar grid:
- * they read well with TalkBack and large text, and a birth year is one tap
- * away instead of decades of swiping. No year is hinted at or left out.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun BirthDatePicker(date: LocalDate?, today: LocalDate, language: AppLanguage, onChange: (LocalDate?) -> Unit) {
-    val jalali = language == AppLanguage.FA
-    val locale = Locale.forLanguageTag(language.tag)
-    // The three parts in the calendar shown; the date is set once all three are.
-    var year by rememberSaveable { mutableStateOf(date?.let { if (jalali) JalaliDates.toJalali(it).year else it.year }) }
-    var month by rememberSaveable { mutableStateOf(date?.let { if (jalali) JalaliDates.toJalali(it).month else it.monthValue }) }
-    var day by rememberSaveable { mutableStateOf(date?.let { if (jalali) JalaliDates.toJalali(it).day else it.dayOfMonth }) }
-
-    val thisYear = if (jalali) JalaliDates.toJalali(today).year else today.year
-    val years = (thisYear downTo thisYear - 100).toList()
-    val monthLength = when {
-        year == null || month == null -> 31
-        jalali -> JalaliDates.monthLength(year!!, month!!)
-        else -> java.time.YearMonth.of(year!!, month!!).lengthOfMonth()
-    }
-
-    fun emit() {
-        val y = year
-        val m = month
-        val d = day?.coerceAtMost(monthLength)
-        if (d != day) day = d
-        val result = if (y != null && m != null && d != null) {
-            runCatching { if (jalali) JalaliDates.toGregorian(JalaliDate(y, m, d)) else LocalDate.of(y, m, d) }.getOrNull()
-        } else {
-            null
-        }
-        onChange(result?.takeIf { !it.isAfter(today) })
-    }
-
-    // Two rows: three menus with their arrows do not fit one phone-width row in English or
-    // Turkish ("Day" and "Gün" were clipped to one letter, or "September" was). Reading order
-    // stays day, month, year.
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            DropdownField(
-                label = brandString(R.string.onboarding_birthday_day),
-                value = day?.let { Digits.localize(it.toString(), language) },
-                options = (1..monthLength).map { it to Digits.localize(it.toString(), language) },
-                onPick = { day = it; emit() },
-                modifier = Modifier.weight(1f),
-            )
-            DropdownField(
-                label = brandString(R.string.onboarding_birthday_month),
-                value = month?.let { monthName(it, jalali, locale) },
-                options = (1..12).map { it to monthName(it, jalali, locale) },
-                onPick = { month = it; emit() },
-                modifier = Modifier.weight(2f),
-            )
-        }
-        DropdownField(
-            label = brandString(R.string.onboarding_birthday_year),
-            value = year?.let { Digits.localize(it.toString(), language) },
-            options = years.map { it to Digits.localize(it.toString(), language) },
-            onPick = { year = it; emit() },
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-private fun monthName(month: Int, jalali: Boolean, locale: Locale): String =
-    if (jalali) JALALI_MONTHS[month - 1] else java.time.Month.of(month).getDisplayName(TextStyle.FULL_STANDALONE, locale)
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DropdownField(label: String, value: String?, options: List<Pair<Int, String>>, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
-    var open by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }, modifier = modifier) {
-        OutlinedTextField(
-            value = value.orEmpty(),
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            label = { Text(label, maxLines = 1) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
-            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-        )
-        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            options.forEach { (id, text) ->
-                DropdownMenuItem(text = { Text(text) }, onClick = {
-                    open = false
-                    onPick(id)
-                })
-            }
-        }
-    }
-}
-
 // MARK: - Gender
 
+/** Three plain rows with the radio at the start; the one line says the answer is kept for good. */
 @Composable
 fun GenderStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: StepChrome) {
-    val language = screenLanguage()
-    var confirm by rememberSaveable { mutableStateOf(false) }
-    OnboardingFrame(
+    OnboardingPage(
         chrome = chrome,
         title = brandString(R.string.onboarding_gender_title),
-        subtitle = brandString(R.string.onboarding_gender_body),
-        actions = { PrimaryButton(brandString(R.string.action_next), onClick = { confirm = true }, enabled = state.gender != null, busy = state.busy) },
+        subtitle = brandString(R.string.onboarding_locked),
+        error = stepErrorText(state.error),
+        actions = { PrimaryButton(brandString(R.string.onboarding_continue), model::submitBasics, enabled = state.gender != null, loading = state.busy) },
     ) {
-        GENDERS.forEach { gender ->
-            OptionCard(
-                title = brandString(gender.label()),
-                selected = state.gender == gender,
-                onClick = { model.genderChanged(gender) },
-            )
+        Options {
+            GENDERS.forEach { gender ->
+                Choice(brandString(gender.label()), selected = state.gender == gender) { model.genderChanged(gender) }
+            }
         }
-        InlineMessage(stepErrorText(state.error))
-    }
-    val birth = state.birthDate
-    if (confirm && birth != null && state.gender != null) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text(brandString(R.string.onboarding_basics_confirm_title)) },
-            text = {
-                Text(brandString(R.string.onboarding_basics_confirm_body, formatDate(birth, language), brandString(state.gender.label())))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirm = false
-                    model.submitBasics()
-                }) { Text(brandString(R.string.action_confirm)) }
-            },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(brandString(R.string.action_edit)) } },
-        )
     }
 }
 
@@ -340,109 +247,69 @@ private fun Gender.peopleLabel(): Int = when (this) {
 
 // MARK: - Interested in
 
+/** Who to meet: the same rows with a checkbox, one or more. */
 @Composable
 fun InterestedInStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: StepChrome) {
-    OnboardingFrame(
+    OnboardingPage(
         chrome = chrome,
         title = brandString(R.string.onboarding_interest_title),
         subtitle = brandString(R.string.onboarding_interest_body),
-        actions = { PrimaryButton(brandString(R.string.action_next), onClick = model::submitInterests, enabled = state.interestedIn.isNotEmpty(), busy = state.busy) },
+        error = stepErrorText(state.error),
+        actions = {
+            PrimaryButton(brandString(R.string.onboarding_continue), model::submitInterests, enabled = state.interestedIn.isNotEmpty(), loading = state.busy)
+        },
     ) {
-        GENDERS.forEach { gender ->
-            OptionCard(
-                title = brandString(gender.peopleLabel()),
-                selected = gender in state.interestedIn,
-                multiple = true,
-                onClick = { model.toggleInterest(gender) },
-            )
+        Options {
+            GENDERS.forEach { gender ->
+                Choice(brandString(gender.peopleLabel()), selected = gender in state.interestedIn, multiple = true) { model.toggleInterest(gender) }
+            }
         }
-        NoteCard(icon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }) {
-            Text(brandString(R.string.onboarding_interest_consent), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        InlineMessage(stepErrorText(state.error))
     }
 }
 
 // MARK: - Intention
 
+/** Four plain rows, no descriptions. The catalogue's labels when the server has them, the app's own otherwise. */
 @Composable
 fun IntentionStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: StepChrome) {
-    // The catalogue's labels when the server has them, the app's own otherwise.
     val catalog = state.config?.catalog?.intentions.orEmpty().associate { it.key to it.label }
-    OnboardingFrame(
+    OnboardingPage(
         chrome = chrome,
         title = brandString(R.string.onboarding_goal_title),
-        subtitle = brandString(R.string.onboarding_goal_body),
-        actions = { PrimaryButton(brandString(R.string.action_next), onClick = model::submitIntention, enabled = state.intention != null, busy = state.busy) },
+        error = stepErrorText(state.error),
+        actions = { PrimaryButton(brandString(R.string.onboarding_continue), model::submitIntention, enabled = state.intention != null, loading = state.busy) },
     ) {
-        INTENTIONS.forEach { (intention, icon, label) ->
-            OptionCard(
-                title = catalog[intention.wire]?.takeIf { it.isNotBlank() } ?: brandString(label),
-                selected = state.intention == intention,
-                icon = icon,
-                onClick = { model.intentionChanged(intention) },
-            )
+        Options {
+            INTENTIONS.forEach { (intention, label) ->
+                val text = catalog[intention.wire]?.takeIf { it.isNotBlank() } ?: brandString(label)
+                Choice(text, selected = state.intention == intention) { model.intentionChanged(intention) }
+            }
         }
-        Text(brandString(R.string.onboarding_goal_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        InlineMessage(stepErrorText(state.error))
     }
 }
 
-private val INTENTIONS: List<Triple<Intention, ImageVector, Int>> = listOf(
-    Triple(Intention.Serious, Icons.Filled.Favorite, R.string.intention_serious),
-    Triple(Intention.Marriage, Icons.Filled.Star, R.string.intention_marriage),
-    Triple(Intention.Friendship, Icons.Filled.Person, R.string.intention_friendship),
-    Triple(Intention.NotSure, Icons.Filled.Info, R.string.intention_not_sure),
+private val INTENTIONS: List<Pair<Intention, Int>> = listOf(
+    Intention.Serious to R.string.intention_serious,
+    Intention.Marriage to R.string.intention_marriage,
+    Intention.Friendship to R.string.intention_friendship,
+    Intention.NotSure to R.string.intention_not_sure,
 )
 
-// MARK: - The option card every choice step uses
+// MARK: - The choice rows every choice step uses
 
-/**
- * One choice: a large card, its state shown by the border, the fill and a
- * check, and read by TalkBack as a radio button or a checkbox ([multiple]).
- */
+/** The rows of a choice step: 28 dp under the title, 10 dp apart. */
 @Composable
-fun OptionCard(
-    title: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    icon: ImageVector? = null,
-    multiple: Boolean = false,
-) {
+private fun Options(content: @Composable () -> Unit) {
+    Gap(OnboardingLayout.optionsTop)
+    Column(Modifier.fillMaxWidth().semantics { selectableGroup() }, verticalArrangement = Arrangement.spacedBy(OnboardingLayout.optionGap)) { content() }
+}
+
+/** One [OptionRow], with the light tick a choice gives. */
+@Composable
+private fun Choice(label: String, selected: Boolean, multiple: Boolean = false, onClick: () -> Unit) {
     val haptics = LocalHapticFeedback.current
-    val colors = MaterialTheme.colorScheme
-    val border by animateColorAsState(if (selected) colors.primary else colors.outlineVariant, label = "optionBorder")
-    val fill by animateColorAsState(if (selected) colors.primaryContainer else colors.surfaceContainerLow, label = "optionFill")
-    val select = {
+    OptionRow(label, selected, onClick = {
         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
         onClick()
-    }
-    val interaction = if (multiple) {
-        Modifier.toggleable(value = selected, role = Role.Checkbox, onValueChange = { select() })
-    } else {
-        Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = select)
-    }
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 64.dp),
-        shape = RoundedCornerShape(Radius.lg),
-        color = fill,
-        border = BorderStroke(if (selected) 2.dp else 1.dp, border),
-    ) {
-        Row(
-            interaction.padding(horizontal = Space.lg, vertical = Space.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
-        ) {
-            if (icon != null) Icon(icon, contentDescription = null, tint = if (selected) colors.onPrimaryContainer else colors.primary)
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = if (selected) colors.onPrimaryContainer else colors.onSurface)
-                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-            }
-            if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = colors.primary, modifier = Modifier.size(24.dp))
-        }
-    }
+    }, multiple = multiple)
 }

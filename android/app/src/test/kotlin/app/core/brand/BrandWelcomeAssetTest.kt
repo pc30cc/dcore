@@ -3,10 +3,8 @@ package app.core.brand
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.compose.ui.graphics.toArgb
 import app.core.BuildConfig
 import app.core.feature.auth.welcome.BrandWelcome
-import app.core.feature.auth.welcome.WelcomeColors
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -20,9 +18,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The welcome's copy, colours and pictures the app reads (the build's
- * generated `brand/welcome.json` and the pictures in `brand/welcome/`) are brand.json's
- * `welcome` block.
+ * The welcome block the app reads (the build's generated
+ * `brand/welcome.json` and the pictures in `brand/welcome/`) is brand.json's
+ * `welcome` block; the welcome draws its pictures.
  */
 @RunWith(AndroidJUnit4::class)
 class BrandWelcomeAssetTest {
@@ -48,9 +46,8 @@ class BrandWelcomeAssetTest {
         assertEquals(images, welcome.images)
         val gradient = block?.get("gradient") as? JsonObject
         if (gradient != null) {
-            val colors = WelcomeColors.of(welcome.gradient)
-            assertNotNull(colors)
-            assertEquals(gradient["middle"]!!.jsonPrimitive.content.uppercase(), "#%06X".format(colors!!.middle.toArgb() and 0xFFFFFF))
+            assertNotNull(welcome.gradient)
+            assertEquals(gradient["middle"]!!.jsonPrimitive.content, welcome.gradient!!.middle)
         }
     }
 

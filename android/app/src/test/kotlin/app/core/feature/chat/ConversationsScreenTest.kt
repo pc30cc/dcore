@@ -3,6 +3,8 @@ package app.core.feature.chat
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -23,6 +25,7 @@ import app.core.model.CallOutcome
 import app.core.model.MessageKind
 import app.core.realtime.RealtimeHealth
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -53,7 +56,7 @@ class ConversationsScreenTest {
 
     private fun show(state: ConversationsUiState, dark: Boolean = false) {
         compose.setContent {
-            AppTheme(dark = dark) {
+            AppTheme(template = Templates.of(if (dark) Templates.NEON else Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     ConversationsScreen(state, actions, today = LocalDate.now(ChatTestData.zone))
                 }
@@ -97,14 +100,17 @@ class ConversationsScreenTest {
         show(ConversationsUiState(loading = false, me = ME))
         compose.onNodeWithText("No conversations yet").assertIsDisplayed()
         compose.onNodeWithText("Discover people").performClick()
-        assertEquals(listOf("browse"), actions.calls)
+        // Nothing received: requests sent from a profile can still be seen and pulled back.
+        compose.onNodeWithContentDescription("Requests").performClick()
+        assertEquals(listOf("browse", "requests"), actions.calls)
     }
 
     @Test
     fun newMatchesAreARowOfFacesAndOpenTheirThread() {
         show(ready(newMatch))
         compose.onNodeWithText("New matches").assertIsDisplayed()
-        compose.onNodeWithText("Say hello to one of your new matches. The first message is the hardest one.").assertIsDisplayed()
+        // The faces alone: no advice under them.
+        compose.onNodeWithText("Say hello", substring = true).assertDoesNotExist()
         compose.onNodeWithContentDescription("⁨Elif⁩, new match. Open the conversation.").performClick()
         assertEquals("open:2001", actions.calls.last())
     }
@@ -151,7 +157,7 @@ class ConversationsScreenTest {
         )
         val shown = mutableMapOf<String, String?>()
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 shown["declined"] = previewText(call(CallOutcome.Declined, ME, 0), ME)
                 shown["noAnswer"] = previewText(call(CallOutcome.Missed, ME, 0, CallKind.Video), ME)
                 shown["failed"] = previewText(call(CallOutcome.Failed, NEGAR, 0), ME)
@@ -161,10 +167,10 @@ class ConversationsScreenTest {
             }
         }
         compose.waitForIdle()
-        assertEquals("Voice call · Declined", shown["declined"])
-        assertEquals("Video call · No answer", shown["noAnswer"])
-        assertEquals("Voice call · Failed", shown["failed"])
-        assertEquals("Video call · 12 min, 34 sec", shown["long"])
+        assertEquals("Voice call, Declined", shown["declined"])
+        assertEquals("Video call, No answer", shown["noAnswer"])
+        assertEquals("Voice call, Failed", shown["failed"])
+        assertEquals("Video call, 12 min, 34 sec", shown["long"])
         assertEquals("Video call, 12 minutes, 34 seconds", shown["longSpoken"])
         assertEquals("Voice call, Declined", shown["declinedSpoken"])
     }
@@ -179,13 +185,13 @@ class ConversationsScreenTest {
         var shown: String? = null
         var spoken: String? = null
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 shown = previewText(declined, ME)
                 spoken = previewText(declined, ME, spoken = true)
             }
         }
         compose.waitForIdle()
-        assertEquals("تماس صوتی · رد شد", shown)
+        assertEquals("تماس صوتی، رد شد", shown)
         assertEquals("تماس صوتی، رد شد", spoken)
     }
 
@@ -205,59 +211,85 @@ class ConversationsScreenTest {
     }
 
     @Test
-    fun requestsHaveTheirRowAndTheHeaderCount() {
+    fun requestsAreOneRowAboveTheConversations() {
         show(ready(talking, requests = 2))
-        // The header button and the row above the conversations say the same.
-        val both = compose.onAllNodesWithContentDescription("Message requests: 2")
-        assertEquals(2, both.fetchSemanticsNodes().size)
-        both[0].performClick()
-        both[1].performClick()
-        assertEquals(listOf("requests", "requests"), actions.calls.takeLast(2))
-    }
-
-    /** The requests badge's and its button's bounds on screen (the button by its TalkBack label). */
-    private fun badgeAndButton(buttonLabel: String): Pair<androidx.compose.ui.geometry.Rect, androidx.compose.ui.geometry.Rect> {
-        val badge = compose.onNodeWithTag(REQUESTS_BADGE_TAG, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val button = compose.onAllNodesWithContentDescription(buttonLabel).fetchSemanticsNodes()
-            .map { it.boundsInRoot }.minBy { it.width * it.height }
-        return badge to button
-    }
-
-    private fun assertOnTheIconsCorner(badge: androidx.compose.ui.geometry.Rect, button: androidx.compose.ui.geometry.Rect, rtl: Boolean) {
-        assertTrue("never taller than wide: $badge", badge.width >= badge.height - 1f)
-        // Within the button's 48 dp touch target (its drawn circle is 40 dp), so never over the title.
-        val target = button.inflate(4f * compose.density.density + 0.5f)
-        assertTrue("inside the button: $badge in $target", badge.left >= target.left && badge.top >= target.top && badge.right <= target.right && badge.bottom <= target.bottom)
-        assertTrue("over the icon's top half", badge.center.y < button.center.y)
-        if (rtl) assertTrue("on the start (left) side in RTL", badge.center.x < button.center.x)
-        else assertTrue("on the end (right) side", badge.center.x > button.center.x)
+        // One place says how many are waiting: the row (the header's requests button carries no count).
+        val row = compose.onAllNodesWithContentDescription("Requests: 2")
+        assertEquals(1, row.fetchSemanticsNodes().size)
+        row[0].performClick()
+        assertEquals("requests", actions.calls.last())
+        compose.onNodeWithContentDescription("Search").assertIsDisplayed()
     }
 
     @Test
-    @GraphicsMode(GraphicsMode.Mode.NATIVE) // real text metrics
-    fun theRequestsCountIsARoundBadgeOnTheIconsCorner() {
-        show(ready(talking, requests = 3))
-        val (badge, button) = badgeAndButton("Message requests: 3")
-        assertEquals("one figure is round: $badge", badge.width, badge.height, 1f)
-        assertOnTheIconsCorner(badge, button, rtl = false)
+    fun withoutRequestsThereIsNoRowButTheHeaderStillOpensThem() {
+        show(ready(talking, requests = 0))
+        compose.onNode(hasContentDescription("Requests:", substring = true)).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Requests").performClick()
+        assertEquals(listOf("requests"), actions.calls.filter { it == "requests" })
     }
 
     @Test
-    @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Config(qualifiers = "fa-w411dp-h891dp-xhdpi", fontScale = 1.5f)
-    fun inPersianAtLargeTextTheRequestsCountIsOnTheMirroredCorner() {
-        show(ready(talking, requests = 12))
-        val (badge, button) = badgeAndButton("درخواست‌های پیام: ۱۲")
-        assertOnTheIconsCorner(badge, button, rtl = true)
-        // It grew with the text: taller than Material's 16 dp, and as tall as wide or wider (never a tall pill).
-        val density = compose.density.density
-        assertTrue("grew with the text: ${badge.height / density} dp", badge.height / density > 17f)
+    fun searchKeepsOnlyTheNamesThatMatch() {
+        show(ready(talking, mineLast))
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("sar")
+        compose.onNode(hasContentDescription("Sara, ", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Negar, ", substring = true)).assertDoesNotExist()
     }
 
     @Test
-    fun theHeaderAndTheRequestsRowSayTheSameCount() {
+    fun backClosesTheSearchFirstAndANameNobodyHasSaysSo() {
+        var dispatcher: androidx.activity.OnBackPressedDispatcher? = null
+        compose.setContent {
+            dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                CompositionLocalProvider(LocalRemoteImages provides false) {
+                    ConversationsScreen(ready(talking, mineLast), actions, today = LocalDate.now(ChatTestData.zone))
+                }
+            }
+        }
+        assertEquals("nothing to close: Back is the tabs'", false, dispatcher!!.hasEnabledCallbacks())
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("zzz")
+        compose.onNodeWithText("No one by that name").assertIsDisplayed()
+        compose.runOnUiThread { dispatcher!!.onBackPressed() }
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNode(hasContentDescription("Negar, ", substring = true)).assertIsDisplayed()
+        assertEquals(false, dispatcher!!.hasEnabledCallbacks())
+    }
+
+    @Test
+    fun aNameNotReadYetKeepsThePagesComing() {
+        show(ready(talking, mineLast))
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        actions.calls.clear()
+        // Nobody loaded by that name: the next page is asked for, not only "No one by that name".
+        compose.onNode(hasSetTextAction()).performTextInput("zeynep")
+        compose.waitForIdle()
+        compose.onNodeWithText("No one by that name").assertIsDisplayed()
+        assertTrue("the next page is read: ${actions.calls}", "end" in actions.calls)
+    }
+
+    @Test
+    fun aTurkishNameIsFoundWhicheverIItIsTypedWith() {
+        fun named(name: String) = conversation(id = "3001", peer = peer(id = "eturk00000001", name = name), lastMessage = wire(5100, NEGAR, "Merhaba"))
+        assertTrue(matchesSearch(named("İrem"), "irem"))
+        assertTrue(matchesSearch(named("İrem"), "İrem"))
+        assertTrue(matchesSearch(named("İrem"), "İR"))
+        assertTrue(matchesSearch(named("Işıl"), "ışıl"))
+        assertTrue(matchesSearch(named("Işıl"), "Işıl"))
+        assertTrue(matchesSearch(named("Işıl"), "isil"))
+        assertTrue(matchesSearch(named("José"), "jose"))
+        assertTrue(matchesSearch(named("Negar"), "neg"))
+        assertTrue(!matchesSearch(named("Irem"), "arem"))
+    }
+
+    @Test
+    fun theRequestsCountStopsAtNinetyNinePlus() {
         val ascii: (Int) -> String = { it.toString() }
-        // One rule for both places (the header used to stop at "9+" over a row saying "12").
         assertEquals("3", requestsBadgeText(3, ascii))
         assertEquals("12", requestsBadgeText(12, ascii))
         assertEquals("99", requestsBadgeText(99, ascii))
@@ -267,7 +299,7 @@ class ConversationsScreenTest {
     @Test
     fun offlineAndReconnectingAreAQuietLineOverWhatThePhoneHas() {
         show(ready(talking).copy(offline = true, connection = RealtimeHealth.DEGRADED))
-        compose.onNodeWithText("You're offline. Showing what's on this phone.").assertIsDisplayed()
+        compose.onNodeWithText("You’re offline.").assertIsDisplayed()
         compose.onNode(hasContentDescription("Negar, Verified, 3 unread", substring = true)).assertIsDisplayed()
     }
 
@@ -280,7 +312,7 @@ class ConversationsScreenTest {
     @Test
     fun aPhoneWithoutPushIsToldOnceAndCanDismissIt() {
         show(ready(talking).copy(pushUnavailable = true))
-        compose.onNodeWithText("Notifications can't reach this phone").assertIsDisplayed()
+        compose.onNodeWithText("Notifications can’t reach this phone").assertIsDisplayed()
         compose.onNodeWithContentDescription("Close").performClick()
         assertEquals("dismissPush", actions.calls.last())
     }
@@ -296,6 +328,6 @@ class ConversationsScreenTest {
     fun persianCountsInPersianDigits() {
         show(ready(talking, requests = 2))
         compose.onNodeWithText("گفتگوها").assertExists()
-        compose.onNode(hasContentDescription("Negar، تأییدشده، ۳ خوانده‌نشده", substring = true)).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Negar، تأییدشده، ۳ پیام نخونده", substring = true)).assertIsDisplayed()
     }
 }

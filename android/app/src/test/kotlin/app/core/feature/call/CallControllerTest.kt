@@ -1,6 +1,7 @@
 package app.core.feature.call
 
 import app.core.common.Clock
+import app.core.model.ConversationPeer
 import app.core.model.CallKind
 import app.core.model.CallRole
 import app.core.model.CallState
@@ -24,7 +25,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CallControllerTest {
 
-    private class App(scope: TestScope, cachedFace: suspend (Id) -> Photo? = { null }) {
+    private class App(scope: TestScope, cachedFace: suspend (Id) -> ConversationPeer? = { null }) {
         val api = ScriptedCallApi()
         val signals = CallSignals().apply { setRealtimeConnected(true) }
         val ringsEnded = mutableListOf<Pair<Id, CallEnd>>()
@@ -116,7 +117,7 @@ class CallControllerTest {
     fun aRingTakesTheFaceTheChatStoredForItsConversation() = runTest {
         val stored = Photo(id = "1", w = 640, h = 800, blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj", url = "https://cdn.example.test/p/1/1/320.webp?sig=a")
         val asked = mutableListOf<Id>()
-        val app = App(this, cachedFace = { id -> asked += id; stored.takeIf { id == "500" } })
+        val app = App(this, cachedFace = { id -> asked += id; ConversationPeer("bnegar2kq7xm4", "Negar", stored, verified = true).takeIf { id == "500" } })
         // The ring brought a name and no photo.
         assertTrue(app.controller.openRing(link()))
         runCurrent()
@@ -125,6 +126,7 @@ class CallControllerTest {
         assertEquals(stored.url, peer.photoUrl)
         assertEquals("the blurhash, drawn while the photo loads", stored.blurhash, peer.blurhash)
         assertEquals("Negar", peer.name)
+        assertTrue("the verified mark the chat stored", peer.verified)
         app.controller.dismiss()
         runCurrent()
     }

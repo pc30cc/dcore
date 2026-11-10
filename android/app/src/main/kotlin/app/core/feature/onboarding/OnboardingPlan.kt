@@ -1,7 +1,5 @@
 package app.core.feature.onboarding
 
-import androidx.annotation.StringRes
-import app.core.R
 import app.core.model.Config
 import app.core.model.ConsentKind
 import app.core.model.Gender
@@ -16,20 +14,20 @@ import app.core.model.PhotoStatus
  * answer on the server to count as done, whatever the stored number says;
  * optional ones count as done once passed.
  */
-enum class OnboardingStep(val code: Int, val required: Boolean, @StringRes val title: Int) {
+enum class OnboardingStep(val code: Int, val required: Boolean) {
     /** The privacy notice, when this install has not shown it (a sign-up carried on from another phone). */
-    Privacy(OnboardingCodes.START, true, R.string.privacy_title),
-    Name(OnboardingCodes.NAME, true, R.string.onboarding_step_name),
-    BirthDate(OnboardingCodes.BIRTH_DATE, true, R.string.onboarding_step_birthday),
-    Gender(OnboardingCodes.GENDER, true, R.string.onboarding_step_gender),
-    InterestedIn(OnboardingCodes.INTERESTED_IN, true, R.string.onboarding_step_interested_in),
-    Intention(OnboardingCodes.INTENTION, true, R.string.onboarding_step_goal),
-    Photos(OnboardingCodes.PHOTOS, true, R.string.onboarding_step_photos),
-    Prompts(OnboardingCodes.PROMPTS, false, R.string.onboarding_step_prompts),
-    Fields(OnboardingCodes.FIELDS, false, R.string.onboarding_step_fields),
-    Location(OnboardingCodes.LOCATION, true, R.string.onboarding_step_location),
-    Notifications(OnboardingCodes.NOTIFICATIONS, false, R.string.onboarding_step_notifications),
-    Guidelines(OnboardingCodes.GUIDELINES, true, R.string.onboarding_step_rules),
+    Privacy(OnboardingCodes.START, true),
+    Name(OnboardingCodes.NAME, true),
+    BirthDate(OnboardingCodes.BIRTH_DATE, true),
+    Gender(OnboardingCodes.GENDER, true),
+    InterestedIn(OnboardingCodes.INTERESTED_IN, true),
+    Intention(OnboardingCodes.INTENTION, true),
+    Photos(OnboardingCodes.PHOTOS, true),
+    Prompts(OnboardingCodes.PROMPTS, false),
+    Fields(OnboardingCodes.FIELDS, false),
+    Location(OnboardingCodes.LOCATION, true),
+    Notifications(OnboardingCodes.NOTIFICATIONS, false),
+    Guidelines(OnboardingCodes.GUIDELINES, true),
     ;
 
     /** What the server stores once this step is passed: the next step's number, or [OnboardingCodes.DONE]. */

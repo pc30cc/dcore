@@ -226,7 +226,7 @@ class WireModelsTest {
     @Test
     fun entitlementsReadTheFeatureKeysAndDefaultTheRest() {
         val paid = Fixtures.decode("entitlements", Entitlements.serializer())
-        assertEquals(Plan.Plus, paid.plan)
+        assertEquals("plus", paid.plan)
         assertEquals(EntitlementSource.Play, paid.source)
         assertTrue(paid.features.seeLikes && paid.features.advancedFilters && paid.features.travelMode)
         assertFalse(paid.features.readReceipts)
@@ -235,7 +235,7 @@ class WireModelsTest {
         assertEquals(3, paid.wallet.dm)
 
         val free = Fixtures.decode("entitlements-free", Entitlements.serializer())
-        assertEquals(Plan.Free, free.plan)
+        assertEquals(PlanKey.FREE, free.plan)
         assertFalse(free.features.seeLikes)
         assertEquals(47, free.quotas.likes!!.left)
         assertNull(free.quotas.boosts)
@@ -243,11 +243,13 @@ class WireModelsTest {
     }
 
     @Test
-    fun productsOfUnknownPlansAndItemsDegrade() {
+    fun productsOfUnknownPeriodsAndItemsDegradeAndAnyPlanKeyIsKept() {
         val products = Fixtures.decode("products-play", StoreProducts.serializer())
         assertEquals(StoreName.Play, products.store)
         assertEquals(listOf(BillingPeriod.Month, BillingPeriod.Week, BillingPeriod.Unknown), products.subscriptions.map { it.period })
-        assertEquals(Plan.Unknown, products.subscriptions[2].plan)
+        // Plans are the admin's keys, not a list in the app: a key this build never heard of is kept as it is.
+        assertEquals(listOf("plus", "premium", "gold"), products.subscriptions.map { it.plan })
+        assertTrue("an older server lists no plans", products.plans.isEmpty())
         assertEquals(WalletItem.Unknown, products.consumables[1].item)
     }
 
@@ -276,7 +278,7 @@ class WireModelsTest {
         assertNull(pending.entitlements)
         val granted = Fixtures.decode("purchase", PurchaseResult.serializer())
         assertFalse(granted.purchase.pending)
-        assertEquals(Plan.Plus, granted.entitlements?.plan)
+        assertEquals("plus", granted.entitlements?.plan)
     }
 
     @Test

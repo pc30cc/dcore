@@ -2,135 +2,144 @@
 <resources>
     <!-- The deck -->
     <string name="deck_filters">Filtreler</string>
-    <string name="deck_loading">Senin için insanlar bulunuyor</string>
     <string name="deck_action_pass">Geç</string>
     <string name="deck_action_like">Beğen</string>
     <string name="deck_action_superlike">Süper beğeni</string>
-    <string name="deck_action_rewind">Geri al</string>
     <string name="deck_action_details">Profili aç</string>
     <string name="deck_action_next_photo">Sonraki fotoğraf</string>
     <string name="deck_action_previous_photo">Önceki fotoğraf</string>
     <string name="deck_name_age">%1$s, %2$s</string>
     <string name="deck_photo_position">Fotoğraf %1$s / %2$s</string>
-    <string name="deck_distance_km">%1$s km uzakta</string>
-    <string name="deck_distance_less">%1$s km\'den yakın</string>
-    <string name="deck_city_distance">%1$s · %2$s</string>
-    <string name="deck_traveling">Seyahatte</string>
-    <string name="deck_active_recently">Yakın zamanda aktif</string>
+    <string name="deck_distance_km">%1$s km</string>
+    <string name="deck_distance_less">%1$s km’den az</string>
+    <string name="deck_city_distance">%1$s, %2$s</string>
     <string name="deck_likes_you">Seni beğendi</string>
     <string name="deck_superliked_you">Seni süper beğendi</string>
     <string name="deck_verified">Doğrulanmış</string>
-    <string name="deck_stamp_like">BEĞEN</string>
-    <string name="deck_stamp_pass">GEÇ</string>
-    <string name="deck_superlikes_left">%1$s süper beğeni kaldı</string>
+    <string name="deck_superlikes_left">%1$s süper beğenin var</string>
+    <string name="deck_boost_active">Boost %1$s dakika daha açık</string>
 
-    <!-- The end of the deck -->
+    <!-- The end of the deck: one fix at a time -->
     <string name="deck_exhausted_title">Şimdilik herkesi gördün</string>
-    <string name="deck_exhausted_body">Her gün yeni insanlar katılıyor. Şimdi daha fazlasıyla tanışmak için aramanı genişlet.</string>
-    <string name="deck_widen_distance">%1$s km\'ye kadar ara</string>
+    <string name="deck_widen_distance">%1$s km’ye kadar ara</string>
     <string name="deck_widen_distance_generic">Daha uzakta ara</string>
     <string name="deck_widen_country">Tüm ülkede ara</string>
-    <string name="deck_widen_age">Yaş aralığını %1$s–%2$s yap</string>
+    <string name="deck_widen_age">Yaşı %1$s–%2$s yap</string>
     <string name="deck_widen_age_generic">Yaş aralığını genişlet</string>
     <string name="deck_boost">Profilini öne çıkar</string>
-    <string name="deck_boost_started">Öne çıkarma %1$s saatine kadar sürüyor.</string>
-    <string name="deck_boost_none">Öne çıkarma hakkın kalmadı.</string>
-    <string name="deck_change_filters">Filtreleri değiştir</string>
     <string name="deck_check_again">Yeniden bak</string>
-    <string name="deck_widening">Daha uzağa bakılıyor…</string>
+    <string name="deck_boost_started">Boost açık, bitiş: %1$s.</string>
+    <string name="deck_boost_none">Boost hakkın kalmadı.</string>
 
     <!-- Why the deck cannot be shown -->
-    <string name="feed_offline_title">Çevrimdışısın</string>
-    <string name="feed_offline_body">İnternete bağlandığında bu sayfa kendiliğinden dolar.</string>
-    <string name="feed_error_title">Bu yüklenemedi</string>
-    <string name="feed_error_body">Bizim tarafımızda bir sorun oldu. Biraz sonra yeniden dene.</string>
-    <string name="feed_retry">Yeniden dene</string>
+    <string name="deck_failed">Bir sorun çıktı.</string>
     <string name="deck_onboarding_title">Önce profilini tamamla</string>
-    <string name="deck_onboarding_body">Fotoğraflarını ve bilgilerini ekle, sonra insanlarla tanışmaya başlayabilirsin.</string>
     <string name="deck_onboarding_action">Profilime git</string>
-    <string name="deck_snoozed_title">Mola modundasın</string>
-    <string name="deck_snoozed_body">Mola modundayken kimse profilini görmez, sen de yeni kimseyi görmezsin.</string>
-    <string name="deck_snoozed_action">Mola modunu kapat</string>
-    <string name="deck_snooze_failed">Mola modu hâlâ açık. Yeniden dene.</string>
-    <string name="deck_location_title">{appName} konumuna ihtiyaç duyuyor</string>
-    <string name="deck_location_body">İnsanlar şehrine olan uzaklığa göre gösterilir. Konumunu profilinde paylaş, sonra yeniden dene.</string>
+    <string name="deck_snoozed_title">Mola modu açık</string>
+    <string name="deck_snoozed_body">Açıkken profilini kimse görmez.</string>
+    <string name="deck_snoozed_action">Kapat</string>
+    <string name="deck_snooze_failed">Mola modu hâlâ açık. Tekrar dene.</string>
+    <string name="deck_location_title">Önce şehrini belirle</string>
+    <string name="deck_location_body">Şehrini profilinden ekle.</string>
 
-    <!-- What became of a like -->
-    <string name="deck_like_offline">Beğenin gönderilmedi: çevrimdışısın.</string>
-    <string name="deck_like_failed">Beğenin gönderilmedi. Yeniden dene.</string>
-    <string name="deck_rate_limited">Çok hızlı kaydırıyorsun. Kısa bir mola ver, sonra devam et.</string>
-    <string name="deck_out_of_likes_title">Şimdilik beğeni hakkın bitti</string>
-    <string name="deck_out_of_superlikes_title">Süper beğeni hakkın kalmadı</string>
+    <!-- What became of a like, a report or a block -->
+    <string name="deck_like_offline">Beğeni gönderilemedi, internet yok.</string>
+    <string name="deck_like_failed">Beğeni gönderilemedi. Tekrar dene.</string>
+    <string name="deck_rate_limited">Birkaç saniye bekle.</string>
+    <string name="deck_out_of_likes_title">Şimdilik beğenin kalmadı</string>
+    <string name="deck_out_of_superlikes_title">Süper beğenin kalmadı</string>
     <string name="deck_quota_resets">Saat %1$s itibarıyla yenilenir.</string>
     <string name="deck_quota_resets_soon">Yakında yenilenir.</string>
-    <string name="deck_rewind_title">Fikrin mi değişti?</string>
-    <string name="deck_rewind_body">Geri al, son geçtiğin kişiyi geri getirir.</string>
-    <string name="deck_rewind_nothing">Geri getirilecek bir şey yok: yalnızca son geçişin, hemen ardından geri alınabilir.</string>
-    <string name="upsell_plans">%1$s ile birlikte gelir.</string>
+    <string name="deck_rewind_nothing">Geri alınacak bir şey yok.</string>
+    <string name="deck_reported">Raporun alındı.</string>
+    <string name="deck_blocked">%1$s artık seni bulamaz.</string>
+    <string name="deck_safety_failed">Bir sorun çıktı. Tekrar dene.</string>
     <string name="upsell_plans_generic">Ücretli bir planla birlikte gelir.</string>
-    <string name="action_got_it">Anladım</string>
 
     <!-- A like on one photo or one answer -->
     <string name="like_item_photo_title">%1$s adlı kişinin fotoğrafını beğen</string>
-    <string name="like_item_prompt_title">%1$s adlı kişinin cevabını beğen</string>
-    <string name="like_item_comment_label">Yorum ekle (isteğe bağlı)</string>
-    <string name="like_item_comment_hint">Dikkatini ne çektiğini söyle</string>
+    <string name="like_item_prompt_title">%1$s adlı kişinin yanıtını beğen</string>
+    <string name="like_item_comment_label">Not (isteğe bağlı)</string>
     <string name="like_item_counter">%1$s/%2$s</string>
     <string name="like_item_send">Beğeniyi gönder</string>
-    <string name="like_item_sending">Gönderiliyor…</string>
-    <string name="like_item_refused">Bu yorum gönderilemez. Lütfen nazik ve saygılı ol.</string>
-    <string name="like_item_offline">Çevrimdışısın. Bağlandığında yeniden gönder.</string>
-    <string name="like_item_failed">Beğenin gönderilmedi. Yeniden dene.</string>
+    <string name="like_item_super">Süper beğeni gönder, %1$s tane var</string>
+    <string name="like_item_super_any">Süper beğeni gönder</string>
+    <string name="like_item_refused">Bu not gönderilemez. Nazik ol.</string>
+    <string name="like_item_offline">Beğeni gönderilemedi, internet yok.</string>
+    <string name="like_item_failed">Beğeni gönderilemedi. Tekrar dene.</string>
     <string name="like_photo">Bu fotoğrafı beğen</string>
-    <string name="like_prompt">Bu cevabı beğen</string>
 
     <!-- The full profile -->
-    <string name="profile_view_close">Profili kapat</string>
+    <string name="profile_view_close">Kapat</string>
+    <string name="profile_view_more">Daha fazla</string>
     <string name="profile_view_about">Hakkımda</string>
-    <string name="profile_view_basics">Temel bilgiler</string>
-    <string name="profile_view_voice_answer">Sesli cevap · %1$s</string>
-    <string name="profile_view_voice_unavailable">Sesli cevaplar bu sürümde henüz çalınamıyor.</string>
+    <string name="profile_view_voice">Kendi sesiyle</string>
+    <string name="profile_view_play">Oynat</string>
+    <string name="profile_view_voice_unavailable">Sesli yanıtlar bu sürümde henüz çalınamıyor.</string>
     <string name="profile_view_like_back">Sen de beğen</string>
     <string name="profile_view_photo">Fotoğraf %1$s / %2$s</string>
-    <string name="profile_view_intention_serious">Ciddi bir ilişki</string>
+    <string name="profile_view_photos">%1$s adlı kişinin fotoğrafları</string>
+    <!-- Between the values of a field with several («فارسی، انگلیسی»); the trailing space is kept. -->
+    <string name="profile_list_separator">", "</string>
+    <string name="profile_fact_looking_for">Arıyor</string>
+    <string name="profile_fact_cm">%1$s cm</string>
+    <string name="profile_view_intention_serious">Ciddi ilişki</string>
     <string name="profile_view_intention_marriage">Evlilik</string>
     <string name="profile_view_intention_friendship">Arkadaşlık</string>
     <string name="profile_view_intention_not_sure">Henüz emin değilim</string>
+    <string name="profile_report">%1$s adlı kişiyi bildir</string>
+    <string name="profile_block">Engelle</string>
 
     <!-- The match moment -->
     <string name="match_title">Eşleştiniz!</string>
-    <string name="match_body">Sen ve %1$s birbirinizi beğendiniz.</string>
-    <string name="match_send_message">Mesaj gönder</string>
-    <string name="match_keep_swiping">Kaydırmaya devam et</string>
+    <string name="match_title_accent"></string>
+    <string name="match_composer">Bir mesaj gönder…</string>
+    <string name="match_send">Gönder</string>
+    <string name="match_later">Sonra</string>
     <string name="match_announcement">%1$s ile eşleştin</string>
+    <!-- Openers: a first message built from one of their answers (or its question), %1$s. -->
+    <string name="match_opener_plain">Çay mı, kahve mi?</string>
+
+    <!-- Older states the likes list still shows -->
+    <string name="deck_loading">Senin için insanlar bulunuyor</string>
 
     <!-- The likes list -->
     <string name="likes_count">%1$s kişi seni beğendi</string>
     <string name="likes_count_plus">%1$s+ kişi seni beğendi</string>
     <string name="likes_count_one">1 kişi seni beğendi</string>
-    <string name="likes_banner_title">Seni kimin beğendiğini gör</string>
-    <string name="likes_banner_body">Tüm beğenileri aç, yorumlarını oku ve sen de beğen.</string>
-    <string name="likes_daily_reveal">Bugünün ücretsiz bakışı</string>
     <string name="likes_superlike">Süper beğeni</string>
-    <string name="likes_liked_photo">Fotoğrafını beğendi</string>
-    <string name="likes_liked_prompt">Cevabını beğendi</string>
     <string name="likes_hidden_person">Seni beğenen biri. Planında gizli.</string>
-    <string name="likes_empty_action">İnsanları keşfet</string>
+    <string name="likes_empty_action">Keşfet’e git</string>
     <string name="likes_more_failed">Daha fazla beğeni yüklenemedi.</string>
-    <string name="likes_open_profile">%1$s profilini aç</string>
-    <string name="likes_comment_quote">“%1$s”</string>
+    <string name="likes_open_profile">%1$s profili</string>
     <string name="likes_pass_done">%1$s adlı kişiyi geçtin.</string>
+    <string name="likes_filter_all">Tümü</string>
+    <string name="likes_filter_super">Süper beğeniler</string>
+    <string name="likes_filter_note">Notlu</string>
+    <string name="likes_free_today">Bugün ücretsiz</string>
+    <string name="likes_see_all">Seni kimlerin beğendiğini gör</string>
 
     <!-- Filters -->
-    <string name="filters_title">Kimleri göreceksin</string>
-    <string name="filters_distance">En fazla uzaklık</string>
-    <string name="filters_distance_value">%1$s km</string>
-    <string name="filters_whole_country">Ülkemin her yeri</string>
-    <string name="filters_age">Yaş aralığı</string>
+    <string name="filters_title">Filtreler</string>
+    <string name="filters_reset">Sıfırla</string>
+    <string name="filters_distance">Mesafe</string>
+    <string name="filters_distance_value">%1$s km’ye kadar</string>
+    <!-- %1$s: the account's country, named in the app's language. -->
+    <!-- %1$s: the country in the genitive with its apostrophe («İran’ın»); the suffix follows the name's
+         last vowel, so the code builds it (DeckSheets countryName). -->
+    <string name="filters_anywhere_in">%1$s her yeri</string>
+    <string name="filters_anywhere">Ülkenin her yeri</string>
+    <!-- A range filter's value in centimetres (height). -->
+    <string name="filters_cm_range">%1$s–%2$s cm</string>
+    <string name="filters_age">Yaş</string>
     <string name="filters_age_value">%1$s–%2$s</string>
-    <string name="filters_verified_only">Yalnızca doğrulanmış profiller</string>
-    <string name="filters_apply">Kişileri göster</string>
-    <string name="filters_saving">Kaydediliyor…</string>
-    <string name="filters_failed">Filtrelerin kaydedilmedi. Yeniden dene.</string>
-    <string name="filters_limit">Bugün uzaklığı çok kez değiştirdin. Yarın yeniden dene.</string>
+    <string name="filters_verified_only">Sadece doğrulanmış</string>
+    <string name="filters_more">Daha fazla</string>
+    <string name="filters_paid">Abonelik</string>
+    <string name="filters_looking_for">Ne arıyor</string>
+    <string name="filters_any">Fark etmez</string>
+    <string name="filters_apply">Göster</string>
+    <string name="filters_failed">Filtreler kaydedilmedi. Tekrar dene.</string>
+    <string name="filters_limit">Bugün mesafeyi çok değiştirdin. Yarın tekrar dene.</string>
+    <string name="likes_show_more">Daha fazla göster</string>
 </resources>

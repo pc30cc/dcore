@@ -6,44 +6,61 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The full profile is one continuous page: photos, prompts and fields interleaved. */
+/**
+ * The full profile after its first screen (the photos, the name and the
+ * line) is one continuous page: about, the voice answers, the fact grid,
+ * then each answer with one more photo after it.
+ */
 class ProfileSectionsTest {
 
     private fun shape(sections: List<ProfileSection>): List<String> = sections.map {
         when (it) {
             is ProfileSection.PhotoBlock -> "photo${it.index + 1}"
-            ProfileSection.Header -> "header"
             is ProfileSection.About -> "about"
-            is ProfileSection.PromptBlock -> "prompt${it.prompt.promptId}"
+            is ProfileSection.PromptBlock -> if (it.voice) "voice${it.prompt.promptId}" else "prompt${it.prompt.promptId}"
             is ProfileSection.Fields -> "fields"
         }
     }
 
     @Test
-    fun photosPromptsAndFieldsAlternate() {
+    fun aboutAndTheFactsLeadThenEachAnswerBringsOneMorePhoto() {
         val sections = profileSections(ScreenTestData.negar, ScreenTestData.catalog)
         assertEquals(
-            listOf("photo1", "header", "about", "prompt1", "photo2", "fields", "prompt2", "photo3", "photo4"),
+            listOf("about", "fields", "prompt1", "photo2", "prompt2", "photo3", "photo4"),
             shape(sections),
         )
     }
 
     @Test
-    fun withNoPromptsTheFieldsFollowTheSecondPhoto() {
+    fun theFirstPhotoIsTheFirstScreensAndNeverRepeated() {
+        val sections = profileSections(ScreenTestData.negar, ScreenTestData.catalog)
+        assertTrue(sections.filterIsInstance<ProfileSection.PhotoBlock>().none { it.index == 0 })
+    }
+
+    @Test
+    fun withNoPromptsThePhotosFollowTheFacts() {
         val card = ScreenTestData.negar.copy(prompts = emptyList(), about = null)
-        assertEquals(listOf("photo1", "header", "photo2", "fields", "photo3", "photo4"), shape(profileSections(card, ScreenTestData.catalog)))
+        assertEquals(listOf("fields", "photo2", "photo3", "photo4"), shape(profileSections(card, ScreenTestData.catalog)))
     }
 
     @Test
     fun emptyPartsAreLeftOut() {
         val card = ScreenTestData.olivia.copy(about = "  ", prompts = listOf(ProfilePrompt(1, "")))
-        assertEquals(listOf("photo1", "header"), shape(profileSections(card, ScreenTestData.catalog)))
+        assertEquals(emptyList<String>(), shape(profileSections(card, ScreenTestData.catalog)))
     }
 
     @Test
-    fun aVoiceAnswerCountsAsAnAnswer() {
-        val card = ScreenTestData.olivia.copy(prompts = listOf(ProfilePrompt(3, null, audioMs = 14_200, audioUrl = "https://media.test/a/1.m4a")))
-        assertEquals(listOf("photo1", "header", "prompt3"), shape(profileSections(card, ScreenTestData.catalog)))
+    fun whatTheyLookForAloneStillMakesTheFactGrid() {
+        val card = ScreenTestData.olivia.copy(intention = app.core.model.Intention.Friendship)
+        val fields = profileSections(card, ScreenTestData.catalog).single() as ProfileSection.Fields
+        assertEquals(app.core.model.Intention.Friendship, fields.intention)
+        assertTrue(fields.lines.isEmpty())
+    }
+
+    @Test
+    fun aVoiceAnswerCountsAsAnAnswerAndComesBeforeTheFacts() {
+        val card = ScreenTestData.negar.copy(prompts = listOf(ProfilePrompt(3, null, audioMs = 14_200, audioUrl = "https://media.test/a/1.m4a"), ProfilePrompt(1, "A trip north")))
+        assertEquals(listOf("about", "voice3", "fields", "prompt1", "photo2", "photo3", "photo4"), shape(profileSections(card, ScreenTestData.catalog)))
     }
 
     @Test

@@ -1,5 +1,7 @@
 package app.core.ui.components
 
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,14 +34,16 @@ import app.core.ui.theme.insetShadow
 /**
  * Chips wrap onto whole rows (never clipped at the edge): 8 dp between
  * chips, 12 dp between rows of 44 dp chips (each chip's 48 dp target
- * reaches 2 dp above and below it).
+ * reaches 2 dp above and below it). [centered] centres each row (the match
+ * screen's openers); otherwise rows start at the start. [group] makes the
+ * row one group of single choices for TalkBack ("1 of 3").
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChipRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun ChipRow(modifier: Modifier = Modifier, centered: Boolean = false, group: Boolean = false, content: @Composable () -> Unit) {
     FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.then(if (group) Modifier.selectableGroup() else Modifier),
+        horizontalArrangement = if (centered) Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) { content() }
 }
@@ -48,7 +52,9 @@ fun ChipRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
  * A choice or filter chip: 44 dp to see in a 48 dp target, `--r-chip`; at
  * rest a 1 dp `--line-strong` edge; selected, the one selected treatment
  * ([choiceFrame]) and a 17 dp check before the label. [count] follows the
- * label in `--text-3` («همه ۱۲»). Never an icon of its own.
+ * label in `--text-3` («همه ۱۲»). Never an icon of its own. [kind] is
+ * what TalkBack calls it: a checkbox among several choices, a radio button
+ * in a single choice, a tab for a filter that switches the list.
  */
 @Composable
 fun ChoiceChip(
@@ -57,14 +63,20 @@ fun ChoiceChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     count: String? = null,
+    kind: ChoiceKind = ChoiceKind.Multi,
 ) {
     val t = AppTheme.template
     val shape = RoundedCornerShape(t.radii.chip)
+    val choose = when (kind) {
+        ChoiceKind.Multi -> Modifier.toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
+        ChoiceKind.Single -> Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+        ChoiceKind.Tab -> Modifier.selectable(selected = selected, role = Role.Tab, onClick = onClick)
+    }
     Box(
         modifier
             .heightIn(min = 48.dp)
             .clip(shape)
-            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() }),
+            .then(choose),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -75,12 +87,15 @@ fun ChoiceChip(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (selected) Icon(AppIcons.Check, contentDescription = null, tint = t.colors.text, modifier = Modifier.size(17.dp))
+            if (selected) Icon(AppIcons.CheckBold, contentDescription = null, tint = t.colors.text, modifier = Modifier.size(17.dp))
             Text(label, style = t.type.labelSm, color = t.colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (count != null) Text(count, style = t.type.labelSm, color = t.colors.text3, maxLines = 1)
         }
     }
 }
+
+/** What a [ChoiceChip] is to TalkBack. */
+enum class ChoiceKind { Multi, Single, Tab }
 
 /**
  * An interest on a profile (44 dp, not tappable). [shared] (you both have
@@ -117,15 +132,6 @@ fun InterestChip(label: String, modifier: Modifier = Modifier, shared: Boolean =
     }
 }
 
-/** A chip on a photo (34 dp): `--photo-chip-fill` (blurred where glass is on), a hairline, `--on-photo` text. */
-@Composable
-fun PhotoChip(label: String, modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
-    val t = AppTheme.template
-    GlassBox(RoundedCornerShape(t.radii.chip), GlassStyle.photoChip(), modifier.heightIn(min = 34.dp), backdrop) {
-        Text(label, style = t.type.caption, color = t.colors.onPhoto, maxLines = 1, modifier = Modifier.padding(horizontal = 13.dp))
-    }
-}
-
 /** What a small pill says with its colours. */
 enum class PillKind {
     /** «اصلی», «سوپرلایک», «رایگان امروز»: `--tag-fill` with `--on-tag`. */
@@ -135,7 +141,7 @@ enum class PillKind {
     Tint,
 }
 
-/** A 24 dp pill: a tag or a tint pill. */
+/** A 24 dp pill (taller with larger text, one line, cut short with «…» when it has no room): a tag or a tint pill. */
 @Composable
 fun Pill(text: String, modifier: Modifier = Modifier, kind: PillKind = PillKind.Tag) {
     val t = AppTheme.template
@@ -143,31 +149,36 @@ fun Pill(text: String, modifier: Modifier = Modifier, kind: PillKind = PillKind.
         PillKind.Tag -> Modifier.background(t.paints.tagFill, CircleShape)
         PillKind.Tint -> Modifier.background(t.colors.primaryTint.compositeOverSafe(t.colors.bg), CircleShape)
     }
-    Box(modifier.height(24.dp).then(m).padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = t.type.captionStrong, color = if (kind == PillKind.Tag) t.colors.onTag else t.colors.primary, maxLines = 1)
+    Box(modifier.heightIn(min = 24.dp).then(m).padding(horizontal = 10.dp, vertical = 2.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text,
+            style = t.type.captionStrong,
+            color = if (kind == PillKind.Tag) t.colors.onTag else t.colors.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
-/** A status pill on a photo («در حال بررسی»): `--photo-chip-fill`, a 1 dp `--photo-chip-line`, white text. */
+/** A status pill on a photo («در حال بررسی»): `--photo-chip-fill`, a 1 dp `--photo-chip-line`, white text; sized as [Pill]. */
 @Composable
 fun PhotoPill(text: String, modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     val t = AppTheme.template
-    GlassBox(CircleShape, GlassStyle.photoChip(), modifier.height(24.dp), backdrop) {
-        Text(text, style = t.type.captionStrong, color = t.colors.onPhoto, maxLines = 1, modifier = Modifier.padding(horizontal = 10.dp))
+    GlassBox(CircleShape, GlassStyle.photoChip(), modifier.heightIn(min = 24.dp), backdrop) {
+        Text(
+            text,
+            style = t.type.captionStrong,
+            color = t.colors.onPhoto,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+        )
     }
 }
 
 /** An unread count (22 dp): `--unread-fill` with `--on-unread`. */
 @Composable
-fun UnreadCount(text: String, modifier: Modifier = Modifier) {
-    val t = AppTheme.template
-    Box(
-        modifier.height(22.dp).widthIn(min = 22.dp).background(t.paints.unreadFill, CircleShape).padding(horizontal = 7.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = t.type.captionStrong, color = t.colors.onUnread, maxLines = 1)
-    }
-}
+fun UnreadCount(text: String, modifier: Modifier = Modifier) = CountBadge(text, modifier)
 
 /** The online mark: a plain `--online` dot (10-13 dp), never a chip or a word on a card. */
 @Composable

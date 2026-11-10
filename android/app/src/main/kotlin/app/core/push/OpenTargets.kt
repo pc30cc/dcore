@@ -15,6 +15,9 @@ sealed interface OpenTarget {
     data object Chats : OpenTarget
     data object Likes : OpenTarget
     data object Account : OpenTarget
+
+    /** The Profile tab (the end of sign-up's «پروفایلم رو ببینم»; no notification opens it). */
+    data object Profile : OpenTarget
     data class Support(val ticketId: Id?) : OpenTarget
 
     /** A campaign's in-app path ([deeplink] is never a web address). */

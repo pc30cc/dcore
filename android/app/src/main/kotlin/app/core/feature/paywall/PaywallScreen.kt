@@ -1,129 +1,144 @@
 package app.core.feature.paywall
 
+import android.graphics.Matrix
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.core.R
 import app.core.billing.Catalogue
-import app.core.billing.CatalogueJoin
-import app.core.billing.PlanOption
-import app.core.billing.ProductBadge
+import app.core.billing.PlanGroup
 import app.core.billing.PurchaseFailure
 import app.core.billing.PurchaseStep
 import app.core.billing.storePlan
+import app.core.feature.auth.authSideInsets
+import app.core.feature.auth.authTopInsets
+import app.core.feature.auth.brandPlural
 import app.core.feature.auth.screenLanguage
 import app.core.feature.card.isolate
-import app.core.feature.onboarding.formatDate
+import app.core.i18n.AppLanguage
+import app.core.i18n.Numerals
 import app.core.i18n.brandString
-import app.core.model.EntitlementSource
-import app.core.model.Entitlements
-import app.core.model.Plan
+import app.core.model.PlanKey
 import app.core.model.PurchaseKind
 import app.core.store.Store
-import app.core.ui.components.BrandMark
+import app.core.ui.components.AppIconButton
+import app.core.ui.components.BenefitList
+import app.core.ui.components.PeriodOption
+import app.core.ui.components.PeriodRow
+import app.core.ui.components.PlanSelector
+import app.core.ui.components.PrimaryButton
+import app.core.ui.components.SecondaryButton
+import app.core.ui.components.TextAction
+import app.core.ui.components.TextActionKind
+import app.core.ui.components.periodsStacked
+import app.core.ui.components.skeleton
+import app.core.ui.icons.AppIcons
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.Radius
 import app.core.ui.theme.Space
-import java.time.ZoneId
+import app.core.ui.components.PlanOption as PlanChoice
 
 /** What the paywall and the packs sheet can be asked to do. */
 interface StoreActions {
     fun close()
-    fun selectPlan(plan: Plan)
+    fun selectPlan(plan: String)
     fun select(key: String)
+    fun selectItem(item: app.core.model.WalletItem)
+    fun selectPack(key: String)
     fun buy(key: String)
     fun restore()
-    fun restoreShown()
     fun retry()
 
-    /** The held-elsewhere note: read the entitlements and the store's list again. */
+    /** The held-elsewhere line: read the entitlements and the store's list again. */
     fun checkAgain()
     fun stepShown()
     fun manage()
     fun openLink(url: String)
     fun installStore()
     fun openStore()
-
-    /** From a packs sheet: the plans instead. */
-    fun seePlans()
 }
 
 /** The links under the purchase button, from the config (else the build's). */
 data class PaywallLinks(val termsUrl: String, val privacyUrl: String)
 
+/** The paywall on the design's phone (dp). */
+internal object PaywallLayout {
+    val topRow = 56.dp
+    val closeInset = 8.dp
+
+    /** The block's least distance from the close row, when it fills the screen. */
+    val top = 8.dp
+    val group = 20.dp
+    val aboveButton = 24.dp
+    val underButton = 12.dp
+    val aboveLinks = 4.dp
+    val linkGap = 8.dp
+    val bottom = 14.dp
+    val periodGap = 8.dp
+    val period = 64.dp
+    val selector = 48.dp
+    val skeletonBenefit = 22.dp
+    val skeletonBenefitWidth = 0.6f
+    val skeletonGap = 12.dp
+    val skeletonPeriods = 3
+}
+
 /**
- * The paywall for a given state: the plans of this store with the store's
- * own prices, and every step of a purchase. Next to the button, without
- * another tap: the price, the period and that it renews until cancelled;
- * under the prices the store's renewal and cancellation terms, then what is
- * included; the terms and privacy links, restore, and (for a store plan) the
- * store's own subscription page.
+ * The paywall (m14, h06): the close button, then one block resting on the
+ * bottom of the screen: the title, the plan selector (segmented for two or
+ * three plans, a rail for more), what the chosen plan gives, its periods
+ * with the store's prices, the button with the price on it, one store line
+ * and the links, 20 dp between groups and 24 dp above the button. Neon's
+ * hero light fills the free space above it. Every step of a purchase, and
+ * a restore's answer, is said on the one line under the button; when the
+ * catalogue cannot be shown, what happened is the page's only title, with
+ * its one action.
  */
 @Composable
 fun PaywallScreen(
@@ -134,523 +149,422 @@ fun PaywallScreen(
     links: PaywallLinks,
     actions: StoreActions,
     modifier: Modifier = Modifier,
+    likes: Int? = null,
 ) {
-    val storeName = brandString(R.string.store_name)
-    val snackbar = remember { SnackbarHostState() }
-    RestoreNotices(state, storeName, snackbar, actions)
-
-    Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-            val step = state.step
-            when {
-                step is PurchaseStep.Done && step.kind == PurchaseKind.Subscription ->
-                    DonePane(
-                        title = brandString(R.string.paywall_done_plan_title, planName(state.entitlements?.plan?.takeIf { it in CatalogueJoin.PLANS } ?: state.plan, planNames)),
-                        body = brandString(R.string.paywall_done_plan_body, planName(state.entitlements?.plan?.takeIf { it in CatalogueJoin.PLANS } ?: state.plan, planNames)),
-                        onContinue = { actions.stepShown(); actions.close() },
-                    )
-                else -> Column(Modifier.fillMaxSize()) {
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        Hero(entry, onClose = actions::close)
-                        Column(
-                            Modifier.padding(horizontal = Space.gutter),
-                            verticalArrangement = Arrangement.spacedBy(Space.lg),
-                        ) {
-                            CurrentPlan(state.entitlements, store, planNames, actions, manage = !state.heldElsewhere)
-                            when (val load = state.load) {
-                                StoreLoad.Loading -> LoadingPane()
-                                is StoreLoad.Unavailable -> UnavailablePane(load.reason, storeName, actions)
-                                StoreLoad.Offline -> MessagePane(Icons.Filled.Info, brandString(R.string.paywall_offline_title), brandString(R.string.paywall_offline_body), actions::retry)
-                                StoreLoad.Failed -> MessagePane(Icons.Filled.Warning, brandString(R.string.paywall_failed_title), brandString(R.string.paywall_failed_body), actions::retry)
-                                is StoreLoad.Ready -> if (load.catalogue.plans.isEmpty()) {
-                                    MessagePane(Icons.Filled.ShoppingCart, brandString(R.string.paywall_empty_title), brandString(R.string.paywall_empty_body), actions::retry)
-                                } else {
-                                    Plans(load.catalogue, state, planNames, actions)
-                                }
-                            }
-                            Spacer(Modifier.height(Space.sm))
-                        }
-                    }
-                    BottomBar(state, store, links, actions)
-                }
-            }
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 120.dp))
-        }
-    }
-}
-
-@Composable
-private fun Hero(entry: PaywallEntry, onClose: () -> Unit) {
-    val primary = MaterialTheme.colorScheme.primary
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), MaterialTheme.colorScheme.background))),
-    ) {
-        IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(Space.xs)) {
-            Icon(Icons.Filled.Close, contentDescription = brandString(R.string.paywall_close))
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = Space.gutter, end = Space.gutter, top = Space.xxl, bottom = Space.md),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            BrandMark(size = 48.dp)
-            Text(
-                brandString(entry.headline()),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() },
-            )
-            Text(
-                brandString(R.string.paywall_title),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-/**
- * "Plus, renews on 9 Dec 2026", and where to manage it, when there is a paid
- * plan. [manage]: false when the note next to the button already offers the
- * store's page (a plan held on another store account).
- */
-@Composable
-private fun CurrentPlan(e: Entitlements?, store: Store, planNames: Map<String, String>, actions: StoreActions, manage: Boolean) {
-    val plan = e?.plan?.takeIf { it in CatalogueJoin.PLANS } ?: return
-    val name = planName(plan, planNames)
+    val t = AppTheme.template
     val language = screenLanguage()
-    val date = e.planExpiresAt?.let { formatDate(it.atZone(ZoneId.systemDefault()).toLocalDate(), language) }
-    val line = when {
-        date == null -> brandString(R.string.paywall_current_plain, name)
-        e.source == EntitlementSource.Grant -> brandString(R.string.paywall_current_grant, name, date)
-        e.autoRenew == true -> brandString(R.string.paywall_current_renews, name, date)
-        else -> brandString(R.string.paywall_current_ends, name, date)
-    }
-    Surface(shape = RoundedCornerShape(Radius.lg), color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            Text(brandString(R.string.paywall_plan_current), style = MaterialTheme.typography.labelLarge)
-            Text(line, style = MaterialTheme.typography.titleMedium)
-            if (manage && e.storePlan(store)) CardTextButton(brandString(R.string.paywall_manage), actions::manage)
-        }
-    }
-}
+    val storeName = brandString(R.string.store_name)
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun Plans(catalogue: Catalogue, state: StoreUiState, planNames: Map<String, String>, actions: StoreActions) {
-    val plans = catalogue.plans.map { it.plan }
-    if (plans.size > 1) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            plans.forEachIndexed { index, plan ->
-                SegmentedButton(
-                    selected = plan == state.plan,
-                    onClick = { actions.selectPlan(plan) },
-                    shape = SegmentedButtonDefaults.itemShape(index, plans.size),
-                    modifier = Modifier.heightIn(min = Space.minTouch),
-                ) {
-                    Text(planName(plan, planNames), maxLines = 1)
+    Box(modifier.fillMaxSize().background(t.colors.bg)) {
+        if (t.switches.glow) Box(Modifier.fillMaxSize().background(t.paints.heroBg))
+        Column(Modifier.fillMaxSize().authTopInsets().authSideInsets()) {
+            Row(Modifier.fillMaxWidth().height(PaywallLayout.topRow).padding(start = PaywallLayout.closeInset), verticalAlignment = Alignment.CenterVertically) {
+                AppIconButton(AppIcons.Close, brandString(R.string.paywall_close), actions::close)
+            }
+            val step = state.step
+            BottomBlock {
+                if (step is PurchaseStep.Done && step.kind == PurchaseKind.Subscription) {
+                    Done(state, step, planNames, actions)
+                } else {
+                    Offer(state, entry, likes, store, storeName, language, planNames, links, actions)
                 }
             }
-        }
-    }
-    val group = catalogue.plan(state.plan) ?: catalogue.plans.first()
-    Text(
-        brandString(R.string.paywall_periods_label),
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.semantics { heading() },
-    )
-    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        group.options.forEach { option ->
-            OptionRow(option, selected = option.key == state.selected, current = option.key == state.current, enabled = !state.busy) {
-                actions.select(option.key)
-            }
-        }
-    }
-    // The store's renewal and cancellation terms, right under the prices.
-    Text(
-        brandString(R.string.paywall_store_terms),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Benefits(group.plan, planNames)
-}
-
-@Composable
-private fun Benefits(plan: Plan, planNames: Map<String, String>) {
-    Surface(shape = RoundedCornerShape(Radius.lg), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Text(brandString(R.string.paywall_benefits_title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            val lines = buildList {
-                if (plan == Plan.Premium) add(brandString(R.string.paywall_benefit_everything, planName(Plan.Plus, planNames)))
-                benefits(plan).forEach { add(brandString(it)) }
-            }
-            lines.forEach { line ->
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Text(line, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun OptionRow(option: PlanOption, selected: Boolean, current: Boolean, enabled: Boolean, onSelect: () -> Unit) {
-    val period = brandString(option.period.label())
-    val badge = option.badge?.let { brandString(it.label()) }
-    val currentText = if (current) brandString(R.string.paywall_option_current) else null
-    val selectedText = brandString(R.string.paywall_option_selected)
-    val outline = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.lg))
-            .border(if (selected) 2.dp else 1.dp, outline, RoundedCornerShape(Radius.lg))
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
-            .heightIn(min = 64.dp)
-            .padding(horizontal = Space.md, vertical = Space.sm)
-            .semantics(mergeDescendants = true) {
-                contentDescription = listOfNotNull(period, option.price, badge, currentText).joinToString(", ")
-                if (selected) stateDescription = selectedText
-            },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = null, enabled = enabled)
-        Spacer(Modifier.width(Space.sm))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
-                Text(period, style = MaterialTheme.typography.titleMedium)
-                if (badge != null) Badge(badge, option.badge)
-                if (currentText != null) CurrentBadge(currentText)
-            }
-            Text(brandString(option.period.every()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.width(Space.sm))
-        // The store's price exactly as the store writes it.
-        Text(isolate(option.price), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-internal fun Badge(text: String, badge: ProductBadge?) {
-    val container = if (badge == ProductBadge.NEW) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer
-    val content = if (badge == ProductBadge.NEW) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
-    Surface(shape = RoundedCornerShape(Radius.pill), color = container) {
-        Text(text, style = MaterialTheme.typography.labelMedium, color = content, modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.xxs))
-    }
-}
-
-/** "Current plan" on the period the person is on: the current plan card's colours. */
-@Composable
-private fun CurrentBadge(text: String) {
-    Surface(shape = RoundedCornerShape(Radius.pill), color = MaterialTheme.colorScheme.secondaryContainer) {
-        Row(
-            Modifier.padding(horizontal = Space.sm, vertical = Space.xxs),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(14.dp))
-            Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
         }
     }
 }
 
 /**
- * The price line, the button, the store's terms and the links. The period
- * the person is on is not offered again: in place of the button, a line
- * saying so. A plan the store account on this phone does not list sells no
- * subscription here: a note, the store's page and "Check again" instead of
- * the price and the button.
+ * The page under the close row: [content] rests on the bottom edge; taller
+ * than the screen (large text, a small phone), it fills it and scrolls from
+ * its top, so nothing moves while it is read.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BottomBar(state: StoreUiState, store: Store, links: PaywallLinks, actions: StoreActions) {
-    val option = state.selected?.let { state.catalogue?.option(it) }
-    val storeName = brandString(R.string.store_name)
-    if (state.load !is StoreLoad.Ready) {
-        // Nothing to buy: only the links (and restore), no price or button.
-        Surface(color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Space.gutter, vertical = Space.sm)) {
-                LinksRow(state, store, links, actions)
-            }
-        }
-        return
-    }
-    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = Space.gutter, vertical = Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            // The purchase's step, next to the button that started it.
-            if (state.waiting > 0 && state.step !is PurchaseStep.Queued) {
-                StepCard(Icons.Filled.DateRange, null, brandString(R.string.paywall_waiting))
-            }
-            StepPanel(state.step, storeName, actions)
-            val isCurrent = option != null && option.key == state.current
-            when {
-                state.step !is PurchaseStep.Idle -> Unit
-                state.heldElsewhere -> StepCard(Icons.Filled.Info, null, brandString(R.string.paywall_held_elsewhere, storeName)) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        CardTextButton(brandString(R.string.paywall_manage), actions::manage)
-                        CardTextButton(brandString(R.string.paywall_check_again), actions::checkAgain, enabled = !state.checking && !state.busy)
-                    }
-                }
-                state.subscriptionLocked && !isCurrent -> StepCard(Icons.Filled.Info, null, brandString(R.string.paywall_fail_change, storeName))
-            }
-            if (option != null && isCurrent && !state.heldElsewhere) {
-                CurrentOptionLine()
-            } else if (option != null && !state.heldElsewhere) {
-                Text(
-                    brandString(R.string.paywall_renews, isolate(option.price), brandString(option.period.every())),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                )
-                val busy = state.busy
-                val opening = state.step is PurchaseStep.Connecting || state.step is PurchaseStep.InStore
-                Button(
-                    onClick = { actions.buy(option.key) },
-                    enabled = !busy && !state.subscriptionLocked && state.step !is PurchaseStep.Pending && state.step !is PurchaseStep.Queued,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                ) {
-                    if (opening) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-                        Spacer(Modifier.width(Space.sm))
-                        Text(brandString(R.string.paywall_step_opening, storeName))
-                    } else {
-                        Text(brandString(R.string.paywall_subscribe))
-                    }
-                }
-            }
-            LinksRow(state, store, links, actions)
+private fun ColumnScope.BottomBlock(content: @Composable ColumnScope.() -> Unit) {
+    BoxWithConstraints(
+        Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets(bottom = PaywallLayout.bottom)).only(WindowInsetsSides.Bottom)),
+    ) {
+        val viewport = maxHeight
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = viewport).padding(top = PaywallLayout.top),
+                verticalArrangement = Arrangement.Bottom,
+                content = content,
+            )
         }
     }
 }
 
+/** The purchase confirmed: «پریمیوم فعال شد.» right above «ادامه». */
+@Composable
+private fun Done(state: StoreUiState, step: PurchaseStep.Done, planNames: Map<String, String>, actions: StoreActions) {
+    // The plan of the period just bought; the entitlements' only when they name a paid one.
+    val plan = state.catalogue?.option(step.target)?.plan
+        ?: state.entitlements?.plan?.takeIf(PlanKey::isPaid)
+        ?: state.plan.orEmpty()
+    PageTitle(brandString(R.string.paywall_done_plan, planName(plan, planNames, state.catalogue?.plan(plan)?.name)))
+    Spacer(Modifier.height(PaywallLayout.aboveButton))
+    PrimaryButton(brandString(R.string.paywall_done_action), { actions.stepShown(); actions.close() }, Modifier.padding(horizontal = Space.gutter))
+}
+
+/** The offer in its state: loading, the plans, or why there are none with the one thing that helps. */
+@Composable
+private fun Offer(
+    state: StoreUiState,
+    entry: PaywallEntry,
+    likes: Int?,
+    store: Store,
+    storeName: String,
+    language: AppLanguage,
+    planNames: Map<String, String>,
+    links: PaywallLinks,
+    actions: StoreActions,
+) {
+    // A plan of this store keeps its way to the store's page on a page that cannot show the plans too.
+    val manage = state.entitlements?.storePlan(store) == true
+    when (val load = state.load) {
+        StoreLoad.Loading -> {
+            Title(entry, likes, language)
+            Spacer(Modifier.height(PaywallLayout.group))
+            LoadingPlans()
+            Footer(state, storeName, links, actions, manage)
+        }
+        is StoreLoad.Unavailable -> when (load.reason) {
+            PurchaseFailure.STORE_MISSING -> Stopped(brandString(load.reason.message(), storeName), brandString(R.string.paywall_store_missing_action, storeName), actions::installStore, state, storeName, links, actions, manage)
+            PurchaseFailure.STORE_NOT_READY -> Stopped(brandString(load.reason.message(), storeName), brandString(R.string.paywall_store_not_ready_action, storeName), actions::openStore, state, storeName, links, actions, manage)
+            else -> Stopped(brandString(load.reason.message(), storeName), brandString(R.string.action_try_again), actions::retry, state, storeName, links, actions, manage)
+        }
+        StoreLoad.Offline -> Stopped(brandString(R.string.error_offline), brandString(R.string.action_try_again), actions::retry, state, storeName, links, actions, manage)
+        StoreLoad.Failed -> Stopped(brandString(R.string.error_generic), brandString(R.string.action_try_again), actions::retry, state, storeName, links, actions, manage)
+        is StoreLoad.Ready -> {
+            val group = shownPlan(load.catalogue, state)
+            if (group == null) {
+                Stopped(brandString(R.string.paywall_none), brandString(R.string.action_try_again), actions::retry, state, storeName, links, actions, manage)
+            } else {
+                Title(entry, likes, language)
+                Spacer(Modifier.height(PaywallLayout.group))
+                val plans = load.catalogue.plans
+                if (plans.size > 1) {
+                    PlanSelector(
+                        plans = plans.map { PlanChoice(it.plan, planName(it.plan, planNames, it.name)) },
+                        selectedId = group.plan,
+                        onSelect = actions::selectPlan,
+                        modifier = Modifier.padding(horizontal = if (plans.size <= RAIL_FROM) Space.gutter else 0.dp),
+                        contentPadding = PaddingValues(horizontal = if (plans.size <= RAIL_FROM) 0.dp else Space.gutter),
+                        enabled = !state.busy,
+                    )
+                    Spacer(Modifier.height(PaywallLayout.group))
+                }
+                BenefitList(benefitLines(group, plans, planNames, language), Modifier.padding(horizontal = Space.gutter))
+                Spacer(Modifier.height(PaywallLayout.group))
+                Purchase(state, load.catalogue, group, store, storeName, language, actions)
+                Spacer(Modifier.height(PaywallLayout.aboveLinks))
+                LinksRow(state, links, actions)
+            }
+        }
+    }
+}
+
+/**
+ * The catalogue cannot be shown: [message] is the page's only title, with
+ * its one action under it, and the links (a restore still works); for a
+ * plan of this store ([manage]), its store page.
+ */
+@Composable
+private fun Stopped(
+    message: String,
+    action: String,
+    onAction: () -> Unit,
+    state: StoreUiState,
+    storeName: String,
+    links: PaywallLinks,
+    actions: StoreActions,
+    manage: Boolean,
+) {
+    PageTitle(message)
+    Spacer(Modifier.height(PaywallLayout.aboveButton))
+    SecondaryButton(action, onAction, Modifier.padding(horizontal = Space.gutter))
+    Footer(state, storeName, links, actions, manage)
+}
+
+/** Under a page without periods: the restore's line when there is one, «مدیریت اشتراک» for [manage], and the links. */
+@Composable
+private fun Footer(state: StoreUiState, storeName: String, links: PaywallLinks, actions: StoreActions, manage: Boolean) {
+    Spacer(Modifier.height(PaywallLayout.underButton))
+    Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+        StatusLine(state, storeName, actions, fallback = null, plans = true, manage = manage)
+    }
+    Spacer(Modifier.height(PaywallLayout.aboveLinks))
+    LinksRow(state, links, actions)
+}
+
+/**
+ * The page's title (`--type-h1`); the [highlight] part («۱۲ نفر») in the
+ * template's accent (`--accent-text`: neon's gradient, white's ink). The
+ * gradient spans the highlighted words only, as the design draws it, not
+ * the whole title.
+ */
+@Composable
+private fun PageTitle(text: String, highlight: IntRange? = null) {
+    val t = AppTheme.template
+    val accent = t.paints.accentText
+    var bounds by remember(text, highlight) { mutableStateOf<Rect?>(null) }
+    val annotated = remember(text, highlight, accent, bounds) {
+        buildAnnotatedString {
+            append(text)
+            if (highlight != null) addStyle(SpanStyle(brush = accent.within(bounds)), highlight.first, highlight.last + 1)
+        }
+    }
+    Text(
+        annotated,
+        style = t.type.h1.copy(lineBreak = LineBreak.Heading),
+        color = t.colors.text,
+        onTextLayout = { layout ->
+            if (highlight != null) bounds = layout.getPathForRange(highlight.first, highlight.last + 1).getBounds()
+        },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Space.gutter).semantics { heading() },
+    )
+}
+
+/**
+ * [this] drawn over [bounds] only: a span's brush is otherwise sized to the
+ * whole paragraph, so a gradient on a few words would show one end of it.
+ */
+private fun Brush.within(bounds: Rect?): Brush {
+    val inner = this as? ShaderBrush ?: return this
+    if (bounds == null || bounds.isEmpty) return this
+    return object : ShaderBrush() {
+        override fun createShader(size: Size): Shader =
+            inner.createShader(bounds.size).apply { setLocalMatrix(Matrix().apply { setTranslate(bounds.left, bounds.top) }) }
+    }
+}
+
+/**
+ * «۱۲ نفر لایکت کردن» from the likes list (the count highlighted),
+ * «لایک‌های امروزت تموم شد» out of likes, else «یه اشتراک انتخاب کن».
+ */
+@Composable
+private fun Title(entry: PaywallEntry, likes: Int?, language: AppLanguage) {
+    when {
+        entry == PaywallEntry.SEE_LIKES && likes != null && likes > 0 -> {
+            val count = Numerals.format(likes, language)
+            val sentence = brandPlural(R.plurals.paywall_likes, likes, count)
+            val who = brandPlural(R.plurals.paywall_likes_who, likes, count)
+            val at = sentence.indexOf(who)
+            PageTitle(sentence, if (at < 0) null else at until at + who.length)
+        }
+        entry == PaywallEntry.OUT_OF_LIKES -> PageTitle(brandString(R.string.paywall_out_of_likes))
+        else -> PageTitle(brandString(R.string.paywall_choose))
+    }
+}
+
+/** Up to this many plans the selector is segmented; more are a rail (README m14). */
+private const val RAIL_FROM = 3
+
+private fun shownPlan(catalogue: Catalogue, state: StoreUiState): PlanGroup? =
+    state.plan?.let(catalogue::plan) ?: catalogue.plans.firstOrNull()
+
+/** The selector's, the benefits', the periods' and the button's shapes while the catalogue is read. */
+@Composable
+private fun LoadingPlans() {
+    val t = AppTheme.template
+    val loading = stringResource(R.string.ui_loading)
+    Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter).semantics(mergeDescendants = true) { contentDescription = loading }) {
+        Box(Modifier.fillMaxWidth().height(PaywallLayout.selector).skeleton(RoundedCornerShape(t.radii.button)))
+        Spacer(Modifier.height(PaywallLayout.group))
+        Column(verticalArrangement = Arrangement.spacedBy(PaywallLayout.skeletonGap)) {
+            repeat(MAX_BENEFITS) { Box(Modifier.fillMaxWidth(PaywallLayout.skeletonBenefitWidth).height(PaywallLayout.skeletonBenefit).skeleton()) }
+        }
+        Spacer(Modifier.height(PaywallLayout.group))
+        Column(verticalArrangement = Arrangement.spacedBy(PaywallLayout.periodGap)) {
+            repeat(PaywallLayout.skeletonPeriods) { Box(Modifier.fillMaxWidth().height(PaywallLayout.period).skeleton(RoundedCornerShape(t.radii.option))) }
+        }
+        Spacer(Modifier.height(PaywallLayout.aboveButton))
+        Box(Modifier.fillMaxWidth().height(t.sizes.buttonH).skeleton(RoundedCornerShape(t.radii.button)))
+    }
+}
+
+/**
+ * The periods, the button with the price and the one store line. The
+ * period the person is on is marked and not sold again: its button opens
+ * the store's own page, as it does while Cafe Bazaar keeps another
+ * subscription from being sold and while the plan is held on another store
+ * account. A plan from this store keeps a way to that page whatever is
+ * chosen: «مدیریت اشتراک» under the line when the button sells something
+ * else (on Play, a plan change), or when the plan held is no longer sold.
+ */
+@Composable
+private fun Purchase(state: StoreUiState, catalogue: Catalogue, group: PlanGroup, store: Store, storeName: String, language: AppLanguage, actions: StoreActions) {
+    val currency = brandString(R.string.paywall_currency)
+    val currentLabel = brandString(R.string.paywall_option_current)
+    val step = state.step
+    val periods = group.options.map { option ->
+        val price = StorePrices.display(option.product, language, currency)
+        val saving = StorePrices.savingPercent(option, group)?.let { brandString(R.string.paywall_save, Numerals.percent(it, language)) }
+        PeriodOption(
+            id = option.key,
+            title = periodLabel(option.period, language),
+            total = if (price.unit == null) isolate(price.amount) else price.amount,
+            unit = price.unit.orEmpty(),
+            saving = if (option.key == state.current) currentLabel else saving,
+        )
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        // One layout for every row: when one price has to go under its title, all of them do.
+        val stacked = periodsStacked(periods, maxWidth)
+        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(PaywallLayout.periodGap)) {
+            periods.forEach { period ->
+                PeriodRow(
+                    period,
+                    selected = period.id == state.selected,
+                    onClick = { actions.select(period.id) },
+                    enabled = !state.busy,
+                    stacked = stacked,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(PaywallLayout.aboveButton))
+    val option = state.selected?.let(catalogue::option)?.takeIf { it.plan == group.plan }
+    val isCurrent = option != null && option.key == state.current
+    val storePlan = state.entitlements?.storePlan(store) == true
+    val manageButton = (state.heldElsewhere && step is PurchaseStep.Idle) || (storePlan && (isCurrent || state.subscriptionLocked))
+    Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+        when {
+            manageButton -> SecondaryButton(brandString(R.string.manage_subscription), actions::manage)
+            option != null -> {
+                val price = StorePrices.display(option.product, language, currency)
+                // The purchase under way keeps its button in the accent, at work; anything else waits greyed.
+                val working = state.busy && step.target == option.key
+                PrimaryButton(
+                    brandString(R.string.paywall_cta, if (price.unit == null) isolate(price.full) else price.full),
+                    { actions.buy(option.key) },
+                    enabled = working || (
+                        !state.busy && !state.heldElsewhere &&
+                            step !is PurchaseStep.Pending && step !is PurchaseStep.Queued
+                        ),
+                    loading = working,
+                )
+            }
+        }
+        Spacer(Modifier.height(PaywallLayout.underButton))
+        StatusLine(
+            state,
+            storeName,
+            actions,
+            fallback = option?.let { renewalLine(it.period, storeName, language) },
+            plans = true,
+            manage = storePlan && !manageButton,
+        )
+    }
+}
+
+/**
+ * The line under a purchase button: the purchase's step when there is
+ * one, else a restore under way or its answer, else, for [plans], a
+ * payment still waiting for the server or what keeps a subscription from
+ * being sold here, else [fallback] (the store's renewal terms, or the
+ * packs' one-time line). While the button can still buy (a failed step, a
+ * restore's answer, a payment waiting), the terms stay as a second line
+ * under that text. Only what changes as the person acts is said aloud as
+ * it changes; the terms are not. A stop the person can act on carries that
+ * one action; [manage] adds the store's subscription page.
+ */
+@Composable
+internal fun StatusLine(state: StoreUiState, storeName: String, actions: StoreActions, fallback: String?, plans: Boolean, manage: Boolean = false) {
+    val t = AppTheme.template
+    val step = state.step
+    var error = false
+    var announced = true
+    // The terms kept under another text, where the button still buys.
+    var terms: String? = null
+    val notice = state.restoreNotice
+    val text = when (step) {
+        is PurchaseStep.Verifying -> brandString(R.string.paywall_step_verifying, storeName)
+        is PurchaseStep.Restoring -> brandString(R.string.paywall_step_restoring)
+        is PurchaseStep.Pending -> brandString(R.string.paywall_step_pending)
+        is PurchaseStep.Queued -> brandString(R.string.paywall_step_queued)
+        is PurchaseStep.Failed -> {
+            error = step.reason != PurchaseFailure.ALREADY_CURRENT
+            terms = fallback
+            brandString(step.reason.message(), storeName)
+        }
+        else -> when {
+            state.restoring -> brandString(R.string.paywall_restoring)
+            notice != null -> {
+                error = notice.isError
+                terms = fallback
+                brandString(notice.message(), storeName)
+            }
+            !plans -> fallback.also { announced = false }
+            state.waiting > 0 -> {
+                terms = fallback
+                brandString(R.string.paywall_waiting)
+            }
+            state.heldElsewhere -> brandString(R.string.paywall_held_elsewhere, storeName)
+            fallback == null -> null
+            state.subscriptionLocked && state.selected != state.current -> brandString(R.string.paywall_locked)
+            else -> fallback.also { announced = false }
+        }
+    }
+    if (text != null) {
+        Text(
+            text,
+            style = t.type.legal,
+            color = if (error) t.colors.error else t.colors.text3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().then(if (announced) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier),
+        )
+    }
+    terms?.takeIf { it != text }?.let { kept ->
+        Text(kept, style = t.type.legal, color = t.colors.text3, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
+    val idle = step is PurchaseStep.Idle && !state.restoring
+    val action: Pair<String, () -> Unit>? = when {
+        step is PurchaseStep.Failed && step.reason == PurchaseFailure.STORE_MISSING ->
+            brandString(R.string.paywall_store_missing_action, storeName) to actions::installStore
+        step is PurchaseStep.Failed && step.reason == PurchaseFailure.STORE_NOT_READY ->
+            brandString(R.string.paywall_store_not_ready_action, storeName) to actions::openStore
+        plans && idle && state.waiting == 0 && state.heldElsewhere ->
+            brandString(R.string.paywall_check_again) to actions::checkAgain
+        plans && idle && manage -> brandString(R.string.manage_subscription) to actions::manage
+        else -> null
+    }
+    if (action != null) {
+        TextAction(
+            action.first,
+            action.second,
+            style = t.type.legalLink,
+            enabled = !(plans && state.heldElsewhere && (state.checking || state.busy)),
+        )
+    }
+}
+
+/** A restore's answer that says something went wrong, drawn in `--error`. */
+private val RestoreNotice.isError: Boolean
+    get() = this == RestoreNotice.OFFLINE || this == RestoreNotice.FAILED || this == RestoreNotice.STORE_UNAVAILABLE || this == RestoreNotice.OTHER_ACCOUNT
+
+/**
+ * «بازیابی خرید»، «قوانین»، «حریم خصوصی»: 48 dp tall, 8 dp apart, in
+ * `--type-legal-link`; a link that no longer fits (large text, a narrow
+ * phone) moves to a second line instead of being cut.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LinksRow(state: StoreUiState, store: Store, links: PaywallLinks, actions: StoreActions) {
+private fun LinksRow(state: StoreUiState, links: PaywallLinks, actions: StoreActions) {
+    val t = AppTheme.template
     FlowRow(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterHorizontally),
+        Modifier.fillMaxWidth().padding(horizontal = Space.gutter),
+        horizontalArrangement = Arrangement.spacedBy(PaywallLayout.linkGap, Alignment.CenterHorizontally),
     ) {
+        TextAction(brandString(R.string.paywall_restore), actions::restore, kind = TextActionKind.Neutral, enabled = !state.busy, style = t.type.legalLink)
         if (links.termsUrl.isNotBlank()) {
-            TextButton(onClick = { actions.openLink(links.termsUrl) }, modifier = Modifier.heightIn(min = Space.minTouch)) { Text(brandString(R.string.paywall_terms)) }
+            TextAction(brandString(R.string.paywall_terms), { actions.openLink(links.termsUrl) }, kind = TextActionKind.Neutral, style = t.type.legalLink)
         }
         if (links.privacyUrl.isNotBlank()) {
-            TextButton(onClick = { actions.openLink(links.privacyUrl) }, modifier = Modifier.heightIn(min = Space.minTouch)) { Text(brandString(R.string.paywall_privacy)) }
+            TextAction(brandString(R.string.paywall_privacy), { actions.openLink(links.privacyUrl) }, kind = TextActionKind.Neutral, style = t.type.legalLink)
         }
-        TextButton(onClick = actions::restore, enabled = !state.busy, modifier = Modifier.heightIn(min = Space.minTouch)) {
-            Text(brandString(if (state.restoring) R.string.paywall_restoring else R.string.paywall_restore))
-        }
-        // The store's subscription page is on the current plan's card, above.
-    }
-}
-
-/** In place of the purchase button on the period the person is on. */
-@Composable
-private fun CurrentOptionLine() {
-    Surface(shape = RoundedCornerShape(Radius.pill), color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .padding(horizontal = Space.lg)
-                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.sm, Alignment.CenterHorizontally),
-        ) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
-            Text(brandString(R.string.paywall_current_option), style = MaterialTheme.typography.labelLarge)
-        }
-    }
-}
-
-/** The purchase's step next to its button, announced as it changes. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun StepPanel(step: PurchaseStep, storeName: String, actions: StoreActions) {
-    when (step) {
-        is PurchaseStep.Verifying -> StepCard(null, null, brandString(R.string.paywall_step_verifying, storeName), progress = true)
-        is PurchaseStep.Restoring -> StepCard(null, null, brandString(R.string.paywall_step_restoring), progress = true)
-        is PurchaseStep.Pending -> StepCard(Icons.Filled.DateRange, brandString(R.string.paywall_step_pending_title), brandString(R.string.paywall_step_pending_body, storeName)) {
-            CardTextButton(brandString(R.string.paywall_close), onClick = { actions.stepShown(); actions.close() })
-        }
-        is PurchaseStep.Queued -> StepCard(Icons.Filled.CheckCircle, brandString(R.string.paywall_step_queued_title), brandString(R.string.paywall_step_queued_body, storeName)) {
-            CardTextButton(brandString(R.string.paywall_close), onClick = { actions.stepShown(); actions.close() })
-        }
-        // "You already have this plan" informs; every other stop is a failure.
-        is PurchaseStep.Failed -> StepCard(
-            if (step.reason == PurchaseFailure.ALREADY_CURRENT) Icons.Filled.CheckCircle else Icons.Filled.Warning,
-            null,
-            brandString(step.reason.message(), storeName),
-            danger = step.reason != PurchaseFailure.ALREADY_CURRENT,
-        ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                when (step.reason) {
-                    PurchaseFailure.STORE_MISSING -> CardOutlinedButton(brandString(R.string.paywall_store_missing_action, storeName), actions::installStore)
-                    PurchaseFailure.STORE_NOT_READY -> CardOutlinedButton(brandString(R.string.paywall_store_not_ready_action, storeName), actions::openStore)
-                    else -> Unit
-                }
-                CardTextButton(brandString(R.string.action_got_it), actions::stepShown)
-            }
-        }
-        else -> Unit
-    }
-}
-
-/** A button inside a card, in the card's own text colour (the brand colour fails AA on some cards). */
-@Composable
-private fun CardTextButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
-    TextButton(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.textButtonColors(contentColor = LocalContentColor.current),
-        modifier = Modifier.heightIn(min = Space.minTouch),
-    ) { Text(text, fontWeight = FontWeight.SemiBold) }
-}
-
-@Composable
-private fun CardOutlinedButton(text: String, onClick: () -> Unit) {
-    val content = LocalContentColor.current
-    OutlinedButton(
-        onClick = onClick,
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = content),
-        border = androidx.compose.foundation.BorderStroke(1.dp, content),
-        modifier = Modifier.heightIn(min = Space.minTouch),
-    ) { Text(text) }
-}
-
-@Composable
-internal fun StepCard(
-    icon: ImageVector?,
-    title: String?,
-    body: String,
-    progress: Boolean = false,
-    danger: Boolean = false,
-    actions: (@Composable ColumnScope.() -> Unit)? = null,
-) {
-    val container = if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-    val content = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-    Surface(shape = RoundedCornerShape(Radius.lg), color = container, contentColor = content) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(Space.lg)
-                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
-        ) {
-            when {
-                progress -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(body, style = MaterialTheme.typography.bodyMedium)
-                actions?.invoke(this)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LoadingPane() {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = Space.xxl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        CircularProgressIndicator()
-        Text(brandString(R.string.paywall_loading), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** The store cannot sell here: what the person can do (install it, sign in), or try again. */
-@Composable
-internal fun UnavailablePane(reason: PurchaseFailure, storeName: String, actions: StoreActions) {
-    val (title, body) = when (reason) {
-        PurchaseFailure.STORE_MISSING -> R.string.paywall_store_missing_title to R.string.paywall_store_missing_body
-        PurchaseFailure.STORE_NOT_READY -> R.string.paywall_store_not_ready_title to R.string.paywall_store_not_ready_body
-        PurchaseFailure.NOT_SUPPORTED -> R.string.paywall_not_supported_title to R.string.paywall_not_supported_body
-        else -> R.string.paywall_unreachable_title to R.string.paywall_unreachable_body
-    }
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = Space.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Box(Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.ShoppingCart, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
-        }
-        Text(brandString(title, storeName), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
-        Text(brandString(body, storeName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        when (reason) {
-            PurchaseFailure.STORE_MISSING -> Button(onClick = actions::installStore, modifier = Modifier.heightIn(min = Space.minTouch)) {
-                Text(brandString(R.string.paywall_store_missing_action, storeName))
-            }
-            PurchaseFailure.STORE_NOT_READY -> Button(onClick = actions::openStore, modifier = Modifier.heightIn(min = Space.minTouch)) {
-                Text(brandString(R.string.paywall_store_not_ready_action, storeName))
-            }
-            else -> Unit
-        }
-        OutlinedButton(onClick = actions::retry, modifier = Modifier.heightIn(min = Space.minTouch)) { Text(brandString(R.string.paywall_try_again)) }
-    }
-}
-
-@Composable
-internal fun MessagePane(icon: ImageVector, title: String, body: String, onRetry: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = Space.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
-        Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        OutlinedButton(onClick = onRetry, modifier = Modifier.heightIn(min = Space.minTouch)) { Text(brandString(R.string.paywall_try_again)) }
-    }
-}
-
-/** A purchase the server confirmed: what it unlocked, and back to where the person was. */
-@Composable
-internal fun DonePane(title: String, body: String, onContinue: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(Space.xl)
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.lg, Alignment.CenterVertically),
-    ) {
-        Box(Modifier.size(96.dp).clip(CircleShape).background(AppTheme.colors.success.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = AppTheme.colors.success, modifier = Modifier.size(56.dp))
-        }
-        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.semantics { heading() })
-        Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(brandString(R.string.paywall_done_action)) }
-    }
-}
-
-/** The restore button's answer, once, as a snackbar. */
-@Composable
-internal fun RestoreNotices(state: StoreUiState, storeName: String, snackbar: SnackbarHostState, actions: StoreActions) {
-    val notice = state.restoreNotice ?: return
-    val text = brandString(notice.message(), storeName)
-    LaunchedEffect(notice) {
-        snackbar.showSnackbar(text)
-        actions.restoreShown()
     }
 }

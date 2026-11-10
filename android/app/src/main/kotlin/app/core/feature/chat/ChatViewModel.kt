@@ -6,6 +6,7 @@ import app.core.cache.ChatMapping
 import app.core.cache.SendState
 import app.core.common.Clock
 import app.core.model.Conversation
+import app.core.model.ConversationSource
 import app.core.model.ConversationState
 import app.core.model.Id
 import app.core.model.MessageKind
@@ -39,6 +40,16 @@ import java.time.ZoneId
 /** Where a message of the account's own is on its way to being seen. */
 enum class Delivery { Pending, Failed, Confirm, Sent, Delivered, Read }
 
+/**
+ * Whether the line that offers read receipts has a place: the newest own
+ * message (not taken back), the one whose meta carries the link, went out
+ * («فرستاده شد» or «رسید»). One still on its way or not sent has no link.
+ */
+internal fun offersReadReceipts(items: List<ChatItem>): Boolean {
+    val newestOwn = items.firstOrNull { it is ChatItem.Bubble && it.message.mine && it.unsent == null } as ChatItem.Bubble?
+    return newestOwn?.delivery.let { it == Delivery.Sent || it == Delivery.Delivered }
+}
+
 /** One row of the transcript, newest first (the list is drawn bottom-up). */
 sealed interface ChatItem {
     val key: String
@@ -67,12 +78,11 @@ sealed interface ChatItem {
     }
 
     /**
-     * The top of a thread: who matched, and when. [showDate] is false when the
-     * day separator right under it already names that day ("Yesterday" under
-     * "7 November" said the same day twice). [hint] (how to start) only while
-     * nothing has been said yet.
+     * The top of a thread: when they matched («۳ روز پیش مچ شدین»). The
+     * match day's separator is not drawn under it (m10): the intro places
+     * that day already.
      */
-    data class Intro(val conversation: Conversation, val showDate: Boolean = true, val hint: Boolean = true) : ChatItem {
+    data class Intro(val conversation: Conversation) : ChatItem {
         override val key: String get() = "intro"
     }
 }
@@ -167,8 +177,7 @@ class ChatViewModel(
             me = me,
             conversation = conversation ?: base.conversation,
             items = items,
-            readReceiptsLocked = ent != null && !readReceipts && !ended &&
-                items.any { it is ChatItem.Bubble && it.message.mine && it.delivery == Delivery.Delivered },
+            readReceiptsLocked = ent != null && !readReceipts && !ended && offersReadReceipts(items),
             loading = base.loading && rows.isEmpty(),
             loadFailed = base.loadFailed && rows.isEmpty(),
             ended = ended,
@@ -433,12 +442,11 @@ internal fun buildTranscript(
         if (olderDay != day) out += ChatItem.Day(day)
     }
     if (atTop && conversation != null) {
-        val oldestDay = (out.lastOrNull { it is ChatItem.Day } as? ChatItem.Day)?.date
-        out += ChatItem.Intro(
-            conversation,
-            showDate = oldestDay != conversation.createdAt.atZone(zone).toLocalDate(),
-            hint = rows.none { it.kind != MessageKind.Reaction && it.kind != MessageKind.Unsend },
-        )
+        val matchDay = conversation.createdAt.atZone(zone).toLocalDate()
+        // «۳ روز پیش مچ شدین» says the day; a thread begun by a request says none, so it keeps its date.
+        val introNamesDay = conversation.source != ConversationSource.Request
+        if (introNamesDay && (out.lastOrNull() as? ChatItem.Day)?.date == matchDay) out.removeAt(out.lastIndex)
+        out += ChatItem.Intro(conversation)
     }
     return out
 }

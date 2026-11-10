@@ -2,7 +2,6 @@ package app.core.store
 
 import androidx.activity.ComponentActivity
 import app.core.model.BillingPeriod
-import app.core.model.Plan
 import app.core.model.WalletItem
 import app.core.net.SampleData
 import kotlinx.coroutines.flow.Flow
@@ -88,13 +87,20 @@ class SampleBilling(override val store: Store) : StoreBilling {
                     title = s.productId,
                     description = "",
                     formattedPrice = price(s.plan, s.period),
+                    priceMicros = micros(SampleData.plan(s.plan)?.toman?.get(s.period)),
+                    currencyCode = if (store == Store.PLAY) "EUR" else null,
                     basePlanId = s.basePlanId,
-                    billingPeriod = if (store == Store.PLAY) s.period.wire else null,
+                    // Play writes a year as P1Y; the server's catalogue says P12M.
+                    billingPeriod = if (store == Store.PLAY) (if (s.period == BillingPeriod.Year) "P1Y" else s.period.wire) else null,
                     offerToken = s.basePlanId?.let { "offer-$it" },
                 )
             }
             ProductType.ONE_TIME -> SampleData.consumables.filter { it.productId in ids }.map { c ->
-                StoreProduct(c.productId, type, c.productId, "", packPrice(c.item, c.quantity))
+                StoreProduct(
+                    c.productId, type, c.productId, "", packPrice(c.item, c.quantity),
+                    priceMicros = micros(SampleData.packToman(c.item, c.quantity)),
+                    currencyCode = if (store == Store.PLAY) "EUR" else null,
+                )
             }
         }
         return BillingResult.Ok(products)
@@ -158,33 +164,20 @@ class SampleBilling(override val store: Store) : StoreBilling {
         private const val OTHER_ACCOUNT_REF = "otheraccount2"
     }
 
-    /** Made-up prices in each store's own style: Play in a currency, the other in its local one, as its SDK writes them. */
-    private fun price(plan: Plan, period: BillingPeriod): String {
-        val months = when (period) {
-            BillingPeriod.Week -> 0.25
-            BillingPeriod.Month -> 1.0
-            BillingPeriod.ThreeMonths -> 2.6
-            BillingPeriod.SixMonths -> 4.5
-            else -> 8.0
-        }
-        val base = if (plan == Plan.Premium) 2.0 else 1.0
-        return format(base * months)
-    }
+    /** Made-up prices in each store's own style: Play in a currency, the other in toman, as its SDK writes them. */
+    private fun price(plan: String, period: BillingPeriod): String =
+        format(SampleData.plan(plan)?.toman?.get(period) ?: 100_000L)
 
-    private fun packPrice(item: WalletItem, quantity: Int): String {
-        val each = when (item) {
-            WalletItem.Superlike -> 0.2
-            WalletItem.Boost -> 0.6
-            WalletItem.Spotlight -> 0.9
-            else -> 0.15
-        }
-        return format(each * quantity * (if (quantity >= 5) 0.8 else 1.0))
-    }
+    private fun packPrice(item: WalletItem, quantity: Int): String = format(SampleData.packToman(item, quantity))
 
-    private fun format(units: Double): String = if (store == Store.PLAY) {
-        "€" + String.format(java.util.Locale.ROOT, "%.2f", units * 4.99)
+    /** Play's price in micros of a euro; Cafe Bazaar gives none. */
+    private fun micros(toman: Long?): Long? = if (store == Store.PLAY && toman != null) Math.round(euros(toman) * 1_000_000) else null
+
+    private fun euros(toman: Long): Double = Math.round(toman / 360.0) / 100.0 - 0.01
+
+    private fun format(toman: Long): String = if (store == Store.PLAY) {
+        "€" + String.format(java.util.Locale.ROOT, "%.2f", euros(toman))
     } else {
-        val toman = (Math.round(units * 120) * 1_000L)
         val digits = String.format(java.util.Locale.ROOT, "%,d", toman).replace(',', '٬')
         digits.map { if (it in '0'..'9') '۰' + (it - '0') else it }.joinToString("") + " تومان"
     }

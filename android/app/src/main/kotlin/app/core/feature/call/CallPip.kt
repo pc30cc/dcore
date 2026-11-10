@@ -1,5 +1,6 @@
 package app.core.feature.call
 
+import app.core.ui.theme.CallPalette
 import android.os.Handler
 import android.os.Looper
 import android.util.Rational
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,13 +33,11 @@ import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +46,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import app.core.R
+import app.core.ui.theme.outerShadow
+import app.core.ui.icons.AppIcons
+import app.core.ui.theme.AppTheme
 import app.core.i18n.brandString
 import app.core.ui.theme.Space
 import io.livekit.android.room.track.VideoTrack
@@ -71,8 +72,8 @@ fun PipCallView(state: CallScreenState, room: LiveKitRoom?, remoteVideo: VideoTr
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.xs), modifier = Modifier.padding(Space.sm)) {
                 CallFace(state.peer.photoUrl, state.peer.blurhash, size = 52.dp)
-                Text(state.peer.name, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-                CallClock(state.phase, color = Color.White.copy(alpha = 0.78f))
+                Text(state.peer.name, style = AppTheme.template.type.captionStrong, color = AppTheme.template.colors.onPhoto, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                CallClock(state.phase, color = AppTheme.template.colors.onPhoto2)
             }
         }
         if (state.muted) MutedBadge(Modifier.align(Alignment.BottomStart).padding(Space.sm))
@@ -102,16 +103,17 @@ fun FloatingCallBubble(state: CallScreenState, room: LiveKitRoom?, remoteVideo: 
         var y by remember { mutableFloatStateOf(with(density) { 56.dp.toPx() }) }
         if (x.isNaN()) x = if (rtl) 0f else maxX
         val label = brandString(R.string.call_bubble_return, app.core.feature.card.isolate(state.peer.name))
-        val shape = RoundedCornerShape(20.dp)
+        val t = AppTheme.template
+        val shape = RoundedCornerShape(t.radii.lg)
         Surface(
             shape = shape,
-            color = CALL_BACKGROUND,
-            contentColor = Color.White,
+            color = CallPalette.stage,
+            contentColor = t.colors.onPhoto,
             onClick = onOpen,
             modifier = Modifier
                 .absoluteOffset { IntOffset(x.coerceIn(0f, maxX).roundToInt(), y.coerceIn(0f, maxY).roundToInt()) }
                 .size(width, height)
-                .shadow(12.dp, shape)
+                .outerShadow(shape, t.shadows.floatShadow)
                 .pointerInput(maxX, maxY) {
                     detectDragGestures { change, drag ->
                         change.consume()
@@ -119,7 +121,7 @@ fun FloatingCallBubble(state: CallScreenState, room: LiveKitRoom?, remoteVideo: 
                         y = (y + drag.y).coerceIn(0f, maxY)
                     }
                 }
-                .border(1.dp, Color.White.copy(alpha = 0.2f), shape)
+                .border(1.dp, t.colors.callBtnLine, shape)
                 .semantics { contentDescription = label }
                 .testTag(CallTags.BUBBLE),
         ) {
@@ -128,14 +130,14 @@ fun FloatingCallBubble(state: CallScreenState, room: LiveKitRoom?, remoteVideo: 
                 if (picture != null && room != null) {
                     VideoView(picture, room, Modifier.fillMaxSize().clip(shape))
                     Box(Modifier.fillMaxSize().padding(bottom = Space.xs), contentAlignment = Alignment.BottomCenter) {
-                        CallClock(state.phase, color = Color.White)
+                        CallClock(state.phase, color = t.colors.onPhoto)
                     }
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                         CallHalo(ringing = state.phase !is CallPhase.Live, faceSize = 44.dp) {
                             CallFace(state.peer.photoUrl, state.peer.blurhash, size = 44.dp)
                         }
-                        CallClock(state.phase, color = Color.White.copy(alpha = 0.88f))
+                        CallClock(state.phase, color = t.colors.onPhoto2)
                     }
                 }
                 if (state.muted) MutedBadge(Modifier.align(Alignment.TopStart).padding(Space.xs))
@@ -159,7 +161,7 @@ internal fun CallClock(phase: CallPhase, color: Color) {
                         delay(1_000)
                     }
                 }
-                callDuration((now.toEpochMilli() - phase.since.toEpochMilli()) / 1000, language)
+                callTimer((now.toEpochMilli() - phase.since.toEpochMilli()) / 1000, language)
             }
         }
         CallPhase.Connecting -> brandString(R.string.call_status_connecting)
@@ -169,7 +171,7 @@ internal fun CallClock(phase: CallPhase, color: Color) {
     }
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+        style = AppTheme.template.type.captionStrong.copy(fontFeatureSettings = "tnum"),
         color = color,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -179,9 +181,10 @@ internal fun CallClock(phase: CallPhase, color: Color) {
 
 @Composable
 private fun MutedBadge(modifier: Modifier = Modifier) {
-    Surface(color = CALL_END_RED, shape = CircleShape, modifier = modifier.size(22.dp).border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)) {
+    val t = AppTheme.template
+    Surface(color = t.colors.callEnd, shape = CircleShape, modifier = modifier.size(22.dp).border(1.dp, t.colors.callBtnLine, CircleShape)) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.ic_call_mic_off), contentDescription = brandString(R.string.call_action_unmute), tint = Color.White, modifier = Modifier.size(14.dp))
+            Icon(AppIcons.MicOff, contentDescription = brandString(R.string.call_action_unmute), tint = t.colors.onPhoto, modifier = Modifier.size(14.dp))
         }
     }
 }

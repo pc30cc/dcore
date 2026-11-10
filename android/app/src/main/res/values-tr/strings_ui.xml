@@ -6,7 +6,7 @@
     <string name="ui_pass">Geç</string>
     <string name="ui_super_like">Süper beğeni</string>
     <string name="ui_like">Beğen</string>
-    <string name="ui_boost">Öne çıkar</string>
+    <string name="ui_boost">Boost</string>
     <string name="ui_verified">Doğrulanmış</string>
     <string name="ui_online">Çevrimiçi</string>
     <string name="ui_new_match">Yeni eşleşme</string>
@@ -15,6 +15,8 @@
     <string name="ui_step_of">%1$s / %2$s</string>
     <string name="ui_loading">Yükleniyor</string>
     <string name="ui_unread">%1$s okunmamış</string>
+    <!-- A tab's label and its badge, as TalkBack reads them. -->
+    <string name="ui_tab_badge">%1$s, %2$s</string>
     <string name="ui_logo">Logo</string>
     <!-- The remove button on a photo slot. -->
     <string name="ui_remove_photo">Kaldır</string>

@@ -216,6 +216,42 @@ class TemplateContrastTest {
         assertEquals(Color(0xFFE0157A), t.paints.sliderFill.stop(2))
     }
 
+    /**
+     * The photo story bars, with each template's own tokens under its own top
+     * scrim: neon's bleed deck and white's full profile draw the scrim whole,
+     * white's card deck at [app.core.feature.deck.DeckLayout.CARD_SCRIM_ALPHA]
+     * (the design's `opacity:.7`). Over a pure white photo top neither reaches
+     * 3:1 between the shown bar and the rest: the design's track, edge and
+     * scrim values, recorded here as a design waiver (the place in the photos
+     * is also said to TalkBack, «عکس ۲ از ۴»). The ratios may not get worse;
+     * over any photo darker than about 20 % grey the bars pass.
+     */
+    @Test
+    fun `the story bars under the top scrim hold their recorded ratios`() {
+        fun bars(t: AppTemplate, scrim: Float): Pair<Double, Double> {
+            val top = t.paints.photoScrimTop.at(0f).let { it.copy(alpha = it.alpha * scrim) }.compositeOver(white)
+            val track = t.colors.storyTrack.compositeOver(top)
+            val edge = t.colors.storyEdge.compositeOver(top)
+            return Contrast.ratio(t.colors.storyFill, track) to Contrast.ratio(track, edge)
+        }
+        val floors = listOf(
+            // Measured on the tokens as stored (8-bit alpha), rounded down.
+            Triple("neon bleed", bars(Templates.Neon, 1f), 2.77 to 2.99),
+            Triple("white full profile", bars(Templates.White, 1f), 2.50 to 2.82),
+            Triple("white card", bars(Templates.White, app.core.feature.deck.DeckLayout.CARD_SCRIM_ALPHA), 1.82 to 2.15),
+        )
+        for ((name, measured, floor) in floors) {
+            assertTrue("$name fill/track ${measured.first}", measured.first >= floor.first)
+            assertTrue("$name track/edge ${measured.second}", measured.second >= floor.second)
+        }
+        // Over a mid-grey photo (#999) the shown bar reads 3:1 against the rest in both templates.
+        val grey = Color(0xFF999999)
+        for (t in listOf(Templates.Neon, Templates.White)) {
+            val top = t.paints.photoScrimTop.at(0f).compositeOver(grey)
+            assertTrue(t.id, Contrast.ratio(t.colors.storyFill, t.colors.storyTrack.compositeOver(top)) >= Contrast.AA_LARGE)
+        }
+    }
+
     @Test
     fun `the published neon ratios hold`() {
         val c = Templates.Neon.colors

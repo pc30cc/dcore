@@ -1,22 +1,23 @@
 package app.core.ui.theme
 
-import androidx.compose.material3.ColorScheme
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import app.core.feature.chat.NOTE_LABEL_ALPHA
-import app.core.feature.chat.bubbleQuietColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The colours screens written before the templates read (Material's scheme
- * and the older [AppColors] names, both derived from the template drawn)
- * pass WCAG AA (4.5:1 for text, 3:1 for icons and outlines) in the dark
- * template (`neon`, for the brand this build was made from) and the light
- * one (`white`). The templates' own table is [TemplateContrastTest]. A
- * brand whose colours cannot pass is a failed build, not a shipped screen.
+ * Material's scheme as the template derives it ([templateColorScheme]) and
+ * the template tokens the screens draw with pass WCAG AA (4.5:1 for text,
+ * 3:1 for icons and outlines) in the dark template (`neon`, for the brand
+ * this build was made from) and the light one (`white`). The templates'
+ * own table is [TemplateContrastTest]; this one checks the pairs the
+ * screens put together (snackbars, tags, bubbles, call lines, the tab bar
+ * over a photo). A brand whose colours cannot pass is a failed build, not a
+ * shipped screen.
  *
  * Photo cases assume the worst: a pure white photo pixel under the layer.
  */
@@ -31,10 +32,19 @@ class ContrastTest {
 
     private fun assertNoFailures() = assertTrue(failures.joinToString("\n"), failures.isEmpty())
 
-    /** A scrim of black at [alpha] over a white photo. */
-    private fun scrimOverWhite(alpha: Float): Color = Color.Black.copy(alpha = alpha).compositeOver(Color.White)
+    /** Every colour a paint passes through (its stops; a solid paint's one colour). */
+    private val Brush.colors: List<Color>
+        get() = when (this) {
+            is SolidColor -> listOf(value)
+            is CssLinearGradient -> colors
+            is IconGradient -> colors
+            else -> listOf(representative)
+        }
 
-    private fun design(theme: String, s: ColorScheme, a: AppColors) {
+    private fun design(theme: String, t: AppTemplate) {
+        val s = templateColorScheme(t)
+        val c = t.colors
+        val p = t.paints
         // Text on every surface.
         for ((name, surface) in listOf(
             "background" to s.background,
@@ -53,7 +63,7 @@ class ContrastTest {
             "surfaceContainer" to s.surfaceContainer,
             "surfaceContainerHigh" to s.surfaceContainerHigh,
         )) {
-            pair("$theme textTertiary/$name", a.textTertiary, surface)
+            pair("$theme text-3/$name", c.text3, surface)
             pair("$theme primary (text buttons)/$name", s.primary, surface)
             pair("$theme error/$name", s.error, surface)
         }
@@ -63,111 +73,89 @@ class ContrastTest {
         pair("$theme onSecondaryContainer/secondaryContainer", s.onSecondaryContainer, s.secondaryContainer)
         pair("$theme onTertiary/tertiary", s.onTertiary, s.tertiary)
         pair("$theme onTertiaryContainer/tertiaryContainer", s.onTertiaryContainer, s.tertiaryContainer)
-        pair("$theme tertiary (alive text)/background", s.tertiary, s.background)
+        pair("$theme tertiary (accent text)/background", s.tertiary, s.background)
         pair("$theme onError/error", s.onError, s.error)
         pair("$theme onErrorContainer/errorContainer", s.onErrorContainer, s.errorContainer)
         pair("$theme inverseOnSurface/inverseSurface (snackbar)", s.inverseOnSurface, s.inverseSurface)
-        pair("$theme snackbar action/inverseSurface", a.snackbarAction, s.inverseSurface)
-        // Alive: the badge's ink on lime, the shared-interest chip's text on its tint.
-        pair("$theme onAlive/alive", a.onAlive, a.alive)
-        pair("$theme aliveText/aliveTint over surfaceContainerLow", a.aliveText, a.aliveTint.compositeOver(s.surfaceContainerLow))
-        pair("$theme aliveText/aliveTint over background («نوبت توئه»)", a.aliveText, a.aliveTint.compositeOver(s.background))
-        // The gradient carries only button labels (16 sp bold): white on each stop.
-        pair("$theme onGradient/start", a.onGradient, a.gradientStops.start)
-        pair("$theme onGradient/mid", a.onGradient, a.gradientStops.mid)
-        pair("$theme onGradient/end", a.onGradient, a.gradientStops.end)
-        // Display text in the text gradient (24 sp and up: 3:1).
-        pair("$theme textGradientStart/background", a.textGradientStart, s.background, Contrast.AA_LARGE)
-        pair("$theme textGradientEnd/background", a.textGradientEnd, s.background, Contrast.AA_LARGE)
-        // Marks and outlines (non-text, 3:1); the verified badge's check is an icon (the
-        // template contract classes it so: 3:1 at every stop of its fill).
-        pair("$theme onVerified/verified", a.onVerified, a.verified, Contrast.AA_LARGE)
-        pair("$theme verified/background", a.verified, s.background, Contrast.AA_LARGE)
-        pair("$theme like/background", a.like, s.background, Contrast.AA_LARGE)
-        pair("$theme pass/background", a.pass, s.background, Contrast.AA_LARGE)
-        pair("$theme superLike (icon)/background", a.superLike, s.background, Contrast.AA_LARGE)
-        pair("$theme onSuperLike/superLikeFill", a.onSuperLike, a.superLikeFill)
+        pair("$theme snackbar action/inverse", c.inverseAction, c.inverse)
+        // Tags: the pill's ink on every stop of its fill; the accent on its tint (shared interests, «نوبت توئه»).
+        for (stop in p.tagFill.colors) pair("$theme on-tag/tag-fill", c.onTag, stop)
+        pair("$theme accent/primary-tint over surface-1", c.primary, c.primaryTint.compositeOver(c.surface1))
+        pair("$theme accent/primary-tint over the page", c.primary, c.primaryTint.compositeOver(c.bg))
+        // The like fill carries icons and button labels: its ink on each stop.
+        for (stop in p.likeFill.colors) pair("$theme on-like/like-fill", c.onLike, stop)
+        // Display text in the accent (24 sp and up: 3:1).
+        for (stop in p.accentText.colors) pair("$theme accent text/background", stop, s.background, Contrast.AA_LARGE)
+        // Marks and outlines (non-text, 3:1); the verified badge's check is an icon (3:1 at every stop of its fill).
+        for (stop in p.verified.colors) {
+            pair("$theme on-verified/verified", c.onVerified, stop, Contrast.AA_LARGE)
+            pair("$theme verified/background", stop, s.background, Contrast.AA_LARGE)
+        }
+        pair("$theme like/background", c.like, s.background, Contrast.AA_LARGE)
+        pair("$theme pass/background", c.text, s.background, Contrast.AA_LARGE)
+        pair("$theme super like (icon)/background", c.primary, s.background, Contrast.AA_LARGE)
         pair("$theme outline/background", s.outline, s.background, Contrast.AA_LARGE)
         pair("$theme outline/surfaceContainerLow", s.outline, s.surfaceContainerLow, Contrast.AA_LARGE)
         // The switch's off ring on its own track.
         pair("$theme switch off ring/track", s.outline, s.surfaceContainerHighest, 2.0)
-        // Text over photos: white on the scrims, worst case a white photo.
-        pair("$theme onPhoto/bottom scrim 0.82", AppColors.OnPhoto, scrimOverWhite(0.82f))
-        pair("$theme onPhotoVariant/bottom scrim 0.72", AppColors.OnPhotoVariant, scrimOverWhite(0.72f))
-        pair("$theme kicker on photo/scrim 0.62", Color.White.copy(alpha = 0.82f), scrimOverWhite(0.62f))
-        pair("$theme chip text/chip glass over scrim 0.20", Color.White, AppColors.ChipOnPhotoFill.compositeOver(scrimOverWhite(0.20f)))
-        pair("$theme chip text/chip fallback over a white photo", Color.White, AppColors.ChipOnPhotoFallback.compositeOver(Color.White))
-        pair("$theme toast text/toast glass over a white photo", Color.White, AppColors.ToastOnPhotoFill.compositeOver(scrimOverWhite(0.30f)))
-        // Story bars under the top scrim (0.62 at the top).
-        val top = scrimOverWhite(0.62f)
-        val track = AppColors.StoryTrack.compositeOver(top)
-        pair("$theme story fill/track", AppColors.StoryFill, track, Contrast.AA_LARGE)
-        pair("$theme story track/its edge", track, AppColors.StoryEdge.compositeOver(top), Contrast.AA_LARGE)
-        // Glass chrome on photos: the icon on its glass, under the top scrim, over white.
-        if (a.dark) {
-            pair("$theme glass icon/photoChrome", Color.White, a.glassFill.compositeOver(top), Contrast.AA_LARGE)
-            pair("$theme glass icon/photoChrome fallback", Color.White, a.glassFallback.compositeOver(Color.White), Contrast.AA_LARGE)
-        } else {
-            pair("$theme glass icon/white chrome", s.onSurface, Color.White.copy(alpha = 0.86f).compositeOver(Color.Black), Contrast.AA_LARGE)
-        }
-        // The tab bar: labels on its fill, over a white photo and over the theme's background.
-        // Over the deck photo the bar sits on the bottom scrim (0.82 and more there): worst, a white
-        // photo under it in dark, a black one in light (the bar is white there).
-        val underBar = if (a.dark) scrimOverWhite(0.82f) else Color.Black
-        pair("$theme tab label/bar over photo", s.onSurfaceVariant, a.tabBarFillOverPhoto.compositeOver(underBar))
-        pair("$theme tab label/bar over list", s.onSurfaceVariant, a.tabBarFallback.compositeOver(s.background))
-        pair("$theme tab label selected/bar over list", s.onSurface, a.tabBarFallback.compositeOver(s.background))
+        // Glass chrome on photos: the icon on its glass, under the top scrim, over white; its solid fallback.
+        val top = p.photoScrimTop.colors.first().compositeOver(Color.White)
+        pair("$theme glass icon/photo chrome", c.onGlass, c.glassFill.compositeOver(top), Contrast.AA_LARGE)
+        pair("$theme glass icon/photo chrome fallback", c.onGlass, c.glassSolid.compositeOver(Color.White), Contrast.AA_LARGE)
+        // The tab bar: labels on its fill, over a photo (neon's floating bar over the deck's bottom scrim; worst,
+        // a white photo under it) and over the page.
+        val underBar = if (t.switches.tabBar == TabBarStyle.Floating) p.photoScrimBottom.colors.last().compositeOver(Color.White) else c.bg
+        pair("$theme tab label/bar over photo", c.tabColorPhoto, c.tabbarFillPhoto.compositeOver(underBar))
+        pair("$theme tab label/bar over the page", c.tabColor, c.tabbarFill.compositeOver(c.bg))
+        pair("$theme tab label selected/bar over the page", c.tabActiveColor, c.tabbarFill.compositeOver(c.bg))
     }
 
-    private fun olderScreens(theme: String, s: ColorScheme, a: AppColors, template: AppTemplate) {
-        pair("$theme danger/background", a.danger, s.background)
-        pair("$theme danger/surfaceContainerHigh (call line)", a.danger, s.surfaceContainerHigh)
-        pair("$theme success/background", a.success, s.background)
+    private fun screens(theme: String, t: AppTemplate) {
+        val s = templateColorScheme(t)
+        val c = t.colors
+        pair("$theme error/background", c.error, s.background)
+        pair("$theme error/surfaceContainerHigh (call line)", c.error, s.surfaceContainerHigh)
+        pair("$theme online word/background", c.onlineText, s.background)
         pair("$theme surface/onSurfaceVariant (muted count)", s.surface, s.onSurfaceVariant)
-        pair("$theme onSemantic/like", a.onSemantic, a.like)
-        pair("$theme onSemantic/superLike", a.onSemantic, a.superLike)
-        pair("$theme onSemantic/danger", a.onSemantic, a.danger)
-        // A bubble's quieter text (time, like note label), blended as drawn: your own bubble is the
-        // template's `--bubble-out` (its middle colour where it is a gradient).
-        val out = template.paints.bubbleOut.stop(1)
-        pair("$theme own bubble time/bubble-out", bubbleQuietColor(template.colors.onBubbleOut, onGrey = false).compositeOver(out), out)
-        pair("$theme their bubble time/surfaceContainerHigh", bubbleQuietColor(s.onSurface, onGrey = true).compositeOver(s.surfaceContainerHigh), s.surfaceContainerHigh)
-        pair("$theme their like note label/surfaceContainerHigh", bubbleQuietColor(s.onSurface, onGrey = true, alpha = NOTE_LABEL_ALPHA).compositeOver(s.surfaceContainerHigh), s.surfaceContainerHigh)
-        pair("$theme unsent bubble time/background", bubbleQuietColor(s.onSurfaceVariant, onGrey = false).compositeOver(s.background), s.background)
-        // The new gradient bubble: its 75 % meta line on the gradient's lightest stop.
-        pair("$theme gradient bubble meta/end stop", a.onGradient.copy(alpha = 0.75f).compositeOver(a.gradientStops.end), a.gradientStops.end, Contrast.AA_LARGE)
-        val accent = template.colors.primary
-        val callBack = accent.copy(alpha = 0.12f).compositeOver(s.surfaceContainerHigh)
-        pair("$theme call-back icon/its disc", accent, callBack, Contrast.AA_LARGE)
+        // A bubble's quieter text, as the thread draws it: your newest message's meta («۱۸:۲۵، دیده شد»)
+        // and a like note's label in `--on-bubble-out-2` on every stop of `--bubble-out`; on theirs, the
+        // label and the voice length in `--text-3`; a removed message in `--text-3` on the page.
+        t.paints.bubbleOut.colors.distinct().forEachIndexed { i, stop ->
+            pair("$theme own bubble meta/bubble-out stop $i", c.onBubbleOut2.compositeOver(stop), stop)
+        }
+        pair("$theme their voice length, like note label/bubble-in", c.text3, c.bubbleIn)
+        pair("$theme unsent bubble text/page", c.text3, c.bg)
+        // The call line and «زنگ بزن» on the page.
+        pair("$theme call line/page", c.text3, c.bg)
+        pair("$theme missed call line/page", c.error, c.bg)
+        pair("$theme call back/page", c.primary, c.bg)
     }
 
     @Test
     fun `the dark theme passes AA for this build's brand`() {
-        design("dark", appColorScheme(dark = true), AppColors.of(dark = true))
-        olderScreens("dark", appColorScheme(dark = true), AppColors.of(dark = true), Templates.of(Templates.NEON))
+        design("dark", Templates.of(Templates.NEON))
+        screens("dark", Templates.of(Templates.NEON))
         assertNoFailures()
     }
 
     @Test
     fun `the light theme passes AA for this build's brand`() {
-        design("light", appColorScheme(dark = false), AppColors.of(dark = false))
-        olderScreens("light", appColorScheme(dark = false), AppColors.of(dark = false), Templates.White)
+        design("light", Templates.of(Templates.WHITE))
+        screens("light", Templates.of(Templates.WHITE))
         assertNoFailures()
     }
 
     @Test
     fun `the design's own colours pass in both themes`() {
-        for (dark in listOf(true, false)) {
-            val theme = if (dark) "design dark" else "design light"
-            design(theme, appColorScheme(dark, BrandColors.Design), AppColors.of(dark, BrandColors.Design))
-        }
+        design("design dark", Templates.Neon)
+        design("design light", Templates.White)
         assertNoFailures()
     }
 
     @Test
-    fun `the older names carry the template's colours`() {
-        val dark = appColorScheme(dark = true, BrandColors.Design)
-        val light = appColorScheme(dark = false, BrandColors.Design)
+    fun `Material's scheme carries the template's colours`() {
+        val dark = templateColorScheme(Templates.Neon)
+        val light = templateColorScheme(Templates.White)
         // Dark: the accent text colour leads Material's scheme; the container is the gradient's first stop.
         assertEquals(Color(0xFFDD6BF2), dark.primary)
         assertEquals(Color(0xFF7B2BFF), dark.primaryContainer)
@@ -176,13 +164,13 @@ class ContrastTest {
         assertEquals(Color(0xFF111114), light.primary)
         assertEquals(Color(0xFF5B2FD9), light.tertiary)
         assertEquals(Color(0xFFFFFFFF), light.background)
-        val a = AppColors.of(Templates.White)
-        assertEquals(Color(0xFF5B2FD9), a.like)
-        assertEquals(Color(0xFFF0ECFC), a.aliveTint)
-        assertEquals(Templates.White.paints.likeFill, a.gradient)
-        val n = AppColors.of(Templates.Neon)
-        assertEquals(GradientStops(Color(0xFF7B2BFF), Color(0xFFC21FD0), Color(0xFFE0157A)), n.gradientStops)
-        assertNotEquals(a.gradient, n.gradient)
+        assertEquals(Color(0xFF5B2FD9), Templates.White.colors.like)
+        assertEquals(Color(0xFFF0ECFC), Templates.White.colors.primaryTint)
+        assertEquals(
+            listOf(Color(0xFF7B2BFF), Color(0xFFC21FD0), Color(0xFFE0157A)),
+            Templates.Neon.paints.likeFill.colors,
+        )
+        assertNotEquals(Templates.White.paints.likeFill, Templates.Neon.paints.likeFill)
     }
 
     @Test

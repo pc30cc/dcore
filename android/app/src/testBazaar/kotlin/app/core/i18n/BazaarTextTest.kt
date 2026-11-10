@@ -51,9 +51,9 @@ class BazaarTextTest {
     }
 
     @Test
-    fun thePrivacyNoticeNamesThePhoneNumberOnly() {
-        assertTrue(resources("en").getString(R.string.privacy_collect_body).startsWith("Your phone number, what you put in your profile"))
-        assertTrue(resources("fa").getString(R.string.privacy_collect_body).startsWith("شماره موبایل، آنچه در پروفایلتان"))
-        assertTrue(resources("tr").getString(R.string.privacy_collect_body).startsWith("Telefon numaranız, profilinize"))
+    fun thePrivacySummaryNamesThePhoneNumberOnly() {
+        assertEquals("Phone number", resources("en").getString(R.string.privacy_only_us_1))
+        assertEquals("شماره موبایل", resources("fa").getString(R.string.privacy_only_us_1))
+        assertEquals("Telefon numarası", resources("tr").getString(R.string.privacy_only_us_1))
     }
 }

@@ -165,13 +165,6 @@ enum class ConversationSource(override val wire: String) : WireEnum {
     internal object Serializer : WireEnumSerializer<ConversationSource>("ConversationSource", ConversationSource.entries.toTypedArray(), ConversationSource.Unknown)
 }
 
-@Serializable(with = Plan.Serializer::class)
-enum class Plan(override val wire: String) : WireEnum {
-    Free("free"), Plus("plus"), Premium("premium"), Unknown("");
-
-    internal object Serializer : WireEnumSerializer<Plan>("Plan", Plan.entries.toTypedArray(), Plan.Unknown)
-}
-
 /** The kind of a moderation action the user sees (a shadow restriction is never sent). */
 @Serializable(with = ModerationKind.Serializer::class)
 enum class ModerationKind(override val wire: String) : WireEnum {

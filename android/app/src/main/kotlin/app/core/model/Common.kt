@@ -351,7 +351,8 @@ data class Wallet(
 /** What the account may use right now: plan, features, quotas and wallet. */
 @Serializable
 data class Entitlements(
-    val plan: Plan = Plan.Free,
+    /** The key of the best plan the session counts: [PlanKey.FREE], or any key the admin made (never a closed list). */
+    val plan: String = PlanKey.FREE,
     val planExpiresAt: Instant? = null,
     val autoRenew: Boolean? = null,
     val source: EntitlementSource? = null,

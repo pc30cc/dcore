@@ -10,7 +10,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.Locale
 
-/** The Play build offers Google sign-in, so its privacy notice names the Google account too. */
+/** The Play build offers Google sign-in, so its privacy summary names the Google account too. */
 @RunWith(AndroidJUnit4::class)
 class PlayTextTest {
 
@@ -20,10 +20,11 @@ class PlayTextTest {
         base.createConfigurationContext(Configuration(base.resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) }).resources.getString(id)
 
     @Test
-    fun thePrivacyNoticeNamesThePhoneNumberAndTheGoogleAccount() {
-        assertTrue(text("en", R.string.privacy_collect_body).startsWith("Your phone number or Google account"))
-        assertTrue(text("fa", R.string.privacy_collect_body).startsWith("شماره موبایل یا حساب گوگل"))
-        assertTrue(text("tr", R.string.privacy_collect_body).startsWith("Telefon numaranız veya Google hesabınız"))
+    fun thePrivacySummaryNamesThePhoneNumberAndTheGoogleAccount() {
+        // What only the service keeps: the number or the Google account this build signs in with.
+        org.junit.Assert.assertEquals("Phone number or Google account", text("en", R.string.privacy_only_us_1))
+        org.junit.Assert.assertEquals("شماره موبایل یا حساب گوگل", text("fa", R.string.privacy_only_us_1))
+        org.junit.Assert.assertEquals("Telefon numarası veya Google hesabı", text("tr", R.string.privacy_only_us_1))
     }
 
     /** The Play build names no other store, in any of its languages ("nothing that names Bazaar"). */

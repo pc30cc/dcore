@@ -8,21 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -34,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -43,6 +32,13 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.LocalAppGraph
 import app.core.R
+import app.core.ui.components.AppBottomSheet
+import app.core.ui.components.AppIconButton
+import app.core.ui.components.AppSwitch
+import app.core.ui.components.SecondaryButton
+import app.core.ui.components.TextAction
+import app.core.ui.icons.AppIcons
+import app.core.ui.theme.AppTheme
 import app.core.common.runCatchingUnlessCancelled
 import app.core.feature.card.isolate
 import app.core.i18n.brandString
@@ -149,7 +145,7 @@ fun MatchCallActions(conversation: Conversation, settingsOpen: MutableState<Bool
         switches = switches,
         active = conversation.state == ConversationState.Active,
     )
-    val peer = CallPeer(conversation.id, conversation.peer.name, conversation.peer.photo?.url, conversation.peer.photo?.blurhash)
+    val peer = CallPeer(conversation.id, conversation.peer.name, conversation.peer.photo?.url, conversation.peer.photo?.blurhash, conversation.peer.verified)
     CallHeaderButtons(header, onCall = { kind -> calls.controller.requestCall(peer, kind) }, onOpenSettings = { settingsOpen.value = true })
     if (settingsOpen.value) {
         val context = LocalContext.current
@@ -184,31 +180,22 @@ fun MatchCallActions(conversation: Conversation, settingsOpen: MutableState<Bool
     }
 }
 
-/** The header's buttons, from a state alone. */
+/** The header's buttons, from a state alone: video, then voice (`.appbar`), or one quiet phone that opens the settings. */
 @Composable
 fun CallHeaderButtons(state: CallHeaderState, onCall: (CallKind) -> Unit, onOpenSettings: () -> Unit) {
+    val t = AppTheme.template
     val name = isolate(state.peerName)
     if (state.canAudio || state.canVideo) {
         Row {
-            if (state.canAudio) {
-                IconButton(onClick = { onCall(CallKind.Audio) }, modifier = Modifier.testTag(CallTags.HEADER_AUDIO)) {
-                    Icon(painterResource(R.drawable.ic_call_phone), contentDescription = brandString(R.string.call_header_audio, name))
-                }
-            }
             if (state.canVideo) {
-                IconButton(onClick = { onCall(CallKind.Video) }, modifier = Modifier.testTag(CallTags.HEADER_VIDEO)) {
-                    Icon(painterResource(R.drawable.ic_call_videocam), contentDescription = brandString(R.string.call_header_video, name))
-                }
+                AppIconButton(AppIcons.Video, brandString(R.string.call_header_video, name), { onCall(CallKind.Video) }, Modifier.testTag(CallTags.HEADER_VIDEO))
+            }
+            if (state.canAudio) {
+                AppIconButton(AppIcons.Phone, brandString(R.string.call_header_audio, name), { onCall(CallKind.Audio) }, Modifier.testTag(CallTags.HEADER_AUDIO))
             }
         }
     } else if (state.active) {
-        IconButton(onClick = onOpenSettings, modifier = Modifier.testTag(CallTags.HEADER_SETTINGS)) {
-            Icon(
-                painterResource(R.drawable.ic_call_phone),
-                contentDescription = brandString(R.string.call_header_off, name),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            )
-        }
+        AppIconButton(AppIcons.Phone, brandString(R.string.call_header_off, name), onOpenSettings, Modifier.testTag(CallTags.HEADER_SETTINGS), tint = t.colors.text3)
     }
 }
 
@@ -246,8 +233,7 @@ fun CallSettingsSheet(
     onAllowFullScreen: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+    AppBottomSheet(onDismissRequest = onDismiss) {
         CallSettingsContent(state, onToggle, onCall, onEnableNotifications, onAllowFullScreen, onDismiss)
     }
 }
@@ -262,25 +248,28 @@ fun CallSettingsContent(
     onAllowFullScreen: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val t = AppTheme.template
     val name = isolate(state.peerName)
     Column(
-        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = Space.xl).padding(bottom = Space.xl),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
+        Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, bottom = CallSettingsLayout.bottom),
+        verticalArrangement = Arrangement.spacedBy(CallSettingsLayout.gap),
     ) {
-        Text(brandString(R.string.call_settings_title, name), style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+        Text(brandString(R.string.call_settings_title, name), style = t.type.h2, color = t.colors.text, modifier = Modifier.semantics { heading() })
         if (!state.anyKind) {
-            Text(brandString(R.string.call_settings_unavailable), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(brandString(R.string.call_settings_unavailable), style = t.type.bodySm, color = t.colors.text2)
         } else {
+            val enabled = !state.saving && state.active
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .toggleable(value = state.allowMe, enabled = !state.saving && state.active, role = Role.Switch, onValueChange = onToggle)
+                    .heightIn(min = CallSettingsLayout.row)
+                    .toggleable(value = state.allowMe, enabled = enabled, role = Role.Switch, onValueChange = onToggle)
                     .testTag(CallTags.CONSENT),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CallSettingsLayout.rowGap),
             ) {
-                Text(brandString(R.string.call_settings_toggle, name), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = state.allowMe, onCheckedChange = null, enabled = !state.saving && state.active)
+                Text(brandString(R.string.call_settings_toggle, name), style = t.type.bodyStrong, color = t.colors.text, modifier = Modifier.weight(1f))
+                AppSwitch(checked = state.allowMe, onCheckedChange = null, enabled = enabled)
             }
             val line = when {
                 state.saving -> R.string.call_settings_saving
@@ -291,43 +280,57 @@ fun CallSettingsContent(
             }
             Text(
                 if (line == R.string.call_settings_waiting) brandString(line, name) else brandString(line),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = t.type.bodySm,
+                color = if (state.failed) t.colors.error else t.colors.text2,
                 modifier = Modifier.testTag(CallTags.CONSENT_LINE),
             )
-            Text(brandString(R.string.call_settings_body), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(brandString(R.string.call_settings_body), style = t.type.caption, color = t.colors.text3)
             if (!state.readiness.notifications) {
                 Readiness(brandString(R.string.call_ready_notifications), brandString(R.string.call_ready_notifications_action), onEnableNotifications)
             } else if (!state.readiness.fullScreen) {
                 Readiness(brandString(R.string.call_ready_full_screen), brandString(R.string.call_ready_full_screen_action), onAllowFullScreen)
             }
-            if (state.allowMe && state.allowPeer && !state.saving && state.active) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+            if (state.allowMe && state.allowPeer && enabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(CallSettingsLayout.rowGap)) {
                     if (state.switches.audio) {
-                        FilledTonalButton(onClick = { onCall(CallKind.Audio) }) {
-                            Icon(painterResource(R.drawable.ic_call_phone), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(brandString(R.string.call_settings_voice), modifier = Modifier.padding(start = Space.sm))
-                        }
+                        SecondaryButton(
+                            brandString(R.string.call_settings_voice),
+                            onClick = { onCall(CallKind.Audio) },
+                            modifier = Modifier.weight(1f),
+                            medium = true,
+                        )
                     }
                     if (state.switches.video) {
-                        FilledTonalButton(onClick = { onCall(CallKind.Video) }) {
-                            Icon(painterResource(R.drawable.ic_call_videocam), contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(brandString(R.string.call_settings_video), modifier = Modifier.padding(start = Space.sm))
-                        }
+                        SecondaryButton(
+                            brandString(R.string.call_settings_video),
+                            onClick = { onCall(CallKind.Video) },
+                            modifier = Modifier.weight(1f),
+                            medium = true,
+                        )
                     }
                 }
             }
         }
-        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(brandString(R.string.action_close)) }
+        TextAction(brandString(R.string.action_close), onDismiss, Modifier.align(Alignment.CenterHorizontally))
     }
 }
 
 @Composable
 private fun Readiness(text: String, action: String, onClick: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text(text, style = MaterialTheme.typography.bodyMedium)
-        OutlinedButton(onClick = onClick) { Text(action) }
+    val t = AppTheme.template
+    Column(verticalArrangement = Arrangement.spacedBy(CallSettingsLayout.readinessGap)) {
+        Text(text, style = t.type.bodySm, color = t.colors.text)
+        SecondaryButton(action, onClick = onClick, small = true)
     }
+}
+
+/** The call settings sheet's layout (the design's sheet rhythm). */
+private object CallSettingsLayout {
+    val bottom = 20.dp
+    val gap = 14.dp
+    val row = 56.dp
+    val rowGap = 12.dp
+    val readinessGap = 8.dp
 }
 
 /** The app's notification settings, where notifications (and so rings) are turned on. */
@@ -352,7 +355,7 @@ fun ProvideCallsToChat(content: @Composable () -> Unit) {
         { conversation: Conversation, kind: CallKind ->
             calls.remember(conversation)
             calls.controller.requestCall(
-                CallPeer(conversation.id, conversation.peer.name, conversation.peer.photo?.url, conversation.peer.photo?.blurhash),
+                CallPeer(conversation.id, conversation.peer.name, conversation.peer.photo?.url, conversation.peer.photo?.blurhash, conversation.peer.verified),
                 kind,
             )
             Unit

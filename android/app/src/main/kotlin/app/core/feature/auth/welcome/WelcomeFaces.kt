@@ -3,147 +3,248 @@ package app.core.feature.auth.welcome
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Typeface
+import android.util.LruCache
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.core.content.res.ResourcesCompat
-import app.core.R
 import app.core.common.runCatchingUnlessCancelled
 import app.core.media.ImageLoading
 import app.core.media.LocalRemoteImages
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
+import coil3.size.Precision
+import coil3.size.Scale
 import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * The faces in the bubbles. Never a member's photo: only the brand's own
+ * The welcome's pictures. Never a member's photo: only the brand's own
  * pictures (shipped in the build, or named by the server's config and cached
- * like photos), and with none of those, [GeneratedFaces].
+ * like photos). Nothing is drawn in their place when there are none.
+ *
+ * Decoded off the main thread and kept, per picture, at the largest size
+ * asked so far, in a cache bounded in bytes and emptied once the welcome is
+ * gone for good ([release], on sign-in).
  */
 object WelcomeFaces {
 
-    @Volatile private var generated: List<Bitmap>? = null
-    private val pictures = HashMap<WelcomePicture, Bitmap>()
+    /** The orbit's faces: one in the middle, six around it. */
+    const val ORBIT = 7
 
-    /** The thread that painted [generated] (tests: never the main one). */
-    @Volatile internal var paintedOn: Thread? = null
+    /** The framed photo is never blown up more than this to cover its frame (a small crop would turn soft). */
+    const val MAX_UPSCALE = 1.5f
+
+    private class Entry(val bitmap: Bitmap, val full: Boolean)
+
+    private val cache = object : LruCache<WelcomePicture, Entry>(cacheBytes()) {
+        override fun sizeOf(key: WelcomePicture, value: Entry): Int = value.bitmap.allocationByteCount
+    }
+
+    private fun cacheBytes(): Int = min(Runtime.getRuntime().maxMemory() / 8, MAX_CACHE_BYTES).toInt()
+
+    /** How many pictures have been decoded or fetched in this process (tests wait for it). */
+    @Volatile internal var loadedCount: Int = 0
         private set
 
-    /** The generated figures as bubble sprites if this process painted them already, else null. Cheap: for the first frame. */
-    fun generatedIfReady(): List<Bitmap>? = generated
+    /** How many times a welcome finished choosing what to draw (tests wait for it). */
+    @Volatile internal var settledCount: Int = 0
+        private set
+
+    /** The thread the last [load] ran on (tests: never the main one). */
+    @Volatile internal var loadedOn: Thread? = null
+        private set
+
+    internal fun settled() {
+        settledCount++
+    }
+
+    /** Lets the decoded pictures go: the welcome will not be shown again soon (signed in). */
+    fun release() = cache.evictAll()
+
+    /** Forgets what was decoded, so a test sees a first launch. */
+    internal fun forgetForTest() {
+        cache.evictAll()
+        loadedCount = 0
+        settledCount = 0
+        loadedOn = null
+    }
+
+    /** A picture already decoded at its full size (tests: a brand picture without an asset file). */
+    internal fun keepForTest(source: WelcomePicture, bitmap: Bitmap) {
+        cache.put(source, Entry(bitmap, full = true))
+    }
+
+    /** [source] if it is already decoded large enough to cover [width] × [height] px, else null (no I/O). */
+    fun cached(source: WelcomePicture, width: Int, height: Int): Bitmap? =
+        cache.get(source)?.takeIf { it.full || (it.bitmap.width >= width && it.bitmap.height >= height) }?.bitmap
 
     /**
-     * The generated figures as bubble sprites ([BubbleArt.faceSprite]),
-     * painted once per process. Sixteen canvases of figures and their circles:
-     * call it off the main thread ([rememberBubbleArt] does, on
-     * [Dispatchers.Default]).
+     * [source] decoded (or, with [remote], fetched) large enough to cover
+     * [width] × [height] px where the picture has that many pixels, never
+     * blown up; null when it cannot be read. Off the main thread.
      */
-    fun generated(): List<Bitmap> = generated ?: synchronized(this) {
-        generated ?: List(GENERATED) { i ->
-            val figure = GeneratedFaces.paint(i, BubbleArt.FACE)
-            BubbleArt.faceSprite(figure).also { figure.recycle() }
-        }.also {
-            paintedOn = Thread.currentThread()
-            generated = it
-        }
+    suspend fun load(context: Context, source: WelcomePicture, remote: Boolean, width: Int, height: Int): Bitmap? {
+        loadedOn = Thread.currentThread()
+        cached(source, width, height)?.let { return it }
+        val entry = when (source) {
+            is WelcomePicture.Asset -> decodeAsset(context, source.name, width, height)
+            is WelcomePicture.Remote -> if (remote) fetch(context, source.url, width, height) else null
+        } ?: return null
+        loadedCount++
+        val kept = cache.get(source)
+        if (kept == null || entry.bitmap.width > kept.bitmap.width) cache.put(source, entry)
+        return entry.bitmap
     }
 
-    /** Forgets what was painted, so a test sees a first launch. */
-    internal fun forgetForTest() = synchronized(this) {
-        generated = null
-        paintedOn = null
-        synchronized(pictures) { pictures.clear() }
+    /** The square a face is cut from: the whole width, a little above the middle of a portrait. */
+    fun faceSquare(picture: Bitmap): Bitmap {
+        val side = min(picture.width, picture.height)
+        if (picture.width == picture.height) return picture
+        val left = (picture.width - side) / 2
+        val top = ((picture.height - side) * FACE_FOCUS).toInt().coerceIn(0, max(0, picture.height - side))
+        return Bitmap.createBitmap(picture, left, top, side, side)
     }
 
-    /** A picture already decoded and cut, as [load] keeps it (tests: a brand picture without an asset file). */
-    internal fun keepForTest(source: WelcomePicture, sprite: Bitmap) = synchronized(pictures) { pictures[source] = sprite }
+    /** How much [picture] must be enlarged to cover [width] × [height]. */
+    fun upscale(picture: Bitmap, width: Int, height: Int): Float =
+        max(width.toFloat() / picture.width, height.toFloat() / picture.height)
 
-    /**
-     * The brand's pictures as bubble sprites, decoded (or fetched) and cut
-     * once and kept for the process; off the main thread. With [remote] off
-     * (previews, screen tests) config URLs are skipped. Fewer than
-     * [MIN_PICTURES] are mixed with generated figures, so a short list does
-     * not repeat the same few faces.
-     */
-    suspend fun load(context: Context, sources: List<WelcomePicture>, remote: Boolean): List<Bitmap> {
-        if (sources.isEmpty()) return emptyList()
-        val loaded = sources.mapNotNull { source ->
-            synchronized(pictures) { pictures[source] }?.let { return@mapNotNull it }
-            val bitmap = when (source) {
-                is WelcomePicture.Asset -> decodeAsset(context, source.name)
-                is WelcomePicture.Remote -> if (remote) fetch(context, source.url) else null
-            }
-            bitmap?.let(BubbleArt::portrait)?.let(BubbleArt::faceSprite)?.also { synchronized(pictures) { pictures[source] = it } }
-        }
-        if (loaded.isEmpty()) return emptyList()
-        return if (loaded.size >= MIN_PICTURES) loaded else loaded + generated()
-    }
-
-    private suspend fun decodeAsset(context: Context, name: String): Bitmap? = withContext(Dispatchers.IO) {
+    private suspend fun decodeAsset(context: Context, name: String, width: Int, height: Int): Entry? = withContext(Dispatchers.IO) {
         runCatchingUnlessCancelled {
             val path = "${BrandWelcome.IMAGE_FOLDER}/$name"
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             context.assets.open(path).use { BitmapFactory.decodeStream(it, null, bounds) }
             var sample = 1
-            while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= BubbleArt.FACE) sample *= 2
-            context.assets.open(path).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            while (bounds.outWidth / (sample * 2) >= width && bounds.outHeight / (sample * 2) >= height) sample *= 2
+            val bitmap = context.assets.open(path).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            bitmap?.let { Entry(it, full = sample == 1) }
         }.getOrNull()
     }
 
-    private suspend fun fetch(context: Context, url: String): Bitmap? = runCatchingUnlessCancelled {
+    private suspend fun fetch(context: Context, url: String, width: Int, height: Int): Entry? = runCatchingUnlessCancelled {
         val key = ImageLoading.cacheKey(url)
         val request = ImageRequest.Builder(context)
             .data(url)
-            .memoryCacheKey(key)
+            .memoryCacheKey("$key#${width}x$height")
             .diskCacheKey(key)
-            .size(BubbleArt.FACE)
+            .size(width, height)
+            .scale(Scale.FILL)
+            .precision(Precision.INEXACT)
             .allowHardware(false)
             .build()
-        (ImageLoading.loader(context).execute(request) as? SuccessResult)?.image?.toBitmap()
+        val bitmap = (ImageLoading.loader(context).execute(request) as? SuccessResult)?.image?.toBitmap() ?: return@runCatchingUnlessCancelled null
+        // Inexact decoding never enlarges: a result smaller than asked for is the whole picture.
+        Entry(bitmap, full = bitmap.width < width - 1 || bitmap.height < height - 1)
     }.getOrNull()
 
-    private const val GENERATED = 16
-    private const val MIN_PICTURES = 6
+    /** Where a face sits in a portrait: this share of the spare height lies above the square. */
+    private const val FACE_FOCUS = 0.3f
+
+    private const val MAX_CACHE_BYTES = 32L * 1024 * 1024
+}
+
+/** What a welcome hero draws. */
+sealed interface WelcomeArt {
+    /** Pictures are on their way: nothing in their place yet. */
+    data object Loading : WelcomeArt
+
+    /** No picture to show: the hero's design without pictures. */
+    data object None : WelcomeArt
+
+    data class Faces(val faces: List<ImageBitmap>) : WelcomeArt
+
+    data class Photo(val bitmap: ImageBitmap) : WelcomeArt
 }
 
 /**
- * The bubbles' art for this screen: the action [labels] drawn in the
- * screen's script; the faces painted on [Dispatchers.Default] (once per
- * process: a second visit has them from the first frame), the bubbles
- * showing their empty glass until then; the brand's pictures once loaded.
- * When [pictures] change (the server's config arriving after the brand's
- * own list was shown) the faces on screen stay until the new ones are
- * ready, and stay for good if none of the new ones load: the generated
- * figures stand in only while the bubbles have no face at all.
+ * The face orbit's faces as [size] px squares, in the pictures' order (the
+ * first in the middle), from the first set of [sources] that loads at all:
+ * the config's, else the brand's own. [WelcomeArt.None] at once when there
+ * are no pictures; faces already on screen stay when none of a new set loads.
  */
 @Composable
-fun rememberBubbleArt(pictures: List<WelcomePicture>, labels: List<String>, persian: Boolean): BubbleArt {
+fun rememberOrbitFaces(sources: WelcomeSources, size: Int): WelcomeArt {
     val context = LocalContext.current
     val remote = LocalRemoteImages.current && !LocalInspectionMode.current
-    val art = remember(labels, persian) {
-        val typeface = if (persian) {
-            runCatching { ResourcesCompat.getFont(context, R.font.brand_fa_bold) }.getOrNull() ?: Typeface.DEFAULT_BOLD
-        } else {
-            Typeface.create("sans-serif", Typeface.BOLD)
+    val initial = remember(sources, size) { orbitAtOnce(sources, size) }
+    val art by produceState(initial, sources, size, remote) {
+        if (initial !is WelcomeArt.Loading) {
+            value = initial
+            WelcomeFaces.settled()
+            return@produceState
         }
-        BubbleArt(
-            labels,
-            typeface,
-            labelTracking = if (persian) 0f else 0.06f,
-            faceSprites = WelcomeFaces.generatedIfReady().orEmpty(),
-            labelSize = if (persian) BubbleArt.PERSIAN_LABEL_SHARE else BubbleArt.LABEL_SHARE,
-        )
-    }
-    LaunchedEffect(art, pictures, remote) {
-        if (art.faces.isEmpty()) art.replaceFaces(withContext(Dispatchers.Default) { WelcomeFaces.generated() })
-        val loaded = withContext(Dispatchers.Default) { WelcomeFaces.load(context.applicationContext, pictures, remote) }
-        art.replaceFaces(loaded)
+        val found = withContext(Dispatchers.Default) {
+            sources.sets.firstNotNullOfOrNull { set ->
+                set.take(WelcomeFaces.ORBIT)
+                    .mapNotNull { WelcomeFaces.load(context.applicationContext, it, remote, size, size) }
+                    .takeIf { it.isNotEmpty() }
+                    ?.map { WelcomeFaces.faceSquare(it).asImageBitmap() }
+            }
+        }
+        value = when {
+            found != null -> WelcomeArt.Faces(found)
+            value is WelcomeArt.Faces -> value
+            else -> WelcomeArt.None
+        }
+        WelcomeFaces.settled()
     }
     return art
+}
+
+/**
+ * The framed welcome's photo: the first of [sources] (the config's, else the
+ * brand's own) that covers a [width] × [height] px frame without being blown
+ * up more than [WelcomeFaces.MAX_UPSCALE] times. [WelcomeArt.None] when none
+ * does (a face crop would turn soft in the frame); a photo already on screen
+ * stays when none of a new set loads.
+ */
+@Composable
+fun rememberWelcomePhoto(sources: WelcomeSources, width: Int, height: Int): WelcomeArt {
+    val context = LocalContext.current
+    val remote = LocalRemoteImages.current && !LocalInspectionMode.current
+    val initial = remember(sources, width, height) { photoAtOnce(sources, width, height) }
+    val art by produceState(initial, sources, width, height, remote) {
+        if (initial !is WelcomeArt.Loading) {
+            value = initial
+            WelcomeFaces.settled()
+            return@produceState
+        }
+        val found = withContext(Dispatchers.Default) {
+            sources.sets.asSequence().flatten().firstNotNullOfOrNull { source ->
+                WelcomeFaces.load(context.applicationContext, source, remote, width, height)
+                    ?.takeIf { WelcomeFaces.upscale(it, width, height) <= WelcomeFaces.MAX_UPSCALE }
+            }
+        }
+        value = when {
+            found != null -> WelcomeArt.Photo(found.asImageBitmap())
+            value is WelcomeArt.Photo -> value
+            else -> WelcomeArt.None
+        }
+        WelcomeFaces.settled()
+    }
+    return art
+}
+
+/** What the orbit can draw without waiting: nothing to load, or every face already decoded; else [WelcomeArt.Loading]. */
+private fun orbitAtOnce(sources: WelcomeSources, size: Int): WelcomeArt {
+    if (sources.isEmpty) return WelcomeArt.None
+    val first = sources.sets.first().take(WelcomeFaces.ORBIT)
+    val cached = first.map { WelcomeFaces.cached(it, size, size) ?: return WelcomeArt.Loading }
+    return WelcomeArt.Faces(cached.map { WelcomeFaces.faceSquare(it).asImageBitmap() })
+}
+
+/** What the frame can draw without waiting: nothing to load, or the first picture already decoded and large enough. */
+private fun photoAtOnce(sources: WelcomeSources, width: Int, height: Int): WelcomeArt {
+    if (sources.isEmpty) return WelcomeArt.None
+    val cached = sources.sets.first().firstOrNull()?.let { WelcomeFaces.cached(it, width, height) } ?: return WelcomeArt.Loading
+    return if (WelcomeFaces.upscale(cached, width, height) <= WelcomeFaces.MAX_UPSCALE) WelcomeArt.Photo(cached.asImageBitmap()) else WelcomeArt.Loading
 }

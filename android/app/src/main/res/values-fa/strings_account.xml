@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- پروفایل خودت، ویرایش، تنظیمات، حذف حساب. Persian. -->
+<resources>
+    <string name="me_edit">ویرایش پروفایل</string>
+    <string name="me_preview">پیش‌نمایش</string>
+    <string name="me_complete">تکمیل پروفایل</string>
+    <string name="me_plan">اشتراک</string>
+    <string name="me_free">رایگان</string>
+    <string name="me_packs">سوپرلایک و بوست</string>
+    <plurals name="me_packs_value">
+        <item quantity="one">%1$s سوپرلایک</item>
+        <item quantity="other">%1$s سوپرلایک</item>
+    </plurals>
+
+    <string name="edit_photos">عکس‌ها</string>
+    <string name="edit_prompts">سؤال‌ها</string>
+    <string name="edit_about">درباره‌ی من</string>
+    <string name="edit_count">%1$s از %2$s</string>
+    <string name="edit_work">کار</string>
+    <string name="edit_save">ذخیره</string>
+    <string name="edit_remove">حذف</string>
+
+    <string name="settings_title">تنظیمات</string>
+    <string name="settings_notifications">اعلان‌ها</string>
+    <string name="settings_privacy">حریم خصوصی و ایمنی</string>
+    <string name="settings_account">حساب</string>
+    <string name="settings_help">کمک و پشتیبانی</string>
+    <string name="settings_legal">قوانین و حریم خصوصی</string>
+    <string name="settings_delete">حذف حساب</string>
+    <string name="settings_incognito">حالت ناشناس</string>
+    <string name="settings_show_online">آنلاین بودنم دیده بشه</string>
+    <string name="settings_save_failed">ذخیره نشد. دوباره امتحان کن.</string>
+    <string name="settings_export">یه نسخه از اطلاعاتم رو بگیر</string>
+    <string name="settings_export_started">آماده که شد، همین‌جا می‌تونی بگیریش.</string>
+    <string name="settings_export_weekly">هفته‌ای یه بار می‌شه گرفتش.</string>
+    <string name="settings_sign_out_all">خروج از همه‌ی دستگاه‌ها</string>
+    <string name="settings_sign_out_all_title">از همه‌ی دستگاه‌ها خارج می‌شی؟</string>
+    <string name="settings_support_email">ایمیل به پشتیبانی</string>
+    <string name="manage_subscription">مدیریت اشتراک</string>
+
+    <string name="delete_title">حسابت رو پاک می‌کنی؟</string>
+    <string name="delete_now">از همین الان کسی پروفایلت رو نمی‌بینه و مچ‌ها و گفتگوهات بسته می‌شن.</string>
+    <string name="delete_restore">تا %1$s با یه ورود ساده همه‌چی برمی‌گرده.</string>
+    <string name="delete_after">بعدش عکس‌ها، پیام‌ها و اطلاعاتت برای همیشه پاک می‌شن.</string>
+    <string name="delete_sub">اشتراکت خودکار لغو نمی‌شه.</string>
+    <string name="delete_export">اول یه نسخه از اطلاعاتم رو بگیر</string>
+    <string name="delete_stay">نه، می‌مونم</string>
+    <string name="delete_confirm">حسابم رو پاک کن</string>
+
+    <string name="restricted_body_banned">کسی پروفایلت رو نمی‌بینه.</string>
+    <string name="restricted_until_value">%1$s، ساعت %2$s</string>
+    <string name="restricted_billing">اشتراکت تو این مدت هم تمدید می‌شه.</string>
+    <string name="edit_bio">بیو</string>
+    <string name="settings_show_age">سنم دیده بشه</string>
+    <string name="settings_show_distance">فاصله‌م دیده بشه</string>
+    <string name="settings_terms">شرایط استفاده</string>
+    <string name="settings_privacy_policy">حریم خصوصی</string>
+    <string name="language_phone">زبان گوشی</string>
+</resources>

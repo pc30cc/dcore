@@ -42,7 +42,7 @@ class SystemBarsTest {
             val bars = remember { SystemBarRequests() }
             ApplySystemBars(compose.activity, template, bars)
             CompositionLocalProvider(LocalSystemBars provides bars) {
-                // As AuthScreen and CallHost ask.
+                // A full-screen scene's own request, and CallHost's.
                 if (welcome) SystemBarsOverride(BarIcons(lightStatus = sheetOpen, lightNavigation = true))
                 if (call) SystemBarsOverride(BarIcons(lightStatus = true, lightNavigation = true))
             }

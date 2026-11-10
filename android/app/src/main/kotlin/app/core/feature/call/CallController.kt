@@ -3,9 +3,9 @@ package app.core.feature.call
 import android.Manifest
 import android.os.Build
 import app.core.common.runCatchingUnlessCancelled
+import app.core.model.ConversationPeer
 import app.core.model.CallKind
 import app.core.model.Id
-import app.core.model.Photo
 import app.core.push.IncomingCallLink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -41,7 +41,7 @@ class CallController(
     private val onRingEnded: (callId: Id, end: CallEnd) -> Unit = { _, _ -> },
     private val lingerMs: Long = END_LINGER_MS,
     /** The match's photo as the chat's cache has it for a conversation, or null (signed out, not stored). */
-    private val cachedFace: suspend (conversationId: Id) -> Photo? = { null },
+    private val cachedFace: suspend (conversationId: Id) -> ConversationPeer? = { null },
 ) {
     private val _session = MutableStateFlow<MatchCallSession?>(null)
 
@@ -123,7 +123,7 @@ class CallController(
         // the ring had none) come from the conversation the phone has stored.
         scope.launch {
             val face = runCatchingUnlessCancelled { cachedFace(link.conversationId) }.getOrNull() ?: return@launch
-            session.knowFace(link.conversationId, face.url, face.blurhash)
+            session.knowFace(link.conversationId, face.photo?.url, face.photo?.blurhash, face.verified)
         }
         return true
     }

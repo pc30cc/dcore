@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Profil sekmesi, profili düzenleme, ayarlar, hesabı silme. Turkish. -->
+<resources>
+    <string name="me_edit">Profili düzenle</string>
+    <string name="me_preview">Önizle</string>
+    <string name="me_complete">Profil tamamlama</string>
+    <string name="me_plan">Abonelik</string>
+    <string name="me_free">Ücretsiz</string>
+    <string name="me_packs">Süper beğeni ve boost</string>
+    <plurals name="me_packs_value">
+        <item quantity="one">%1$s süper beğeni</item>
+        <item quantity="other">%1$s süper beğeni</item>
+    </plurals>
+
+    <string name="edit_photos">Fotoğraflar</string>
+    <string name="edit_prompts">Sorular</string>
+    <string name="edit_about">Hakkımda</string>
+    <string name="edit_count">%1$s/%2$s</string>
+    <string name="edit_work">İş</string>
+    <string name="edit_save">Kaydet</string>
+    <string name="edit_remove">Kaldır</string>
+
+    <string name="settings_title">Ayarlar</string>
+    <string name="settings_notifications">Bildirimler</string>
+    <string name="settings_privacy">Gizlilik ve güvenlik</string>
+    <string name="settings_account">Hesap</string>
+    <string name="settings_help">Yardım</string>
+    <string name="settings_legal">Koşullar ve gizlilik</string>
+    <string name="settings_delete">Hesabı sil</string>
+    <string name="settings_incognito">Gizli mod</string>
+    <string name="settings_show_online">Çevrimiçi olduğumu göster</string>
+    <string name="settings_save_failed">Kaydedilemedi. Tekrar dene.</string>
+    <string name="settings_export">Verilerimi indir</string>
+    <string name="settings_export_started">Verilerin birazdan burada hazır olur.</string>
+    <string name="settings_export_weekly">Verilerini haftada bir indirebilirsin.</string>
+    <string name="settings_sign_out_all">Tüm cihazlarda çıkış yap</string>
+    <string name="settings_sign_out_all_title">Tüm cihazlarda çıkış yapılsın mı?</string>
+    <string name="settings_support_email">Bize e-posta gönder</string>
+    <string name="manage_subscription">Aboneliği yönet</string>
+
+    <string name="delete_title">Hesabın silinsin mi?</string>
+    <string name="delete_now">Şu andan itibaren profilini kimse görmez; eşleşmelerin ve sohbetlerin kapanır.</string>
+    <string name="delete_restore">%1$s tarihine kadar giriş yapman her şeyi geri getirir.</string>
+    <string name="delete_after">Sonra fotoğrafların, mesajların ve bilgilerin kalıcı olarak silinir.</string>
+    <string name="delete_sub">Aboneliğin otomatik iptal edilmez.</string>
+    <string name="delete_export">Önce verilerimi indir</string>
+    <string name="delete_stay">Hayır, kalıyorum</string>
+    <string name="delete_confirm">Hesabımı sil</string>
+
+    <string name="restricted_body_banned">Profilini kimse göremez.</string>
+    <string name="restricted_until_value">%1$s, %2$s</string>
+    <string name="restricted_billing">Aboneliğin bu sürede de yenilenir.</string>
+    <string name="edit_bio">Biyografi</string>
+    <string name="settings_show_age">Yaşımı göster</string>
+    <string name="settings_show_distance">Mesafemi göster</string>
+    <string name="settings_terms">Kullanım koşulları</string>
+    <string name="settings_privacy_policy">Gizlilik politikası</string>
+    <string name="language_phone">Telefon dili</string>
+</resources>

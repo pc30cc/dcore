@@ -1,5 +1,6 @@
 package app.core.feature.chat
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -7,7 +8,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,25 +25,18 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SmallFloatingActionButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -54,26 +47,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.core.R
 import app.core.feature.call.CallLineRow
-import app.core.feature.call.rememberCallLengths
-import app.core.feature.card.isolate
-import app.core.feature.card.shimmer
+import app.core.feature.call.callDuration
+import app.core.feature.call.rememberLanguage
 import app.core.i18n.brandString
 import app.core.media.PhotoImage
 import app.core.model.ConversationSource
@@ -81,24 +71,33 @@ import app.core.model.MessageKind
 import app.core.model.Photo
 import app.core.model.ProblemCodes
 import app.core.sync.ChatErrors
+import app.core.ui.components.AppIconButton
+import app.core.ui.components.BUBBLE_MAX
+import app.core.ui.components.ChatBubbleFrame
+import app.core.ui.components.ChatBubbleMeta
+import app.core.ui.components.ChatSystemLine
+import app.core.ui.components.IconButtonKind
+import app.core.ui.components.TextAction
+import app.core.ui.components.overhangingTarget
+import app.core.ui.components.skeleton
+import app.core.ui.icons.AppIcons
 import app.core.ui.theme.AppTheme
-import app.core.ui.theme.stop
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Space
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import androidx.compose.runtime.getValue
+import java.time.Duration
+import java.time.Instant
 
 /** The transcript: newest at the bottom, older pages as the person scrolls up. */
 @Composable
-internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (ChatSheet) -> Unit) {
+internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (ChatSheet) -> Unit, onVoice: () -> Unit = {}, now: Instant = rememberMinuteNow()) {
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val clock = rememberChatClock()
     val items = state.items
     val newest = items.firstOrNull()?.key
-    // Read again with each new line: a thread left open past midnight calls the new day "Today".
-    val today = remember(newest) { LocalDate.now() }
+    // Moves with the minute clock: a thread left open past midnight calls the new day "Today".
+    val today = rememberToday(now)
     val rows = items.count { it is ChatItem.Bubble || it is ChatItem.Call }
 
     // Stay at the newest message when one arrives and the person was there
@@ -114,58 +113,66 @@ internal fun Transcript(state: ChatUiState, actions: ChatActions, onSheet: (Chat
         shown.key = newest
         if (wasThere || atBottom || mine) list.animateScrollToItem(0)
     }
+    // Typing is the newest row: someone reading the newest message sees it come in.
+    LaunchedEffect(state.typing) {
+        if (state.typing && list.firstVisibleItemIndex <= 1) list.animateScrollToItem(0)
+    }
     LaunchedEffect(list, rows) {
         snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
             .collect { last -> if (rows > 0 && last >= list.layoutInfo.totalItemsCount - TOP_MARGIN) actions.nearTop(rows) }
     }
 
+    // Only your newest message says when it went and how far it got («۱۸:۲۵، دیده شد»); a pending one says it is on its way.
+    val newestOwn = items.firstOrNull { it is ChatItem.Bubble && it.message.mine && it.unsent == null }?.key
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val bubbleMax = (maxWidth * 0.78f).coerceAtMost(520.dp)
+        val bubbleMax = (maxWidth * BUBBLE_SHARE).coerceAtMost(BUBBLE_MAX)
         LazyColumn(
             state = list,
             reverseLayout = true,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.md),
+            contentPadding = PaddingValues(horizontal = Space.gutter, vertical = TranscriptLayout.edge),
         ) {
             if (state.typing) item(key = "typing") { TypingBubble(peerName(state)) }
             items(items, key = { it.key }) { item ->
                 when (item) {
-                    is ChatItem.Bubble -> BubbleRow(item, bubbleMax, clock, state, actions, onSheet)
+                    is ChatItem.Bubble -> BubbleRow(item, bubbleMax, clock, state, actions, onSheet, onVoice, meta = item.key == newestOwn)
                     is ChatItem.Call -> CallLine(item, state)
-                    is ChatItem.Day -> DayRow(dayHeader(clock, item.date, today))
-                    is ChatItem.Intro -> Intro(item, clock, today)
+                    is ChatItem.Day -> ChatSystemLine(dayHeader(clock, item.date, today))
+                    is ChatItem.Intro -> Intro(item, clock, now)
                 }
             }
             if (state.olderLoading) {
                 item(key = "older-loading") {
+                    val t = AppTheme.template
                     Box(Modifier.fillMaxWidth().padding(Space.lg), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(color = t.colors.text3, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                     }
                 }
             } else if (state.olderFailed) {
                 item(key = "older-failed") {
-                    Row(
-                        Modifier.fillMaxWidth().padding(Space.sm),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(brandString(R.string.chat_older_failed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = actions::retryOlder) { Text(brandString(R.string.action_try_again)) }
+                    val t = AppTheme.template
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(brandString(R.string.chat_older_failed), style = t.type.caption, color = t.colors.text3)
+                        TextAction(brandString(R.string.action_try_again), actions::retryOlder)
                     }
                 }
             }
         }
         if (!atBottom) {
-            SmallFloatingActionButton(
+            AppIconButton(
+                AppIcons.ChevronDown,
+                brandString(R.string.chat_jump_newest),
                 onClick = { scope.launch { list.animateScrollToItem(0) } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(Space.lg),
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            ) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = brandString(R.string.chat_jump_newest))
-            }
+                kind = IconButtonKind.Tonal,
+                size = TranscriptLayout.jump,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(TranscriptLayout.jumpInset),
+            )
         }
     }
 }
+
+/** A bubble takes at most this share of the thread's width, and never more than 286 dp. */
+private const val BUBBLE_SHARE = 0.78f
 
 private const val TOP_MARGIN = 4
 
@@ -174,55 +181,31 @@ private class ShownNewest {
     var key: Any? = null
 }
 
+/**
+ * The top of a thread, as one system line: when they matched («۳ روز پیش
+ * مچ شدین», «امروز مچ شدین»), or that it began with a message request.
+ */
 @Composable
-private fun DayRow(text: String) {
-    Box(Modifier.fillMaxWidth().padding(vertical = Space.md), contentAlignment = Alignment.Center) {
-        Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            Text(
-                text,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs).semantics { heading() },
-            )
-        }
+private fun Intro(item: ChatItem.Intro, clock: ChatClockText, now: Instant) {
+    val conversation = item.conversation
+    val text = if (conversation.source == ConversationSource.Request) {
+        brandString(R.string.chat_intro_request)
+    } else {
+        matchedAgo(clock, conversation.createdAt, now)
     }
+    ChatSystemLine(text)
 }
 
+/** «امروز مچ شدین», «دیروز مچ شدین», «۳ روز پیش مچ شدین», by calendar days in the reader's zone. */
 @Composable
-private fun Intro(item: ChatItem.Intro, clock: ChatClockText, today: LocalDate) {
-    val conversation = item.conversation
-    val name = isolate(conversation.peer.name)
-    Column(
-        Modifier.fillMaxWidth().padding(top = Space.xl, bottom = Space.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        PeerAvatar(conversation.peer.photo, size = 96.dp)
-        Text(
-            if (conversation.source == ConversationSource.Request) brandString(R.string.chat_intro_request, name)
-            else brandString(R.string.chat_intro_matched, name),
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = Space.xl).semantics { heading() },
-        )
-        // Said the way the day separators say it ("Yesterday", a weekday, a date),
-        // and left out when the separator under it names the same day.
-        if (item.showDate) {
-            Text(
-                dayHeader(clock, clock.date(conversation.createdAt), today),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        // How to start: only until the first message (it read oddly over a whole history).
-        if (item.hint) {
-            Text(
-                brandString(R.string.chat_intro_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = Space.xl),
-            )
+internal fun matchedAgo(clock: ChatClockText, at: Instant, now: Instant): String {
+    val days = Duration.between(clock.date(at).atStartOfDay(), clock.date(now).atStartOfDay()).toDays().coerceAtLeast(0)
+    return when (days) {
+        0L -> brandString(R.string.chat_matched_today)
+        1L -> brandString(R.string.chat_matched_yesterday)
+        else -> {
+            val resources = androidx.compose.ui.platform.LocalResources.current
+            resources.getQuantityString(R.plurals.chat_matched_days, days.toInt(), clock.digits(days.toString()))
         }
     }
 }
@@ -236,32 +219,18 @@ private fun BubbleRow(
     state: ChatUiState,
     actions: ChatActions,
     onSheet: (ChatSheet) -> Unit,
+    onVoice: () -> Unit,
+    meta: Boolean,
 ) {
+    val t = AppTheme.template
     val message = item.message
     val mine = message.mine
     val haptics = LocalHapticFeedback.current
-    val big = 20.dp
-    val small = 6.dp
-    // Corners on the sender's side flatten where a run continues.
-    val shape = if (mine) {
-        RoundedCornerShape(topStart = big, topEnd = if (item.joinsOlder) small else big, bottomEnd = if (item.joinsNewer) small else big, bottomStart = big)
-    } else {
-        RoundedCornerShape(topStart = if (item.joinsOlder) small else big, topEnd = big, bottomEnd = big, bottomStart = if (item.joinsNewer) small else big)
-    }
-    val colors = MaterialTheme.colorScheme
-    val template = AppTheme.template
     val unsent = item.unsent != null
-    // Your own bubbles are the template's `--bubble-out` (the gradient's colour in neon, the accent in
-    // white); the delivery mark reverses out of [container], so it stays a plain colour.
-    val container = when {
-        unsent -> Color.Transparent
-        mine -> template.paints.bubbleOut.stop(1)
-        else -> colors.surfaceContainerHigh
-    }
     val content = when {
-        unsent -> colors.onSurfaceVariant
-        mine -> template.colors.onBubbleOut
-        else -> colors.onSurface
+        unsent -> t.colors.text3
+        mine -> t.colors.onBubbleOut
+        else -> t.colors.onBubbleIn
     }
     val time = clock.time(message.at)
     val description = bubbleDescription(item, time)
@@ -271,18 +240,32 @@ private fun BubbleRow(
     }
     val failed = item.delivery == Delivery.Failed
     val actionsLabel = brandString(R.string.chat_message_actions)
+    val metaText = when {
+        unsent || failed || item.delivery == Delivery.Confirm -> null
+        item.delivery == Delivery.Pending -> brandString(R.string.chat_status_sending)
+        meta -> metaLine(time, item.delivery)
+        else -> null
+    }
+    // Read receipts are the plan's: the newest message's «رسید» opens the plans, nothing in the thread says so.
+    val paywall = app.core.feature.paywall.LocalPaywall.current
+    val seeRead = brandString(R.string.chat_read_receipts_upsell)
+    val metaClick = if (meta && state.readReceiptsLocked && (item.delivery == Delivery.Delivered || item.delivery == Delivery.Sent)) {
+        Modifier.clickable(role = Role.Button, onClickLabel = seeRead) { paywall.plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS) }
+    } else {
+        Modifier
+    }
 
     Column(
-        Modifier.fillMaxWidth().padding(top = if (item.joinsOlder) 2.dp else Space.sm),
+        Modifier.fillMaxWidth().padding(top = TranscriptLayout.gap),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
         Box {
-            Column(
-                Modifier
-                    .widthIn(max = maxWidth)
-                    .clip(shape)
-                    .then(if (mine && !unsent) Modifier.background(template.paints.bubbleOut) else Modifier.background(container))
-                    .then(if (unsent) Modifier.border(1.dp, colors.outlineVariant, shape) else Modifier)
+            ChatBubbleFrame(
+                mine = mine,
+                tail = !item.joinsOlder,
+                outline = unsent,
+                maxWidth = maxWidth,
+                interaction = Modifier
                     .combinedClickable(
                         onClick = { if (failed) onSheet(ChatSheet.Message(item)) },
                         onLongClick = openSheet,
@@ -291,64 +274,58 @@ private fun BubbleRow(
                     .semantics(mergeDescendants = true) {
                         contentDescription = description
                         customActions = listOf(CustomAccessibilityAction(actionsLabel) { onSheet(ChatSheet.Message(item)); true })
-                    }
-                    .padding(horizontal = Space.md, vertical = Space.sm),
+                    },
             ) {
-                BubbleContent(item, content, mine)
-                Row(
-                    Modifier.align(Alignment.End).padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xxs),
-                ) {
-                    // Quieter than the text only on the grey bubble: on the brand colour the
-                    // 11 sp time at 75 % fell under AA (about 3.2:1 in light), and so did it
-                    // on an unsent one's bare background (3.9:1).
-                    Text(time, style = MaterialTheme.typography.labelSmall, color = bubbleQuietColor(content, onGrey = !mine && !unsent))
-                    item.delivery?.let { DeliveryMark(it, content, container) }
-                }
+                BubbleContent(item, content, mine, onVoice)
+                if (metaText != null) ChatBubbleMeta(metaText, mine, metaClick.testTag(metaTag(item.delivery)))
             }
             if (item.reactions.isNotEmpty() && !unsent) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = colors.surfaceContainerHighest,
-                    shadowElevation = 1.dp,
+                Text(
+                    item.reactions.distinct().joinToString(" ") + if (item.reactions.size > 1) " ${clock.digits(item.reactions.size.toString())}" else "",
+                    style = t.type.labelSm,
+                    color = t.colors.text,
                     modifier = Modifier
                         .align(if (mine) Alignment.BottomStart else Alignment.BottomEnd)
-                        .offset(y = 14.dp),
-                ) {
-                    Text(
-                        item.reactions.distinct().joinToString(" ") + if (item.reactions.size > 1) " ${clock.digits(item.reactions.size.toString())}" else "",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(horizontal = Space.sm, vertical = 2.dp),
-                    )
-                }
+                        .offset(y = TranscriptLayout.reactionDrop)
+                        .background(t.colors.surface2, RoundedCornerShape(t.radii.chip))
+                        .padding(horizontal = TranscriptLayout.reactionPadH, vertical = TranscriptLayout.reactionPadV),
+                )
             }
         }
-        if (item.reactions.isNotEmpty() && !unsent) Spacer(Modifier.height(14.dp))
+        if (item.reactions.isNotEmpty() && !unsent) Spacer(Modifier.height(TranscriptLayout.reactionDrop))
         if (failed || item.delivery == Delivery.Confirm) FailedLine(message.errorCode) { onSheet(ChatSheet.Message(item)) }
     }
 }
 
+/** Your newest message's line: «۱۸:۲۵، دیده شد» / "6:25 PM, seen" (the time alone for any other state). */
 @Composable
-private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) {
+private fun metaLine(time: String, delivery: Delivery?): String = when (delivery) {
+    Delivery.Sent -> brandString(R.string.chat_meta_sent, time)
+    Delivery.Delivered -> brandString(R.string.chat_meta_delivered, time)
+    Delivery.Read -> brandString(R.string.chat_meta_seen, time)
+    else -> time
+}
+
+@Composable
+private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean, onVoice: () -> Unit) {
+    val t = AppTheme.template
     val message = item.message
+    // What people write takes its own direction: English in a Persian thread reads left to right, and the other way round.
+    val body = t.type.body.copy(textDirection = TextDirection.Content)
     when {
         item.unsent == Unsent.Removed -> Placeholder(brandString(R.string.chat_removed), content)
         item.unsent == Unsent.BySender -> Placeholder(brandString(if (mine) R.string.chat_unsent_mine else R.string.chat_unsent_theirs), content)
         else -> when (message.kind) {
-            // What people write takes its own direction: English in a Persian thread reads left to right, and the other way round.
-            MessageKind.Text -> Text(message.body.orEmpty(), style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content), color = content)
-            MessageKind.LikeNote -> Column(verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = if (mine) content else AppTheme.colors.like, modifier = Modifier.size(14.dp))
-                    Text(
-                        brandString(if (mine) R.string.chat_like_note_mine else R.string.chat_like_note_theirs),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = bubbleQuietColor(content, onGrey = !mine, alpha = NOTE_LABEL_ALPHA),
-                    )
-                }
-                message.body?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content), color = content)
+            MessageKind.Text -> Text(message.body.orEmpty(), style = body, color = content)
+            // The note as a plain bubble: the message does not carry what was liked, so there is
+            // no quote (`.qbox`) to draw, and no line is written in its place. TalkBack hears
+            // that it was a like's note.
+            MessageKind.LikeNote -> {
+                val note = message.body?.takeIf { it.isNotBlank() }
+                if (note != null) {
+                    Text(note, style = body, color = content)
+                } else {
+                    Text(brandString(if (mine) R.string.chat_like_note_mine else R.string.chat_like_note_theirs), style = body, color = content)
                 }
             }
             MessageKind.Image, MessageKind.Gif -> {
@@ -358,99 +335,94 @@ private fun BubbleContent(item: ChatItem.Bubble, content: Color, mine: Boolean) 
                     PhotoImage(
                         photo = Photo(id = message.localId, w = media.w ?: 0, h = media.h ?: 0, blurhash = media.blurhash.orEmpty(), url = media.url),
                         contentDescription = brandString(R.string.chat_photo),
-                        modifier = Modifier.width(220.dp).aspectRatio(ratio).clip(RoundedCornerShape(14.dp)),
+                        modifier = Modifier.width(TranscriptLayout.photo).aspectRatio(ratio).clip(RoundedCornerShape(t.radii.md)),
                     )
                 } else {
-                    Text(message.body ?: brandString(R.string.chat_photo), style = MaterialTheme.typography.bodyLarge, color = content)
+                    Text(message.body ?: brandString(R.string.chat_photo), style = body, color = content)
                 }
             }
-            MessageKind.Voice -> Column {
-                // Its length as a length ("42 sec"), not m:ss beside the bubble's time.
-                val seconds = (message.media?.durationMs ?: 0) / 1000
-                val length = rememberCallLengths().line(seconds)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Icon(painterResource(R.drawable.ic_deck_voice), contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
-                    Text(
-                        if (seconds > 0) brandString(R.string.chat_voice, length) else brandString(R.string.chat_preview_voice),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = content,
-                    )
-                }
-                Text(brandString(R.string.chat_voice_unavailable), style = MaterialTheme.typography.labelSmall, color = bubbleQuietColor(content, onGrey = !mine))
-            }
+            MessageKind.Voice -> VoiceMessage(item, mine, onVoice)
             else -> Placeholder(brandString(R.string.chat_unknown), content)
         }
     }
 }
 
+/**
+ * A voice message (`.vm`): the 34 dp play (48 dp target), the waveform and
+ * its length («۰:۱۸»). Playing is not in this version yet: the play says so.
+ */
+@Composable
+private fun VoiceMessage(item: ChatItem.Bubble, mine: Boolean, onPlay: () -> Unit) {
+    val t = AppTheme.template
+    val seconds = ((item.message.media?.durationMs ?: 0) + 999) / 1000
+    val ink = if (mine) t.colors.onBubbleOut else t.colors.onBubbleIn
+    val play = brandString(R.string.chat_voice_play)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TranscriptLayout.voiceGap)) {
+        // The 34 dp play keeps the bubble at the design's height: its 48 dp target reaches over the padding.
+        Box(
+            Modifier
+                .overhangingTarget(onClick = onPlay, target = TranscriptLayout.voiceTarget)
+                .semantics { contentDescription = play },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(TranscriptLayout.voicePlay).background(ink, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(AppIcons.Play, contentDescription = null, tint = if (mine) t.colors.primary else t.colors.bubbleIn, modifier = Modifier.size(TranscriptLayout.voiceIcon))
+            }
+        }
+        Wave(item.key.hashCode(), ink, Modifier.width(TranscriptLayout.waveWidth))
+        if (seconds > 0) Text(callDuration(seconds.toLong(), rememberLanguage()), style = t.type.caption, color = if (mine) t.colors.onBubbleOut2 else t.colors.text3)
+    }
+}
+
+/** The waveform: bars 3 dp wide, their heights fixed by the message, none played yet. */
+@Composable
+private fun Wave(seed: Int, color: Color, modifier: Modifier) {
+    val heights = remember(seed) {
+        val random = kotlin.random.Random(seed)
+        List(WAVE_BARS) { TranscriptLayout.waveMin + (TranscriptLayout.waveMax - TranscriptLayout.waveMin) * random.nextFloat() }
+    }
+    Row(
+        modifier.height(TranscriptLayout.waveMax).clearAndSetSemantics { },
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        heights.forEach { h ->
+            Box(Modifier.width(TranscriptLayout.waveBar).height(h).clip(CircleShape).background(color.copy(alpha = WAVE_REST)))
+        }
+    }
+}
+
+private const val WAVE_BARS = 26
+
+/** `.wave i{opacity:.45}`: bars not played yet. */
+private const val WAVE_REST = 0.45f
+
 @Composable
 private fun Placeholder(text: String, content: Color) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = content)
+    Text(text, style = AppTheme.template.type.bodySm, fontStyle = FontStyle.Italic, color = content)
 }
 
-/**
- * A bubble's quieter text (its time, a like note's label, the voice line):
- * softened ([alpha]) only on the other person's grey bubble ([onGrey]),
- * where it still passes AA; in the bubble's content colour in full on your
- * own (brand-coloured) bubble and on an unsent one's bare background, where
- * any transparency fell under it.
- */
-internal fun bubbleQuietColor(content: Color, onGrey: Boolean, alpha: Float = QUIET_ALPHA): Color =
-    if (onGrey) content.copy(alpha = alpha) else content
-
-/** The time's and the voice line's alpha on the grey bubble (ContrastTest checks it, blended, in both themes). */
-internal const val QUIET_ALPHA = 0.75f
-
-/** A like note's label on the grey bubble. */
-internal const val NOTE_LABEL_ALPHA = 0.85f
-
-/**
- * Your message's tick, in the bubble's content colour in full (on the brand
- * colour, any transparency fell under the 3:1 an icon needs). Read is the
- * double tick reversed out of a disc of that colour, so it is told from
- * delivered by its shape, not by a shade.
- */
-@Composable
-private fun DeliveryMark(delivery: Delivery, content: Color, container: Color) {
-    val tag = Modifier.testTag(deliveryTag(delivery))
-    if (delivery == Delivery.Read && container.alpha > 0f) {
-        Box(tag.size(16.dp).background(content, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.ic_chat_read), contentDescription = null, tint = container, modifier = Modifier.size(12.dp))
-        }
-        return
-    }
-    val (icon, tint) = when (delivery) {
-        Delivery.Pending -> R.drawable.ic_chat_pending to content
-        Delivery.Sent -> R.drawable.ic_chat_sent to content
-        Delivery.Delivered -> R.drawable.ic_chat_read to content
-        // A message unsent since: no bubble colour to reverse out of.
-        Delivery.Read -> R.drawable.ic_chat_read to AppTheme.colors.success
-        // In the bubble's own content colour: the error red on a filled bubble
-        // was all but invisible (under 2:1). The red line under the bubble says why.
-        Delivery.Failed, Delivery.Confirm -> R.drawable.ic_chat_error to content
-    }
-    Icon(painterResource(icon), contentDescription = null, tint = tint, modifier = tag.size(14.dp))
-}
-
-/** A bubble's delivery mark, for tests. */
-internal fun deliveryTag(delivery: Delivery): String = "chat.delivery.${delivery.name.lowercase()}"
+/** A bubble's meta line, for tests: by its delivery state. */
+internal fun metaTag(delivery: Delivery?): String = "chat.meta.${delivery?.name?.lowercase() ?: "none"}"
 
 @Composable
 private fun FailedLine(code: String?, onClick: () -> Unit) {
+    val t = AppTheme.template
     val text = when (code) {
         ProblemCodes.MESSAGE_REFUSED, ProblemCodes.TEXT_REFUSED -> brandString(R.string.chat_not_sent_refused)
         ChatErrors.EXPIRED -> brandString(R.string.chat_not_sent_expired)
         ProblemCodes.CONVERSATION_ENDED -> brandString(R.string.chat_ended_title)
         else -> brandString(R.string.chat_not_sent)
     }
-    Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = Space.xs, vertical = Space.xxs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        Icon(painterResource(R.drawable.ic_chat_error), contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
-    }
+    Text(
+        text,
+        style = t.type.caption,
+        color = t.colors.error,
+        modifier = Modifier
+            .clip(RoundedCornerShape(t.radii.xs))
+            .clickable(onClick = onClick)
+            .padding(horizontal = TranscriptLayout.failedPadH, vertical = TranscriptLayout.failedPadV),
+    )
 }
 
 /** What TalkBack reads for a bubble: who, what, when, and where it is. */
@@ -498,49 +470,93 @@ private fun CallLine(item: ChatItem.Call, state: ChatUiState) {
 
 @Composable
 private fun TypingBubble(name: String) {
+    val t = AppTheme.template
     val reduced = LocalReducedMotion.current
     val description = brandString(R.string.chat_typing_a11y, name)
-    Row(Modifier.fillMaxWidth().padding(top = Space.sm)) {
+    Row(Modifier.fillMaxWidth().padding(top = TranscriptLayout.gap)) {
         Row(
             Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .padding(horizontal = Space.lg, vertical = Space.md)
+                .clip(RoundedCornerShape(t.radii.bubble))
+                .background(t.colors.bubbleIn)
+                .padding(horizontal = TranscriptLayout.typingPadH, vertical = TranscriptLayout.typingPadV)
                 .clearAndSetSemantics {
                     contentDescription = description
                     liveRegion = LiveRegionMode.Polite
                 },
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(TranscriptLayout.typingGap),
         ) {
+            // The design's still (1, .7, .45 from the start side) is the first frame; the
+            // darkest dot then moves along, one step every TYPING_STEP_MS.
             val transition = rememberInfiniteTransition(label = "typing")
-            repeat(3) { i ->
-                val alpha = if (reduced) {
-                    0.6f
-                } else {
-                    transition.animateFloat(
-                        initialValue = 0.25f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(durationMillis = 520, delayMillis = i * 160), RepeatMode.Reverse),
-                        label = "dot$i",
-                    ).value
-                }
-                Box(Modifier.size(8.dp).alpha(alpha).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant))
+            val phase = if (reduced) {
+                0f
+            } else {
+                transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = TYPING_REST.size.toFloat(),
+                    animationSpec = infiniteRepeatable(tween(durationMillis = TYPING_STEP_MS * TYPING_REST.size, easing = LinearEasing), RepeatMode.Restart),
+                    label = "dots",
+                ).value
+            }
+            repeat(TYPING_REST.size) { i ->
+                Box(Modifier.size(TranscriptLayout.typingDot).alpha(typingAlpha(i, phase)).clip(CircleShape).background(t.colors.text3))
             }
         }
     }
 }
 
+private val TYPING_REST = listOf(1f, 0.7f, 0.45f)
+private const val TYPING_STEP_MS = 360
+
+/** Dot [i]'s alpha at [phase] (0 until 3): the resting fade shifted along by the phase, blended between steps. */
+internal fun typingAlpha(i: Int, phase: Float): Float {
+    val n = TYPING_REST.size
+    val at = ((i - phase) % n + n) % n
+    val from = at.toInt() % n
+    val to = (from + 1) % n
+    val f = at - at.toInt()
+    return TYPING_REST[from] + (TYPING_REST[to] - TYPING_REST[from]) * f
+}
+
 @Composable
 internal fun TranscriptSkeleton() {
+    val t = AppTheme.template
     val loading = brandString(R.string.chat_loading_messages)
     Column(
-        Modifier.fillMaxSize().padding(Space.md).semantics { contentDescription = loading },
+        Modifier.fillMaxSize().padding(horizontal = Space.gutter, vertical = Space.md).semantics { contentDescription = loading },
         verticalArrangement = Arrangement.spacedBy(Space.md, Alignment.Bottom),
     ) {
         listOf(0.55f to false, 0.4f to true, 0.7f to false, 0.35f to true, 0.6f to true).forEach { (width, mine) ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                Box(Modifier.fillMaxWidth(width).height(40.dp).clip(RoundedCornerShape(20.dp)).shimmer())
+                Box(Modifier.fillMaxWidth(width).height(TranscriptLayout.skeletonBubble).skeleton(RoundedCornerShape(t.radii.bubble)))
             }
         }
     }
+}
+
+/** The thread's layout, from the design's board (`.thread`, `.bub`, `.qbox`, `.vm`, `.typing`). */
+private object TranscriptLayout {
+    val edge = 10.dp
+    val gap = 6.dp
+    val photo = 220.dp
+    val voicePlay = 34.dp
+    val voiceTarget = 48.dp
+    val voiceIcon = 16.dp
+    val voiceGap = 10.dp
+    val waveWidth = 150.dp
+    val waveBar = 3.dp
+    val waveMin = 6.dp
+    val waveMax = 22.dp
+    val reactionDrop = 14.dp
+    val reactionPadH = 8.dp
+    val reactionPadV = 2.dp
+    val failedPadH = 4.dp
+    val failedPadV = 4.dp
+    val typingPadH = 16.dp
+    val typingPadV = 14.dp
+    val typingGap = 4.dp
+    val typingDot = 7.dp
+    val jump = 40.dp
+    val jumpInset = 12.dp
+    val skeletonBubble = 40.dp
 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -45,6 +46,7 @@ import app.core.model.ReportReason
 import app.core.realtime.RealtimeHealth
 import app.core.sync.ChatMessage
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -92,11 +94,10 @@ class ChatScreenTest {
 
     private val actions = Recorder()
 
-    private val INTRO_HINT = "Say something about their profile. It's the easiest way to start."
 
     private fun show(state: ChatUiState, dark: Boolean = false) {
         compose.setContent {
-            AppTheme(dark = dark) {
+            AppTheme(template = Templates.of(if (dark) Templates.NEON else Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
                 }
@@ -135,8 +136,7 @@ class ChatScreenTest {
     @Test
     fun aFailedFirstReadOfflineSaysSoAndTriesAgain() {
         show(ChatUiState(me = ME, conversation = conversation(), loading = false, loadFailed = true, offline = true))
-        compose.onNodeWithText("Couldn't load messages").assertIsDisplayed()
-        compose.onNodeWithText("You're offline. Messages will load when you're back online.").assertIsDisplayed()
+        compose.onNodeWithText("You’re offline.").assertIsDisplayed()
         compose.onNodeWithText("Try again").performClick()
         assertEquals(listOf("reload"), actions.calls)
     }
@@ -144,7 +144,7 @@ class ChatScreenTest {
     @Test
     fun aGoneConversationHasNoComposerAndLeadsBack() {
         show(ChatUiState(me = ME, loading = false, gone = true))
-        compose.onNodeWithText("This conversation isn't available").assertIsDisplayed()
+        compose.onNodeWithText("This conversation isn’t available").assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
         compose.onNodeWithText("Back").performClick()
         assertEquals(listOf("back"), actions.calls)
@@ -169,7 +169,7 @@ class ChatScreenTest {
                 ),
             ),
         )
-        compose.onNodeWithText("You and ⁨Negar⁩ matched").assertIsDisplayed()
+        compose.onNodeWithText("You matched 3 days ago").assertIsDisplayed()
         compose.onNodeWithText("Yesterday").assertIsDisplayed()
         compose.onNodeWithText("Today").assertIsDisplayed()
         compose.onNodeWithText("Good morning").assertIsDisplayed()
@@ -183,7 +183,7 @@ class ChatScreenTest {
         }
         var state by mutableStateOf(thread(yesterday))
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
                 }
@@ -215,7 +215,7 @@ class ChatScreenTest {
         compose.onNode(bubble("You, Fourth", ", Sending")).assertIsDisplayed()
         compose.onNode(bubble("You, Third", ", Sent")).assertIsDisplayed()
         compose.onNode(bubble("You, Second", ", Delivered")).assertIsDisplayed()
-        compose.onNode(bubble("You, First", ", Read")).assertIsDisplayed()
+        compose.onNode(bubble("You, First", ", Seen")).assertIsDisplayed()
     }
 
     /** How many of the node [tag]'s pixels are within a few levels of [color]. */
@@ -231,23 +231,37 @@ class ChatScreenTest {
     }
 
     @Test
-    @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun readIsToldFromDeliveredByItsShapeNotAShade() {
-        show(thread(listOf(row(102, mine = true, body = "Second", at = minutesAgo(3)), row(101, mine = true, body = "First", at = minutesAgo(4))),
-            conversation = conversation(peerReadId = "101", peerDeliveredId = "102")))
-        val ink = app.core.ui.theme.Templates.White.colors.onBubbleOut
-        // Delivered: the double tick's thin strokes on the bubble. Read: a disc of the same ink with
-        // the tick cut out of it, so several times as much of it is ink.
-        val delivered = pixelsNear(deliveryTag(Delivery.Delivered), ink)
-        val read = pixelsNear(deliveryTag(Delivery.Read), ink)
-        assertTrue("delivered $delivered px of ink, read $read", delivered > 0 && read > 2 * delivered)
+    fun onlyTheNewestOwnMessageSaysWhenItWentAndHowFarItGot() {
+        // First was read, Second (the newest of yours) only delivered: the meta under Second says so,
+        // and First carries none (TalkBack still reads each one's state).
+        val rows = listOf(row(102, mine = true, body = "Second", at = minutesAgo(3)), row(101, mine = true, body = "First", at = minutesAgo(4)))
+        var state by mutableStateOf(thread(rows, conversation = conversation(peerReadId = "101", peerDeliveredId = "102")))
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                CompositionLocalProvider(LocalRemoteImages provides false) {
+                    ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        val delivered = compose.onNodeWithTag(metaTag(Delivery.Delivered), useUnmergedTree = true).fetchSemanticsNode()
+        val text = delivered.config[SemanticsProperties.Text].joinToString { it.text }
+        // The visible line is the spec's "{time}, delivered" (lower case after the comma).
+        assertTrue(text, text.endsWith(", delivered"))
+        compose.onAllNodesWithTag(metaTag(Delivery.Read), useUnmergedTree = true).assertCountEquals(0)
+        compose.onNode(bubble("You, First", ", Seen")).assertIsDisplayed()
+
+        // Once the newest is read, its line says «seen».
+        state = thread(rows, conversation = conversation(peerReadId = "102", peerDeliveredId = "102"))
+        compose.waitForIdle()
+        val seen = compose.onNodeWithTag(metaTag(Delivery.Read), useUnmergedTree = true).fetchSemanticsNode()
+        assertTrue(seen.config[SemanticsProperties.Text].joinToString { it.text }.endsWith(", seen"))
     }
 
     @Test
     fun withoutReadReceiptsNothingReadsAsRead() {
         show(thread(listOf(row(102, mine = true, body = "Second"), row(101, mine = true, body = "First")), readReceipts = false))
         compose.onNode(bubble("You, First", ", Delivered")).assertIsDisplayed()
-        compose.onNode(bubble("You, First", ", Read")).assertDoesNotExist()
+        compose.onNode(bubble("You, First", ", Seen")).assertDoesNotExist()
     }
 
     @Test
@@ -343,10 +357,51 @@ class ChatScreenTest {
     }
 
     @Test
-    fun typingShowsInTheHeaderAndAsABubble() {
+    fun typingShowsAsABubbleAndNotInTheHeader() {
         show(thread(listOf(row(1, mine = false, body = "Hey"))).copy(typing = true))
-        compose.onNodeWithText("typing…").assertIsDisplayed()
+        compose.onNodeWithText("typing…").assertDoesNotExist()
         compose.onNodeWithContentDescription("⁨Negar⁩ is typing").assertIsDisplayed()
+    }
+
+    @Test
+    fun typingThatStartsWhileTheNewestMessageIsReadComesIntoView() {
+        val rows = (1..30L).map { id -> row(id, mine = id % 2 == 0L, body = "Line $id", at = minutesAgo(60 - id)) }.reversed()
+        var state by mutableStateOf(thread(rows))
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                CompositionLocalProvider(LocalRemoteImages provides false) {
+                    ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        compose.onNodeWithText("Line 30").assertIsDisplayed()
+        // The reader is at the newest message when the other person starts typing.
+        state = state.copy(typing = true)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("⁨Negar⁩ is typing").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "fa-w411dp-h891dp")
+    fun withLargeTextTheBarGrowsAndOnlineIsWhole() {
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                CompositionLocalProvider(
+                    LocalRemoteImages provides false,
+                    androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(compose.density.density, fontScale = 1.5f),
+                ) {
+                    ChatScreen(thread(listOf(row(1, mine = false, body = "سلام")), conversation = conversation(peer = peer(online = true))), actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                }
+            }
+        }
+        // Each line drawn whole: what is on screen (clipped by the bar) is as tall as the text's own lines.
+        for (text in listOf("آنلاین", "Negar")) {
+            val node = compose.onNodeWithText(text, useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode()
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            val needed = layouts.single().multiParagraph.height
+            assertTrue("«$text»: ${node.boundsInRoot.height} px shown of $needed", node.boundsInRoot.height >= needed - 1f)
+        }
     }
 
     @Test
@@ -383,8 +438,8 @@ class ChatScreenTest {
 
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Unmatch").performClick()
-        compose.onNodeWithText("Unmatch ⁨Negar⁩?").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Unmatch?").assertIsDisplayed()
+        compose.onNodeWithText("Keep").performClick()
         assertEquals(listOf("block"), actions.calls)
     }
 
@@ -427,7 +482,7 @@ class ChatScreenTest {
         val rows = listOf(row(92, mine = false, kind = MessageKind.Call, body = null, sender = NEGAR, call = callLine(92, NEGAR, CallOutcome.Missed, kind = CallKind.Video)))
         var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 CompositionLocalProvider(
                     LocalRemoteImages provides false,
                     LocalChatCallBack provides { conversation, kind -> back += "${conversation.id}:${kind.wire}" },
@@ -451,7 +506,7 @@ class ChatScreenTest {
         val rows = listOf(row(93, mine = true, kind = MessageKind.Call, body = null, call = callLine(93, ME, CallOutcome.Completed, seconds = 65)))
         var state by mutableStateOf(thread(rows, conversation = conversation(callsAllowed = CallsAllowed(me = true, peer = true))))
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false, LocalChatCallBack provides { _, _ -> }) {
                     ChatScreen(state, actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
                 }
@@ -473,34 +528,31 @@ class ChatScreenTest {
         val clock = ChatClockText(Locale.US)
         val weekday = clock.weekday(day)
         show(thread(listOf(row(1, mine = false, body = "Hey", at = matched.createdAt.plusSeconds(600))), conversation = matched))
-        compose.onNodeWithText("You and ⁨Negar⁩ matched").assertIsDisplayed()
-        // Something has been said: no more advice on how to start.
-        compose.onNodeWithText(INTRO_HINT).assertDoesNotExist()
-        // One name for that day: the separator's; not the date over it as well.
-        compose.onAllNodesWithText(weekday).assertCountEquals(1)
+        compose.onNodeWithText("You matched 3 days ago").assertIsDisplayed()
+        // The intro places that day: no separator names it again under it, and no date over it.
+        compose.onAllNodesWithText(weekday).assertCountEquals(0)
         compose.onNodeWithText(clock.day(day, LocalDate.now(ChatTestData.zone))).assertDoesNotExist()
     }
 
     @Test
-    fun anEmptyThreadSuggestsHowToStart() {
+    fun anEmptyThreadSaysOnlyWhenTheyMatched() {
         show(thread(emptyList()))
-        compose.onNodeWithText("You and ⁨Negar⁩ matched").assertIsDisplayed()
-        compose.onNodeWithText(INTRO_HINT).assertIsDisplayed()
+        compose.onNodeWithText("You matched 3 days ago").assertIsDisplayed()
+        compose.onNodeWithText("Say something about their profile", substring = true).assertDoesNotExist()
     }
 
     @Test
-    fun theIntroSaysWhenTheyMatchedTheWayTheSeparatorsDo() {
+    fun theIntroCountsTheDaysSinceTheMatchAndTheSeparatorNamesToday() {
         val matched = conversation(peerReadId = "101", peerDeliveredId = "102")
-        val weekday = ChatClockText(Locale.US).weekday(matched.createdAt.atZone(ChatTestData.zone).toLocalDate())
         show(thread(listOf(row(1, mine = false, body = "Hey", at = minutesAgo(1))), conversation = matched))
+        compose.onNodeWithText("You matched 3 days ago").assertIsDisplayed()
         compose.onNodeWithText("Today").assertIsDisplayed()
-        compose.onNodeWithText(weekday).assertIsDisplayed()
     }
 
     @Test
     fun earlierMessagesThatFailedToLoadOfferAnotherTry() {
         show(thread(listOf(row(1, mine = false, body = "Hey")), atTop = false).copy(olderFailed = true))
-        compose.onNodeWithText("Couldn't load earlier messages").assertIsDisplayed()
+        compose.onNodeWithText("Earlier messages didn’t load").assertIsDisplayed()
         compose.onNodeWithText("Try again").performClick()
         assertEquals(listOf("retryOlder"), actions.calls)
     }
@@ -533,7 +585,7 @@ class ChatScreenTest {
         compose.onNodeWithText("امروز").assertIsDisplayed()
         compose.onNodeWithText("سلام").assertIsDisplayed()
         // Times and lengths in Persian digits: no ASCII digit is left in what TalkBack reads.
-        val mine = compose.onNode(bubble("شما، سلام")).fetchSemanticsNode()
+        val mine = compose.onNode(bubble("تو، سلام")).fetchSemanticsNode()
         val description = mine.config[SemanticsProperties.ContentDescription].single()
         assertTrue(description, description.none { it in '0'..'9' })
         assertTrue(description, description.any { it in '۰'..'۹' })
@@ -545,16 +597,48 @@ class ChatScreenTest {
     fun aDeliveredMessageWithoutReadReceiptsOffersThePlans() {
         val opened = mutableListOf<app.core.feature.paywall.PaywallRequest>()
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 CompositionLocalProvider(
                     LocalRemoteImages provides false,
                     app.core.feature.paywall.LocalPaywall provides app.core.feature.paywall.PaywallLauncher { opened += it },
                 ) {
-                    ChatScreen(ChatUiState(me = ME, conversation = conversation(), loading = false, readReceiptsLocked = true), actions, messageMax = 2_000, catalog = ScreenTestData.catalog)
+                    ChatScreen(
+                        thread(listOf(row(102, mine = true, body = "Second"), row(101, mine = true, body = "First")), readReceipts = false).copy(readReceiptsLocked = true),
+                        actions,
+                        messageMax = 2_000,
+                        catalog = ScreenTestData.catalog,
+                    )
                 }
             }
         }
-        compose.onNodeWithText("See when it's read").performClick()
+        // No line in the thread offers the plans; your newest message's «delivered» does.
+        compose.onNodeWithText("See when it's read").assertDoesNotExist()
+        compose.onNodeWithTag(metaTag(Delivery.Delivered), useUnmergedTree = true).performClick()
+        assertEquals(listOf(app.core.feature.paywall.PaywallRequest.Plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS)), opened)
+    }
+
+    @Test
+    fun aSentMessageNewerThanTheDeliveredOneStillOffersThePlans() {
+        val opened = mutableListOf<app.core.feature.paywall.PaywallRequest>()
+        val items = thread(listOf(row(103, mine = true, body = "Third"), row(102, mine = true, body = "Second")), readReceipts = false).items
+        assertTrue(offersReadReceipts(items))
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                CompositionLocalProvider(
+                    LocalRemoteImages provides false,
+                    app.core.feature.paywall.LocalPaywall provides app.core.feature.paywall.PaywallLauncher { opened += it },
+                ) {
+                    ChatScreen(
+                        thread(listOf(row(103, mine = true, body = "Third"), row(102, mine = true, body = "Second")), readReceipts = false).copy(readReceiptsLocked = true),
+                        actions,
+                        messageMax = 2_000,
+                        catalog = ScreenTestData.catalog,
+                    )
+                }
+            }
+        }
+        // The other phone is off: the newest says «sent», and that line is the way to the plans.
+        compose.onNodeWithTag(metaTag(Delivery.Sent), useUnmergedTree = true).performClick()
         assertEquals(listOf(app.core.feature.paywall.PaywallRequest.Plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS)), opened)
     }
 }

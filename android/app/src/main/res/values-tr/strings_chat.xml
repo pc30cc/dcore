@@ -1,24 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The chat list -->
-    <string name="chat_list_browse">İnsanları keşfet</string>
+    <string name="chat_list_browse">Keşfet’e git</string>
     <string name="chat_list_loading">Sohbetler yükleniyor</string>
+    <string name="chats_search">Ara</string>
+    <string name="chats_search_none">Bu isimde kimse yok</string>
     <string name="chat_new_matches">Yeni eşleşmeler</string>
     <string name="chat_messages">Mesajlar</string>
-    <string name="chat_say_hi_hint">Yeni eşleşmelerinden birine merhaba de. En zoru ilk mesajdır.</string>
     <string name="chat_new_match_open">%1$s, yeni eşleşme. Sohbeti aç.</string>
-    <string name="chat_requests">Mesaj istekleri</string>
-    <string name="chat_requests_count">Mesaj istekleri: %1$s</string>
-    <string name="chat_requests_hint">Eşleşmeden önce sana yazanlar</string>
-    <string name="chat_status_offline">Çevrimdışısın. Bu telefondakiler gösteriliyor.</string>
+    <string name="chat_requests">İstekler</string>
+    <string name="chat_requests_count">İstekler: %1$s</string>
+    <string name="chat_status_offline">İnternet yok.</string>
     <string name="chat_status_reconnecting">Yeniden bağlanıyor…</string>
     <string name="chat_status_connecting">Bağlanıyor…</string>
     <string name="chat_push_missing_title">Bildirimler bu telefona ulaşamıyor</string>
-    <string name="chat_push_missing_body">Google Play hizmetleri kullanılamıyor; yeni mesajlar yalnızca {appName} açıkken gelir.</string>
+    <string name="chat_push_missing_body">Bu telefonda Google Play hizmetleri yok; yeni mesajlar yalnızca uygulama açıkken gelir.</string>
     <string name="chat_typing">yazıyor…</string>
     <string name="chat_typing_a11y">%1$s yazıyor</string>
     <string name="chat_online">Çevrimiçi</string>
-    <string name="chat_active_recently">Yakın zamanda aktif</string>
     <string name="chat_unread_count">%1$s okunmamış</string>
     <string name="chat_muted">Sessiz</string>
     <string name="chat_day_today">Bugün</string>
@@ -27,10 +26,11 @@
     <!-- Previews in the list -->
     <string name="chat_preview_you">Sen: %1$s</string>
     <string name="chat_preview_message">Mesaj</string>
-    <string name="chat_preview_like_note">Profilini beğendi: %1$s</string>
-    <string name="chat_preview_liked">Profilini beğendi</string>
+    <string name="chat_preview_like_note">Seni beğendi: “%1$s”</string>
+    <string name="chat_preview_liked">Seni beğendi</string>
     <string name="chat_preview_photo">Fotoğraf</string>
     <string name="chat_preview_voice">Sesli mesaj</string>
+    <string name="chat_preview_voice_length">Sesli mesaj, %1$s</string>
     <string name="chat_preview_call">Arama</string>
     <string name="chat_preview_unsent">Bir mesaj geri alındı</string>
     <string name="chat_preview_you_unsent">Bir mesajı geri aldın</string>
@@ -43,21 +43,17 @@
     <string name="chat_report">Bildir</string>
     <string name="chat_block">Engelle</string>
     <string name="chat_unmatch">Eşleşmeyi kaldır</string>
-    <string name="chat_composer_hint">Mesaj</string>
+    <string name="chat_composer_hint">Bir mesaj gönder…</string>
     <string name="chat_send">Gönder</string>
     <string name="chat_counter">%1$s/%2$s</string>
     <string name="chat_ended_title">Bu sohbet sona erdi</string>
-    <string name="chat_ended_body">Buradakileri hâlâ okuyabilirsin ama yeni mesaj gönderilemez.</string>
+    <string name="chat_ended_body">Okuyabilirsin ama yeni mesaj gönderilemez.</string>
     <string name="chat_gone_title">Bu sohbet kullanılamıyor</string>
-    <string name="chat_gone_body">Sona ermiş olabilir. Diğer sohbetlerin Sohbetler bölümünde.</string>
     <string name="chat_load_failed_title">Mesajlar yüklenemedi</string>
-    <string name="chat_load_failed_offline">Çevrimdışısın. Bağlandığında mesajlar yüklenecek.</string>
     <string name="chat_loading_messages">Mesajlar yükleniyor</string>
     <string name="chat_older_failed">Önceki mesajlar yüklenemedi</string>
     <string name="chat_jump_newest">En yeni mesaja git</string>
-    <string name="chat_intro_matched">Sen ve %1$s eşleştiniz</string>
-    <string name="chat_intro_request">Sen ve %1$s bir mesaj isteğiyle konuşmaya başladınız</string>
-    <string name="chat_intro_hint">Profili hakkında bir şey söyle. Başlamanın en kolay yolu bu.</string>
+    <string name="chat_intro_request">Bir mesaj isteğiyle başladı</string>
     <string name="chat_you">Sen</string>
     <string name="chat_unsent_mine">Bu mesajı geri aldın</string>
     <string name="chat_unsent_theirs">Bu mesaj geri alındı</string>
@@ -65,14 +61,17 @@
     <string name="chat_like_note_theirs">Profilini beğendi</string>
     <string name="chat_like_note_mine">Profilini beğendin</string>
     <string name="chat_photo">Fotoğraf</string>
-    <string name="chat_voice">Sesli mesaj · %1$s</string>
     <string name="chat_voice_unavailable">Sesli mesajlar bu sürümde henüz oynatılamıyor.</string>
-    <string name="chat_unknown">Bu mesaj {appName} uygulamasının bu sürümünde gösterilemiyor.</string>
+    <string name="chat_voice_play">Oynat</string>
+    <string name="chat_unknown">Bu mesaj uygulamanın bu sürümünde gösterilemiyor.</string>
     <string name="chat_reactions">Tepkiler: %1$s</string>
     <string name="chat_status_sending">Gönderiliyor</string>
     <string name="chat_status_sent">Gönderildi</string>
     <string name="chat_status_delivered">İletildi</string>
-    <string name="chat_status_read">Okundu</string>
+    <string name="chat_status_read">Görüldü</string>
+    <string name="chat_meta_sent">%1$s, gönderildi</string>
+    <string name="chat_meta_delivered">%1$s, iletildi</string>
+    <string name="chat_meta_seen">%1$s, görüldü</string>
     <string name="chat_not_sent">Gönderilemedi. Seçenekler için dokun.</string>
     <string name="chat_not_sent_refused">Gönderilemedi: bu mesaj topluluk kurallarına aykırı.</string>
     <string name="chat_not_sent_expired">Gönderilemedi. Tekrar denemek için dokun.</string>
@@ -93,11 +92,13 @@
     <string name="chat_unsend_failed">Mesaj geri alınamadı.</string>
     <string name="chat_copied">Kopyalandı</string>
     <string name="chat_action_failed">Olmadı. Tekrar dene.</string>
-    <string name="chat_action_offline">Çevrimdışısın. Bağlandığında tekrar dene.</string>
+    <string name="chat_action_offline">İnternet yok.</string>
 
     <!-- Safety -->
-    <string name="chat_unmatch_title">%1$s ile eşleşme kaldırılsın mı?</string>
-    <string name="chat_unmatch_body">Bu sohbet ikiniz için de sona erer ve birbirinizi bir daha görmezsiniz.</string>
+    <string name="chat_unmatch_title">Eşleşme kaldırılsın mı?</string>
+    <string name="chat_unmatch_body">Sohbetiniz silinir ve birbirinizi bir daha görmezsiniz.</string>
+    <string name="chat_unmatch_confirm">Kaldır</string>
+    <string name="chat_unmatch_keep">Kalsın</string>
     <string name="chat_block_title">%1$s engellensin mi?</string>
     <string name="chat_block_body">Seni göremez, sana yazamaz ve bu sohbet sona erer. Kendisine haber verilmez.</string>
     <string name="chat_confirm_title">Göndermeden önce</string>
@@ -122,13 +123,14 @@
     <string name="report_block">Ayrıca engelle</string>
     <string name="report_with_message">Seçtiğin mesaj bildirimle birlikte gönderilir.</string>
     <string name="report_with_recent">Ekibin inceleyebilmesi için son mesajları bildirimle birlikte gönderilir.</string>
+    <string name="report_profile_note">Ekip bildiriminle birlikte profilini inceler.</string>
     <string name="report_send">Bildirimi gönder</string>
-    <string name="report_sent">Teşekkürler. Ekip inceleyecek.</string>
-    <string name="report_sent_blocked">Teşekkürler. Birbirinizi bir daha görmeyeceksiniz.</string>
+    <string name="report_sent">Raporun alındı.</string>
+    <string name="report_sent_blocked">Raporun alındı. Birbirinizi bir daha görmezsiniz.</string>
 
     <!-- Message requests -->
     <string name="requests_inbox">Gelen</string>
-    <string name="requests_inbox_count">Gelen (%1$s)</string>
+    <string name="requests_inbox_count">Gelen, %1$s</string>
     <string name="requests_sent">Gönderilen</string>
     <string name="requests_accept">Kabul et</string>
     <string name="requests_decline">Reddet</string>
@@ -138,28 +140,40 @@
     <string name="requests_expired">Zamanında yanıt gelmedi</string>
     <string name="requests_declined">Reddedildi. Kendisine haber verilmez.</string>
     <string name="requests_withdrawn">Geri çekildi.</string>
-    <string name="requests_load_failed">Mesaj istekleri yüklenemedi</string>
-    <string name="requests_loading">Mesaj istekleri yükleniyor</string>
+    <string name="requests_load_failed">İstekler yüklenemedi.</string>
+    <string name="requests_loading">İstekler yükleniyor</string>
     <string name="requests_more_failed">Daha fazla istek yüklenemedi.</string>
     <string name="requests_show_more">Daha fazla göster</string>
     <string name="requests_report_note">Mesajı bildirimle birlikte gönderilir ve istek reddedilir.</string>
-    <string name="requests_empty_inbox_title">Mesaj isteği yok</string>
-    <string name="requests_empty_inbox_body">Biri eşleşmeden önce sana yazarsa burada görünür.</string>
+    <string name="requests_empty_inbox_title">İstek yok</string>
     <string name="requests_empty_sent_title">Gönderilen yok</string>
-    <string name="requests_empty_sent_body">Eşleşmeden önce gönderdiğin mesajlar yanıtlanana kadar burada bekler.</string>
-    <string name="request_write_to">Ona yaz</string>
+    <string name="request_write_to">Mesaj gönder</string>
     <string name="request_send_title">%1$s kişisine yaz</string>
-    <string name="request_send_body">Eşleşmeden önce mesajını görür. Kabul ederse konuşmaya devam edebilirsiniz.</string>
-    <string name="request_send_hint">Profili hakkında bir şey söyle</string>
+    <string name="request_send_hint">Profili hakkında bir şey söyle…</string>
     <string name="request_send">Gönder</string>
-    <string name="request_sent">Gönderildi. Kabul ederse sohbet Sohbetler bölümünde görünür.</string>
+    <string name="request_sent">Gönderildi.</string>
     <string name="request_already">%1$s kişisine zaten yazdın.</string>
     <string name="request_matched">Eşleştiniz. Sohbetinizde yaz.</string>
     <string name="request_open_chat">Sohbeti aç</string>
-    <string name="request_quota">Eşleşmediğin kişilere bugünkü mesaj hakkını kullandın.</string>
-    <string name="request_quota_at">Eşleşmediğin kişilere bugünkü mesaj hakkını kullandın. %1$s itibarıyla yenilenir.</string>
+    <string name="request_quota">Bugünkü ilk mesajların bitti.</string>
+    <string name="request_quota_at">Bugünkü ilk mesajların bitti. %1$s itibarıyla yenilenir.</string>
     <string name="request_daily_cap">Bugünkü ilk mesaj sınırına ulaştın. Yarın tekrar dene.</string>
     <string name="request_refused">Bu mesaj gönderilemez. Nazik ve saygılı yaz.</string>
     <string name="request_unavailable">Bu profil kullanılamıyor.</string>
     <string name="request_failed">Gönderilemedi. Tekrar dene.</string>
+    <string name="chat_matched_today">Bugün eşleştiniz</string>
+    <string name="chat_matched_yesterday">Dün eşleştiniz</string>
+    <plurals name="chat_matched_days">
+        <item quantity="one">%1$s gün önce eşleştiniz</item>
+        <item quantity="other">%1$s gün önce eşleştiniz</item>
+    </plurals>
+    <string name="chat_time_now">Şimdi</string>
+    <plurals name="chat_time_days_ago">
+        <item quantity="one">%1$s gün önce</item>
+        <item quantity="other">%1$s gün önce</item>
+    </plurals>
+    <plurals name="chat_time_hours_ago">
+        <item quantity="one">%1$s saat önce</item>
+        <item quantity="other">%1$s saat önce</item>
+    </plurals>
 </resources>

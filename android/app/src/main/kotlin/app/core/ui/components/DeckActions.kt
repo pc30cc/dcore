@@ -18,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -47,7 +48,11 @@ enum class DeckAction { Rewind, Pass, SuperLike, Like, Boost }
  * Persian screen; inside the 20 dp gutter.
  *
  * A null handler leaves that button out (no rewind or boost on a plan
- * without them), keeping the others where they are.
+ * without them), keeping the others where they are. [enabled] off (no card
+ * yet) dims the row. [progress] is the top card's drag, -1 (pass) to 1
+ * (like): the button under the finger's gesture grows with it. [boostActive]
+ * draws the bolt in `--primary` while a boost runs; [superLikeDescription]
+ * and [boostDescription] replace what TalkBack says («سوپرلایک. ۳ تا داری»).
  */
 @Composable
 fun DeckActions(
@@ -58,21 +63,33 @@ fun DeckActions(
     onBoost: (() -> Unit)?,
     modifier: Modifier = Modifier,
     backdrop: GlassBackdrop? = null,
+    enabled: Boolean = true,
+    progress: () -> Float = { 0f },
+    boostActive: Boolean = false,
+    superLikeDescription: String? = null,
+    boostDescription: String? = null,
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
-            modifier = modifier.fillMaxWidth().padding(horizontal = Space.gutter),
+            modifier = modifier.fillMaxWidth().padding(horizontal = Space.gutter).alpha(if (enabled) 1f else DISABLED_ALPHA),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Slot(DeckActionTokens.rewind) { onRewind?.let { DeckActionButton(DeckAction.Rewind, it, backdrop = backdrop) } }
-            DeckActionButton(DeckAction.Pass, onPass, backdrop = backdrop)
-            DeckActionButton(DeckAction.SuperLike, onSuperLike, backdrop = backdrop)
-            DeckActionButton(DeckAction.Like, onLike, backdrop = backdrop)
-            Slot(DeckActionTokens.boost) { onBoost?.let { DeckActionButton(DeckAction.Boost, it, backdrop = backdrop) } }
+            Slot(DeckActionTokens.rewind) { onRewind?.let { DeckActionButton(DeckAction.Rewind, it, backdrop = backdrop, enabled = enabled) } }
+            DeckActionButton(DeckAction.Pass, onPass, backdrop = backdrop, enabled = enabled, highlight = { (-progress()).coerceAtLeast(0f) })
+            DeckActionButton(DeckAction.SuperLike, onSuperLike, backdrop = backdrop, enabled = enabled, description = superLikeDescription)
+            DeckActionButton(DeckAction.Like, onLike, backdrop = backdrop, enabled = enabled, highlight = { progress().coerceAtLeast(0f) })
+            Slot(DeckActionTokens.boost) {
+                onBoost?.let { DeckActionButton(DeckAction.Boost, it, backdrop = backdrop, enabled = enabled, active = boostActive, description = boostDescription) }
+            }
         }
     }
 }
+
+private const val DISABLED_ALPHA = 0.45f
+
+/** How much a pass or like button grows at a full drag toward it. */
+private const val HIGHLIGHT_GROWTH = 0.12f
 
 @Composable
 private fun Slot(size: Dp, content: @Composable () -> Unit) {
@@ -84,8 +101,9 @@ private fun Slot(size: Dp, content: @Composable () -> Unit) {
  * `--glow-like` (the only glow); super like `--super-fill` with a 1.5 dp
  * `--super-line` and `--super-icon`; rewind, pass and boost `--act-fill`
  * (blurred over [backdrop] where glass is on) with a 1 dp `--act-line`,
- * `--act-icon` (boost: `--boost-icon`). Neon puts them on the photo, white
- * on the page with `--act-shadow`; the tokens carry the difference.
+ * `--act-icon` (boost: `--boost-icon`, `--primary` while [active]). Neon
+ * puts them on the photo, white on the page with `--act-shadow`; the tokens
+ * carry the difference. [highlight] (0 to 1) grows it a little.
  */
 @Composable
 fun DeckActionButton(
@@ -93,12 +111,16 @@ fun DeckActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     backdrop: GlassBackdrop? = null,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    highlight: () -> Float = { 0f },
+    description: String? = null,
 ) {
     val t = AppTheme.template
     val c = t.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale = pressScale(pressed, if (action == DeckAction.Like) 0.90f else 0.94f)
+    val scale = pressScale(pressed && enabled, if (action == DeckAction.Like) 0.90f else 0.94f)
     val (size, icon, label) = when (action) {
         DeckAction.Rewind -> Triple(DeckActionTokens.rewind, AppIcons.Rewind, R.string.ui_rewind)
         DeckAction.Pass -> Triple(DeckActionTokens.pass, AppIcons.Close, R.string.ui_pass)
@@ -106,23 +128,24 @@ fun DeckActionButton(
         DeckAction.Like -> Triple(DeckActionTokens.like, AppIcons.Heart, R.string.ui_like)
         DeckAction.Boost -> Triple(DeckActionTokens.boost, AppIcons.Bolt, R.string.ui_boost)
     }
-    val description = stringResource(label)
+    val spoken = description ?: stringResource(label)
     val iconSize = if (size >= 68.dp) 30.dp else 24.dp
     val tint: Color = when (action) {
         DeckAction.Like -> c.onLike
         DeckAction.SuperLike -> c.superIcon
-        DeckAction.Boost -> c.boostIcon
+        DeckAction.Boost -> if (active) c.primary else c.boostIcon
         DeckAction.Rewind, DeckAction.Pass -> c.actIcon
     }
     Box(
         modifier = modifier
             .size(size)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                val grow = 1f + HIGHLIGHT_GROWTH * highlight().coerceIn(0f, 1f)
+                scaleX = scale * grow
+                scaleY = scale * grow
             }
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = description },
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = spoken },
         contentAlignment = Alignment.Center,
     ) {
         when (action) {

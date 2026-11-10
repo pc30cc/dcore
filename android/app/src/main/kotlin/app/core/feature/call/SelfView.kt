@@ -1,5 +1,6 @@
 package app.core.feature.call
 
+import app.core.ui.theme.CallPalette
 import android.content.Context
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -55,6 +56,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import app.core.R
+import app.core.ui.theme.AppTheme
+import app.core.ui.theme.outerShadow
 import app.core.i18n.brandString
 import app.core.ui.theme.LocalReducedMotion
 import kotlinx.coroutines.launch
@@ -87,7 +90,7 @@ data class SelfViewCorner(val left: Boolean, val top: Boolean) {
 /** How wide the small picture is, in dp; it is always 3:4. */
 object SelfViewSize {
     const val MIN = 64f
-    const val DEFAULT = 108f
+    const val DEFAULT = 104f
     const val MAX = 176f
 
     /** The double-tap steps: small, as it opens, large, and round again. */
@@ -107,7 +110,8 @@ internal class SelfViewPlacement(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("call.selfView", Context.MODE_PRIVATE)
 
     var corner: SelfViewCorner
-        get() = SelfViewCorner(prefs.getBoolean(KEY_LEFT, false), prefs.getBoolean(KEY_TOP, false))
+        // The design's place for it at first: the top left corner, under the name.
+        get() = SelfViewCorner(prefs.getBoolean(KEY_LEFT, true), prefs.getBoolean(KEY_TOP, true))
         set(value) {
             prefs.edit { putBoolean(KEY_LEFT, value.left).putBoolean(KEY_TOP, value.top) }
         }
@@ -208,7 +212,8 @@ fun SelfView(
         // Read by the gesture, which outlives any one size of the screen.
         val measures by rememberUpdatedState(geometry)
 
-        val shape = RoundedCornerShape(16.dp)
+        val t = AppTheme.template
+        val shape = RoundedCornerShape(t.radii.lg)
         val label = if (swapped) brandString(R.string.call_self_theirs, peerName) else brandString(R.string.call_self_yours)
         val state = if (swapped) brandString(R.string.call_self_you_large) else brandString(R.string.call_self_they_large, peerName)
         val swapLabel = brandString(R.string.call_self_swap)
@@ -224,13 +229,13 @@ fun SelfView(
                 .align(AbsoluteAlignment.TopLeft)
                 .absoluteOffset { IntOffset(position.value.x.roundToInt(), position.value.y.roundToInt()) }
                 .size(shownDp.dp, (shownDp * 4f / 3f).dp)
-                .shadow(10.dp, shape)
+                .outerShadow(shape, t.shadows.floatShadow)
                 .clip(shape)
                 // Dark until a picture's first frame: a renderer made fresh
                 // by a swap is see-through for a moment, and the big picture
                 // must not show through it.
-                .background(CALL_TILE)
-                .border(1.5.dp, Color.White.copy(alpha = 0.35f), shape)
+                .background(CallPalette.tile)
+                .border(1.dp, t.colors.callBtnLine, shape)
                 // One element: what it shows, what fills the screen, and a
                 // click that swaps them. The picture or face inside adds nothing.
                 .clearAndSetSemantics {

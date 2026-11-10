@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="store_name">گوگل‌پلی</string>
-    <string name="paywall_store_terms">پرداخت با حساب گوگل‌پلی شما انجام می‌شود. اشتراک با همان قیمت و همان دوره خودکار تمدید می‌شود تا وقتی آن را در گوگل‌پلی (پرداخت‌ها و اشتراک‌ها، سپس اشتراک‌ها) لغو کنید. هر وقت بخواهید می‌توانید لغو کنید و تا پایان دوره‌ای که پرداخت کرده‌اید از آن استفاده کنید.</string>
+    <!-- Play signs in with Google too: what only the service keeps names the account. -->
+    <string name="privacy_only_us_1">شماره موبایل یا حساب گوگل</string>
 </resources>

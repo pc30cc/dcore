@@ -127,6 +127,34 @@ class OnboardingViewModelTest {
         runCurrent()
     }
 
+    /** From a new account to the location step: the basics, who to meet, the intention, two photos, prompts and fields skipped. */
+    private fun TestScope.reachLocation(model: OnboardingViewModel) {
+        basics(model)
+        model.toggleInterest(Gender.Man)
+        model.submitInterests()
+        runCurrent()
+        model.intentionChanged(Intention.Serious)
+        model.submitIntention()
+        runCurrent()
+        repeat(2) { model.photos.add(bytes()) }
+        advance(2_000)
+        model.submitPhotos()
+        runCurrent()
+        model.submitPrompts(skip = true)
+        runCurrent()
+        model.submitFields(skip = true)
+        runCurrent()
+    }
+
+    /** Every step, to the done screen. */
+    private fun TestScope.finishSignUp(model: OnboardingViewModel) {
+        reachLocation(model)
+        model.cityPicked(SampleData.city(112931))
+        runCurrent()
+        model.acceptGuidelines()
+        runCurrent()
+    }
+
     @Test
     fun `every step writes its answer and the step reached, and the finish lets the account in`() = vmTest {
         val s = newAccount()
@@ -202,9 +230,9 @@ class OnboardingViewModelTest {
         val tehran = model.state.value.cityResults.first()
         model.cityPicked(tehran)
         runCurrent()
+        // The area kept is the whole step: it is passed at once.
         assertTrue(model.state.value.location is LocationPhase.Set)
-        model.submitLocation()
-        runCurrent()
+        assertEquals(OnboardingCodes.NOTIFICATIONS, stored(s.api).onboardingStep)
 
         // No notification permission to ask for on this phone: straight to the guidelines.
         assertEquals(OnboardingStep.Guidelines, model.state.value.step)
@@ -213,7 +241,70 @@ class OnboardingViewModelTest {
         me = stored(s.api)
         assertEquals(AccountStatus.Active, me.status)
         assertTrue(me.consentsDue.isEmpty())
+        // Finished: the done screen holds until the person moves on, then the app opens on its deck.
+        assertEquals(AccountStatus.Active, model.state.value.done?.status)
+        assertEquals(Root.Onboarding, s.gate.root.value)
+        var profileAsked = false
+        model.leave { profileAsked = true }
+        assertFalse("«بریم» goes to the deck", profileAsked)
         assertEquals(Root.Main, s.gate.root.value)
+    }
+
+    @Test
+    fun `from the done screen the profile can be asked for, not while the profile waits for a review`() = vmTest {
+        for (waitlist in listOf(false, true)) {
+            val s = newAccount(waitlist = waitlist)
+            val model = model(s)
+            finishSignUp(model)
+            assertEquals(Root.Onboarding, s.gate.root.value)
+            var profileAsked = false
+            model.leave(profile = true) { profileAsked = true }
+            assertEquals(!waitlist, profileAsked)
+            assertEquals(if (waitlist) Root.Review else Root.Main, s.gate.root.value)
+        }
+    }
+
+    @Test
+    fun `the done screen stays while a photo still in review is decided`() = vmTest {
+        val s = newAccount()
+        val model = model(s)
+        // The second photo stays in review past the finish, so the processing poll is still running then.
+        SampleData.photosHeldInReview = setOf(1)
+        try {
+            finishSignUp(model)
+            assertTrue("a photo is still in review", model.photos.state.value.processing)
+            val done = checkNotNull(model.state.value.done)
+            assertEquals(Root.Main, Root.of(done))
+            // The moderator lets it through; the poll's next turns would read an account out of sign-up.
+            SampleData.photosHeldInReview = emptySet()
+            repeat(6) { advance(15_000) }
+            assertEquals("nothing moves the app under the done screen", Root.Onboarding, s.gate.root.value)
+            assertEquals(done, model.state.value.done)
+            model.leave()
+            assertEquals(Root.Main, s.gate.root.value)
+        } finally {
+            SampleData.photosHeldInReview = emptySet()
+        }
+    }
+
+    @Test
+    fun `notifications switched off are kept on the account before the phone is asked`() = vmTest {
+        val s = newAccount()
+        val model = model(s, askable = true)
+        reachLocation(model)
+        model.cityPicked(SampleData.city(112931))
+        runCurrent()
+        assertEquals(OnboardingStep.Notifications, model.state.value.step)
+        var asked = false
+        model.turnOnNotifications(matches = true, messages = false) { asked = true }
+        runCurrent()
+        assertTrue(asked)
+        val prefs = checkNotNull(stored(s.api).notifications)
+        assertTrue(prefs.matches && prefs.likes)
+        assertFalse(prefs.messages || prefs.calls)
+        model.submitNotifications()
+        runCurrent()
+        assertEquals(OnboardingStep.Guidelines, model.state.value.step)
     }
 
     @Test
@@ -308,12 +399,11 @@ class OnboardingViewModelTest {
         runCurrent()
         model.cityPicked(SampleData.city(745044))
         runCurrent()
-        model.submitLocation()
-        runCurrent()
         model.acceptGuidelines()
         runCurrent()
-        assertEquals(Root.Review, s.gate.root.value)
         assertEquals(AccountStatus.PendingReview, stored(s.api).status)
+        model.leave()
+        assertEquals(Root.Review, s.gate.root.value)
     }
 
     @Test
@@ -336,8 +426,6 @@ class OnboardingViewModelTest {
         model.submitFields(skip = true)
         runCurrent()
         model.cityPicked(SampleData.city(112931))
-        runCurrent()
-        model.submitLocation()
         runCurrent()
         // Another phone removed a photo meanwhile.
         s.api.deletePhoto(stored(s.api).profile!!.photos.first().id)

@@ -1,32 +1,39 @@
 package app.core.feature.paywall
 
 import androidx.compose.runtime.staticCompositionLocalOf
-import app.core.model.Plan
+import app.core.billing.PlanNeed
 import app.core.model.WalletItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Where the paywall was opened from: what its first line says, and which plan it starts on. */
-enum class PaywallEntry(val plan: Plan = Plan.Plus) {
-    SEE_LIKES,
-    READ_RECEIPTS,
-    INCOGNITO,
-    ADVANCED_FILTERS,
-    REWIND,
-    OUT_OF_LIKES,
-    OUT_OF_SUPERLIKES,
-    BOOSTS,
-    MESSAGES,
+/**
+ * Where the paywall was opened from: what its title says, and what the plan
+ * it opens on should give ([need], matched against the server's plans).
+ */
+enum class PaywallEntry(val need: PlanNeed?) {
+    SEE_LIKES(PlanNeed.SEE_LIKES),
+    READ_RECEIPTS(PlanNeed.READ_RECEIPTS),
+    INCOGNITO(PlanNeed.INCOGNITO),
+    ADVANCED_FILTERS(PlanNeed.ADVANCED_FILTERS),
+    REWIND(PlanNeed.REWIND),
+    OUT_OF_LIKES(PlanNeed.MORE_LIKES),
+    OUT_OF_SUPERLIKES(PlanNeed.MORE_SUPERLIKES),
+    BOOSTS(PlanNeed.BOOSTS),
+    MESSAGES(PlanNeed.MESSAGES),
     /** The profile tab's "plans" row, the restricted screen: no feature in particular. */
-    GENERAL,
+    GENERAL(null),
 }
 
 sealed interface PaywallRequest {
     val entry: PaywallEntry
 
-    /** The plans (subscriptions). [plan]: the tier to show first, else the entry's. */
-    data class Plans(override val entry: PaywallEntry, val plan: Plan? = null) : PaywallRequest
+    /**
+     * The plans (subscriptions). [plan]: the key of the plan to show first,
+     * else one that gives the entry's need. [likes]: how many people like the
+     * person, when the likes list knows it (the title says it).
+     */
+    data class Plans(override val entry: PaywallEntry, val plan: String? = null, val likes: Int? = null) : PaywallRequest
 
     /** The packs of one consumable. */
     data class Packs(val item: WalletItem, override val entry: PaywallEntry) : PaywallRequest

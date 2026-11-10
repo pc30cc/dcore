@@ -13,6 +13,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.click
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.core.feature.chat.ChatClockText
 import app.core.model.CallKind
@@ -20,6 +25,7 @@ import app.core.model.CallLine
 import app.core.model.CallOutcome
 import app.core.model.CallSwitches
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
@@ -45,7 +51,7 @@ class CallChatPartsTest {
     private val calls = mutableListOf<String>()
 
     private fun show(dark: Boolean = false, content: @Composable () -> Unit) {
-        compose.setContent { AppTheme(dark = dark) { content() } }
+        compose.setContent { AppTheme(template = Templates.of(if (dark) Templates.NEON else Templates.WHITE)) { content() } }
     }
 
     private val on = CallSwitches(audio = true, video = true)
@@ -215,22 +221,77 @@ class CallChatPartsTest {
         val line = line(CallOutcome.Completed, caller = "me", kind = CallKind.Video)
         var dark by mutableStateOf(false)
         var back: (() -> Unit)? by mutableStateOf(null)
-        compose.setContent { AppTheme(dark = dark) { CallLineRow(line, me = "me", at = at(0), onCallBack = back) } }
+        compose.setContent { AppTheme(template = Templates.of(if (dark) Templates.NEON else Templates.WHITE)) { CallLineRow(line, me = "me", at = at(0), onCallBack = back) } }
         for (theme in listOf(false, true)) {
             dark = theme
             back = { calls += "back" }
             compose.waitForIdle()
             val withButton = accentPixels(line, dark)
-            val wide = compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().boundsInRoot.width
+            compose.onNodeWithTag(callLineTag(line)).assert(hasClickAction())
             back = null
             compose.waitForIdle()
             val record = accentPixels(line, dark)
-            val narrow = compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().boundsInRoot.width
-            assertTrue("dark=$dark: the button's camera in the accent ($withButton px)", withButton > 40)
+            assertTrue("dark=$dark: «call back» in the accent ($withButton px)", withButton > 40)
             assertEquals("dark=$dark: no accent on a record", 0, record)
-            // The button's 48 dp touch target ends the line.
-            assertTrue("dark=$dark: $wide vs $narrow", wide - narrow >= 40f * compose.density.density)
+            // A record is not a button.
+            compose.onNodeWithTag(callLineTag(line)).assert(hasClickAction().not())
         }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun theCallBackLinkTakesATapAnywhereInIts48DpTarget() {
+        val line = line(CallOutcome.Completed, caller = "me", kind = CallKind.Video)
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(vertical = 60.dp)) {
+                    CallLineRow(line, me = "me", at = at(0), onCallBack = { calls += "back" })
+                }
+            }
+        }
+        val node = compose.onNodeWithTag(callLineTag(line))
+        val bounds = node.fetchSemanticsNode().boundsInRoot
+        // Where «Call back» is drawn: its accent pixels.
+        val image = node.captureToImage().asAndroidBitmap()
+        val accent = app.core.ui.theme.Templates.of(app.core.ui.theme.Templates.WHITE).colors.primary
+        val xs = mutableListOf<Int>()
+        for (y in 0 until image.height) for (x in 0 until image.width) {
+            val p = image.getPixel(x, y)
+            val d = abs(android.graphics.Color.red(p) - (accent.red * 255).toInt()) + abs(android.graphics.Color.green(p) - (accent.green * 255).toInt()) + abs(android.graphics.Color.blue(p) - (accent.blue * 255).toInt())
+            if (d < 24) xs += x
+        }
+        assertTrue("the link is drawn", xs.size > 40)
+        val linkX = bounds.left + xs.average().toFloat()
+        val dp = compose.density.density
+        // The line is 28 dp tall: 20 dp above its middle is outside it, inside the link's 48 dp target.
+        compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(linkX, bounds.center.y - 20f * dp)) }
+        compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(linkX, bounds.center.y + 20f * dp)) }
+        assertEquals(listOf("back", "back"), calls)
+        // 30 dp away is outside it.
+        compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(linkX, bounds.center.y - 30f * dp)) }
+        assertEquals(listOf("back", "back"), calls)
+    }
+
+    @Test
+    fun aTapBesideTheCentredLineDoesNotCallBack() {
+        val line = line(CallOutcome.Completed, caller = "me")
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(vertical = 60.dp)) {
+                    CallLineRow(line, me = "me", at = at(0), onCallBack = { calls += "back" })
+                }
+            }
+        }
+        val bounds = compose.onNodeWithTag(callLineTag(line)).fetchSemanticsNode().boundsInRoot
+        val dp = compose.density.density
+        assertTrue("the line is centred, with room beside it", bounds.left > 40f * dp)
+        // Empty room at the screen's edge, at the line's height: nothing rings.
+        compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(8f * dp, bounds.center.y)) }
+        compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 8f * dp, bounds.center.y)) }
+        assertEquals(emptyList<String>(), calls)
+        // On the words it still calls back.
+        compose.onRoot().performTouchInput { click(bounds.center) }
+        assertEquals(listOf("back"), calls)
     }
 
     @Test

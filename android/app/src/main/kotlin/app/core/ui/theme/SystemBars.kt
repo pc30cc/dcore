@@ -92,3 +92,23 @@ fun ApplySystemBars(activity: ComponentActivity, template: AppTemplate, bars: Sy
 /** The scrims Android draws behind three-button navigation (androidx.activity's defaults). */
 private val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
 private val DARK_SCRIM = Color.argb(0x80, 0x1b, 0x1b, 0x1b)
+
+/**
+ * A dialog's own window (the match moment, the paywall, the full profile,
+ * the photo crop) shows the bars while it is up: its icons follow the
+ * drawn template (light on neon, dark on white), whatever the activity's
+ * theme was at its start. Call it first inside every full-screen dialog.
+ * The window goes with the dialog, so nothing is restored.
+ */
+@Composable
+fun DialogBarIcons() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val light = AppTheme.template.switches.scheme == Scheme.Light
+    SideEffect {
+        val window = (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window ?: return@SideEffect
+        androidx.core.view.WindowCompat.getInsetsController(window, view).run {
+            isAppearanceLightStatusBars = light
+            isAppearanceLightNavigationBars = light
+        }
+    }
+}

@@ -18,22 +18,22 @@
     <string name="push_channel_account">Account and safety</string>
     <string name="push_channel_account_about">Your account, reports and replies from support.</string>
     <string name="push_channel_offers">Offers</string>
-    <string name="push_channel_offers_about">Occasional offers. Off unless you turn them on in {appName}.</string>
+    <string name="push_channel_offers_about">Occasional offers. Off unless you turn them on.</string>
 
     <string name="push_message_title">New message</string>
-    <string name="push_message_body">Open {appName} to read it.</string>
+    <string name="push_message_body">Tap to read it.</string>
     <string name="push_match_title">You have a new match</string>
     <string name="push_match_body">Say hello while it\'s fresh.</string>
     <string name="push_like_title">Someone likes you</string>
-    <string name="push_like_body">Open {appName} to see your likes.</string>
+    <string name="push_like_body">Tap to see your likes.</string>
     <string name="push_request_title">New message request</string>
     <string name="push_request_body">Someone wants to talk to you.</string>
     <string name="push_call_missed_title">Missed call</string>
-    <string name="push_call_missed_body">Open {appName} to call back.</string>
+    <string name="push_call_missed_body">Tap to call back.</string>
     <string name="push_account_title">Your account</string>
     <string name="push_account_body">There\'s news about your account.</string>
     <string name="push_support_title">Support replied</string>
-    <string name="push_support_body">Open {appName} to read the answer.</string>
+    <string name="push_support_body">Tap to read the answer.</string>
     <string name="push_offer_title">An offer for you</string>
-    <string name="push_offer_body">Open {appName} to see it.</string>
+    <string name="push_offer_body">Tap to see it.</string>
 </resources>

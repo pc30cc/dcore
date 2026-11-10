@@ -194,11 +194,20 @@ class AuthGate(
      * Signs out here: the server is told when it can be reached; when it
      * cannot, the session is forgotten on the phone anyway (its refresh
      * token goes with it, so nobody can use it again from here).
+     *
+     * [allSessions] ends every session, which only the server can do: when
+     * it cannot be told, the failure is thrown and this phone stays signed
+     * in (forgetting only this session would look the same as success
+     * while the other devices stay signed in).
      */
     suspend fun signOut(allSessions: Boolean = false) {
         runHooks { it.before }
         runCatchingUnlessCancelled { api.logout(allSessions) }
             .onFailure {
+                if (allSessions) {
+                    diag.info(AREA, "sign-out everywhere could not reach the server (${it.javaClass.simpleName}); still signed in")
+                    throw it
+                }
                 diag.info(AREA, "sign-out could not reach the server (${it.javaClass.simpleName}); forgotten here")
                 runCatchingUnlessCancelled { api.discardSession() }
             }

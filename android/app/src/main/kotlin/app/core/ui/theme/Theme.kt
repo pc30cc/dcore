@@ -46,9 +46,8 @@ fun currentTemplate(): AppTemplate {
 /**
  * The app's theme: the visual [template] (its tokens through
  * [AppTheme.template], Material 3's scheme, type and shapes derived from
- * them), Persian type when the app speaks Persian, the older app colours
- * ([AppTheme.colors], mapped onto the template) and whether glass may blur
- * ([LocalGlass], never when the template's glass switch is off).
+ * them), Persian type when the app speaks Persian, and whether glass may
+ * blur ([LocalGlass], never when the template's glass switch is off).
  *
  * The layout direction is not set here: it comes from the configuration's
  * locale (`AppLocales.wrap`), so Persian is right to left in Compose and in
@@ -65,10 +64,8 @@ fun AppTheme(
     val persian = AppLanguage.fromTag(locale?.toLanguageTag()) == AppLanguage.FA
     val scripted = remember(template, persian) { template.inScript(persian) }
     val scheme = remember(template) { templateColorScheme(template) }
-    val colors = remember(template) { AppColors.of(template) }
     val typography = remember(scripted) { templateTypography(scripted) }
     val shapes = remember(template) { templateShapes(template) }
-    val type = remember(scripted) { AppType.of(scripted) }
     val context = LocalContext.current
     val reducedMotion = remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
@@ -76,27 +73,11 @@ fun AppTheme(
     val glass = rememberGlassAvailable(context) && template.switches.glass
     CompositionLocalProvider(
         LocalAppTemplate provides scripted,
-        LocalAppColors provides colors,
-        LocalAppType provides type,
         LocalReducedMotion provides reducedMotion,
         LocalGlass provides glass,
     ) {
         MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
     }
-}
-
-/**
- * The dark (`neon`, with [brand]'s gradient) or the light (`white`)
- * template: for tests and previews that pin one.
- */
-@Composable
-fun AppTheme(
-    dark: Boolean,
-    brand: BrandColors = BrandColors.Build,
-    content: @Composable () -> Unit,
-) {
-    val template = remember(dark, brand) { Templates.of(if (dark) Templates.NEON else Templates.WHITE, brand) }
-    AppTheme(template = template, content = content)
 }
 
 /** Android 12+ and battery saver off, following battery saver as it changes. */
@@ -122,7 +103,7 @@ private fun rememberGlassAvailable(context: Context): Boolean {
     return !saving
 }
 
-/** What Material has no role for, read like `MaterialTheme.colorScheme`. */
+/** The template drawn and whether glass blurs, read like `MaterialTheme.colorScheme`. */
 object AppTheme {
     /**
      * The template being drawn: its id, switches and every token, its type
@@ -132,13 +113,6 @@ object AppTheme {
      */
     val template: AppTemplate
         @Composable @ReadOnlyComposable get() = LocalAppTemplate.current
-
-    /** The older colour names, mapped onto [template]; new code reads [template]. */
-    val colors: AppColors
-        @Composable @ReadOnlyComposable get() = LocalAppColors.current
-
-    val type: AppType
-        @Composable @ReadOnlyComposable get() = LocalAppType.current
 
     /** Whether glass blurs here ([LocalGlass]). */
     val glass: Boolean

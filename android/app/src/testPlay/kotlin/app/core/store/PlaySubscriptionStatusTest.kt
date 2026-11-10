@@ -12,7 +12,6 @@ import app.core.common.Diag
 import app.core.common.FakeClock
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.net.Fetched
 import app.core.storage.MemorySecretStore
 import app.core.sync.EntitlementRepository
@@ -88,7 +87,7 @@ class PlaySubscriptionStatusTest {
 
         assertEquals("the known subscription token once; no pack", listOf(listOf("tok-plus")), r.api.restored)
         assertEquals("active", r.known.state("tok-plus"))
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertEquals(EntitlementSource.Play, r.entitlements.entitlements.value?.source)
         assertEquals("said once", 1, r.said.size)
         assertEquals("the paywall's restore notice is not involved", PurchaseStep.Idle, r.purchases.step.value)
@@ -100,7 +99,7 @@ class PlaySubscriptionStatusTest {
         r.known.put("tok-plus", "grace")
         r.api.granted += "tok-plus"
         r.api.verdicts["tok-plus"] = "active"
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play)
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play)
         r.entitlements.apply(r.api.entitlements)
         runCurrent()
 

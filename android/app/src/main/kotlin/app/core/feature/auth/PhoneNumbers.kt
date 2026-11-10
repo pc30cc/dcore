@@ -17,6 +17,8 @@ data class DialCountry(
     val groups: List<Int> = listOf(3, 3, 4),
     /** What a mobile number starts with, when every one does (`9` under +98, `5` under +90). */
     val mobileStart: Char? = null,
+    /** Numbers are written at home with a leading `0` (`0912 345 6789`). */
+    val trunkZero: Boolean = false,
 ) {
     fun displayName(language: Locale): String =
         Locale.Builder().setRegion(iso).build().getDisplayCountry(language).ifBlank { iso }
@@ -61,8 +63,8 @@ object PhoneNumbers {
 
     /** The countries offered in the picker. A number typed with `+` may be from any other one. */
     val countries: List<DialCountry> = listOf(
-        DialCountry("IR", "98", 10..10, listOf(3, 3, 4), mobileStart = '9'),
-        DialCountry("TR", "90", 10..10, listOf(3, 3, 2, 2), mobileStart = '5'),
+        DialCountry("IR", "98", 10..10, listOf(3, 3, 4), mobileStart = '9', trunkZero = true),
+        DialCountry("TR", "90", 10..10, listOf(3, 3, 2, 2), mobileStart = '5', trunkZero = true),
         DialCountry("AF", "93", 9..9, listOf(2, 3, 4)),
         DialCountry("AE", "971", 9..9, listOf(2, 3, 4)),
         DialCountry("AM", "374", 8..8, listOf(2, 3, 3)),
@@ -239,6 +241,17 @@ object PhoneNumbers {
         val international = international(e164) ?: return e164
         val (country, rest) = international
         return if (country == null) e164 else "+${country.dialCode} ${group(country, rest)}"
+    }
+
+    /**
+     * The number as its holder writes it at home, `0912 123 4567`, for the
+     * countries that write a leading `0` ([DialCountry.trunkZero]); any other
+     * as [display] has it.
+     */
+    fun displayNational(e164: String): String {
+        val international = international(e164) ?: return e164
+        val (country, rest) = international
+        return if (country != null && country.trunkZero) "0" + group(country, rest) else display(e164)
     }
 
     /**

@@ -1,5 +1,8 @@
 package app.core.ui.nav
 
+import androidx.compose.runtime.CompositionLocalProvider
+import app.core.ui.components.LocalBottomBarRoom
+import app.core.ui.components.BottomBarRoom
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
@@ -41,9 +44,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import app.core.feature.requests.RequestsRoute
+import app.core.feature.auth.DeleteAccountRoute
+import app.core.feature.profile.EditProfileRoute
+import app.core.feature.settings.SettingsRoute
 import app.core.push.OpenTarget
 import androidx.compose.runtime.remember
 import app.core.feature.onboarding.OnboardingRoute
+import kotlinx.coroutines.flow.receiveAsFlow
 import app.core.feature.splash.SplashRoute
 import app.core.feature.splash.UpdateRequiredScreen
 import app.core.model.Config
@@ -77,6 +84,15 @@ import kotlinx.serialization.Serializable
 
 /** The message requests, over the tabs. */
 @Serializable data object RequestsKey : NavKey
+
+/** Settings, over the tabs. */
+@Serializable data object SettingsKey : NavKey
+
+/** The profile editor, over the tabs. */
+@Serializable data object EditProfileKey : NavKey
+
+/** Deleting the account: over Settings, or over the restricted screen. */
+@Serializable data object DeleteAccountKey : NavKey
 
 /** The root key for each place [AuthGate] can put the app. */
 private fun Root.key(): NavKey = when (this) {
@@ -129,7 +145,9 @@ fun AppNavHost(config: Config?) {
     // A notification tap, once the app is in: the thread or the requests
     // over the tabs, or a tab.
     val links = LocalAppGraph.current.push.links
-    val tabs = remember { kotlinx.coroutines.flow.MutableSharedFlow<MainTab>(extraBufferCapacity = 1) }
+    // A tab asked for before the tabs are on screen (the root just moved to them) waits here until they take it.
+    val tabs = remember { kotlinx.coroutines.channels.Channel<MainTab>(kotlinx.coroutines.channels.Channel.CONFLATED) }
+    val tabRequests = remember(tabs) { tabs.receiveAsFlow() }
     LaunchedEffect(root) {
         if (root != Root.Main) return@LaunchedEffect
         links.pending.collect { target ->
@@ -137,8 +155,9 @@ fun AppNavHost(config: Config?) {
             when (target) {
                 is OpenTarget.Thread -> backStack.openOver(ChatKey(target.conversationId))
                 OpenTarget.Requests -> backStack.openOver(RequestsKey)
-                OpenTarget.Chats -> { backStack.backToMain(); tabs.tryEmit(MainTab.CHATS) }
-                OpenTarget.Likes -> { backStack.backToMain(); tabs.tryEmit(MainTab.LIKES) }
+                OpenTarget.Chats -> { backStack.backToMain(); tabs.trySend(MainTab.CHATS) }
+                OpenTarget.Likes -> { backStack.backToMain(); tabs.trySend(MainTab.LIKES) }
+                OpenTarget.Profile -> { backStack.backToMain(); tabs.trySend(MainTab.PROFILE) }
                 else -> backStack.backToMain()
             }
             links.taken(target)
@@ -146,62 +165,95 @@ fun AppNavHost(config: Config?) {
     }
 
     // The paywall and the packs sheets open over whatever screen asked for them; the store's prompts ride along.
+    val bottomBar = remember { BottomBarRoom() }
     PaywallHost(config) {
-        Box(Modifier.fillMaxSize()) {
-            NavDisplay(
-                backStack = backStack,
-                onBack = { backStack.removeLastOrNull() },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-                transitionSpec = { forward(rtl, reducedMotion) },
-                popTransitionSpec = { backward(rtl, reducedMotion) },
-                predictivePopTransitionSpec = { backward(rtl, reducedMotion) },
-                entryProvider = entryProvider {
-                    entry<SplashKey> { SplashRoute() }
-                    entry<AuthKey> { AuthRoute() }
-                    entry<OnboardingKey> { OnboardingRoute() }
-                    entry<ReviewKey> { ReviewRoute() }
-                    entry<RestrictedKey> { RestrictedRoute() }
-                    entry<RestoreKey> { RestoreRoute() }
-                    entry<MainKey> {
-                        MainRoute(
-                            onOpenChat = { id -> backStack.add(ChatKey(id)) },
-                            onOpenRequests = { backStack.add(RequestsKey) },
-                            tabRequests = tabs,
-                        )
-                    }
-                    entry<ChatKey> { key -> ChatRoute(key.conversationId, onBack = { backStack.removeLastOrNull() }) }
-                    entry<RequestsKey> {
-                        RequestsRoute(
-                            onBack = { backStack.removeLastOrNull() },
-                            onOpenChat = { id ->
-                                backStack.removeLastOrNull()
-                                backStack.add(ChatKey(id))
-                            },
-                        )
-                    }
-                },
-            )
-            StorePrompts(root, config, Modifier.align(Alignment.BottomCenter))
+        CompositionLocalProvider(LocalBottomBarRoom provides bottomBar) {
+            Box(Modifier.fillMaxSize()) {
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { backStack.removeLastOrNull() },
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                    transitionSpec = { forward(rtl, reducedMotion) },
+                    popTransitionSpec = { backward(rtl, reducedMotion) },
+                    predictivePopTransitionSpec = { backward(rtl, reducedMotion) },
+                    entryProvider = entryProvider {
+                        entry<SplashKey> { SplashRoute() }
+                        entry<AuthKey> { AuthRoute() }
+                        entry<OnboardingKey> { OnboardingRoute() }
+                        entry<ReviewKey> { ReviewRoute() }
+                        entry<RestrictedKey> { RestrictedRoute(onDelete = { backStack.push(DeleteAccountKey) }) }
+                        entry<RestoreKey> { RestoreRoute() }
+                        entry<MainKey> {
+                            MainRoute(
+                                onOpenChat = { id -> backStack.push(ChatKey(id)) },
+                                onOpenRequests = { backStack.push(RequestsKey) },
+                                tabRequests = tabRequests,
+                                onOpenSettings = { backStack.push(SettingsKey) },
+                                onOpenEditProfile = { backStack.push(EditProfileKey) },
+                            )
+                        }
+                        entry<SettingsKey> {
+                            SettingsRoute(onBack = { backStack.pop(SettingsKey) }, onDelete = { backStack.push(DeleteAccountKey) })
+                        }
+                        entry<EditProfileKey> { EditProfileRoute(onBack = { backStack.pop(EditProfileKey) }) }
+                        entry<DeleteAccountKey> { DeleteAccountRoute(onBack = { backStack.pop(DeleteAccountKey) }) }
+                        entry<ChatKey> { key -> ChatRoute(key.conversationId, onBack = { backStack.pop(key) }) }
+                        entry<RequestsKey> {
+                            RequestsRoute(
+                                onBack = { backStack.pop(RequestsKey) },
+                                onOpenChat = { id ->
+                                    Snapshot.withMutableSnapshot {
+                                        if (backStack.lastOrNull() == RequestsKey) backStack.removeLastOrNull()
+                                        backStack.push(ChatKey(id))
+                                    }
+                                },
+                            )
+                        }
+                    },
+                )
+                StorePrompts(root, config, Modifier.align(Alignment.BottomCenter))
+            }
         }
     }
 }
 
-/** Opens [key] over the main tabs, replacing any thread or list already open over them. */
+/**
+ * Opens [key] unless it is already on top: a second tap during the forward
+ * transition does not stack the same screen twice.
+ */
+private fun NavBackStack<NavKey>.push(key: NavKey) {
+    if (lastOrNull() != key) add(key)
+}
+
+/**
+ * Closes the screen [key] names, only while it is the one on top: a second
+ * back during the transition never closes the screen under it (or empties
+ * the stack).
+ */
+private fun NavBackStack<NavKey>.pop(key: NavKey) {
+    if (size > 1 && lastOrNull() == key) removeLastOrNull()
+}
+
+/** Opens [key] over the main tabs, replacing whatever is already open over them. */
 private fun NavBackStack<NavKey>.openOver(key: NavKey) {
     if (lastOrNull() == key) return
     Snapshot.withMutableSnapshot {
-        removeAll { it is ChatKey || it is RequestsKey }
+        removeAll { it.isOverMain() }
         add(key)
     }
 }
 
 /** Back to the tabs, closing what is open over them. */
 private fun NavBackStack<NavKey>.backToMain() {
-    Snapshot.withMutableSnapshot { removeAll { it is ChatKey || it is RequestsKey } }
+    Snapshot.withMutableSnapshot { removeAll { it.isOverMain() } }
 }
+
+/** The screens that open over the main tabs. */
+private fun NavKey.isOverMain(): Boolean =
+    this is ChatKey || this is RequestsKey || this is SettingsKey || this is EditProfileKey || this is DeleteAccountKey
 
 /** Makes [key] the only entry, in one snapshot so no frame sees the stack empty. */
 private fun NavBackStack<NavKey>.replaceAll(key: NavKey) {

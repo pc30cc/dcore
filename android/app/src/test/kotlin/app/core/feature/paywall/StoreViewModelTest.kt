@@ -9,7 +9,7 @@ import app.core.billing.Purchases
 import app.core.common.FakeClock
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
+import app.core.model.PlanKey
 import app.core.net.Fetched
 import app.core.storage.MemorySecretStore
 import app.core.store.ProductType
@@ -68,7 +68,7 @@ class StoreViewModelTest {
         fun paywall(request: PaywallRequest = PaywallRequest.Plans(PaywallEntry.GENERAL)) = StoreViewModel(purchases, entitlements, request)
     }
 
-    private val plusMonthly = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
+    private val plusMonthly = Entitlements(plan = "plus", source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
 
     @Test
     fun thePeriodThePersonIsOnIsMarkedAndItsTabOpensOnAnother() {
@@ -79,10 +79,97 @@ class StoreViewModelTest {
         assertEquals("sub.plus:m1", vm.state.value.current)
         assertFalse(vm.state.value.heldElsewhere)
         // Plus holders open on Premium; on the Plus tab the chosen period is not the one held.
-        assertEquals(Plan.Premium, vm.state.value.plan)
-        vm.selectPlan(Plan.Plus)
+        assertEquals("premium", vm.state.value.plan)
+        vm.selectPlan("plus")
         assertEquals("sub.plus:m3", vm.state.value.selected)
         assertEquals("the store page names the server's product", "sub.plus", vm.currentProductId())
+    }
+
+    @Test
+    fun theEntryOpensOnAPlanThatGivesWhatItWasOpenedFor() {
+        // In the fakes Plus has no incognito and Premium has: a gate for incognito opens on Premium.
+        val r = Rig(Store.PLAY)
+        assertEquals("premium", r.paywall(PaywallRequest.Plans(PaywallEntry.INCOGNITO)).state.value.plan)
+        assertEquals("both show who likes: the first", "plus", r.paywall(PaywallRequest.Plans(PaywallEntry.SEE_LIKES)).state.value.plan)
+        assertEquals("a plan asked for by key", "premium", r.paywall(PaywallRequest.Plans(PaywallEntry.GENERAL, plan = "premium")).state.value.plan)
+        assertEquals("a key not sold is not opened", "plus", r.paywall(PaywallRequest.Plans(PaywallEntry.GENERAL, plan = "gold")).state.value.plan)
+    }
+
+    @Test
+    fun aFailedPurchaseLineGoesWhenAnotherPeriodOrPlanIsChosen() {
+        val r = Rig(Store.PLAY)
+        val vm = r.paywall()
+        r.billing.next = { app.core.store.PurchaseOutcome.Failed(app.core.store.BillingUnavailableReason.ERROR) }
+        kotlinx.coroutines.runBlocking {
+            r.purchases.buy(org.robolectric.Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().get(), vm.state.value.catalogue!!, app.core.billing.PurchaseTarget.Subscription(vm.state.value.catalogue!!.defaultOption("plus")!!))
+        }
+        assertTrue(vm.state.value.step is app.core.billing.PurchaseStep.Failed)
+        vm.select("sub.plus:m3")
+        assertEquals(app.core.billing.PurchaseStep.Idle, vm.state.value.step)
+    }
+
+    @Test
+    fun nothingElseCanBeChosenWhileAPurchaseIsUnderWay() {
+        val r = Rig(Store.PLAY)
+        val vm = r.paywall()
+        val plan = vm.state.value.plan!!
+        val selected = vm.state.value.selected!!
+        val other = vm.state.value.catalogue!!.plan(plan)!!.options.first { it.key != selected }.key
+        var during: app.core.billing.PurchaseStep? = null
+        r.billing.next = {
+            // The store's sheet is open: a tap on another period or plan changes nothing.
+            during = r.purchases.step.value
+            vm.select(other)
+            vm.selectPlan(vm.state.value.plans.first { it != plan })
+            app.core.store.PurchaseOutcome.Failed(app.core.store.BillingUnavailableReason.ERROR)
+        }
+        vm.buy(org.robolectric.Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup().get(), selected)
+        assertTrue(during is app.core.billing.PurchaseStep.InStore)
+        assertEquals(plan, vm.state.value.plan)
+        assertEquals(selected, vm.state.value.selected)
+        assertTrue(vm.state.value.step is app.core.billing.PurchaseStep.Failed)
+        // Once it stopped, the choice is free again (and the failure's line goes with it).
+        vm.select(other)
+        assertEquals(other, vm.state.value.selected)
+        assertEquals(app.core.billing.PurchaseStep.Idle, vm.state.value.step)
+    }
+
+    @Test
+    fun aRestoresAnswerStaysOnTheLineUntilSomethingElseIsChosen() {
+        val r = Rig(Store.PLAY)
+        val vm = r.paywall()
+        vm.restore()
+        assertFalse(vm.state.value.restoring)
+        assertTrue(vm.state.value.restoreNotice != null)
+        val other = vm.state.value.catalogue!!.plan(vm.state.value.plan!!)!!.options.first { it.key != vm.state.value.selected }.key
+        vm.select(other)
+        assertEquals(null, vm.state.value.restoreNotice)
+    }
+
+    @Test
+    fun aPacksSheetStartsOnItsBestPackAndSwitchesItems() {
+        val r = Rig(Store.PLAY)
+        val vm = r.paywall(PaywallRequest.Packs(app.core.model.WalletItem.Superlike, PaywallEntry.OUT_OF_SUPERLIKES))
+        assertEquals(app.core.model.WalletItem.Superlike, vm.state.value.item)
+        assertEquals("cons.superlike.5", vm.state.value.selectedPack)
+        vm.selectItem(app.core.model.WalletItem.Boost)
+        assertEquals(app.core.model.WalletItem.Boost, vm.state.value.item)
+        assertEquals("the fakes sell no boost", null, vm.state.value.selectedPack)
+        vm.selectItem(app.core.model.WalletItem.Superlike)
+        vm.selectPack("cons.superlike.5")
+        assertEquals("cons.superlike.5", vm.state.value.selectedPack)
+    }
+
+    @Test
+    fun theCatalogueIsReadAgainWhenTheStoreComesBack() {
+        val r = Rig(Store.PLAY)
+        r.billing.availability = app.core.store.BillingAvailability.Unavailable(app.core.store.BillingUnavailableReason.STORE_NOT_INSTALLED)
+        val vm = r.paywall()
+        assertTrue(vm.state.value.load is StoreLoad.Unavailable)
+        // Back from installing it.
+        r.billing.availability = app.core.store.BillingAvailability.Ready
+        vm.resumed()
+        assertTrue(vm.state.value.load is StoreLoad.Ready)
     }
 
     @Test
@@ -135,7 +222,7 @@ class StoreViewModelTest {
         assertEquals(asked + 1, r.billing.ownedQueries)
 
         // Changed on another phone, to a product this store account does not hold.
-        r.entitlements.apply(plusMonthly.copy(plan = Plan.Premium, productId = "sub.premium"))
+        r.entitlements.apply(plusMonthly.copy(plan = "premium", productId = "sub.premium"))
         main.scheduler.advanceUntilIdle()
         assertEquals(asked + 2, r.billing.ownedQueries)
         assertTrue(vm.state.value.heldElsewhere)
@@ -159,10 +246,10 @@ class StoreViewModelTest {
         r.billing.owned.clear()
         val vm = r.paywall()
         assertEquals("read again on opening", 2, r.reads)
-        assertEquals(Plan.Free, vm.state.value.entitlements?.plan)
+        assertEquals(PlanKey.FREE, vm.state.value.entitlements?.plan)
         assertFalse(vm.state.value.heldElsewhere)
         assertEquals(null, vm.state.value.current)
-        assertEquals("the Plus tab opens on its popular period", Plan.Plus, vm.state.value.plan)
+        assertEquals("the Plus tab opens on its popular period", "plus", vm.state.value.plan)
         assertEquals("sub.plus:m1", vm.state.value.selected)
     }
 
@@ -213,7 +300,7 @@ class StoreViewModelTest {
     @Test
     fun anEmptyBazaarListKeepsTheLockNotAnotherAccount() {
         val r = Rig(Store.BAZAAR)
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
         val vm = r.paywall()
         assertFalse(vm.state.value.heldElsewhere)
         assertTrue(vm.state.value.subscriptionLocked)

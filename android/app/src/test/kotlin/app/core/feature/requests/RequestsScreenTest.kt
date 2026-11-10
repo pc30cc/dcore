@@ -18,6 +18,7 @@ import app.core.model.RequestStatus
 import app.core.model.RequestBox
 import app.core.sync.RequestsBox
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -51,7 +52,7 @@ class RequestsScreenTest {
 
     private fun show(state: RequestsUiState, dark: Boolean = false) {
         compose.setContent {
-            AppTheme(dark = dark) {
+            AppTheme(template = Templates.of(if (dark) Templates.NEON else Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     RequestsScreen(state, actions, ScreenTestData.catalog, today = LocalDate.now(ChatTestData.zone))
                 }
@@ -72,19 +73,19 @@ class RequestsScreenTest {
     @Test
     fun theFirstReadIsASkeletonWithALabel() {
         show(RequestsUiState(inbox = RequestsBox(loading = true)))
-        compose.onNodeWithContentDescription("Loading message requests").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Loading requests").assertIsDisplayed()
     }
 
     @Test
     fun anEmptyInboxSaysWhatWouldBeThere() {
         show(RequestsUiState(inbox = RequestsBox(loaded = true)))
-        compose.onNodeWithText("No message requests").assertIsDisplayed()
+        compose.onNodeWithText("No requests").assertIsDisplayed()
     }
 
     @Test
     fun aFailedReadOfflineSaysSoAndTriesAgain() {
         show(RequestsUiState(inbox = RequestsBox(loaded = true, failed = true, offline = true)))
-        compose.onNodeWithText("Couldn't load message requests").assertIsDisplayed()
+        compose.onNodeWithText("You’re offline.").assertIsDisplayed()
         compose.onNodeWithText("Try again").performClick()
         assertEquals(listOf("refresh"), actions.calls)
     }
@@ -92,7 +93,7 @@ class RequestsScreenTest {
     @Test
     fun aReceivedRequestIsAcceptedOrDeclined() {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true)))
-        compose.onNodeWithText("Received (1)").assertIsDisplayed()
+        compose.onNodeWithText("Received, 1").assertIsDisplayed()
         compose.onNodeWithText("Your photos from the north are great.").assertIsDisplayed()
         compose.onNodeWithText("Decline").performClick()
         compose.onNodeWithText("Accept").performClick()
@@ -103,7 +104,7 @@ class RequestsScreenTest {
     fun anAnswerOnItsWayHoldsTheButtons() {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true), working = setOf("3001")))
         compose.onNodeWithText("Decline").assertIsNotEnabled()
-        compose.onNodeWithText("Accept").assertDoesNotExist()
+        compose.onNodeWithText("Accept").assertIsNotEnabled()
     }
 
     @Test
@@ -138,8 +139,8 @@ class RequestsScreenTest {
     @Config(qualifiers = "fa-w411dp-h891dp")
     fun persianCountsInPersianDigits() {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar, fromNegar.copy(id = "3003")), loaded = true)))
-        compose.onNodeWithText("درخواست‌های پیام").assertIsDisplayed()
-        compose.onNodeWithText("دریافتی (۲)", substring = true).assertExists()
+        compose.onNodeWithText("درخواست‌ها").assertIsDisplayed()
+        compose.onNodeWithText("دریافتی، ۲", substring = true).assertExists()
     }
 
     @Test
@@ -147,13 +148,13 @@ class RequestsScreenTest {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true, nextCursor = "c1")))
         compose.waitForIdle()
         assertEquals(listOf("more"), actions.calls)
-        compose.onNodeWithContentDescription("Loading message requests").assertExists()
+        compose.onNodeWithContentDescription("Loading requests").assertExists()
     }
 
     @Test
     fun aFailedReadOfMoreOffersToTryAgain() {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true, nextCursor = "c1", moreFailed = true)))
-        compose.onNodeWithText("More requests didn't load.").assertExists()
+        compose.onNodeWithText("More requests didn’t load.").assertExists()
         compose.onNodeWithText("Try again").performClick()
         assertEquals(listOf("more"), actions.calls)
     }
@@ -161,7 +162,7 @@ class RequestsScreenTest {
     @Test
     fun pagesOfHiddenSendersWaitForTheButtonInsteadOfAnEmptyBox() {
         show(RequestsUiState(inbox = RequestsBox(loaded = true, nextCursor = "c5", moreHidden = true)))
-        compose.onNodeWithText("No message requests").assertDoesNotExist()
+        compose.onNodeWithText("No requests").assertDoesNotExist()
         compose.waitForIdle()
         assertEquals("nothing read unasked", emptyList<String>(), actions.calls)
         compose.onNodeWithText("Show more").performClick()
@@ -172,7 +173,7 @@ class RequestsScreenTest {
     fun theEndOfTheBoxReadsNothingMore() {
         show(RequestsUiState(inbox = RequestsBox(items = listOf(fromNegar), loaded = true)))
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Loading message requests").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Loading requests").assertDoesNotExist()
         assertEquals(emptyList<String>(), actions.calls)
     }
 }

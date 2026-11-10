@@ -1,161 +1,221 @@
 package app.core.feature.paywall
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.core.R
 import app.core.billing.PackOption
+import app.core.billing.PurchaseFailure
 import app.core.billing.PurchaseStep
 import app.core.feature.auth.brandPlural
+import app.core.feature.auth.screenLanguage
 import app.core.feature.card.isolate
-import app.core.feature.card.rememberNumbers
+import app.core.i18n.AppLanguage
+import app.core.i18n.Numerals
 import app.core.i18n.brandString
 import app.core.model.PurchaseKind
 import app.core.model.Wallet
 import app.core.model.WalletItem
-import app.core.ui.theme.Radius
+import app.core.ui.components.EmptyState
+import app.core.ui.components.PackCard
+import app.core.ui.components.PackChoice
+import app.core.ui.components.PrimaryButton
+import app.core.ui.components.SegmentedControl
+import app.core.ui.components.packPriceFit
+import app.core.ui.components.skeleton
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Space
 
+/** The packs sheet on the design's phone (dp). */
+internal object PacksLayout {
+    val bottom = 30.dp
+    val underTabs = 18.dp
+    val titleGap = 10.dp
+    val cardsTop = 16.dp
+    val cardGap = 8.dp
+    val aboveButton = 18.dp
+    val underButton = 12.dp
+    val skeletonCard = 132.dp
+}
+
+/** Up to three packs share a row; more wrap to the next row. */
+private const val PACKS_PER_ROW = 3
+
+/** The two items a sheet switches between (README m15): super likes and boosts. */
+private val SWITCHED = listOf(WalletItem.Superlike, WalletItem.Boost)
+
 /**
- * The packs of one consumable (super likes, boosts, spotlight, messages):
- * what it does, how many the account holds, each pack with the store's own
- * price, and the purchase's steps, in a bottom sheet over the screen that
- * ran out.
+ * The packs of one consumable (m15), in a bottom sheet over the screen that
+ * ran out: «سوپرلایک / بوست» when both are on sale, the title with how many
+ * the account holds beside it, the packs (the count and the store's price),
+ * the button with the chosen pack's price, and one line of terms where the
+ * purchase's steps are said.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PacksContent(state: StoreUiState, item: WalletItem, actions: StoreActions, modifier: Modifier = Modifier) {
+fun PacksContent(state: StoreUiState, actions: StoreActions, modifier: Modifier = Modifier) {
+    val t = AppTheme.template
+    val language = screenLanguage()
     val storeName = brandString(R.string.store_name)
-    val number = rememberNumbers()
+    val item = state.item
     val step = state.step
     Column(
         modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(start = Space.xl, end = Space.xl, bottom = Space.xl),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
+            .padding(start = Space.gutter, end = Space.gutter, bottom = PacksLayout.bottom),
     ) {
         if (step is PurchaseStep.Done && step.kind == PurchaseKind.Consumable) {
-            val pack = step.target.let { state.catalogue?.pack(it) }
-            DonePane(
-                title = brandString(R.string.paywall_done_pack_title),
-                body = pack?.let { brandPlural(it.item.quantity(), it.quantity, number(it.quantity)) } ?: "",
-                onContinue = { actions.stepShown(); actions.close() },
+            val pack = state.catalogue?.pack(step.target)
+            val what = pack?.let { brandPlural(it.item.quantity(), it.quantity, Numerals.format(it.quantity, language)) }
+            Text(
+                if (what != null) brandString(R.string.packs_done, what) else brandString(R.string.paywall_done_action),
+                style = t.type.h2,
+                color = t.colors.text,
+                modifier = Modifier.semantics { heading() },
             )
+            Spacer(Modifier.height(PacksLayout.aboveButton))
+            PrimaryButton(brandString(R.string.paywall_done_action), { actions.stepShown(); actions.close() })
             return@Column
         }
-        Text(brandString(item.packsTitle()), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-        Text(brandString(item.packsBody()), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        state.entitlements?.wallet?.count(item)?.takeIf { it > 0 }?.let { held ->
-            Text(
-                brandString(R.string.packs_have, brandPlural(item.quantity(), held, number(held))),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
+        val catalogue = state.catalogue
+        val switchable = item in SWITCHED && (catalogue == null || SWITCHED.all { catalogue.packsFor(it).isNotEmpty() })
+        if (switchable) {
+            SegmentedControl(
+                options = listOf(brandString(R.string.packs_tab_superlike), brandString(R.string.packs_tab_boost)),
+                selected = SWITCHED.indexOf(item),
+                onSelect = { actions.selectItem(SWITCHED[it]) },
+                enabled = !state.busy,
             )
+            Spacer(Modifier.height(PacksLayout.underTabs))
         }
-        when (val load = state.load) {
-            StoreLoad.Loading -> Row(Modifier.fillMaxWidth().padding(vertical = Space.lg), horizontalArrangement = Arrangement.Center) {
-                CircularProgressIndicator()
+        // The balance moves under the title when both no longer fit one line (large text), instead of being squeezed.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(PacksLayout.titleGap)) {
+            Text(brandString(item.packsTitle()), style = t.type.h2, color = t.colors.text, modifier = Modifier.alignByBaseline().semantics { heading() })
+            state.entitlements?.wallet?.count(item)?.takeIf { it > 0 }?.let { held ->
+                Text(
+                    brandPlural(R.plurals.packs_balance, held, Numerals.format(held, language)),
+                    style = t.type.bodySm,
+                    color = t.colors.text3,
+                    modifier = Modifier.alignByBaseline(),
+                )
             }
-            is StoreLoad.Unavailable -> UnavailablePane(load.reason, storeName, actions)
-            StoreLoad.Offline -> MessagePane(Icons.Filled.Info, brandString(R.string.paywall_offline_title), brandString(R.string.paywall_offline_body), actions::retry)
-            StoreLoad.Failed -> MessagePane(Icons.Filled.Warning, brandString(R.string.paywall_failed_title), brandString(R.string.paywall_failed_body), actions::retry)
+        }
+        Spacer(Modifier.height(PacksLayout.cardsTop))
+        when (val load = state.load) {
+            StoreLoad.Loading -> LoadingPacks()
+            is StoreLoad.Unavailable -> {
+                val message = brandString(load.reason.message(), storeName)
+                when (load.reason) {
+                    PurchaseFailure.STORE_MISSING -> EmptyState(message, action = brandString(R.string.paywall_store_missing_action, storeName), onAction = actions::installStore)
+                    PurchaseFailure.STORE_NOT_READY -> EmptyState(message, action = brandString(R.string.paywall_store_not_ready_action, storeName), onAction = actions::openStore)
+                    else -> EmptyState(message, action = brandString(R.string.action_try_again), onAction = actions::retry)
+                }
+            }
+            StoreLoad.Offline -> EmptyState(brandString(R.string.error_offline), action = brandString(R.string.action_try_again), onAction = actions::retry)
+            StoreLoad.Failed -> EmptyState(brandString(R.string.error_generic), action = brandString(R.string.action_try_again), onAction = actions::retry)
             is StoreLoad.Ready -> {
                 val packs = load.catalogue.packsFor(item)
                 if (packs.isEmpty()) {
-                    MessagePane(Icons.Filled.ShoppingCart, brandString(R.string.paywall_empty_title), brandString(R.string.paywall_empty_body), actions::retry)
+                    EmptyState(brandString(R.string.packs_none), action = brandString(R.string.action_try_again), onAction = actions::retry)
                 } else {
-                    packs.forEach { pack -> PackRow(pack, state, number) { actions.buy(pack.key) } }
+                    Packs(packs, state, language, actions)
                 }
             }
-        }
-        StepPanel(step, storeName, actions)
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.xs, Alignment.CenterHorizontally)) {
-            if (state.catalogue?.plans?.isNotEmpty() == true) {
-                TextButton(onClick = actions::seePlans, enabled = !state.busy, modifier = Modifier.heightIn(min = Space.minTouch)) {
-                    Text(brandString(R.string.packs_or_plans))
-                }
-            }
-            TextButton(onClick = actions::restore, enabled = !state.busy, modifier = Modifier.heightIn(min = Space.minTouch)) {
-                Text(brandString(if (state.restoring) R.string.paywall_restoring else R.string.paywall_restore))
-            }
-        }
-        // The restore button's answer, under it (a snackbar would sit behind the sheet).
-        state.restoreNotice?.let { notice ->
-            Text(
-                brandString(notice.message(), storeName),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-            )
         }
     }
 }
 
 @Composable
-private fun PackRow(pack: PackOption, state: StoreUiState, number: (Int) -> String, onBuy: () -> Unit) {
-    val what = brandPlural(pack.item.quantity(), pack.quantity, number(pack.quantity))
-    val busyHere = state.busy && state.step.target == pack.key
-    val description = brandString(R.string.packs_buy_a11y, what, pack.price)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.lg))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(Radius.lg))
-            .heightIn(min = 64.dp)
-            .padding(horizontal = Space.md, vertical = Space.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
-            Text(what, style = MaterialTheme.typography.titleMedium)
-            pack.badge?.let { Badge(brandString(it.label()), it) }
-        }
-        Spacer(Modifier.width(Space.sm))
-        Button(
-            onClick = onBuy,
-            enabled = !state.busy && state.step !is PurchaseStep.Pending && state.step !is PurchaseStep.Queued,
-            modifier = Modifier.heightIn(min = Space.minTouch).semantics { contentDescription = description },
-        ) {
-            if (busyHere) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
-            } else {
-                Text(isolate(pack.price))
+private fun Packs(packs: List<PackOption>, state: StoreUiState, language: AppLanguage, actions: StoreActions) {
+    val currency = brandString(R.string.paywall_currency)
+    val storeName = brandString(R.string.store_name)
+    val chosen = packs.firstOrNull { it.key == state.selectedPack } ?: packs.startPack()
+    val prices = packs.map { pack ->
+        val price = StorePrices.display(pack.product, language, currency)
+        if (price.unit == null) isolate(price.full) else price.full
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Every price of the sheet at one size: the largest at which the widest fits its card.
+        val priceFit = packPriceFit(prices, maxWidth, PACKS_PER_ROW, PacksLayout.cardGap)
+        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(PacksLayout.cardGap)) {
+            packs.zip(prices).chunked(PACKS_PER_ROW).forEach { row ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(PacksLayout.cardGap)) {
+                    row.forEach { (pack, price) ->
+                        val what = brandPlural(pack.item.quantity(), pack.quantity, Numerals.format(pack.quantity, language))
+                        PackCard(
+                            PackChoice(
+                                id = pack.key,
+                                count = Numerals.format(pack.quantity, language),
+                                price = price,
+                                description = brandString(R.string.packs_buy_a11y, what, StorePrices.display(pack.product, language, currency).full),
+                            ),
+                            selected = pack.key == chosen?.key,
+                            onClick = { actions.selectPack(pack.key) },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            priceFit = priceFit,
+                            enabled = !state.busy,
+                        )
+                    }
+                    repeat(PACKS_PER_ROW - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
+    }
+    Spacer(Modifier.height(PacksLayout.aboveButton))
+    if (chosen != null) {
+        val price = StorePrices.display(chosen.product, language, currency)
+        val step = state.step
+        // The purchase under way keeps its button in the accent, at work.
+        val working = state.busy && step.target == chosen.key
+        // «{price} Toman’a satın al» fits a toman price only; any other is said without a suffix.
+        val label = if (StorePrices.toman(chosen.price) != null) R.string.packs_buy else R.string.packs_buy_store_price
+        PrimaryButton(
+            brandString(label, if (price.unit == null) isolate(price.full) else price.full),
+            { actions.buy(chosen.key) },
+            enabled = working || (!state.busy && step !is PurchaseStep.Pending && step !is PurchaseStep.Queued),
+            loading = working,
+        )
+    }
+    Spacer(Modifier.height(PacksLayout.underButton))
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        StatusLine(state, storeName, actions, fallback = brandString(R.string.packs_terms), plans = false)
+    }
+}
+
+/** Three pack shapes while the catalogue is read. */
+@Composable
+private fun LoadingPacks() {
+    val t = AppTheme.template
+    val loading = stringResource(R.string.ui_loading)
+    Row(
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = loading },
+        horizontalArrangement = Arrangement.spacedBy(PacksLayout.cardGap),
+    ) {
+        repeat(PACKS_PER_ROW) { Box(Modifier.weight(1f).height(PacksLayout.skeletonCard).skeleton(RoundedCornerShape(t.radii.card))) }
     }
 }
 

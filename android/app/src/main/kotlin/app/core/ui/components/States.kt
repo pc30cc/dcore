@@ -65,21 +65,6 @@ fun EmptyState(
     }
 }
 
-/**
- * The older screens' form: [icon] is no longer drawn (the templates show no
- * decorative icons); the screen jobs drop the argument.
- */
-@Composable
-fun EmptyState(
-    @Suppress("UNUSED_PARAMETER") @androidx.annotation.DrawableRes icon: Int,
-    title: String,
-    body: String,
-    modifier: Modifier = Modifier,
-    action: (@Composable () -> Unit)? = null,
-) {
-    EmptyStateLayout(title, body, modifier) { action?.invoke() }
-}
-
 @Composable
 private fun EmptyStateLayout(title: String, body: String?, modifier: Modifier, actions: @Composable () -> Unit) {
     val t = AppTheme.template
@@ -136,30 +121,6 @@ fun Modifier.skeleton(shape: Shape = RoundedCornerShape(AppTheme.template.radii.
         }
 }
 
-/** A loading list row: a circle and two bars. */
-@Composable
-fun SkeletonRow(modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().height(76.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Box(Modifier.size(54.dp).skeleton(CircleShape))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.fillMaxWidth(0.45f).height(12.dp).skeleton(CircleShape))
-            Box(Modifier.fillMaxWidth(0.75f).height(10.dp).skeleton(CircleShape))
-        }
-    }
-}
-
-/** A loading card: the card's silhouette (`--r-card`) with its name and meta bars. */
-@Composable
-fun SkeletonCard(modifier: Modifier = Modifier) {
-    val t = AppTheme.template
-    Box(modifier.skeleton(RoundedCornerShape(t.radii.card))) {
-        Column(Modifier.align(Alignment.BottomStart).padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(120.dp, 16.dp).background(t.colors.skeletonHi, CircleShape))
-            Box(Modifier.size(72.dp, 12.dp).background(t.colors.skeletonHi, CircleShape))
-        }
-    }
-}
-
 /**
  * An onboarding step's top: back at the start, «رد شو» at the end only on
  * optional steps ([skip]), and the one 4 dp progress bar under them, inside
@@ -175,7 +136,8 @@ fun StepsHeader(
     onSkip: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // The back glyph lines up with the gutter (8 dp + the 48 dp target's 12 dp); «رد شو» keeps 6 dp at the end.
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 8.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (onBack != null) {
                 AppIconButton(AppIcons.Back, stringResource(R.string.ui_back), onBack)
             } else {

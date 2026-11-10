@@ -3,8 +3,8 @@
     <!-- The call screen: the line under the name -->
     <string name="call_status_calling">Aranıyor…</string>
     <string name="call_status_ringing">Çalıyor…</string>
-    <string name="call_status_incoming_audio">Gelen sesli arama</string>
-    <string name="call_status_incoming_video">Gelen görüntülü arama</string>
+    <string name="call_status_incoming_audio">Sesli arama</string>
+    <string name="call_status_incoming_video">Görüntülü arama</string>
     <string name="call_status_connecting">Bağlanıyor…</string>
     <string name="call_status_reconnecting">Yeniden bağlanıyor…</string>
     <string name="call_status_peer_away">%1$s yeniden bağlanana kadar bekleniyor…</string>
@@ -36,29 +36,27 @@
     <string name="call_end_no_microphone">Aramalar için mikrofon gerekiyor</string>
     <string name="call_end_connection_lost">Arama koptu</string>
     <string name="call_end_failed">Arama bağlanamadı</string>
-    <string name="call_end_no_microphone_body">Telefonunun ayarlarından {appName} için mikrofona izin ver, sonra tekrar ara.</string>
+    <string name="call_end_no_microphone_body">Telefonun ayarlarından mikrofona izin ver, sonra tekrar ara.</string>
 
     <!-- The call screen: buttons -->
     <string name="call_action_answer">Yanıtla</string>
     <string name="call_action_answer_video">Görüntülü yanıtla</string>
     <string name="call_action_answer_audio">Yalnızca sesle yanıtla</string>
     <string name="call_action_answer_video_short">Görüntülü</string>
-    <string name="call_action_answer_audio_short">Sesli</string>
+    <string name="call_action_answer_audio_short">Sadece ses</string>
     <string name="call_action_decline">Reddet</string>
-    <string name="call_action_hang_up">Bitir</string>
     <string name="call_action_hang_up_full">Aramayı bitir</string>
     <string name="call_action_mute">Sessiz</string>
     <string name="call_action_unmute">Sesi aç</string>
+    <string name="call_action_mic">Mikrofon</string>
     <string name="call_action_camera">Kamera</string>
-    <string name="call_action_camera_on">Kamerayı aç</string>
-    <string name="call_action_camera_off">Kamerayı kapat</string>
-    <string name="call_action_flip">Çevir</string>
-    <string name="call_action_flip_full">Kamerayı değiştir</string>
+    <string name="call_action_flip_full">Kamerayı çevir</string>
     <string name="call_action_speaker">Hoparlör</string>
-    <string name="call_action_audio">Ses</string>
-    <string name="call_action_minimise">Aramayı küçült</string>
     <string name="call_action_done">Kapat</string>
     <string name="call_action_retry">Tekrar ara</string>
+    <string name="call_action_reply">Mesajla yanıtla</string>
+    <string name="call_action_message">Mesaj</string>
+    <string name="call_mic_off">Mikrofonun kapalı</string>
 
     <!-- Where the sound goes -->
     <string name="call_route_title">Aramayı şurada çal</string>
@@ -81,13 +79,13 @@
     <!-- Notifications -->
     <string name="call_notify_incoming_audio">Gelen sesli arama</string>
     <string name="call_notify_incoming_video">Gelen görüntülü arama</string>
-    <string name="call_notify_incoming_public">{appName} üzerinde gelen arama</string>
+    <string name="call_notify_incoming_public">Gelen arama</string>
     <string name="call_notify_missed_audio">Cevapsız sesli arama</string>
     <string name="call_notify_missed_video">Cevapsız görüntülü arama</string>
-    <string name="call_notify_missed_public">{appName} üzerinde cevapsız arama</string>
+    <string name="call_notify_missed_public">Cevapsız arama</string>
     <string name="call_notify_ongoing_audio">Sesli arama</string>
     <string name="call_notify_ongoing_video">Görüntülü arama</string>
-    <string name="call_notify_ongoing_public">{appName} üzerinde süren arama</string>
+    <string name="call_notify_ongoing_public">Süren arama</string>
 
     <!-- The chat header and the match's call settings -->
     <string name="call_header_audio">%1$s ile sesli arama</string>

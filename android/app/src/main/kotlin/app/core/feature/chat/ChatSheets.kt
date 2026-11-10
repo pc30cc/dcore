@@ -6,31 +6,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,24 +27,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.core.R
 import app.core.i18n.brandString
 import app.core.model.Catalog
 import app.core.model.MessageKind
 import app.core.model.ReportReason
 import app.core.sync.ChatMessage
+import app.core.ui.components.AppBottomSheet
+import app.core.ui.components.AppCheckbox
+import app.core.ui.components.AppDialog
+import app.core.ui.components.AppTextField
+import app.core.ui.components.PrimaryButton
+import app.core.ui.components.SheetChoiceRow
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Space
 
-/** A sheet or dialog over the thread. */
 sealed interface ChatSheet {
     data class Message(val item: ChatItem.Bubble) : ChatSheet
     data class Report(val message: ChatMessage?) : ChatSheet
@@ -92,42 +83,34 @@ internal fun ChatSheets(
                 onDismiss()
             },
         )
-        is ChatSheet.Unsend -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(brandString(R.string.chat_unsend_title)) },
-            text = { Text(brandString(R.string.chat_unsend_body)) },
-            confirmButton = {
-                TextButton(onClick = { actions.unsend(sheet.message); onDismiss() }) { Text(brandString(R.string.chat_action_unsend)) }
-            },
-            dismissButton = { TextButton(onClick = onDismiss) { Text(brandString(R.string.action_cancel)) } },
+        is ChatSheet.Unsend -> AppDialog(
+            title = brandString(R.string.chat_unsend_title),
+            body = brandString(R.string.chat_unsend_body),
+            confirm = brandString(R.string.chat_action_unsend),
+            onConfirm = { actions.unsend(sheet.message); onDismiss() },
+            dismiss = brandString(R.string.action_cancel),
+            onDismiss = onDismiss,
         )
-        ChatSheet.Block -> AlertDialog(
-            onDismissRequest = onDismiss,
-            icon = { Icon(painterResource(R.drawable.ic_chat_block), contentDescription = null) },
-            title = { Text(brandString(R.string.chat_block_title, name)) },
-            text = { Text(brandString(R.string.chat_block_body)) },
-            confirmButton = {
-                TextButton(onClick = { actions.block(); onDismiss() }) {
-                    Text(brandString(R.string.chat_block), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = onDismiss) { Text(brandString(R.string.action_cancel)) } },
+        ChatSheet.Block -> AppDialog(
+            title = brandString(R.string.chat_block_title, name),
+            body = brandString(R.string.chat_block_body),
+            confirm = brandString(R.string.chat_block),
+            onConfirm = { actions.block(); onDismiss() },
+            dismiss = brandString(R.string.action_cancel),
+            onDismiss = onDismiss,
         )
-        ChatSheet.Unmatch -> AlertDialog(
-            onDismissRequest = onDismiss,
-            icon = { Icon(painterResource(R.drawable.ic_chat_unmatch), contentDescription = null) },
-            title = { Text(brandString(R.string.chat_unmatch_title, name)) },
-            text = { Text(brandString(R.string.chat_unmatch_body)) },
-            confirmButton = {
-                TextButton(onClick = { actions.unmatch(); onDismiss() }) {
-                    Text(brandString(R.string.chat_unmatch), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = onDismiss) { Text(brandString(R.string.action_cancel)) } },
+        ChatSheet.Unmatch -> AppDialog(
+            title = brandString(R.string.chat_unmatch_title),
+            body = brandString(R.string.chat_unmatch_body),
+            confirm = brandString(R.string.chat_unmatch_confirm),
+            onConfirm = { actions.unmatch(); onDismiss() },
+            dismiss = brandString(R.string.chat_unmatch_keep),
+            onDismiss = onDismiss,
         )
     }
 }
 
+/** What can be done with one message: the quick reactions, then plain rows (no icons). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MessageSheet(
@@ -138,82 +121,83 @@ private fun MessageSheet(
     onDismiss: () -> Unit,
     onSheet: (ChatSheet) -> Unit,
 ) {
+    val t = AppTheme.template
     val message = item.message
     val copy = rememberCopy(actions)
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val live = !state.ended && !state.gone
     val text = message.body?.takeIf { it.isNotBlank() && item.unsent == null && (message.kind == MessageKind.Text || message.kind == MessageKind.LikeNote) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = Space.lg)) {
+    AppBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, bottom = SheetLayout.bottom)) {
             if (message.sent && item.unsent == null && live) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.sm),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
+                Row(Modifier.fillMaxWidth().padding(bottom = SheetLayout.reactionsBottom), horizontalArrangement = Arrangement.SpaceBetween) {
                     QUICK_REACTIONS.forEach { emoji ->
                         val selected = emoji == item.mine
                         val label = if (selected) brandString(R.string.chat_action_remove_reaction) else brandString(R.string.chat_action_react, emoji)
                         Box(
                             Modifier
-                                .size(48.dp)
+                                .size(SheetLayout.reaction)
                                 .clip(CircleShape)
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .background(if (selected) t.colors.primaryTint else t.colors.surface2)
                                 .clickable(onClickLabel = label, role = Role.Button) {
                                     actions.react(message, emoji, item.mine)
                                     onDismiss()
                                 }
                                 .semantics { contentDescription = label },
                             contentAlignment = Alignment.Center,
-                        ) { Text(emoji, fontSize = 24.sp) }
+                        ) { Text(emoji, style = t.type.h2) }
                     }
                 }
             }
-            when (message.state) {
-                app.core.cache.SendState.FAILED -> {
-                    if (message.errorCode != app.core.model.ProblemCodes.MESSAGE_REFUSED && message.errorCode != app.core.model.ProblemCodes.CONVERSATION_ENDED && live) {
-                        SheetRow(R.drawable.ic_chat_pending, brandString(R.string.chat_action_retry)) { actions.retry(message); onDismiss() }
+            val rows = buildList {
+                when (message.state) {
+                    app.core.cache.SendState.FAILED -> {
+                        if (message.errorCode != app.core.model.ProblemCodes.MESSAGE_REFUSED && message.errorCode != app.core.model.ProblemCodes.CONVERSATION_ENDED && live) {
+                            add(SheetAction(brandString(R.string.chat_action_retry)) { actions.retry(message); onDismiss() })
+                        }
+                        if (message.body != null) {
+                            add(
+                                SheetAction(brandString(R.string.chat_confirm_edit)) {
+                                    onEdit(message.body)
+                                    actions.delete(message)
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        add(SheetAction(brandString(R.string.chat_action_delete), danger = true) { actions.delete(message); onDismiss() })
                     }
-                    if (message.body != null) SheetRow(R.drawable.ic_chat_copy, brandString(R.string.chat_confirm_edit)) {
-                        onEdit(message.body)
-                        actions.delete(message)
-                        onDismiss()
+                    app.core.cache.SendState.PENDING -> add(SheetAction(brandString(R.string.chat_action_cancel_send), danger = true) { actions.delete(message); onDismiss() })
+                    app.core.cache.SendState.CONFIRM -> {
+                        add(SheetAction(brandString(R.string.chat_confirm_send)) { actions.sendAnyway(message); onDismiss() })
+                        add(SheetAction(brandString(R.string.chat_action_delete), danger = true) { actions.delete(message); onDismiss() })
                     }
-                    SheetRow(R.drawable.ic_chat_unsend, brandString(R.string.chat_action_delete), danger = true) { actions.delete(message); onDismiss() }
+                    app.core.cache.SendState.SENT -> Unit
                 }
-                app.core.cache.SendState.PENDING -> {
-                    SheetRow(R.drawable.ic_chat_unsend, brandString(R.string.chat_action_cancel_send), danger = true) { actions.delete(message); onDismiss() }
-                }
-                app.core.cache.SendState.CONFIRM -> {
-                    SheetRow(R.drawable.ic_chat_sent, brandString(R.string.chat_confirm_send)) { actions.sendAnyway(message); onDismiss() }
-                    SheetRow(R.drawable.ic_chat_unsend, brandString(R.string.chat_action_delete), danger = true) { actions.delete(message); onDismiss() }
-                }
-                app.core.cache.SendState.SENT -> Unit
+                if (text != null) add(SheetAction(brandString(R.string.chat_action_copy)) { copy(text); onDismiss() })
+                if (message.mine && message.sent && item.unsent == null && live) add(SheetAction(brandString(R.string.chat_action_unsend)) { onSheet(ChatSheet.Unsend(message)) })
+                if (!message.mine && message.sent && live) add(SheetAction(brandString(R.string.chat_action_report), danger = true) { onSheet(ChatSheet.Report(message)) })
             }
-            if (text != null) SheetRow(R.drawable.ic_chat_copy, brandString(R.string.chat_action_copy)) { copy(text); onDismiss() }
-            if (message.mine && message.sent && item.unsent == null && live) {
-                SheetRow(R.drawable.ic_chat_unsend, brandString(R.string.chat_action_unsend)) { onSheet(ChatSheet.Unsend(message)) }
-            }
-            if (!message.mine && message.sent && live) {
-                SheetRow(R.drawable.ic_chat_report, brandString(R.string.chat_action_report), danger = true) { onSheet(ChatSheet.Report(message)) }
-            }
+            rows.forEachIndexed { index, row -> SheetRow(row, divider = index > 0) }
         }
     }
 }
 
+/** One row of the message sheet. */
+private class SheetAction(val text: String, val danger: Boolean = false, val onClick: () -> Unit)
+
 @Composable
-private fun SheetRow(icon: Int, text: String, danger: Boolean = false, onClick: () -> Unit) {
-    val color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = Space.xl),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.lg),
-    ) {
-        Icon(painterResource(icon), contentDescription = null, tint = color)
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = color)
+private fun SheetRow(action: SheetAction, divider: Boolean) {
+    val t = AppTheme.template
+    Column(Modifier.fillMaxWidth()) {
+        if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(t.colors.line))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = SheetLayout.row)
+                .clickable(role = Role.Button, onClick = action.onClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(action.text, style = t.type.bodyStrong, color = if (action.danger) t.colors.error else t.colors.text)
+        }
     }
 }
 
@@ -225,13 +209,14 @@ internal fun ConfirmSendDialog(message: ChatMessage, onSend: () -> Unit, onEdit:
         "contact", "contacts", "phone", "links" -> brandString(R.string.chat_confirm_contact)
         else -> brandString(R.string.chat_confirm_generic)
     }
-    AlertDialog(
-        onDismissRequest = onEdit,
-        icon = { Icon(painterResource(R.drawable.ic_chat_error), contentDescription = null) },
-        title = { Text(brandString(R.string.chat_confirm_title)) },
-        text = { Text(body) },
-        confirmButton = { TextButton(onClick = onSend) { Text(brandString(R.string.chat_confirm_send)) } },
-        dismissButton = { TextButton(onClick = onEdit) { Text(brandString(R.string.chat_confirm_edit)) } },
+    AppDialog(
+        title = brandString(R.string.chat_confirm_title),
+        body = body,
+        confirm = brandString(R.string.chat_confirm_send),
+        onConfirm = onSend,
+        dismiss = brandString(R.string.chat_confirm_edit),
+        onDismiss = onEdit,
+        destructive = false,
     )
 }
 
@@ -250,81 +235,83 @@ fun ReportSheet(
     onSend: (ReportReason, String?, Boolean) -> Unit,
     evidenceNote: String? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val t = AppTheme.template
     var reason by rememberSaveable { mutableStateOf<String?>(null) }
     var details by rememberSaveable { mutableStateOf("") }
     var block by rememberSaveable { mutableStateOf(true) }
     val reasons = reportReasons(catalog)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    AppBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = Space.xl, vertical = Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
+                .padding(start = Space.gutter, end = Space.gutter, bottom = SheetLayout.bottom),
         ) {
-            Text(brandString(R.string.report_title, name), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-            Text(brandString(R.string.report_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(Modifier.selectableGroup()) {
-                reasons.forEach { (wire, label) ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = Space.minTouch)
-                            .selectable(selected = reason == wire, role = Role.RadioButton, onClick = { reason = wire }),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = reason == wire, onClick = null)
-                        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = Space.md))
-                    }
+            Text(brandString(R.string.report_title, name), style = t.type.h2, color = t.colors.text, modifier = Modifier.semantics { heading() })
+            Text(brandString(R.string.report_subtitle), style = t.type.bodySm, color = t.colors.text2, modifier = Modifier.padding(top = SheetLayout.lineTop))
+            Column(Modifier.padding(top = SheetLayout.listTop).selectableGroup()) {
+                reasons.forEachIndexed { index, (wire, label) ->
+                    SheetChoiceRow(label, selected = reason == wire, onClick = { reason = wire }, divider = index < reasons.lastIndex)
                 }
             }
-            OutlinedTextField(
+            AppTextField(
                 value = details,
                 onValueChange = { details = it.take(DETAILS_MAX) },
-                label = { Text(brandString(R.string.report_details_hint)) },
-                textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
-                minLines = 2,
-                maxLines = 5,
-                modifier = Modifier.fillMaxWidth(),
+                placeholder = brandString(R.string.report_details_hint),
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth().padding(top = SheetLayout.fieldTop),
             )
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = Space.minTouch)
+                    .heightIn(min = SheetLayout.row)
                     .toggleable(value = block, role = Role.Checkbox, onValueChange = { block = it }),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(SheetLayout.checkGap),
             ) {
-                Checkbox(checked = block, onCheckedChange = null)
-                Text(brandString(R.string.report_block), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = Space.md))
+                AppCheckbox(block)
+                Text(brandString(R.string.report_block), style = t.type.bodyStrong, color = t.colors.text)
             }
             Text(
                 evidenceNote ?: brandString(if (withMessage) R.string.report_with_message else R.string.report_with_recent),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = t.type.bodySm,
+                color = t.colors.text3,
             )
-            Button(
+            Spacer(Modifier.height(SheetLayout.buttonTop))
+            PrimaryButton(
+                brandString(R.string.report_send),
                 onClick = {
-                    val picked = reason ?: return@Button
-                    val value = ReportReason.entries.firstOrNull { it.wire == picked && it != ReportReason.Unknown } ?: ReportReason.Other
-                    onSend(value, details.trim().takeIf { it.isNotEmpty() }, block)
+                    reason?.let { picked ->
+                        val value = ReportReason.entries.firstOrNull { it.wire == picked && it != ReportReason.Unknown } ?: ReportReason.Other
+                        onSend(value, details.trim().takeIf { it.isNotEmpty() }, block)
+                    }
                 },
                 enabled = reason != null,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-                modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
-            ) { Text(brandString(R.string.report_send)) }
+            )
             if (reason == null) {
                 Text(
                     brandString(R.string.report_reason_required),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = t.type.caption,
+                    color = t.colors.text3,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(top = SheetLayout.lineTop),
                 )
             }
         }
     }
+}
+
+/** The chat's sheets, laid out as the design's sheets are. */
+private object SheetLayout {
+    val bottom = 30.dp
+    val reaction = 48.dp
+    val reactionsBottom = 8.dp
+    val row = 52.dp
+    val lineTop = 4.dp
+    val listTop = 8.dp
+    val fieldTop = 12.dp
+    val checkGap = 12.dp
+    val buttonTop = 16.dp
 }
 
 private const val DETAILS_MAX = 500

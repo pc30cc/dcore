@@ -41,6 +41,20 @@ class TranscriptRulesTest {
     }
 
     @Test
+    fun theReadReceiptsLinkGoesWithTheNewestOwnMessageOnceItWentOut() {
+        val c = conversation(peerReadId = "101", peerDeliveredId = "102")
+        fun offered(rows: List<app.core.sync.ChatMessage>) = offersReadReceipts(buildTranscript(rows, emptyList(), c, readReceipts = false, atTop = false, me = ME, zone = zone))
+        // 102 delivered, then 103 sent while the other phone is off: the newest one carries the link.
+        assertTrue(offered(listOf(row(103, mine = true), row(102, mine = true))))
+        assertTrue(offered(listOf(row(102, mine = true))))
+        // The newest own one failed or is still on its way: no line carries the link, so none is offered.
+        assertFalse(offered(listOf(row(104, mine = true, state = SendState.FAILED), row(102, mine = true))))
+        assertFalse(offered(listOf(row(104, mine = true, state = SendState.PENDING), row(102, mine = true))))
+        // Only their messages: nothing of the account's to read.
+        assertFalse(offered(listOf(row(105, mine = false))))
+    }
+
+    @Test
     fun theOutboxStatesShowAsTheyAreAndTheirMessagesHaveNoMark() {
         val rows = listOf(
             row(4, mine = true, state = SendState.CONFIRM, errorCode = "money"),
@@ -67,31 +81,42 @@ class TranscriptRulesTest {
     }
 
     @Test
-    fun theIntroNamesItsDayOnlyWhenTheSeparatorUnderItDoesNot() {
+    fun theMatchDaysSeparatorIsLeftToTheIntro() {
         val matched = conversation() // matched three days before today, at noon
-        fun intro(rows: List<app.core.sync.ChatMessage>) =
-            buildTranscript(rows, emptyList(), matched, readReceipts = false, atTop = true, me = ME, zone = zone).last() as ChatItem.Intro
+        fun items(rows: List<app.core.sync.ChatMessage>) =
+            buildTranscript(rows, emptyList(), matched, readReceipts = false, atTop = true, me = ME, zone = zone)
+        val matchDay = matched.createdAt.atZone(zone).toLocalDate()
 
-        // The first message the same day as the match: its separator already says which day.
-        assertFalse(intro(listOf(row(1, mine = true, at = matched.createdAt.plusSeconds(600)))).showDate)
-        // A first message on a later day: the intro says when they matched.
-        assertTrue(intro(listOf(row(1, mine = true, at = minutesAgo(1)))).showDate)
-        // Nothing written yet: no separator, so the intro carries the day.
-        assertTrue(intro(emptyList()).showDate)
+        // The first message the same day as the match: «۳ روز پیش مچ شدین» places it; no separator under the intro.
+        val sameDay = items(listOf(row(1, mine = true, at = matched.createdAt.plusSeconds(600))))
+        assertEquals(listOf("local-1", "intro"), sameDay.map { it.key })
+        // A first message on a later day keeps its separator.
+        val later = items(listOf(row(1, mine = true, at = minutesAgo(1))))
+        assertEquals(listOf("local-1", "day:${LocalDate.now(zone)}", "intro"), later.map { it.key })
+        assertFalse(later.any { it is ChatItem.Day && it.date == matchDay })
+        // Nothing written yet: the intro alone.
+        assertEquals(listOf("intro"), items(emptyList()).map { it.key })
+        // Not at the top of the history: no intro, and the separator stays.
+        val notTop = buildTranscript(listOf(row(1, mine = true, at = matched.createdAt.plusSeconds(600))), emptyList(), matched, readReceipts = false, atTop = false, me = ME, zone = zone)
+        assertEquals(listOf("local-1", "day:$matchDay"), notTop.map { it.key })
     }
 
     @Test
-    fun theIntroSuggestsHowToStartOnlyUntilTheFirstMessage() {
-        val matched = conversation()
-        fun intro(rows: List<app.core.sync.ChatMessage>, marks: List<app.core.sync.ChatMessage> = emptyList()) =
-            buildTranscript(rows, marks, matched, readReceipts = false, atTop = true, me = ME, zone = zone).last() as ChatItem.Intro
-        assertTrue("an empty thread", intro(emptyList()).hint)
-        assertFalse("after the first message, sent or received", intro(listOf(row(1, mine = true, at = minutesAgo(1)))).hint)
-        assertFalse(intro(listOf(row(1, mine = false, at = minutesAgo(1)))).hint)
-        assertFalse("a call line is a start too", intro(listOf(row(2, mine = true, kind = MessageKind.Call, body = null, call = ChatTestData.callLine(2, ME, CallOutcome.Missed)))).hint)
-        // Marks are not messages: a reaction or an unsend alone leaves the thread unstarted.
-        val marksOnly = listOf(row(3, mine = true, kind = MessageKind.Reaction, body = "❤️", refId = 9), row(4, mine = true, kind = MessageKind.Unsend, refId = 9))
-        assertTrue(intro(marksOnly).hint)
+    fun aThreadMatchedTodayHasOneSystemLine() {
+        // «امروز مچ شدین» and nothing else above today's first message: no «امروز» separator under it.
+        val matchedNow = conversation().copy(createdAt = minutesAgo(5))
+        val items = buildTranscript(listOf(row(1, mine = true, at = minutesAgo(1))), emptyList(), matchedNow, readReceipts = false, atTop = true, me = ME, zone = zone)
+        assertEquals(listOf("local-1", "intro"), items.map { it.key })
+        assertEquals(1, items.count { it is ChatItem.Day || it is ChatItem.Intro })
+    }
+
+    @Test
+    fun aThreadBegunByARequestKeepsItsFirstDate() {
+        // «گفتگو با یه درخواست شروع شد» names no day: the separator under it stays.
+        val requested = conversation(source = app.core.model.ConversationSource.Request)
+        val matchDay = requested.createdAt.atZone(zone).toLocalDate()
+        val items = buildTranscript(listOf(row(1, mine = true, at = requested.createdAt.plusSeconds(600))), emptyList(), requested, readReceipts = false, atTop = true, me = ME, zone = zone)
+        assertEquals(listOf("local-1", "day:$matchDay", "intro"), items.map { it.key })
     }
 
     @Test
@@ -111,6 +136,13 @@ class TranscriptRulesTest {
         assertFalse("another person: a new run", byKey.getValue(3).joinsOlder)
         assertFalse("a call line breaks a run", byKey.getValue(2).joinsOlder)
         assertEquals(1, items.count { it is ChatItem.Call })
+    }
+
+    @Test
+    fun theTypingDotsRestAtTheDesignsFadeAndTheDarkestMovesAlong() {
+        assertEquals(listOf(1f, 0.7f, 0.45f), (0..2).map { typingAlpha(it, 0f) })
+        assertEquals(listOf(0.45f, 1f, 0.7f), (0..2).map { typingAlpha(it, 1f) })
+        assertEquals(0.85f, typingAlpha(1, 0.5f), 0.001f)
     }
 
     @Test

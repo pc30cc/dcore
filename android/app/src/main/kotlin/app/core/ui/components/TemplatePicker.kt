@@ -5,8 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,10 +41,10 @@ import app.core.ui.theme.Templates
  * offered template this build ships, in the server's order, each a 58 dp
  * swatch drawn from that template's own tokens (page, two text lines, the
  * primary button, the like disc; «پیش‌فرض» is the two split on a
- * diagonal) and under it the radio with the name beside it (below it when
- * it does not fit there). When a name does not fit its column on one line
- * (a long word, a large font scale), the options go one a row instead, the
- * swatch at the start: a name is never cut short or broken inside a word.
+ * diagonal) and under it the radio with the name beside it. When a name
+ * and its radio do not fit their column on one line (a long word, a large
+ * font scale), the options go one a row instead, the swatch at the start: a
+ * name is never cut short, broken inside a word or pushed under its radio.
  *
  * The checked option is the stored [choice], never the template being
  * drawn: a person on `default` sees «پیش‌فرض» checked whichever template
@@ -76,11 +74,13 @@ fun TemplatePicker(
         val names = options.map { stringResource(templateName(it)) }
         val measurer = rememberTextMeasurer()
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val gap = 12.dp
+            val gap = PICKER_GAP
             val column = (maxWidth - gap * (options.size - 1)) / options.size
-            val columnPx = with(LocalDensity.current) { column.toPx() }
-            // Side by side while every name fits its column on one line; else one option a row (a long word, a large font scale).
-            val sideBySide = names.all { measurer.measure(it, t.type.bodyStrong, maxLines = 1, softWrap = false).size.width <= columnPx }
+            val density = LocalDensity.current
+            val columnPx = with(density) { column.toPx() }
+            val radioPx = with(density) { (RADIO + RADIO_GAP).toPx() }
+            // Side by side while every name fits beside its radio on one line; else one option a row (a long word, a large font scale).
+            val sideBySide = names.all { radioPx + measurer.measure(it, t.type.bodyStrong, maxLines = 1, softWrap = false).size.width <= columnPx }
             if (sideBySide) {
                 Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                     options.forEachIndexed { i, id ->
@@ -100,7 +100,7 @@ fun TemplatePicker(
 
 /** The swatch in its frame: a 2 dp `--primary-ring` when selected, a 1 dp `--line-strong` edge otherwise. */
 @Composable
-private fun FramedSwatch(id: String, selected: Boolean, modifier: Modifier) {
+private fun FramedSwatch(id: String, selected: Boolean, modifier: Modifier, swatchHeight: androidx.compose.ui.unit.Dp = SWATCH_HEIGHT) {
     val t = AppTheme.template
     val outer = RoundedCornerShape(t.radii.md)
     Column(
@@ -108,12 +108,11 @@ private fun FramedSwatch(id: String, selected: Boolean, modifier: Modifier) {
             .then(if (selected) Modifier.border(2.dp, t.paints.primaryRing, outer) else Modifier.border(1.dp, t.colors.lineStrong, outer))
             .padding(2.dp),
     ) {
-        TemplateSwatch(id, Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(t.radii.sm)))
+        TemplateSwatch(id, Modifier.fillMaxWidth().height(swatchHeight).clip(RoundedCornerShape(t.radii.sm)))
     }
 }
 
-/** One option in a column: the swatch, and under it the radio with the name beside it, or below it when it does not fit there. */
-@OptIn(ExperimentalLayoutApi::class)
+/** One option in a column: the swatch, and under it the radio with the name beside it (the picker checked that they fit). */
 @Composable
 private fun TemplateOption(id: String, name: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val t = AppTheme.template
@@ -124,18 +123,18 @@ private fun TemplateOption(id: String, name: String, selected: Boolean, onClick:
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         FramedSwatch(id, selected, Modifier.fillMaxWidth())
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            AppRadio(selected, size = 20.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(RADIO_GAP), verticalAlignment = Alignment.CenterVertically) {
+            AppRadio(selected, size = RADIO)
             Text(name, style = t.type.bodyStrong, color = t.colors.text, maxLines = 1, softWrap = false)
         }
     }
 }
 
-/** One option a row (when the names do not fit side by side): the swatch at the start, then the radio and the name, which may wrap. */
+/**
+ * One option a row (when the names do not fit side by side): the radio at
+ * the start, as every choice row has it, the name (which may wrap), and a
+ * smaller swatch at the end, so the group stays short.
+ */
 @Composable
 private fun TemplateOptionRow(id: String, name: String, selected: Boolean, onClick: () -> Unit) {
     val t = AppTheme.template
@@ -147,9 +146,9 @@ private fun TemplateOptionRow(id: String, name: String, selected: Boolean, onCli
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FramedSwatch(id, selected, Modifier.width(96.dp))
-        AppRadio(selected, size = 20.dp)
+        AppRadio(selected, size = RADIO)
         Text(name, style = t.type.bodyStrong, color = t.colors.text, modifier = Modifier.weight(1f))
+        FramedSwatch(id, selected, Modifier.width(ROW_SWATCH), swatchHeight = ROW_SWATCH_HEIGHT)
     }
 }
 
@@ -173,8 +172,8 @@ fun TemplateSwatch(id: String, modifier: Modifier = Modifier) {
                 miniature(white)
                 val split = Path().apply {
                     moveTo(0f, 0f)
-                    lineTo(size.width * 0.58f, 0f)
-                    lineTo(size.width * 0.42f, size.height)
+                    lineTo(size.width * 0.62f, 0f)
+                    lineTo(size.width * 0.38f, size.height)
                     lineTo(0f, size.height)
                     close()
                 }
@@ -184,28 +183,41 @@ fun TemplateSwatch(id: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** The page, two text lines at the top end, the primary button at the bottom end and the like disc at the bottom start, physical (like the picture). */
+/**
+ * The page, two text lines at the top end, a hairline across, the like disc
+ * at the bottom start and the primary button at the bottom end, physical
+ * (like the picture, `assets/templates/<id>.png`: its 58-unit height, the
+ * widths as parts of its width).
+ */
 private fun DrawScope.miniature(t: AppTemplate) {
     val w = size.width
     val h = size.height
     val u = h / 58f
     drawRect(t.colors.bg)
-    val line = CornerRadius(2f * u)
-    drawRoundRect(t.colors.text, topLeft = Offset(w - 12f * u - w * 0.42f, 12f * u), size = Size(w * 0.42f, 4f * u), cornerRadius = line)
-    drawRoundRect(t.colors.text2, topLeft = Offset(w - 12f * u - w * 0.26f, 21f * u), size = Size(w * 0.26f, 4f * u), cornerRadius = line)
-    val buttonW = w * 0.40f
-    val buttonH = 12f * u
+    val end = w * 0.842f
+    drawRoundRect(t.colors.text, topLeft = Offset(w * 0.386f, 12f * u), size = Size(end - w * 0.386f, 5f * u), cornerRadius = CornerRadius(2.5f * u))
+    drawRoundRect(t.colors.text2, topLeft = Offset(w * 0.545f, 22f * u), size = Size(end - w * 0.545f, 4f * u), cornerRadius = CornerRadius(2f * u))
+    drawRect(t.colors.line, topLeft = Offset(w * 0.119f, 32.5f * u), size = Size(w * 0.762f, maxOf(1f, u / 3f)))
+    val buttonLeft = w * 0.413f
+    val buttonTop = 39f * u
+    val buttonH = 12.7f * u
     val buttonR = minOf(t.radii.button.toPx(), buttonH / 2f)
     // Each fill in its own box, so a gradient spans the button and the disc, not the whole swatch.
-    val buttonLeft = w - 12f * u - buttonW
-    val buttonTop = h - 12f * u - buttonH
-    inset(left = buttonLeft, top = buttonTop, right = w - buttonLeft - buttonW, bottom = h - buttonTop - buttonH) {
+    inset(left = buttonLeft, top = buttonTop, right = w - end, bottom = h - buttonTop - buttonH) {
         drawRoundRect(t.paints.primaryFill, cornerRadius = CornerRadius(buttonR))
     }
-    val disc = 6f * u
-    val discX = 12f * u + disc
-    val discY = h - 12f * u - buttonH / 2f
+    val disc = 6.5f * u
+    val discX = w * 0.223f
+    val discY = buttonTop + buttonH / 2f
     inset(left = discX - disc, top = discY - disc, right = w - discX - disc, bottom = h - discY - disc) {
         drawCircle(t.paints.likeFill)
     }
 }
+
+private val PICKER_GAP = 12.dp
+private val RADIO = 20.dp
+private val RADIO_GAP = 8.dp
+/** A stacked row's swatch: smaller than the columns' (58 dp high), the design's proportions kept. */
+private val ROW_SWATCH = 64.dp
+private val ROW_SWATCH_HEIGHT = 40.dp
+private val SWATCH_HEIGHT = 58.dp

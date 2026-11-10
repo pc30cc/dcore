@@ -5,7 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.core.common.FakeClock
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
+import app.core.model.PlanKey
 import app.core.model.PurchaseKind
 import app.core.net.ApiError
 import app.core.net.Fetched
@@ -86,7 +86,7 @@ class PurchasesTest {
         assertEquals(PurchaseStep.Done("sub.plus:m1", PurchaseKind.Subscription), end)
         assertEquals(listOf("sub.plus" to "k7wq2m4zx5p3a"), r.billing.sheets)
         assertEquals(listOf("tok-sub.plus"), r.api.submitted)
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertTrue("nothing left waiting", r.outbox.all().isEmpty())
         assertEquals("active", r.known.state("tok-sub.plus"))
         assertEquals(0, r.purchases.waiting.value)
@@ -99,7 +99,7 @@ class PurchasesTest {
         val catalogue = r.catalogue()
         assertEquals(PurchaseStep.Idle, r.purchases.buy(activity, catalogue, PurchaseTarget.Subscription(catalogue.option("sub.plus:m1")!!)))
         assertTrue(r.api.submitted.isEmpty())
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
     }
 
     @Test
@@ -128,7 +128,7 @@ class PurchasesTest {
         val end = r.purchases.buy(activity, catalogue, PurchaseTarget.Subscription(catalogue.option("sub.plus:m3")!!))
 
         assertEquals(PurchaseStep.Pending("sub.plus:m3"), end)
-        assertEquals("nothing granted", Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals("nothing granted", PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
         assertEquals(KnownPurchases.PENDING, r.known.state("tok-pending"))
 
         // The cash is paid: Play reports the purchase outside the flow; it goes to the server once.
@@ -136,7 +136,7 @@ class PurchasesTest {
         r.billing.updates.emit(r.billing.purchase("sub.plus", "tok-pending"))
         runCurrent()
         assertEquals(listOf("tok-pending", "tok-pending"), r.api.submitted)
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertEquals("the paywall's pending step finishes", PurchaseStep.Done("sub.plus:m3", PurchaseKind.Subscription), r.purchases.step.value)
     }
 
@@ -151,7 +151,7 @@ class PurchasesTest {
         assertEquals(1, r.outbox.all().size)
         assertEquals(1, r.purchases.waiting.value)
         assertEquals("a background job with a network constraint was asked for", 1, r.backgroundRetries)
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
 
         // Still offline at the next try: it stays, with a longer wait.
         r.clock.advance(Purchases.backoff(0))
@@ -161,7 +161,7 @@ class PurchasesTest {
         // The network is back.
         r.api.offline = false
         assertEquals(0, r.purchases.flushNow())
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertEquals("the queued step completes", PurchaseStep.Done("sub.plus:m1", PurchaseKind.Subscription), r.purchases.step.value)
         assertEquals("credited once", 1, r.api.granted.size)
 
@@ -185,7 +185,7 @@ class PurchasesTest {
         val second = Rig(Store.PLAY, backgroundScope, secrets)
         assertEquals(0, second.purchases.flushNow())
         assertEquals(listOf("tok-sub.plus"), second.api.submitted)
-        assertEquals(Plan.Plus, second.entitlements.entitlements.value?.plan)
+        assertEquals("plus", second.entitlements.entitlements.value?.plan)
     }
 
     @Test
@@ -218,7 +218,7 @@ class PurchasesTest {
         r.api.verdicts["tok-cons.superlike.5"] = "not_found"
         assertEquals(PurchaseStep.Queued("cons.superlike.5"), r.purchases.buy(activity, catalogue, PurchaseTarget.Pack(catalogue.pack("cons.superlike.5")!!)))
         assertEquals(3, r.outbox.all().size)
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
     }
 
     @Test
@@ -237,7 +237,7 @@ class PurchasesTest {
         )
         assertTrue(r.outbox.all().isEmpty())
         assertFalse(r.known.needsSending("tok-sub.plus", StorePurchaseState.PURCHASED))
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
     }
 
     @Test
@@ -298,12 +298,12 @@ class PurchasesTest {
     @Test
     fun theRestoreButtonSendsEveryOwnedTokenAndNeverTakesAnythingAway() = runTest {
         val r = rig()
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play)
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play)
         r.entitlements.apply(r.api.entitlements)
         // The store's list came back empty (it happens): nothing is sent, nothing removed; the server is read again.
         assertEquals(RestoreOutcome.NothingToRestore, r.purchases.restore(manual = true))
         assertTrue(r.api.restored.isEmpty())
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
 
         r.billing.owned += r.billing.purchase("sub.plus", "tok-a") to ProductType.SUBSCRIPTION
         r.known.put("tok-a", "active")
@@ -325,7 +325,7 @@ class PurchasesTest {
     @Test
     fun anUpgradeOnPlayReplacesTheOwnedSubscriptionAndBazaarSellsNoSecondOne() = runTest {
         val play = rig()
-        play.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play))
+        play.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play))
         play.billing.owned += play.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
         val catalogue = play.catalogue()
         play.purchases.buy(activity, catalogue, PurchaseTarget.Subscription(catalogue.option("sub.premium:m1")!!))
@@ -336,7 +336,7 @@ class PurchasesTest {
         assertFalse(play.purchases.subscriptionLocked(play.entitlements.entitlements.value))
 
         val bazaar = rig(Store.BAZAAR)
-        bazaar.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar)
+        bazaar.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Bazaar)
         bazaar.entitlements.apply(bazaar.api.entitlements)
         assertTrue(bazaar.purchases.subscriptionLocked(bazaar.entitlements.entitlements.value))
         val bc = bazaar.catalogue()
@@ -348,7 +348,7 @@ class PurchasesTest {
 
         // A plan given by the admin panel is not a store subscription: buying one is a plain purchase.
         val granted = rig(Store.BAZAAR)
-        granted.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Grant))
+        granted.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Grant))
         assertFalse(granted.purchases.subscriptionLocked(granted.entitlements.entitlements.value))
         val gc = granted.catalogue()
         granted.purchases.buy(activity, gc, PurchaseTarget.Subscription(gc.option("sub.premium.1m")!!))
@@ -412,7 +412,7 @@ class PurchasesTest {
         r.api.offline = false
         assertEquals(0, broken.flushNow())
         assertEquals(listOf("tok-sub.plus", "tok-sub.plus"), r.api.submitted)
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
     }
 
     @Test
@@ -433,7 +433,7 @@ class PurchasesTest {
     @Test
     fun aPlanChangeReplacesOnlyThisAccountsSubscriptionOfItsCurrentPlan() = runTest {
         val r = rig()
-        r.entitlements.apply(Entitlements(plan = Plan.Premium, source = EntitlementSource.Play))
+        r.entitlements.apply(Entitlements(plan = "premium", source = EntitlementSource.Play))
         // One phone, one Google account, two accounts of the app: A's Plus, this account's own
         // cancelled Plus that has not ended yet (bought later), and this account's Premium.
         r.billing.owned += r.billing.purchase("sub.plus", "tok-a-plus", accountRef = "otheraccount2") to ProductType.SUBSCRIPTION
@@ -449,7 +449,7 @@ class PurchasesTest {
     @Test
     fun noSubscriptionOfThisAccountsPlanOnTheStoreAccountReplacesNothing() = runTest {
         val r = rig()
-        r.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play))
+        r.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play))
         // Only another account's Plus, and this account's own Premium on hold: neither backs this Plus.
         r.billing.owned += r.billing.purchase("sub.plus", "tok-a-plus", accountRef = "otheraccount2") to ProductType.SUBSCRIPTION
         r.billing.owned += r.billing.purchase("sub.plus", "tok-no-ref", accountRef = null) to ProductType.SUBSCRIPTION
@@ -462,7 +462,7 @@ class PurchasesTest {
     @Test
     fun anotherPeriodOfTheSamePlanIsChargedInFullNotProrated() = runTest {
         val r = rig()
-        r.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play))
+        r.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play))
         r.billing.owned += r.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
         val catalogue = r.catalogue()
         r.purchases.buy(activity, catalogue, PurchaseTarget.Subscription(catalogue.option("sub.plus:m3")!!))
@@ -487,7 +487,7 @@ class PurchasesTest {
         assertEquals(1, done.foreign)
         assertEquals(2, done.later)
         assertEquals(2, done.inactive)
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
 
         r.api.verdicts["tok-hold"] = "grace"
         val grace = r.purchases.restore(manual = true) as RestoreOutcome.Done
@@ -501,7 +501,7 @@ class PurchasesTest {
         val catalogue = r.catalogue()
         val end = r.purchases.buy(activity, catalogue, PurchaseTarget.Subscription(catalogue.option("sub.plus:m1")!!))
         assertEquals(PurchaseStep.Failed("sub.plus:m1", PurchaseFailure.NOT_ACTIVE), end)
-        assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan ?: Plan.Free)
+        assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan ?: PlanKey.FREE)
         assertTrue("settled, not retried", r.outbox.all().isEmpty())
         assertEquals("on_hold", r.known.state("tok-sub.plus"))
     }
@@ -551,7 +551,7 @@ class PurchasesTest {
         val r = rig()
         // Plus is also sold weekly, dearer per day than Premium monthly.
         r.api.catalogue = r.api.catalogue.copy(
-            subscriptions = r.api.catalogue.subscriptions + app.core.model.SubscriptionProduct("sub.plus", "w1", Plan.Plus, app.core.model.BillingPeriod.Week, null, 10),
+            subscriptions = r.api.catalogue.subscriptions + app.core.model.SubscriptionProduct("sub.plus", "w1", "plus", app.core.model.BillingPeriod.Week, null, 10),
         )
         r.billing.products += app.core.store.StoreProduct("sub.plus", ProductType.SUBSCRIPTION, "Plus", "", "€2.99", 2_990_000, "EUR", offerToken = "o-w1", basePlanId = "w1", billingPeriod = "P1W")
         r.billing.owned += r.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
@@ -560,12 +560,12 @@ class PurchasesTest {
         val premium = PurchaseTarget.Subscription(catalogue.option("sub.premium:m1")!!)
 
         // The server says monthly Plus: Premium monthly costs more per day than that, so the difference is charged now.
-        r.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1"))
+        r.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1"))
         r.purchases.buy(activity, catalogue, premium)
         assertEquals(app.core.store.PlanChange("tok-plus", PlanChangeKind.CHARGE_DIFFERENCE), r.billing.changes.last())
 
         // A server that does not name it: the dearest Plus base plan (weekly) is the bar, and the time left is credited.
-        r.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play))
+        r.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play))
         r.purchases.buy(activity, catalogue, premium)
         assertEquals(app.core.store.PlanChange("tok-plus", PlanChangeKind.CREDIT_TIME), r.billing.changes.last())
     }
@@ -573,7 +573,7 @@ class PurchasesTest {
     @Test
     fun thePeriodThePersonIsOnIsNotSoldAgain() = runTest {
         val play = rig()
-        play.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
+        play.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
         play.entitlements.apply(play.api.entitlements)
         play.billing.owned += play.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
         val pc = play.catalogue()
@@ -584,7 +584,7 @@ class PurchasesTest {
         assertEquals(app.core.store.PlanChange("tok-plus", PlanChangeKind.CHARGE_FULL), play.billing.changes.single())
 
         val bazaar = rig(Store.BAZAAR)
-        bazaar.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
+        bazaar.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
         bazaar.entitlements.apply(bazaar.api.entitlements)
         bazaar.billing.owned += bazaar.billing.purchase("sub.plus.1m", "tok-plus") to ProductType.SUBSCRIPTION
         val bc = bazaar.catalogue()
@@ -602,12 +602,12 @@ class PurchasesTest {
             val r = rig(store)
             val product = if (store == Store.PLAY) "sub.plus" else "sub.plus.1m"
             val source = if (store == Store.PLAY) EntitlementSource.Play else EntitlementSource.Bazaar
-            r.api.entitlements = Entitlements(plan = Plan.Plus, source = source, productId = product, basePlanId = "m1".takeIf { store == Store.PLAY })
+            r.api.entitlements = Entitlements(plan = "plus", source = source, productId = product, basePlanId = "m1".takeIf { store == Store.PLAY })
             r.entitlements.apply(r.api.entitlements)
             // The store account on this phone holds only another account's Plus.
             r.billing.owned += r.billing.purchase(product, "tok-theirs", accountRef = "otheraccount2") to ProductType.SUBSCRIPTION
             val catalogue = r.catalogue()
-            val premium = catalogue.plan(Plan.Premium)!!.options.first()
+            val premium = catalogue.plan("premium")!!.options.first()
             assertTrue(r.purchases.heldElsewhere(r.entitlements.entitlements.value, r.purchases.ownedSubscriptions(), catalogue.billingRef))
             assertEquals(
                 "$store: no second subscription",
@@ -625,7 +625,7 @@ class PurchasesTest {
 
         // A server that names no product: as before, nothing is known to be elsewhere (Play sells a plain one).
         val older = rig()
-        older.entitlements.apply(Entitlements(plan = Plan.Plus, source = EntitlementSource.Play))
+        older.entitlements.apply(Entitlements(plan = "plus", source = EntitlementSource.Play))
         val oc = older.catalogue()
         assertFalse(older.purchases.heldElsewhere(older.entitlements.entitlements.value, older.purchases.ownedSubscriptions(), oc.billingRef))
         older.purchases.buy(activity, oc, PurchaseTarget.Subscription(oc.option("sub.premium:m1")!!))
@@ -711,7 +711,7 @@ class PurchasesTest {
         // Plus from a token the server knows, with no reference to replace it by: Play says "already owned".
         r.billing.owned += r.billing.purchase("sub.plus", "tok-plus", accountRef = null) to ProductType.SUBSCRIPTION
         r.api.granted += "tok-plus"
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play)
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play)
         r.entitlements.apply(r.api.entitlements)
         r.billing.next = { p -> PurchaseOutcome.AlreadyOwned(p.id) }
         assertEquals(
@@ -725,7 +725,7 @@ class PurchasesTest {
         val oc = older.catalogue()
         older.billing.owned += older.billing.purchase("sub.plus", "tok-plus", accountRef = null) to ProductType.SUBSCRIPTION
         older.api.granted += "tok-plus"
-        older.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play)
+        older.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play)
         older.entitlements.apply(older.api.entitlements)
         older.billing.next = { p -> PurchaseOutcome.AlreadyOwned(p.id) }
         assertEquals(
@@ -751,7 +751,7 @@ class PurchasesTest {
         runCurrent()
         assertEquals("the known subscription token, sent again; no pack", listOf(listOf("tok-plus")), r.api.restored)
         assertEquals("active", r.known.state("tok-plus"))
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertEquals("no purchase step: nothing is shown on the paywall", PurchaseStep.Idle, r.purchases.step.value)
     }
 
@@ -773,7 +773,7 @@ class PurchasesTest {
         backgroundScope.launch { r.purchases.subscriptionBack.collect { said += it } }
         r.billing.owned += r.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
         r.known.put("tok-plus", "active")
-        val plus = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play)
+        val plus = Entitlements(plan = "plus", source = EntitlementSource.Play)
         r.api.granted += "tok-plus"
 
         // In grace: the plan was shown all along. Its answer is applied, nothing said.
@@ -815,7 +815,7 @@ class PurchasesTest {
         r.billing.owned += r.billing.purchase("sub.plus", "tok-plus") to ProductType.SUBSCRIPTION
         r.purchases.resyncSubscriptions()
         runCurrent()
-        assertEquals(Plan.Plus, r.entitlements.entitlements.value?.plan)
+        assertEquals("plus", r.entitlements.entitlements.value?.plan)
         assertEquals("what the app showed before is unknown: silent", emptyList<Unit>(), said)
     }
 
@@ -831,7 +831,7 @@ class PurchasesTest {
             val r = rig(store)
             val product = if (store == Store.PLAY) "sub.plus" else "sub.plus.1m"
             r.api.entitlements = Entitlements(
-                plan = Plan.Plus,
+                plan = "plus",
                 source = if (store == Store.PLAY) EntitlementSource.Play else EntitlementSource.Bazaar,
                 productId = product,
                 basePlanId = "m1".takeIf { store == Store.PLAY },
@@ -854,7 +854,7 @@ class PurchasesTest {
             assertEquals("$store: every period reaches the store's sheet", keys.map { catalogue.option(it)!!.productId }, r.billing.sheets.map { it.first })
             assertTrue("$store: nothing replaced", r.billing.changes.all { it == null })
             assertEquals("$store: read once, before the first refusal", reads + 1, r.entitlementReads)
-            assertEquals(Plan.Free, r.entitlements.entitlements.value?.plan)
+            assertEquals(PlanKey.FREE, r.entitlements.entitlements.value?.plan)
         }
     }
 
@@ -867,7 +867,7 @@ class PurchasesTest {
     fun aCopyPastItsEndHoldsNothingWhenItCannotBeReadAgain() = runTest {
         val r = rig()
         val ended = Entitlements(
-            plan = Plan.Plus,
+            plan = "plus",
             source = EntitlementSource.Play,
             productId = "sub.plus",
             basePlanId = "m1",
@@ -904,7 +904,7 @@ class PurchasesTest {
     @Test
     fun theStoreIsAskedAgainBeforeSayingThePlanIsOnAnotherAccount() = runTest {
         val r = rig()
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Play, productId = "sub.plus", basePlanId = "m1")
         r.entitlements.apply(r.api.entitlements)
         val catalogue = r.catalogue()
         val first = r.billing.ownedQueries
@@ -925,7 +925,7 @@ class PurchasesTest {
     @Test
     fun anEmptyBazaarListIsNotAnotherAccount() = runTest {
         val r = rig(Store.BAZAAR)
-        r.api.entitlements = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
+        r.api.entitlements = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, productId = "sub.plus.1m")
         r.entitlements.apply(r.api.entitlements)
         val catalogue = r.catalogue()
         assertFalse(r.purchases.heldElsewhere(r.entitlements.entitlements.value, r.purchases.ownedSubscriptions(), catalogue.billingRef))

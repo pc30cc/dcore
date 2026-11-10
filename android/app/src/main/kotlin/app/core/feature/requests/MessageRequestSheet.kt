@@ -3,22 +3,12 @@ package app.core.feature.requests
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,18 +22,23 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import app.core.LocalAppGraph
 import app.core.R
 import app.core.feature.card.isolate
 import app.core.feature.card.rememberNumbers
 import app.core.feature.card.rememberTimeOfDay
-import app.core.feature.chat.PeerAvatar
 import app.core.i18n.brandString
+import app.core.media.PhotoImage
 import app.core.model.Id
 import app.core.model.ProfileCard
 import app.core.sync.RequestSendResult
+import app.core.ui.components.AvatarFocus
+import app.core.ui.components.AppBottomSheet
+import app.core.ui.components.AppTextField
+import app.core.ui.components.Avatar
+import app.core.ui.components.PrimaryButton
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Space
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -58,7 +53,6 @@ import java.util.UUID
 fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((Id) -> Unit)? = null) {
     val graph = LocalAppGraph.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val max = graph.config.config.value?.limits?.messageMax ?: BODY_MAX
     var text by rememberSaveable { mutableStateOf("") }
     var clientId by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
@@ -67,19 +61,24 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
     val name = isolate(card.name)
     val time = rememberTimeOfDay()
     val number = rememberNumbers()
+    val t = AppTheme.template
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    AppBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = Space.xl, vertical = Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.md),
+            Modifier.fillMaxWidth().imePadding().padding(start = Space.gutter, end = Space.gutter, bottom = RequestSheetLayout.bottom),
+            verticalArrangement = Arrangement.spacedBy(RequestSheetLayout.gap),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                PeerAvatar(card.photos.firstOrNull(), size = 48.dp)
-                Text(brandString(R.string.request_send_title, name), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(RequestSheetLayout.avatarGap)) {
+                Avatar(RequestSheetLayout.avatar, photo = card.photos.firstOrNull()?.let { photo -> { PhotoImage(photo, null, Modifier.fillMaxSize(), alignment = AvatarFocus) } })
+                Text(
+                    brandString(R.string.request_send_title, name),
+                    style = t.type.h2,
+                    color = t.colors.text,
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                )
             }
-            Text(brandString(R.string.request_send_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val sent = result is RequestSendResult.Sent
-            OutlinedTextField(
+            AppTextField(
                 value = text,
                 onValueChange = {
                     if (it != text) {
@@ -90,15 +89,9 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                     }
                 },
                 enabled = !sending && !sent,
-                placeholder = { Text(brandString(R.string.request_send_hint)) },
-                textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
-                minLines = 3,
-                maxLines = 6,
-                supportingText = if (text.length > max - 100) {
-                    { Text(brandString(R.string.chat_counter, number(text.length), number(max))) }
-                } else {
-                    null
-                },
+                placeholder = brandString(R.string.request_send_hint),
+                singleLine = false,
+                helper = if (text.length > max - COUNTER_FROM) brandString(R.string.chat_counter, number(text.length), number(max)) else null,
                 modifier = Modifier.fillMaxWidth(),
             )
             result?.let { r ->
@@ -114,8 +107,8 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                 }
                 Text(
                     message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (r is RequestSendResult.Sent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    style = t.type.bodySm,
+                    color = if (r is RequestSendResult.Sent) t.colors.text2 else t.colors.error,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
@@ -123,15 +116,16 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
             if (outOfQuota?.canBuy == true) {
                 // Out of today's requests: more come in packs.
                 val paywall = app.core.feature.paywall.LocalPaywall.current
-                Button(
+                PrimaryButton(
+                    brandString(R.string.request_quota_buy),
                     onClick = { paywall.packs(app.core.model.WalletItem.Dm, app.core.feature.paywall.PaywallEntry.MESSAGES) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
-                ) { Text(brandString(R.string.request_quota_buy)) }
+                )
             }
             if (result is RequestSendResult.Sent || result == RequestSendResult.AlreadySent || result == RequestSendResult.Unavailable) {
-                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch)) { Text(brandString(R.string.action_close)) }
+                PrimaryButton(brandString(R.string.action_close), onClick = onDismiss)
             } else if (result == RequestSendResult.AlreadyMatched && onOpenChat != null) {
-                Button(
+                PrimaryButton(
+                    brandString(R.string.request_open_chat),
                     onClick = {
                         scope.launch {
                             val who = graph.chat.sync.account.value
@@ -140,10 +134,10 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                             id?.let(onOpenChat)
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
-                ) { Text(brandString(R.string.request_open_chat)) }
+                )
             } else {
-                Button(
+                PrimaryButton(
+                    brandString(R.string.request_send),
                     onClick = {
                         sending = true
                         scope.launch {
@@ -152,14 +146,23 @@ fun MessageRequestSheet(card: ProfileCard, onDismiss: () -> Unit, onOpenChat: ((
                         }
                     },
                     enabled = text.isNotBlank() && !sending,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.minTouch),
-                ) {
-                    if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(brandString(R.string.request_send))
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(brandString(R.string.action_cancel)) }
+                    loading = sending,
+                )
+                // No cancel button: the sheet closes by dragging it down or tapping outside it.
             }
         }
     }
 }
 
 private const val BODY_MAX = 2_000
+
+/** The counter shows in the last stretch before the limit. */
+private const val COUNTER_FROM = 100
+
+/** The sheet's layout (the same rhythm as the design's sheets). */
+private object RequestSheetLayout {
+    val avatar = 48.dp
+    val avatarGap = 12.dp
+    val gap = 14.dp
+    val bottom = 20.dp
+}

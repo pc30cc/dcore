@@ -13,12 +13,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Sizes, corners, type sizes and motion that do not change between
- * templates. All brand-free: a rebrand changes colours and fonts, never
- * these. [Radius], [TabBarTokens] and [GlassTokens] are the older,
- * dark-template values the screens written before the templates still
- * use; new code reads `AppTheme.template.radii` and `.sizes` instead, and
- * the screen jobs move each use over.
+ * Spacing, type sizes and motion that do not change between templates.
+ * All brand-free: a rebrand changes colours and fonts, never these. Corners
+ * and component sizes are the template's (`AppTheme.template.radii`,
+ * `.sizes`).
  */
 object Space {
     /** The 4 dp grid: 0, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. */
@@ -39,15 +37,6 @@ object Space {
     /** The side gutter of every screen. */
     val gutter: Dp = 20.dp
 
-    /** Onboarding steps breathe a little more. */
-    val onboardingGutter: Dp = 24.dp
-
-    /** Between editorial sections. */
-    val sectionGap: Dp = 28.dp
-
-    /** Between chips in a row and between rows. */
-    val chipGap: Dp = 8.dp
-
     /** The smallest touch target (Android's 48 dp; every icon button gets it). */
     val minTouch: Dp = 48.dp
 
@@ -58,58 +47,6 @@ object Space {
     val conversationRow: Dp = 76.dp
 }
 
-object Radius {
-    val xs: Dp = 8.dp
-    val sm: Dp = 12.dp
-    val md: Dp = 16.dp
-    val lg: Dp = 20.dp
-    val xl: Dp = 24.dp
-    val xxl: Dp = 28.dp
-
-    /** Profile cards: large rounded corners, photo edge to edge. */
-    val card: Dp = 28.dp
-    val sheet: Dp = 32.dp
-    val dialog: Dp = 28.dp
-    val field: Dp = 18.dp
-    val otpCell: Dp = 16.dp
-    val planCard: Dp = 20.dp
-    val periodRow: Dp = 18.dp
-    val promptCard: Dp = 24.dp
-    val matchTile: Dp = 20.dp
-    val thumb: Dp = 18.dp
-    val bubble: Dp = 22.dp
-    val bubbleTail: Dp = 6.dp
-    val tabBar: Dp = 33.dp
-    val pill: Dp = 999.dp
-}
-
-/**
- * The fixed type sizes older screens use directly; the roles live in
- * [appTypography]. sp, never dp, so the reader's font size applies. Nothing
- * is smaller than 12 sp.
- */
-object TypeScale {
-    val xs: TextUnit = 12.sp
-    val sm: TextUnit = 13.sp
-    val md: TextUnit = 14.sp
-    val lg: TextUnit = 16.sp
-    val xl: TextUnit = 20.sp
-    val xxl: TextUnit = 24.sp
-    val display: TextUnit = 32.sp
-    val hero: TextUnit = 40.sp
-}
-
-/** The floating tab bar's place in the dark template (the template's `sizes` hold both). */
-object TabBarTokens {
-    val height: Dp = 66.dp
-    val sideInset: Dp = 12.dp
-    val bottomOffset: Dp = 20.dp
-    val padding: Dp = 5.dp
-
-    /** What a list under the bar keeps free at its end, so nothing reads through the bar: 66 + 20 + 16. */
-    val listBottomPadding: Dp = 102.dp
-}
-
 /** The deck's action row (physical left to right, in every language). */
 object DeckActionTokens {
     val rewind: Dp = 48.dp
@@ -117,18 +54,6 @@ object DeckActionTokens {
     val superLike: Dp = 56.dp
     val like: Dp = 68.dp
     val boost: Dp = 48.dp
-    val gutter: Dp = 20.dp
-
-    /** Above the screen's bottom edge, over the tab bar. */
-    val bottomOffset: Dp = 100.dp
-}
-
-/** Glass blur radii of the dark template; colours are in [AppColors]. */
-object GlassTokens {
-    val photoChromeBlur: Dp = 24.dp
-    val chipBlur: Dp = 20.dp
-    val tabBarBlur: Dp = 28.dp
-    val toastBlur: Dp = 24.dp
 }
 
 /**

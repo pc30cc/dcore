@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="privacy_collect_body">شماره موبایل، آنچه در پروفایلتان می‌گذارید (نام، تاریخ تولد، جنسیت، عکس‌ها، پاسخ‌ها)، کسانی که دوست دارید با آن‌ها آشنا شوید، محدوده‌ی تقریبی‌تان و کارهایی که در برنامه می‌کنید، مثل لایک‌ها، مچ‌ها و پیام‌ها.</string>
-    <string name="chat_push_missing_body">پیام‌های تازه فقط وقتی {appName} باز است دریافت می‌شوند.</string>
+    <string name="chat_push_missing_body">پیام‌های تازه فقط وقتی اپ بازه می‌رسن.</string>
 </resources>

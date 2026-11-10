@@ -366,6 +366,34 @@ class DeckRepositoryTest {
     }
 
     @Test
+    fun aDropAfterAReportPassesThemSoChangedFiltersDoNotBringThemBack() = runTest {
+        val server = Server(people(12))
+        val deck = repository(server)
+        deck.start()
+        settle()
+        val reported = deck.state.value.cards.first()
+        deck.drop(reported, pass = true)
+        assertNull("a reported person is not a pass a rewind brings back", deck.rewind())
+        deck.filtersChanged()
+        settle()
+        assertTrue("the report's pass reached the server", server.swipes.flatten().any { it.target == reported.id && it.action == SwipeAction.Pass })
+        assertTrue("and they stay out of the new pages", deck.state.value.cards.none { it.id == reported.id })
+    }
+
+    @Test
+    fun aDropAfterABlockSendsNothing() = runTest {
+        val server = Server(people(12))
+        val deck = repository(server)
+        deck.start()
+        settle()
+        val blocked = deck.state.value.cards.first()
+        deck.pass(blocked)
+        deck.drop(blocked)
+        assertNull("no longer rewindable", deck.rewind())
+        assertTrue(deck.state.value.cards.none { it.id == blocked.id })
+    }
+
+    @Test
     fun aLikeBackFromTheLikesListKeepsThatPersonOutOfTheDeck() = runTest {
         val server = Server(people(12))
         val deck = repository(server)

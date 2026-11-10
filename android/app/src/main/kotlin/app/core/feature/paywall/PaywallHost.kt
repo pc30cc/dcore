@@ -3,7 +3,6 @@ package app.core.feature.paywall
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -25,6 +24,7 @@ import app.core.LocalAppGraph
 import app.core.brand.AppBrand
 import app.core.billing.PurchaseStep
 import app.core.model.Config
+import app.core.ui.components.AppBottomSheet
 
 /**
  * Provides [LocalPaywall] to [content] and draws what it opens: the paywall
@@ -65,13 +65,14 @@ private fun OpenPaywall(graph: AppGraph, request: PaywallRequest, config: Config
         val actions = remember(vm, request) {
             object : StoreActions {
                 override fun close() = dismiss()
-                override fun selectPlan(plan: app.core.model.Plan) = vm.selectPlan(plan)
+                override fun selectPlan(plan: String) = vm.selectPlan(plan)
                 override fun select(key: String) = vm.select(key)
+                override fun selectItem(item: app.core.model.WalletItem) = vm.selectItem(item)
+                override fun selectPack(key: String) = vm.selectPack(key)
                 override fun buy(key: String) {
                     activity?.let { vm.buy(it, key) }
                 }
                 override fun restore() = vm.restore()
-                override fun restoreShown() = vm.restoreShown()
                 override fun retry() = vm.load()
                 override fun checkAgain() = vm.checkAgain()
                 override fun stepShown() = vm.stepShown()
@@ -87,7 +88,6 @@ private fun OpenPaywall(graph: AppGraph, request: PaywallRequest, config: Config
                 override fun openStore() {
                     activity?.let { graph.store.info.openAppPage(it) }
                 }
-                override fun seePlans() = graph.paywall.open(PaywallRequest.Plans(request.entry))
             }
         }
         val links = PaywallLinks(
@@ -101,6 +101,8 @@ private fun OpenPaywall(graph: AppGraph, request: PaywallRequest, config: Config
                 onDismissRequest = { if (dismissable) dismiss() },
                 properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
             ) {
+                // The dialog's own window: its bar icons follow the template, whatever the activity started in.
+                app.core.ui.theme.DialogBarIcons()
                 PaywallScreen(
                     state = state,
                     entry = request.entry,
@@ -108,12 +110,13 @@ private fun OpenPaywall(graph: AppGraph, request: PaywallRequest, config: Config
                     planNames = config?.planNames.orEmpty(),
                     links = links,
                     actions = actions,
+                    likes = request.likes,
                 )
             }
             is PaywallRequest.Packs -> {
                 val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                ModalBottomSheet(onDismissRequest = { if (dismissable) dismiss() }, sheetState = sheet) {
-                    PacksContent(state = state, item = request.item, actions = actions)
+                AppBottomSheet(onDismissRequest = { if (dismissable) dismiss() }, sheetState = sheet) {
+                    PacksContent(state = state, actions = actions)
                 }
             }
         }

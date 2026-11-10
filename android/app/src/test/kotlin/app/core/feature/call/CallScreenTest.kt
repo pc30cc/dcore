@@ -5,12 +5,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -23,7 +25,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.core.media.LocalRemoteImages
 import app.core.model.CallKind
 import app.core.ui.theme.AppTheme
+import app.core.ui.theme.Templates
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +55,7 @@ class CallScreenTest {
         override fun done() { calls += "done" }
         override fun retry() { calls += "retry" }
         override fun openSettings() { calls += "settings" }
+        override fun message() { calls += "message" }
     }
 
     private val actions = Recorder()
@@ -65,7 +70,7 @@ class CallScreenTest {
 
     @Composable
     private fun Screen(state: CallScreenState) {
-        AppTheme(dark = false) {
+        AppTheme(template = Templates.of(Templates.WHITE)) {
             CompositionLocalProvider(LocalRemoteImages provides false) {
                 CallScreen(state, actions, now = { at(65_000) })
             }
@@ -91,7 +96,7 @@ class CallScreenTest {
     fun withRemoteImagesThePhotoIsDrawnOverItsBlurhash() {
         val face = negar.copy(blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj")
         compose.setContent {
-            AppTheme(dark = true) {
+            AppTheme(template = Templates.of(Templates.NEON)) {
                 CallScreen(state(CallPhase.Ringing, incoming = true).copy(peer = face), actions, now = { at(65_000) })
             }
         }
@@ -104,19 +109,22 @@ class CallScreenTest {
     fun anIncomingVoiceCallShowsWhoAndAnswerAndDecline() {
         show(state(CallPhase.Ringing, incoming = true))
         compose.onNodeWithText("Negar").assertIsDisplayed()
-        status().assertTextEquals("Incoming voice call")
+        status().assertTextEquals("Voice call")
         compose.onNodeWithContentDescription("Answer").performClick()
         compose.onNodeWithContentDescription("Decline").performClick()
-        assertEquals(listOf("answer", "decline"), actions.calls)
-        // Ringing here: nothing to minimise, no in-call controls yet.
-        compose.onAllNodesWithTag(CallTags.MINIMISE).assertCountEquals(0)
+        // «با یه پیام جواب بده»: the chat, the ring declined on the way (CallHost).
+        compose.onNodeWithText("Reply with a message").performClick()
+        assertEquals(listOf("answer", "decline", "message"), actions.calls)
+        // Ringing here: no in-call controls yet.
+        compose.onAllNodesWithTag(CallTags.MESSAGE).assertCountEquals(0)
         compose.onAllNodesWithTag(CallTags.MUTE).assertCountEquals(0)
     }
 
     @Test
     fun anIncomingVideoCallCanBeAnsweredWithVoiceOnly() {
         show(state(CallPhase.Ringing, incoming = true, kind = CallKind.Video))
-        status().assertTextEquals("Incoming video call")
+        status().assertTextEquals("Video call")
+        // Each answer's caption under it («فقط صدا», «تصویری») is drawn only; TalkBack reads the button's fuller name.
         compose.onNodeWithContentDescription("Answer with voice only").performClick()
         compose.onNodeWithContentDescription("Answer with video").performClick()
         assertEquals(listOf("answerVoiceOnly", "answer"), actions.calls)
@@ -128,8 +136,10 @@ class CallScreenTest {
         status().assertTextEquals("Calling…")
         compose.onNodeWithContentDescription("End call").performClick()
         assertEquals(listOf("hangUp"), actions.calls)
-        compose.onNodeWithTag(CallTags.MINIMISE).performClick()
-        assertEquals("minimise", actions.calls.last())
+        // No minimise button (the design has none): «پیام» leaves the call in its bubble for the chat; Back minimises.
+        compose.onAllNodesWithTag(CallTags.MINIMISE).assertCountEquals(0)
+        compose.onNodeWithContentDescription("Message").performClick()
+        assertEquals("message", actions.calls.last())
     }
 
     @Test
@@ -147,24 +157,29 @@ class CallScreenTest {
     @Test
     fun aLiveCallShowsItsTimerAndTheControls() {
         show(state(CallPhase.Live(since = at(0))))
-        status().assertTextEquals("1:05")
-        compose.onNodeWithContentDescription("Mute").performClick()
+        status().assertTextEquals("01:05")
+        compose.onNodeWithContentDescription("Microphone").performClick()
         compose.onNodeWithContentDescription("Speaker").performClick()
         assertEquals(listOf("mute", "speaker"), actions.calls)
     }
 
     @Test
-    fun mutedAndSpeakerAreSaidAsToggles() {
-        show(state(CallPhase.Live(since = at(0))).copy(muted = true, speakerOn = true))
-        compose.onNodeWithContentDescription("Unmute").assertIsSelected()
-        compose.onNodeWithContentDescription("Speaker").assertIsSelected()
+    fun mutedAndSpeakerAreSaidAsSwitchesUnderFixedNames() {
+        var muted by mutableStateOf(true)
+        compose.setContent { Screen(state(CallPhase.Live(since = at(0))).copy(muted = muted, speakerOn = true)) }
+        // "Microphone, switch, off": the name stays, the state says on or off.
+        compose.onNodeWithContentDescription("Microphone").assertIsOff()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
+        compose.onNodeWithContentDescription("Speaker").assertIsOn()
+        muted = false
+        compose.onNodeWithContentDescription("Microphone").assertIsOn()
     }
 
     @Test
     fun aVideoCallHasCameraAndFlipButNoSpeakerSwitch() {
         show(state(CallPhase.Live(since = at(0)), kind = CallKind.Video))
-        compose.onNodeWithContentDescription("Turn camera off").performClick()
-        compose.onNodeWithContentDescription("Switch camera").performClick()
+        compose.onNodeWithContentDescription("Camera").assertIsOn().performClick()
+        compose.onNodeWithContentDescription("Flip camera").performClick()
         compose.onAllNodesWithTag(CallTags.SPEAKER).assertCountEquals(0)
         assertEquals(listOf("camera", "flip"), actions.calls)
     }
@@ -172,8 +187,8 @@ class CallScreenTest {
     @Test
     fun cameraControlsWaitForTheAnswer() {
         show(state(CallPhase.Placing, kind = CallKind.Video))
-        compose.onNodeWithContentDescription("Turn camera off").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Switch camera").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Camera").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Flip camera").assertIsNotEnabled()
     }
 
     @Test
@@ -202,7 +217,7 @@ class CallScreenTest {
         compose.onNodeWithText("On hold while another call uses the audio").assertIsDisplayed()
         compose.onNodeWithText("Your camera couldn't start. The call goes on as voice.").assertExists()
         compose.onNodeWithText("Your network may block calls. If it doesn't connect, try another network.").assertExists()
-        compose.onNodeWithContentDescription("Mute").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Microphone").assertIsNotEnabled()
     }
 
     @Test
@@ -214,6 +229,17 @@ class CallScreenTest {
         compose.onNodeWithText("Car kit").assertIsDisplayed()
         compose.onNodeWithText("Speaker").performClick()
         assertEquals(listOf("route:Speaker"), actions.calls)
+    }
+
+    @Test
+    fun aTapOnTheRouteSheetsTitleKeepsItOpen() {
+        show(state(CallPhase.Live(since = at(0))).copy(routes = AudioRoutes(listOf(AudioRoute.Earpiece, AudioRoute.Speaker, AudioRoute.Bluetooth("Car kit")), AudioRoute.Bluetooth("Car kit"))))
+        compose.onNodeWithTag(CallTags.AUDIO).performClick()
+        compose.onNodeWithText("Play the call on").performClick()
+        compose.waitForIdle()
+        // The title is the sheet's, not the scrim's: the list stays and nothing is chosen.
+        compose.onNodeWithTag(CallTags.ROUTES).assertIsDisplayed()
+        assertEquals(emptyList<String>(), actions.calls.filter { it.startsWith("route:") })
     }
 
     @Test
@@ -252,7 +278,7 @@ class CallScreenTest {
         )
         var current = words.keys.first()
         compose.setContent {
-            AppTheme(dark = false) {
+            AppTheme(template = Templates.of(Templates.WHITE)) {
                 CompositionLocalProvider(LocalRemoteImages provides false) {
                     CallScreen(state(CallPhase.Ended(current)), actions)
                 }
@@ -267,6 +293,57 @@ class CallScreenTest {
         status().assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
     }
 
+    private fun centreX(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.center.x
+
+    private fun bounds(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+
+    @Test
+    fun aVoiceCallsFourButtonsAreSpreadWithEqualGaps() {
+        compose.setContent { Screen(state(CallPhase.Live(since = at(0)))) }
+        // Speaker, microphone, end, message: one row, the same gap between each two, no empty slot.
+        val row = listOf(CallTags.SPEAKER, CallTags.MUTE, CallTags.HANG_UP, CallTags.MESSAGE).map(::bounds).sortedBy { it.left }
+        val gaps = row.zipWithNext { a, b -> b.left - a.right }
+        assertTrue("gaps $gaps", gaps.all { it > 0f })
+        gaps.forEach { assertEquals(gaps.first(), it, 2f) }
+        val speaker = centreX(CallTags.SPEAKER)
+        val mic = centreX(CallTags.MUTE)
+        val end = centreX(CallTags.HANG_UP)
+        val message = centreX(CallTags.MESSAGE)
+        assertTrue("speaker $speaker, mic $mic, end $end, message $message", speaker < mic && mic < end && end < message)
+    }
+
+    @Test
+    fun theEndButtonIsInTheMiddleOfAVideoCall() {
+        compose.setContent { Screen(state(CallPhase.Live(since = at(0)), kind = CallKind.Video)) }
+        val screen = compose.onNodeWithTag(CallTags.SCREEN).fetchSemanticsNode().boundsInRoot
+        assertEquals(screen.center.x, centreX(CallTags.HANG_UP), 2f)
+        assertEquals(screen.center.x - centreX(CallTags.FLIP), centreX(CallTags.MESSAGE) - screen.center.x, 2f)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h740dp")
+    fun aHeadsetOnAVideoCallKeepsEveryButtonA48DpTargetOnANarrowPhone() {
+        val headset = AudioRoutes(listOf(AudioRoute.Earpiece, AudioRoute.Speaker, AudioRoute.Wired), AudioRoute.Wired)
+        var cameraOn by mutableStateOf(true)
+        compose.setContent { Screen(state(CallPhase.Live(since = at(0)), kind = CallKind.Video).copy(routes = headset, cameraOn = cameraOn)) }
+        val min = 48f * compose.density.density - 0.5f
+        val tags = listOf(CallTags.FLIP, CallTags.MUTE, CallTags.HANG_UP, CallTags.CAMERA, CallTags.AUDIO, CallTags.MESSAGE)
+        tags.forEach { tag ->
+            val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag is ${bounds.width} x ${bounds.height}", bounds.width >= min && bounds.height >= min)
+        }
+        // None overlaps the next one.
+        val edges = tags.map { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }.sortedBy { it.left }
+        edges.zipWithNext().forEach { (a, b) -> assertTrue("$a overlaps $b", a.right <= b.left + 0.5f) }
+        // The camera off: where the sound goes takes the flip's place, five buttons again.
+        cameraOn = false
+        compose.waitForIdle()
+        compose.onAllNodesWithTag(CallTags.FLIP).assertCountEquals(0)
+        compose.onNodeWithTag(CallTags.AUDIO).assertExists()
+        val screen = compose.onNodeWithTag(CallTags.SCREEN).fetchSemanticsNode().boundsInRoot
+        assertEquals(screen.center.x, centreX(CallTags.HANG_UP), 2f)
+    }
+
     @Test
     fun aLiveTimerIsNotReadEverySecond() {
         show(state(CallPhase.Live(since = at(0))))
@@ -277,15 +354,15 @@ class CallScreenTest {
     @Config(qualifiers = "fa-w411dp-h891dp")
     fun persianIsRightToLeftWithPersianDigits() {
         show(state(CallPhase.Live(since = at(0))))
-        status().assertTextEquals("۱:۰۵")
-        compose.onNodeWithContentDescription("بی‌صدا").assertIsDisplayed()
+        status().assertTextEquals("۰۱:۰۵")
+        compose.onNodeWithContentDescription("میکروفون").assertIsDisplayed()
     }
 
     @Test
     @Config(qualifiers = "fa-w411dp-h891dp")
     fun persianRing() {
         show(state(CallPhase.Ringing, incoming = true, kind = CallKind.Video))
-        status().assertTextEquals("تماس تصویری ورودی")
+        status().assertTextEquals("تماس تصویری")
         compose.onNodeWithContentDescription("رد").assertIsDisplayed()
     }
 

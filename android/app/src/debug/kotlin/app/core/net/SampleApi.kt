@@ -67,6 +67,7 @@ import app.core.model.LocationUpdate
 import app.core.model.Me
 import app.core.model.Message
 import app.core.model.MessageKind
+import app.core.model.MessageMedia
 import app.core.model.MessageRequest
 import app.core.model.MessageRequestsPage
 import app.core.model.MessagesPage
@@ -88,7 +89,7 @@ import app.core.model.PhotoMime
 import app.core.model.PhotoProcessing
 import app.core.model.PhotoStatus
 import app.core.model.PhotoUploadTicket
-import app.core.model.Plan
+import app.core.model.PlanKey
 import app.core.model.PlayPurchaseRequest
 import app.core.model.PreferencesPatch
 import app.core.model.Problem
@@ -195,6 +196,8 @@ class SampleApi(
     private val waitlist: Boolean = false,
     /** Hears the account's settings in every answer that carries them, as from the server. */
     private val settingsTap: SettingsTap = SettingsTap.None,
+    /** The request's language (`fa`, `en`, `tr`), as the real client sends it: city names follow it. */
+    private val language: () -> String = { java.util.Locale.getDefault().language },
 ) : ServerApi, BlobTransport, ExternalSignIn, SmsCodeReceiver, RealtimeTransport, SamplePeer {
 
     private val lock = Mutex()
@@ -351,7 +354,7 @@ class SampleApi(
     private fun nextMidnight(): Instant = now().atOffset(ZoneOffset.UTC).toLocalDate().plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC)
 
     private fun freeEntitlements() = Entitlements(
-        plan = Plan.Free,
+        plan = PlanKey.FREE,
         quotas = Quotas(
             likes = Quota(limit = 50, used = 3, resetsAt = null),
             superlikes = Quota(limit = 1, used = 0, resetsAt = null),
@@ -367,6 +370,12 @@ class SampleApi(
     )
 
     private fun plusFeatures() = Features(seeLikes = true, rewind = true, advancedFilters = true, travelMode = true)
+
+    /** A sample plan's switches as the entitlements carry them. */
+    private fun features(f: app.core.model.PlanFlags) = Features(
+        seeLikes = f.seeLikes, rewind = f.rewind, readReceipts = f.readReceipts, incognito = f.incognito, travelMode = f.travelMode,
+        advancedFilters = f.advancedFilters, profileViews = f.profileViews, secondLook = f.secondLook, priorityLikes = f.priorityLikes,
+    )
 
     private fun quotaAt(q: Quota?): Quota? = q?.copy(resetsAt = q.resetsAt ?: nextMidnight())
 
@@ -497,6 +506,174 @@ class SampleApi(
         call
     }
 
+    // MARK: - The design's boards
+
+    private class BoardLike(val id: PublicUid, val kind: LikeKind, val note: String? = null)
+
+    /** The likes [stageSocialBoards] put in place of the people who like this account, in order. */
+    private var boardLikes: List<BoardLike>? = null
+
+    /** The conversations a tour opens on the staged boards. */
+    class SocialBoards(val talking: Id, val names: Map<PublicUid, Id>)
+
+    /**
+     * Puts the account where the design's social boards (m08–m13) show it:
+     * twelve likes (two super likes, three with a note), four new matches,
+     * five conversations (one typing-ready thread with a like note, a call
+     * line, a voice message and a read message; a sent question; a voice
+     * message; a video call; a like note) and two requests, all of
+     * [SampleData.boardPeople]. With [premium], the plan that opens every
+     * like and sends read receipts. Replaces the seeded chats and requests.
+     */
+    suspend fun stageSocialBoards(premium: Boolean): SocialBoards = route("sample.stage") {
+        val t0 = now()
+        fun at(minutesAgo: Long) = t0.minus(minutesAgo, ChronoUnit.MINUTES)
+        fun who(id: PublicUid) = SampleData.person(id)!!
+        val day = 60L * 24
+
+        boardLikes = listOf(
+            BoardLike("byasaman2kq7a", LikeKind.Like),
+            BoardLike("creyhan3kq7ab", LikeKind.Superlike),
+            BoardLike("dparya4kq7abc", LikeKind.Like, "منم عاشق ماسوله‌ام! اون مسیر جنگلیش رو رفتی؟"),
+            BoardLike("enegar5kq7abd", LikeKind.Like),
+            BoardLike("fsara6kq7abef", LikeKind.Like),
+            BoardLike("gelnaz7kq7abf", LikeKind.Superlike),
+            BoardLike("hhasti2kq7abg", LikeKind.Like, "عکس دربندت عالیه"),
+            BoardLike("ikiana3kq7abh", LikeKind.Like),
+            BoardLike("mtaran7kq7abl", LikeKind.Like),
+            BoardLike("lshida6kq7abk", LikeKind.Like),
+            BoardLike("knazan5kq7abj", LikeKind.Like, "منم کتاب‌فروشی‌های انقلاب رو دوست دارم"),
+            BoardLike("jmahsa4kq7abi", LikeKind.Like),
+        )
+
+        threads.clear()
+        requests.clear()
+        val names = mutableMapOf<PublicUid, Id>()
+        fun open(id: PublicUid, createdMinutesAgo: Long, online: Boolean = false, unread: Int = 0, read: Boolean = false, say: MutableList<Message>.(Id) -> Unit = {}) {
+            val card = who(id)
+            val conversationId = nextId()
+            val messages = mutableListOf<Message>().apply { say(conversationId) }
+            val mine = messages.lastOrNull { it.senderId == SampleData.ME }?.id
+            val conversation = Conversation(
+                id = conversationId,
+                peer = ConversationPeer(card.id, card.name, card.photos.firstOrNull(), card.verified, online = online, activeRecently = card.activeRecently),
+                state = ConversationState.Active,
+                source = ConversationSource.Like,
+                createdAt = at(createdMinutesAgo),
+                callsAllowed = CallsAllowed(me = true, peer = true),
+                lastMessage = messages.lastOrNull(),
+                unread = unread,
+                myReadId = messages.lastOrNull()?.id,
+                peerDeliveredId = mine,
+                peerReadId = mine.takeIf { read },
+            )
+            threads[conversationId] = Thread(conversation, messages)
+            names[id] = conversationId
+        }
+        fun MutableList<Message>.line(conversationId: Id, from: PublicUid, minutesAgo: Long, body: String?, kind: MessageKind = MessageKind.Text, media: MessageMedia? = null, call: CallLine? = null) {
+            this += Message(nextId(), conversationId, from, kind = kind, body = body, media = media, call = call, at = at(minutesAgo))
+        }
+        fun voice(seconds: Long) = MessageMedia("https://media.example.com/v/${nextId()}.m4a", "audio/mp4", durationMs = seconds * 1000)
+
+        // The thread m10 draws; the first row of m09.
+        val mahsa = "jmahsa4kq7abi"
+        open(mahsa, 3 * day + 30, online = true, unread = 2, read = true) { c ->
+            line(c, SampleData.ME, 3 * day + 20, "درکه یا دارآباد؟", MessageKind.LikeNote)
+            line(c, mahsa, 3 * day + 12, "دارآباد! مسیرش قشنگ‌تره. تو چی؟")
+            line(c, SampleData.ME, 3 * day + 8, "معمولاً جمعه‌ها با دوستام می‌رم.")
+            line(c, mahsa, 3 * day + 5, "منم! شاید یه روز اون بالا همو دیدیم.")
+            line(c, mahsa, 3 * day - 60, null, MessageKind.Call, call = CallLine(nextId(), CallKind.Audio, CallOutcome.Completed, at(3 * day - 60), durationSeconds = 720, caller = mahsa))
+            line(c, mahsa, 25, null, MessageKind.Voice, media = voice(18))
+            line(c, SampleData.ME, 18, "صدات خیلی آرومه. پس جمعه ساعت ۷ دارآباد؟")
+        }
+        open("knazan5kq7abj", 2 * day) { c ->
+            line(c, "knazan5kq7abj", 140, "آره، آخر هفته خوبه")
+            line(c, SampleData.ME, 120, "پس پنج‌شنبه دربند؟")
+        }
+        open("dparya4kq7abc", 2 * day) { c -> line(c, "dparya4kq7abc", 200, null, MessageKind.Voice, media = voice(18)) }
+        open("lshida6kq7abk", 4 * day) { c ->
+            line(c, "lshida6kq7abk", day + 120, null, MessageKind.Call, call = CallLine(nextId(), CallKind.Video, CallOutcome.Completed, at(day + 120), durationSeconds = 240, caller = "lshida6kq7abk"))
+        }
+        open("ikiana3kq7abh", 3 * day) { c -> line(c, "ikiana3kq7abh", 2 * day, "منم!", MessageKind.LikeNote) }
+        // New matches: no message yet, the first two today.
+        open("mtaran7kq7abl", 120, online = true)
+        open("hhasti2kq7abg", 300)
+        open("creyhan3kq7ab", 2 * day)
+        open("fsara6kq7abef", 3 * day)
+        open("byasaman2kq7a", 4 * day)
+        swiped += names.keys
+        bumpConversations()
+
+        requests += RequestBox.Inbox to MessageRequest(nextId(), summary(who("gelnaz7kq7abf")), "سلام! دیدم تو هم ماسوله رفتی. اون مسیر جنگلی پشت روستا رو هم رفتی؟", RequestStatus.Pending, at(120))
+        requests += RequestBox.Inbox to MessageRequest(nextId(), summary(who("enegar5kq7abd")), "جواب «بهترین سفر»ت خیلی خوب بود. منم دفترچه‌ی طراحی دارم!", RequestStatus.Pending, at(day + 60))
+
+        if (premium) {
+            entitlements = entitlements.copy(plan = "premium", planExpiresAt = t0.plus(Duration.ofDays(30)), features = premiumFeatures())
+            bumpEntitlements()
+        }
+        SocialBoards(names.getValue(mahsa), names.toMap())
+    }
+
+    /**
+     * The design's own profile, for the account screens' tours: Arash, 25, in
+     * Tehran, an industrial designer; four photos (the last still in review),
+     * two answered questions, height and education; 70 % complete, not
+     * verified, one super like. With [subscription], a plan of this store that
+     * keeps renewing (the restricted and delete screens name it).
+     */
+    suspend fun stageOwnProfile(subscription: Boolean = false) = route("sample.stage") {
+        val fa = language() == "fa"
+        fun t(persian: String, english: String) = if (fa) persian else english
+        fun photo(id: String, position: Int, status: PhotoStatus = PhotoStatus.Approved) =
+            OwnPhoto(id, position, status, w = 1080, h = 1350, blurhash = "", url = "https://media.example.com/p/$id/1/640.webp")
+        profile = profile.copy(
+            name = t("آرش", "Arash"),
+            age = 25,
+            gender = Gender.Man,
+            verified = false,
+            job = t("طراح صنعتی", "Industrial designer"),
+            about = t("طراحی، کوه و کتاب‌فروشی‌های قدیمی.", "Design, mountains and old bookshops."),
+            city = SampleData.city(TEHRAN, language()),
+            photos = listOf(photo("8101", 0), photo("8102", 1), photo("8103", 2), photo("8104", 3, PhotoStatus.Review)),
+            prompts = listOf(
+                OwnPrompt(1, position = 0, answer = t("یه هفته کوه‌پیمایی دور ماسوله، با یه کوله", "A week hiking around Masuleh with one backpack"), status = TextState.Approved),
+                OwnPrompt(2, position = 1, answer = t("صبح زود دوچرخه، عصر کتاب‌فروشی", "An early bike ride, an evening in a bookshop"), status = TextState.Approved),
+            ),
+            fields = listOf(ProfileFieldValue(1, number = 178), ProfileFieldValue(5, option = 54)),
+            completeness = 70,
+        )
+        location = location.copy(city = SampleData.city(TEHRAN, language()))
+        entitlements = entitlements.copy(wallet = entitlements.wallet.copy(superlike = 1))
+        if (subscription) {
+            entitlements = entitlements.copy(
+                plan = "premium",
+                planExpiresAt = now().plus(Duration.ofDays(30)),
+                autoRenew = true,
+                source = if (store == "play") EntitlementSource.Play else EntitlementSource.Bazaar,
+                manageUrl = "https://example.com/account/subscriptions",
+                features = premiumFeatures(),
+            )
+        }
+        bumpEntitlements()
+        bumpMe()
+    }
+
+    /** What the wallet holds, for the packs sheet's balance («۱ تا داری»). */
+    suspend fun stageWallet(superlikes: Int, boosts: Int = 0) = route("sample.stage") {
+        entitlements = entitlements.copy(wallet = entitlements.wallet.copy(superlike = superlikes, boost = boosts))
+        bumpEntitlements()
+    }
+
+    /** A spoken answer to [promptId] at [position] (no text): it holds its place among the written ones. */
+    suspend fun stageVoiceAnswer(promptId: Int, position: Int) = route("sample.stage") {
+        profile = profile.copy(
+            prompts = profile.prompts.filterNot { it.position == position } +
+                OwnPrompt(promptId, position = position, audioMs = 4_000, audioUrl = "https://media.example.com/a/$promptId.m4a", status = TextState.Approved),
+            v = profile.v + 1,
+        )
+        bumpMe()
+    }
+
     /** Puts the account into [status] (a suspension or ban comes with a reason), for the restricted screens. */
     suspend fun setAccountStatus(status: AccountStatus, reason: String = "Repeated reports of harassment.") = route("sample.status") {
         val me = user()
@@ -535,13 +712,13 @@ class SampleApi(
     private fun challenge(phone: String, channel: OtpChannel?): OtpChallenge {
         validPhone(phone)
         val last = lastOtpAt[phone]
-        if (last != null && nowMs() - last < RESEND_AFTER_MS) {
-            fail(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to (RESEND_AFTER_MS - (nowMs() - last) + 999) / 1000)
+        if (last != null && nowMs() - last < otpResendAfterMs) {
+            fail(429, ProblemCodes.RATE_LIMITED, "retryAfterSeconds" to (otpResendAfterMs - (nowMs() - last) + 999) / 1000)
         }
         lastOtpAt[phone] = nowMs()
         val id = "ch_" + nextId()
         challenges[id] = Challenge(phone, nowMs() + OTP_TTL_MS, OTP_ATTEMPTS)
-        return OtpChallenge(id, SampleData.CODE.length, (OTP_TTL_MS / 1000).toInt(), (RESEND_AFTER_MS / 1000).toInt(), channel ?: OtpChannel.Sms)
+        return OtpChallenge(id, SampleData.CODE.length, (OTP_TTL_MS / 1000).toInt(), (otpResendAfterMs / 1000).toInt(), channel ?: OtpChannel.Sms)
     }
 
     /** Checks [code] against [challengeId]; returns the phone it was for. */
@@ -668,17 +845,23 @@ class SampleApi(
     private fun advanceBackground() {
         val due = processingSince.filterValues { nowMs() - it >= PROCESSING_MS }.keys
         if (due.isNotEmpty()) {
+            // A photo at a position the tour holds stays in review (and is decided once it lets go).
+            val held = SampleData.photosHeldInReview
+            val waiting = profile.photos.filter { it.id in due && it.position in held && it.id !in toReject }.map { it.id }.toSet()
+            val decided = due - waiting
+            val before = profile.photos
             profile = profile.copy(
                 photos = profile.photos.map {
                     when {
-                        it.id !in due -> it
+                        it.id in waiting -> if (it.status == PhotoStatus.Review) it else it.copy(status = PhotoStatus.Review, url = "https://media.example.com/p/${it.id}/1/640.webp")
+                        it.id !in decided -> it
                         it.id in toReject -> it.copy(status = PhotoStatus.Rejected, rejectReason = REJECT_REASON)
                         else -> it.copy(status = PhotoStatus.Approved, url = "https://media.example.com/p/${it.id}/1/640.webp")
                     }
                 },
             )
-            due.forEach { processingSince.remove(it) }
-            bumpMe()
+            decided.forEach { processingSince.remove(it) }
+            if (profile.photos != before) bumpMe()
         }
         val waiting = reviewSince
         val current = session
@@ -709,7 +892,7 @@ class SampleApi(
             billingRef = "br" + me.id.take(11),
             profile = profile,
             preferences = preferences,
-            location = location,
+            location = location.copy(city = location.city?.let { SampleData.city(it.id, language()) }),
             notifications = notifications,
             flags = mapOf("voice_prompts" to true, "message_requests" to true),
             moderation = moderation.filter { it.kind != ModerationKind.Warning && (it.endsAt == null || it.endsAt > now()) },
@@ -889,8 +1072,8 @@ class SampleApi(
         if (update.cityId == null && (lat == null || lng == null)) fail(422, ProblemCodes.FIELD_INVALID)
         lastLocationAt = nowMs()
         // Like the server: the position picks a city and is forgotten.
-        val city = update.cityId?.let { id -> SampleData.cities.firstOrNull { it.id == id } ?: fail(422, ProblemCodes.FIELD_INVALID) }
-            ?: SampleData.cityCentres.minByOrNull { (_, c) -> sq(c.first - lat!!) + sq(c.second - lng!!) }?.key?.let(SampleData::city)
+        val city = update.cityId?.let { id -> SampleData.cities(language()).firstOrNull { it.id == id } ?: fail(422, ProblemCodes.FIELD_INVALID) }
+            ?: SampleData.cityCentres.minByOrNull { (_, c) -> sq(c.first - lat!!) + sq(c.second - lng!!) }?.key?.let { SampleData.city(it, language()) }
         location = location.copy(city = city, country = city?.country)
         bumpMe()
         LocationResult(city, city?.country)
@@ -901,7 +1084,7 @@ class SampleApi(
     override suspend fun cities(query: String, country: String?): List<City> = route("cities") {
         user()
         val q = query.trim()
-        SampleData.cities.filter { (country == null || it.country == country) && (q.isEmpty() || it.name.contains(q, ignoreCase = true)) }
+        SampleData.findCities(q, country, language())
     }
 
     override suspend fun startPhotoUpload(position: Int, mime: PhotoMime, bytes: Long): PhotoUploadTicket = route("me.photos.start") {
@@ -1015,10 +1198,22 @@ class SampleApi(
 
     // MARK: - Deck and swipes
 
+    /** What the deck answers while set: no network, or a server failure (screenshots of those states). */
+    enum class DeckOutage { Offline, Failed }
+
+    @Volatile var deckOutage: DeckOutage? = null
+
     override suspend fun deck(limit: Int): DeckPage = route("deck") {
         active()
+        when (deckOutage) {
+            DeckOutage.Offline -> throw ApiError.Network(java.io.IOException("sample: no network"))
+            DeckOutage.Failed -> fail(500, ProblemCodes.INTERNAL)
+            null -> Unit
+        }
         val ids = deckQueue.filter { it !in blocked && it !in swiped }
+        // City names in the request's language, as the server writes them.
         val cards = ids.take(limit.coerceIn(1, 50)).mapNotNull(SampleData::person)
+            .map { card -> card.copy(city = card.city?.let { SampleData.city(it.id, language()) }) }
         val remaining = (ids.size - cards.size).coerceAtLeast(0)
         val exhausted = ids.size <= cards.size
         DeckPage(
@@ -1105,6 +1300,7 @@ class SampleApi(
     override suspend fun likes(cursor: String?, limit: Int): LikesPage = route("likes") {
         active()
         val seeLikes = currentEntitlements().features.seeLikes
+        boardLikes?.let { board -> return@route boardLikesPage(board, seeLikes, cursor, limit) }
         val likers = SampleData.people.filter { it.likesYou && it.id !in swiped && it.id !in blocked }
         val start = cursor?.removePrefix("c")?.toIntOrNull() ?: 0
         val page = likers.drop(start).take(limit.coerceIn(1, 50))
@@ -1116,11 +1312,42 @@ class SampleApi(
                 blurhash = card.photos.firstOrNull()?.blurhash,
                 kind = if (superlike) LikeKind.Superlike else LikeKind.Like,
                 item = if (superlike) card.photos.firstOrNull()?.let { LikedItem(app.core.model.ItemKind.Photo, it.id) } else null,
-                comment = if (shown && superlike) "Your map collection is great!" else null,
+                comment = if (shown && superlike) sampleNote() else null,
             )
         }
         val next = (start + page.size).takeIf { it < likers.size }?.let { "c$it" }
         LikesPage(total = likers.size, items = items, nextCursor = next)
+    }
+
+    /** The sample super like's note, in the reader's language as a person there would write it. */
+    private fun sampleNote(): String = when (language()) {
+        "fa" -> "مجموعه‌ی نقشه‌هات عالیه!"
+        "tr" -> "Harita koleksiyonun harika!"
+        else -> "Your map collection is great!"
+    }
+
+    /**
+     * A photo's blurhash as a tour wants it drawn (the one its own picture
+     * gives), or null for the sample's; set by screen tours only.
+     */
+    @Volatile var blurhashOf: (photoId: Id) -> String? = { null }
+
+    /** The staged likes: the first (a like) is the day's free look; super likes and notes stay hidden without `see_likes`. */
+    private fun boardLikesPage(board: List<BoardLike>, seeLikes: Boolean, cursor: String?, limit: Int): LikesPage {
+        val start = cursor?.removePrefix("c")?.toIntOrNull() ?: 0
+        val page = board.drop(start).take(limit.coerceIn(1, 50))
+        val items = page.mapIndexed { index, like ->
+            val card = SampleData.person(like.id)!!
+            val shown = seeLikes || (start + index == 0 && like.kind == LikeKind.Like)
+            LikeItem(
+                liker = if (shown) card else null,
+                blurhash = card.photos.firstOrNull()?.let { photo -> blurhashOf(photo.id) ?: photo.blurhash },
+                kind = like.kind,
+                comment = if (shown) like.note else null,
+            )
+        }
+        val next = (start + page.size).takeIf { it < board.size }?.let { "c$it" }
+        return LikesPage(total = board.size, items = items, nextCursor = next)
     }
 
     // MARK: - Conversations and messages
@@ -1556,7 +1783,7 @@ class SampleApi(
 
     override suspend fun products(): StoreProducts = route("store.products") {
         val me = user()
-        StoreProducts(StoreName.fromWire(store), "br" + me.id.take(11), SampleData.subscriptions(store), SampleData.consumables)
+        StoreProducts(StoreName.fromWire(store), "br" + me.id.take(11), SampleData.storePlans(language()), SampleData.subscriptions(store), SampleData.consumables)
     }
 
     /**
@@ -1588,8 +1815,8 @@ class SampleApi(
                         else -> Duration.ofDays(365)
                     },
                 )
-                val premium = subscription.plan == Plan.Premium
-                val unlimited = Quota(limit = -1)
+                val plan = SampleData.plan(subscription.plan)
+                fun quota(n: Int?) = Quota(limit = n ?: 0)
                 entitlements = entitlements.copy(
                     plan = subscription.plan,
                     planExpiresAt = expires,
@@ -1599,8 +1826,12 @@ class SampleApi(
                     manageUrl = "https://example.com/account/subscriptions",
                     productId = subscription.productId,
                     basePlanId = subscription.basePlanId,
-                    features = if (premium) premiumFeatures() else plusFeatures(),
-                    quotas = entitlements.quotas.copy(likes = unlimited, superlikes = Quota(limit = if (premium) 5 else 3), boosts = Quota(limit = if (premium) 2 else 1)),
+                    features = plan?.flags?.let(::features) ?: plusFeatures(),
+                    quotas = entitlements.quotas.copy(
+                        likes = quota(plan?.quotas?.dailyLikes ?: -1),
+                        superlikes = quota(plan?.quotas?.weeklySuperlikes),
+                        boosts = quota(plan?.quotas?.monthlyBoosts),
+                    ),
                 )
             }
             kind == PurchaseKind.Consumable && consumable != null -> {
@@ -1625,6 +1856,9 @@ class SampleApi(
 
     /** How long the sample server takes to verify a purchase (screenshots of the "confirming" step). */
     @Volatile var purchaseDelayMs: Long = 0
+
+    /** How long before a new code may be sent (screenshots of the code step once a new code is allowed). */
+    @Volatile var otpResendAfterMs: Long = RESEND_AFTER_MS
 
     /** No purchase gets an answer while set: the network lost between the store and the server. */
     @Volatile var purchasesUnreachable: Boolean = false
@@ -1747,7 +1981,7 @@ class SampleApi(
         user()
         val e = entitlements
         DeletionPreflight(
-            subscription = if (e.plan != Plan.Free && e.autoRenew == true && e.source != EntitlementSource.Grant) {
+            subscription = if (PlanKey.isPaid(e.plan) && e.autoRenew == true && e.source != EntitlementSource.Grant) {
                 StoreSubscriptionNotice(StoreName.fromWire(store), active = true, manageUrl = e.manageUrl)
             } else {
                 null
@@ -1914,6 +2148,7 @@ class SampleApi(
         private const val VERIFICATION_MS = 10_000L
         private const val MAX_PHOTO_BYTES = 15L * 1024 * 1024
         private const val LIMITS_PHOTOS = 9
+        private const val TEHRAN = 112931
         private const val LIMITS_PHOTOS_MIN = 2
         private const val REJECT_EVERY = 4
         private const val SHEET_MS = 600L

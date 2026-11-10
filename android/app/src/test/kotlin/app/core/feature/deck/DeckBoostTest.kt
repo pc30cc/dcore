@@ -11,7 +11,6 @@ import app.core.model.DiscoveryPreferences
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
 import app.core.model.Me
-import app.core.model.Plan
 import app.core.model.PreferencesPatch
 import app.core.model.Problem
 import app.core.model.Settings
@@ -59,6 +58,8 @@ class DeckBoostTest {
         override suspend fun updatePreferences(patch: PreferencesPatch) = DiscoveryPreferences()
         override suspend fun updateSettings(patch: SettingsPatch) = Settings()
         override suspend fun boost() = answer()
+        override suspend fun report(request: app.core.model.ReportRequest) { error("not reached in these tests") }
+        override suspend fun block(target: String) { error("not reached in these tests") }
     }
 
     private fun TestScope.model(
@@ -109,7 +110,7 @@ class DeckBoostTest {
     @Test
     fun aBoostWhileAHintIsReadKeepsTheReadsAnswerAndTheBoost() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
-        val premium = Entitlements(plan = Plan.Premium, source = EntitlementSource.Bazaar)
+        val premium = Entitlements(plan = "premium", source = EntitlementSource.Bazaar)
         val (vm, entitlements) = model(EntitlementRepository(fetch = { gate.await(); Fetched(premium, changed = true) }))
         val reading = async { entitlements.reread() }
         runCurrent()
@@ -119,7 +120,7 @@ class DeckBoostTest {
         gate.complete(Unit)
         advanceUntilIdle()
         assertTrue("the hint is answered", reading.await())
-        assertEquals(Plan.Premium, entitlements.entitlements.value?.plan)
+        assertEquals("premium", entitlements.entitlements.value?.plan)
         assertEquals(Instant.parse("2026-11-09T08:30:00Z"), entitlements.entitlements.value?.boostEndsAt)
     }
 }

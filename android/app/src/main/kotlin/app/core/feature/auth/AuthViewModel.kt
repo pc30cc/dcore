@@ -19,6 +19,9 @@ import app.core.net.ApiError
 import app.core.net.ServerApi
 import app.core.store.ExternalSignIn
 import app.core.store.ExternalSignInResult
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,6 +87,8 @@ class AuthViewModel(
     private val integrity: suspend (String) -> String?,
     defaultCountry: DialCountry,
     private val googleBuild: Boolean,
+    /** Keeps what the account was signed in with (the number, or the Google address) for Settings to show. */
+    private val rememberSignIn: suspend (String?) -> Unit = {},
 ) : ViewModel() {
 
     private val externalSignIn: ExternalSignIn get() = gate.externalSignIn
@@ -144,8 +149,9 @@ class AuthViewModel(
             when (pending) {
                 SignInMethod.Phone -> setStage(AuthStage.Phone)
                 SignInMethod.Google -> {
-                    setStage(AuthStage.Welcome)
-                    _state.update { it.copy(launchGoogle = true) }
+                    // Back where Google is offered (the number's page), so its progress and errors are in sight.
+                    setStage(AuthStage.Phone)
+                    _state.update { it.copy(launchGoogle = true, googleError = null) }
                 }
             }
         }
@@ -160,7 +166,11 @@ class AuthViewModel(
                 if (_state.value.otp.sendBlocked) startTicker()
                 setStage(AuthStage.Phone)
             }
-            AuthStage.Phone, AuthStage.Privacy -> setStage(AuthStage.Welcome)
+            AuthStage.Phone, AuthStage.Privacy -> {
+                // Google's error belongs to the number's page; the welcome never shows it.
+                _state.update { it.copy(googleError = null) }
+                setStage(AuthStage.Welcome)
+            }
             AuthStage.Welcome -> return false
         }
         return true
@@ -235,7 +245,7 @@ class AuthViewModel(
     private fun runVerify(effect: OtpEffect.Verify) {
         viewModelScope.launch {
             runCatchingUnlessCancelled { api.verifyOtp(effect.challengeId, effect.code, device()) }
-                .onSuccess { result -> finished(result) }
+                .onSuccess { result -> finished(result, _state.value.otp.challenge?.e164) }
                 .onFailure { error -> updateOtp { OtpFlow.verifyFailed(it, error, clock.nowMillis()) } }
         }
     }
@@ -257,7 +267,7 @@ class AuthViewModel(
                 val nonce = api.googleNonce()
                 when (val picked = externalSignIn.signIn(activity, nonce.nonce)) {
                     is ExternalSignInResult.Token -> {
-                        finished(api.signInWithGoogle(picked.idToken, nonce.nonceId, device()))
+                        finished(api.signInWithGoogle(picked.idToken, nonce.nonceId, device()), googleTokenEmail(picked.idToken))
                         null
                     }
                     ExternalSignInResult.Cancelled -> null
@@ -283,7 +293,8 @@ class AuthViewModel(
 
     // MARK: - Done
 
-    private suspend fun finished(result: AuthResult) {
+    private suspend fun finished(result: AuthResult, identity: String?) {
+        runCatchingUnlessCancelled { rememberSignIn(identity) }
         stopTicker()
         saved.remove<String>(KEY_STAGE)
         CHALLENGE_KEYS.forEach { saved.remove<Any>(it) }
@@ -331,6 +342,7 @@ class AuthViewModel(
             saved[KEY_CH_LENGTH] = c.codeLength
             saved[KEY_CH_CHANNEL] = c.channel.wire
             saved[KEY_CH_TIMES] = longArrayOf(c.sentAtMillis, c.expiresAtMillis, c.resendAtMillis)
+            saved[KEY_CH_RESENT] = c.resent
         }
     }
 
@@ -348,6 +360,7 @@ class AuthViewModel(
             sentAtMillis = times[0],
             expiresAtMillis = times[1],
             resendAtMillis = times[2],
+            resent = saved.get<Boolean>(KEY_CH_RESENT) == true,
         )
         return OtpFlow.tick(base.copy(challenge = challenge), clock.nowMillis())
     }
@@ -369,7 +382,8 @@ class AuthViewModel(
         private const val KEY_CH_LENGTH = "auth.challenge.length"
         private const val KEY_CH_CHANNEL = "auth.challenge.channel"
         private const val KEY_CH_TIMES = "auth.challenge.times"
-        private val CHALLENGE_KEYS = listOf(KEY_CH_ID, KEY_CH_PHONE, KEY_CH_LENGTH, KEY_CH_CHANNEL, KEY_CH_TIMES)
+        private const val KEY_CH_RESENT = "auth.challenge.resent"
+        private val CHALLENGE_KEYS = listOf(KEY_CH_ID, KEY_CH_PHONE, KEY_CH_LENGTH, KEY_CH_CHANNEL, KEY_CH_TIMES, KEY_CH_RESENT)
 
         /**
          * What a Play Integrity token for the code request is bound to:
@@ -402,3 +416,11 @@ class AuthViewModel(
         }
     }
 }
+
+/** The address a Google ID token names (its `email` claim), for Settings to show; null when it names none. */
+internal fun googleTokenEmail(idToken: String): String? = runCatching {
+    val payload = idToken.split('.').getOrNull(1) ?: return null
+    val flags = android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+    val json = String(android.util.Base64.decode(payload, flags), Charsets.UTF_8)
+    kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject["email"]?.jsonPrimitive?.contentOrNull
+}.getOrNull()?.takeIf { '@' in it }

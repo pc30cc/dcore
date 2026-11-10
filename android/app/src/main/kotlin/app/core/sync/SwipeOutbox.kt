@@ -72,11 +72,15 @@ class SwipeOutbox(
 
     val pendingCount: Int get() = pending.size
 
-    /** Records a pass; it leaves with the next batch. */
-    fun pass(target: PublicUid) {
+    /**
+     * Records a pass; it leaves with the next batch. A [rewindable] pass is
+     * held back while it is the last action (a rewind may still take it); one
+     * that is not (after a report) leaves with the batch at once.
+     */
+    fun pass(target: PublicUid, rewindable: Boolean = true) {
         if (pending.any { it.target == target }) return
         pending.addLast(Swipe(target, SwipeAction.Pass))
-        lastIsPass = true
+        lastIsPass = rewindable
         changed()
         if (sendableCount() >= batchSize) {
             launchFlush()

@@ -14,16 +14,7 @@ import java.io.File
 class NamelessStringsTest {
 
     /** Strings written before the redesign that still carry the placeholder. Shrinks, never grows. */
-    private val notYetRewritten = setOf(
-        "auth_closed_body", "auth_error_banned", "auth_sheet_signin_title", "auth_sheet_signup_title",
-        "call_end_no_microphone_body", "call_notify_incoming_public", "call_notify_missed_public", "call_notify_ongoing_public",
-        "chat_push_missing_body", "chat_unknown", "deck_location_title", "discover_empty_body", "maintenance_body",
-        "onboarding_error_text_refused", "onboarding_interest_consent", "onboarding_location_body", "onboarding_name_body",
-        "onboarding_rule_adults", "onboarding_rules_body", "paywall_current_grant", "paywall_title", "privacy_adults",
-        "privacy_intro", "push_call_missed_body", "push_channel_offers_about", "push_like_body", "push_message_body",
-        "push_offer_body", "push_support_body", "rating_prompt", "restricted_body", "review_body", "settings_rate",
-        "splash_loading", "update_available", "update_required_body", "update_required_title",
-    )
+    private val notYetRewritten = emptySet<String>()
 
     private val entry = Regex("""<(string|item)\s+name="([a-z0-9_]+)"[^>]*>([^<]*)<""")
     private val plural = Regex("""<plurals\s+name="([a-z0-9_]+)"[^>]*>(.*?)</plurals>""", RegexOption.DOT_MATCHES_ALL)

@@ -3,7 +3,6 @@ package app.core.realtime
 import app.core.model.ConversationChange
 import app.core.model.EntitlementSource
 import app.core.model.MessageKind
-import app.core.model.Plan
 import app.core.model.PushData
 import app.core.model.RealtimeEvent
 import app.core.model.RealtimeEvents
@@ -93,7 +92,7 @@ class RealtimeEventsTest {
             return RealtimeEvents.decode(Wire.json.parseToJsonElement(text)) as RealtimeEvent.EntitlementsChanged
         }
         for (event in listOf(decode(null), decode("null"), decode("\"play\""), decode("\"bazaar\""), decode("\"elsewhere\""))) {
-            assertEquals(Plan.Plus, event.entitlements.plan)
+            assertEquals("plus", event.entitlements.plan)
             assertEquals(EntitlementSource.Play, event.entitlements.source)
             assertEquals(2, event.entitlements.wallet.boost)
         }

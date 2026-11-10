@@ -217,8 +217,10 @@ class MatchCallSession(
      * ring that brought only a photo URL ([CallPeer.withCachedFace]). Only
      * for this call's own conversation.
      */
-    fun knowFace(conversationId: Id, photoUrl: String?, blurhash: String?) {
-        _peer.update { peer -> if (peer.conversationId == conversationId) peer.withCachedFace(photoUrl, blurhash) else peer }
+    fun knowFace(conversationId: Id, photoUrl: String?, blurhash: String?, verified: Boolean = false) {
+        _peer.update { peer ->
+            if (peer.conversationId == conversationId) peer.withCachedFace(photoUrl, blurhash).let { it.copy(verified = it.verified || verified) } else peer
+        }
     }
 
     /** The microphone was refused before anybody was rung: nothing is placed. */

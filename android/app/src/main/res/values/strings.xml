@@ -6,82 +6,43 @@
   and StringsCompletenessTest checks the placeholders match.
 -->
 <resources>
-    <string name="splash_loading">Opening {appName}</string>
-    <string name="update_required_title">Update {appName}</string>
-    <string name="update_required_body">This version of {appName} is no longer supported. Update it to keep using the app.</string>
+    <string name="update_required_title">Update needed</string>
+    <string name="update_required_body">Update the app to keep using it.</string>
     <string name="update_required_action">Update</string>
-    <string name="auth_subtitle">Sign in or create an account to continue.</string>
     <string name="auth_continue_google">Continue with Google</string>
     <string name="legal_terms">Terms</string>
     <string name="legal_privacy">Privacy Policy</string>
-    <string name="onboarding_progress">Step %1$d of %2$d</string>
-    <string name="onboarding_step_name">Your first name</string>
-    <string name="onboarding_step_birthday">Your birthday</string>
-    <string name="onboarding_step_gender">Your gender</string>
-    <string name="onboarding_step_interested_in">Who you\'d like to meet</string>
-    <string name="onboarding_step_goal">What you\'re looking for</string>
-    <string name="onboarding_step_photos">Your photos</string>
-    <string name="onboarding_step_location">Your location</string>
-    <string name="onboarding_step_notifications">Notifications</string>
-    <string name="onboarding_step_rules">Community guidelines</string>
-    <string name="action_next">Next</string>
     <string name="action_back">Back</string>
     <string name="action_close">Close</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_ok">OK</string>
-    <string name="action_confirm">Confirm</string>
-    <string name="action_edit">Edit</string>
-    <string name="action_change">Change</string>
     <string name="action_more">More options</string>
     <string name="action_not_now">Not now</string>
     <string name="action_open_settings">Open settings</string>
-    <string name="action_refresh">Refresh</string>
     <string name="action_sign_out">Sign out</string>
-    <string name="action_skip_for_now">Skip for now</string>
     <string name="action_try_again">Try again</string>
     <string name="error_generic">Something went wrong. Try again.</string>
-    <string name="error_generic_title">Something went wrong</string>
-    <string name="error_offline">You\'re offline. Check your connection and try again.</string>
-    <string name="error_offline_title">No connection</string>
-    <string name="settings_sign_out_title">Sign out?</string>
-    <string name="settings_sign_out_body">You can sign in again any time with the same phone number or account.</string>
+    <string name="error_offline">You’re offline.</string>
     <string name="tab_discover">Discover</string>
     <string name="tab_likes">Likes</string>
     <string name="tab_chats">Chats</string>
     <string name="tab_profile">Profile</string>
-    <string name="discover_empty_title">No one to show yet</string>
-    <string name="discover_empty_body">Profiles near you will appear here once {appName} is connected to its server.</string>
     <string name="likes_empty_title">No likes yet</string>
-    <string name="likes_empty_body">People who like your profile will show up here.</string>
     <string name="chats_empty_title">No conversations yet</string>
-    <string name="chats_empty_body">When you match with someone, your conversation starts here.</string>
-    <string name="profile_empty_title">Your profile</string>
-    <string name="profile_empty_body">Editing your photos and details comes with the server\'s profile API.</string>
-    <string name="settings_section">Settings</string>
     <string name="settings_language">Language</string>
-    <string name="language_default">Default</string>
-    <string name="language_default_with">Default (%1$s)</string>
-    <string name="settings_rate">Rate {appName}</string>
-    <string name="rating_unavailable">Rating isn\'t available on this device.</string>
+    <string name="settings_rate">Rate us</string>
+    <string name="rating_unavailable">Rating isn’t available on this phone.</string>
     <string name="settings_updates">Check for updates</string>
     <string name="update_up_to_date">You have the latest version.</string>
-    <string name="update_check_failed">Couldn\'t check for updates. Try again later.</string>
-    <string name="settings_payments">Store payments</string>
-    <string name="payments_check">Tap to check %1$s</string>
-    <string name="payments_ready">%1$s is ready.</string>
-    <string name="payments_store_missing">%1$s isn\'t installed on this phone.</string>
-    <string name="payments_store_not_ready">Sign in to %1$s or update it.</string>
-    <string name="payments_not_supported">%1$s payments aren\'t available on this device or account.</string>
-    <string name="payments_service_unavailable">Can\'t reach %1$s right now.</string>
-    <string name="payments_error">Something went wrong with %1$s.</string>
+    <string name="update_check_failed">Couldn’t check for updates. Try again later.</string>
     <string name="settings_licences">Open-source licences</string>
     <string name="licences_font">%1$s font</string>
-    <string name="licences_instrument_serif">Instrument Serif font</string>
-    <string name="licences_lalezar">Lalezar font</string>
-    <string name="settings_version">Version %1$s (%2$d) · %3$s</string>
+    <string name="settings_version">Version %1$s</string>
 
     <!-- Language names in their own language, the same in every locale. -->
     <string name="language_en" translatable="false">English</string>
     <string name="language_fa" translatable="false">فارسی</string>
     <string name="language_tr" translatable="false">Türkçe</string>
+    <string name="a11y_range_from">%1$s, from %2$s</string>
+    <string name="a11y_range_to">%1$s, up to %2$s</string>
 </resources>

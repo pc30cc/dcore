@@ -5,9 +5,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -20,7 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -35,9 +42,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.core.R
 import app.core.ui.theme.AppTheme
 import app.core.ui.theme.LocalReducedMotion
@@ -68,7 +78,8 @@ internal fun buttonShape(): Shape = RoundedCornerShape(AppTheme.template.radii.b
  * white) with `--on-primary`, `--btn-highlight` and no glow, a label and
  * no icon. One per screen. Loading keeps its width and shows a spinner;
  * disabled is `--surface-3` with `--text-3`. [small] is the 48 dp form that
- * hugs its label («ویرایش پروفایل»).
+ * hugs its label («ویرایش پروفایل»); [medium] the 48 dp form with the full
+ * label (`.btn.md`: a request's «قبول»).
  */
 @Composable
 fun PrimaryButton(
@@ -79,6 +90,7 @@ fun PrimaryButton(
     loading: Boolean = false,
     small: Boolean = false,
     fullWidth: Boolean = !small,
+    medium: Boolean = false,
 ) {
     val t = AppTheme.template
     val shape = buttonShape()
@@ -91,7 +103,7 @@ fun PrimaryButton(
     Box(
         modifier = modifier
             .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
-            .heightIn(min = if (small) 48.dp else t.sizes.buttonH)
+            .heightIn(min = if (small || medium) 48.dp else t.sizes.buttonH)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -110,14 +122,7 @@ fun PrimaryButton(
             .padding(horizontal = if (small) 18.dp else 24.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text,
-            style = if (small) t.type.labelSm else t.type.label,
-            color = content,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.alpha(if (loading) 0f else 1f),
-        )
+        ButtonLabel(text, if (small) t.type.labelSm else t.type.label, content, Modifier.alpha(if (loading) 0f else 1f))
         if (loading) {
             CircularProgressIndicator(color = t.colors.onPrimary, trackColor = t.colors.onPrimary.copy(alpha = 0.3f), strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
         }
@@ -127,7 +132,10 @@ fun PrimaryButton(
 /**
  * The secondary button: no fill, a 1.5 dp `--line-strong` edge, the text
  * colour. [destructive] draws the edge and the label in `--error`
- * («حسابم رو پاک کن»). There is no tonal or inverse button.
+ * («حسابم رو پاک کن»). There is no tonal or inverse button. [icon] is for
+ * a sign-in provider's own logo before the label («ادامه با گوگل») and
+ * nothing else. [medium] is the 48 dp form with the full label that hugs
+ * it with 28 dp each side (one fix on an empty screen: «تا ۵۰ کیلومتر بگرد»).
  */
 @Composable
 fun SecondaryButton(
@@ -138,6 +146,8 @@ fun SecondaryButton(
     small: Boolean = false,
     fullWidth: Boolean = !small,
     destructive: Boolean = false,
+    medium: Boolean = false,
+    icon: (@Composable () -> Unit)? = null,
 ) {
     val t = AppTheme.template
     val shape = buttonShape()
@@ -148,7 +158,7 @@ fun SecondaryButton(
     Box(
         modifier = modifier
             .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
-            .heightIn(min = if (small) 48.dp else t.sizes.buttonH)
+            .heightIn(min = if (small || medium) 48.dp else t.sizes.buttonH)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -157,18 +167,44 @@ fun SecondaryButton(
             .border(1.5.dp, if (destructive) t.colors.error else t.colors.lineStrong, shape)
             .then(if (pressed && enabled) Modifier.background(t.colors.text.copy(alpha = 0.06f), shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = if (small) 18.dp else 24.dp)
+            .padding(horizontal = if (small) 18.dp else if (medium) 28.dp else 24.dp)
             .alpha(if (enabled) 1f else 0.4f),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = if (small) t.type.labelSm else t.type.label, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            icon?.invoke()
+            ButtonLabel(text, if (small) t.type.labelSm else t.type.label, color)
+        }
     }
 }
+
+/**
+ * A button's label, on one line: when large text or a long price («ادامه با
+ * ۱٬۲۰۰٬۰۰۰ تومان») no longer fits, its size steps down (to 12 sp at least);
+ * when even that does not fit, it takes two lines before anything is cut.
+ */
+@Composable
+private fun ButtonLabel(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    var wrap by remember(text, style) { mutableStateOf(false) }
+    BasicText(
+        text,
+        modifier = modifier,
+        style = style.copy(color = color, textAlign = TextAlign.Center),
+        maxLines = if (wrap) 2 else 1,
+        softWrap = wrap,
+        overflow = TextOverflow.Ellipsis,
+        autoSize = TextAutoSize.StepBased(minFontSize = LABEL_MIN_SP.sp, maxFontSize = style.fontSize, stepSize = LABEL_STEP_SP.sp),
+        onTextLayout = { if (!wrap && it.hasVisualOverflow) wrap = true },
+    )
+}
+
+private const val LABEL_MIN_SP = 12f
+private const val LABEL_STEP_SP = 0.5f
 
 /** What a text button does: move on (the accent), something neutral, or remove something (error). */
 enum class TextActionKind { Primary, Neutral, Destructive }
 
-/** A text button (`--type-link`): 48 dp tall, hugging its label; never an icon. */
+/** A text button (`--type-link`, or [style]: `--type-legal-link` in a footer): 48 dp tall, hugging its label; never an icon. */
 @Composable
 fun TextAction(
     text: String,
@@ -176,6 +212,7 @@ fun TextAction(
     modifier: Modifier = Modifier,
     kind: TextActionKind = TextActionKind.Primary,
     enabled: Boolean = true,
+    style: TextStyle = AppTheme.template.type.link,
 ) {
     val t = AppTheme.template
     val color = when (kind) {
@@ -193,7 +230,7 @@ fun TextAction(
             .alpha(if (enabled) 1f else 0.4f),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = t.type.link, color = color, maxLines = 1)
+        Text(text, style = style, color = color, maxLines = 1)
     }
 }
 
@@ -278,7 +315,12 @@ enum class CallButtonKind {
     Accept,
 }
 
-/** A call button (68 dp, or 56 dp in the video row), always a 48 dp target at least; never a glow. */
+/**
+ * A call button (68 dp, or 56 dp in the video row), always a 48 dp target at
+ * least; never a glow. [toggled] makes it a switch for TalkBack, read as on
+ * or off under a name that does not change ("Microphone, switch, off"); a
+ * disabled one keeps its place at 40 % opacity.
+ */
 @Composable
 fun CallButton(
     icon: ImageVector,
@@ -288,12 +330,14 @@ fun CallButton(
     kind: CallButtonKind = CallButtonKind.Secondary,
     size: Dp = 68.dp,
     backdrop: GlassBackdrop? = null,
+    enabled: Boolean = true,
+    toggled: Boolean? = null,
 ) {
     val t = AppTheme.template
     val c = t.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale = pressScale(pressed, 0.94f)
+    val scale = pressScale(pressed && enabled, 0.94f)
     val inner = Modifier.size(size)
     val iconSize = if (size >= 68.dp) 28.dp else 24.dp
     Box(
@@ -302,9 +346,16 @@ fun CallButton(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                alpha = if (enabled) 1f else DISABLED_ALPHA
             }
             .clip(CircleShape)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .then(
+                if (toggled != null) {
+                    Modifier.toggleable(value = toggled, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
+                } else {
+                    Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+                },
+            )
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
@@ -324,6 +375,8 @@ fun CallButton(
         }
     }
 }
+
+private const val DISABLED_ALPHA = 0.4f
 
 /** The deck like button's shadow (`--glow-like`): the only glow a template draws. */
 @Composable

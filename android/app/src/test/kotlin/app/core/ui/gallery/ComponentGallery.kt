@@ -33,10 +33,11 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import app.core.feature.auth.welcome.GeneratedFaces
 import app.core.i18n.AppLanguage
 import app.core.i18n.Numerals
 import app.core.ui.components.AddPhotoTile
+import app.core.ui.components.PackCard
+import app.core.ui.components.PackChoice
 import app.core.ui.components.AppCheckbox
 import app.core.ui.components.AppIconButton
 import app.core.ui.components.AppRadio
@@ -412,7 +413,7 @@ object ComponentGallery {
                 time = x.now,
                 onClick = {},
                 verified = true,
-                newMatch = true,
+                online = true,
                 typing = true,
                 unread = 2,
                 photo = facePhoto(1),
@@ -431,6 +432,8 @@ object ComponentGallery {
                 Text(x.nazanin24, style = t.type.h2, color = t.colors.onPhoto, modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 10.dp))
             }
             FactRow(listOf(Fact(x.height, x.heightValue), Fact(x.education, x.bachelor), Fact(x.lookingFor, x.serious)))
+            // Five facts: a full row of three, then two sharing the width (no empty cell).
+            FactRow(listOf(Fact(x.height, x.heightValue), Fact(x.education, x.master), Fact(x.lookingFor, x.friendship), Fact(x.languageRow, x.persian), Fact(x.smoking, x.no)))
             PromptQuote(x.perfectDay, x.perfectDayAnswer, onLike = {})
         }
     }
@@ -495,6 +498,10 @@ object ComponentGallery {
             BenefitList(listOf(x.seeWhoLiked, x.unlimitedLikes))
             PeriodRow(PeriodOption("1m", x.oneMonth, x.price1, x.toman), selected = false, onClick = {})
             PeriodRow(PeriodOption("12m", x.twelveMonths, x.price12, x.toman, saving = x.saving), selected = true, onClick = {})
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PackCard(PackChoice("5", x.five, "${x.price1} ${x.toman}", x.five), selected = false, onClick = {}, modifier = Modifier.weight(1f))
+                PackCard(PackChoice("15", x.fifteen, "${x.price12} ${x.toman}", x.fifteen), selected = true, onClick = {}, modifier = Modifier.weight(1f))
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 TextAction(x.restore, {}, kind = TextActionKind.Neutral)
                 TextAction(x.terms, {}, kind = TextActionKind.Neutral)
@@ -544,7 +551,7 @@ object ComponentGallery {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(t.radii.md)).background(androidx.compose.ui.graphics.Color(0xFF2A2A30)).padding(12.dp)) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        CallButton(AppIcons.Close, x.decline, {}, kind = CallButtonKind.End)
+                        CallButton(AppIcons.PhoneDown, x.decline, {}, kind = CallButtonKind.End)
                         CallButton(AppIcons.Phone, x.audioOnly, {}, kind = CallButtonKind.Secondary)
                         CallButton(AppIcons.Video, x.mute, {}, kind = CallButtonKind.Toggled, size = 56.dp)
                         CallButton(AppIcons.Video, x.answer, {}, kind = CallButtonKind.Accept)
@@ -623,6 +630,8 @@ object ComponentGallery {
         val heightValue = p("۱۶۸ سانت", "168 cm")
         val education = p("تحصیلات", "Education")
         val lookingFor = p("دنبال", "Looking for")
+        val smoking = p("سیگار", "Smoking")
+        val no = p("نه", "No")
         val perfectDay = p("یه روز عالی یعنی…", "A perfect day is…")
         val perfectDayAnswer = p("صبحونه تو دربند، شب یه چای داغ.", "Breakfast in the hills, a hot tea at night.")
         val discover = p("کشف", "Discover")
@@ -651,6 +660,8 @@ object ComponentGallery {
         val price1 = p("۱۸۰٬۰۰۰", "180,000")
         val price12 = p("۱٬۲۰۰٬۰۰۰", "1,200,000")
         val toman = p("تومان", "Toman")
+        val five = p("۵", "5")
+        val fifteen = p("۱۵", "15")
         val saving = p("۴۴٪ کمتر", "44% less")
         val restore = p("بازیابی خرید", "Restore")
         val terms = p("قوانین", "Terms")

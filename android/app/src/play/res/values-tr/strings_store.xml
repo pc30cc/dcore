@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="store_name">Google Play</string>
-    <string name="paywall_store_terms">Ödeme Google Play hesabınla yapılır. Abonelik, Google Play\'de (Ödemeler ve abonelikler, ardından Abonelikler) iptal edene kadar aynı fiyat ve dönemle otomatik yenilenir. İstediğin zaman iptal edebilir, ödediğin dönemin sonuna kadar kullanabilirsin.</string>
+    <!-- Play signs in with Google too: what only the service keeps names the account. -->
+    <string name="privacy_only_us_1">Telefon numarası veya Google hesabı</string>
 </resources>

@@ -581,6 +581,30 @@ val brandWelcomeAssets = tasks.register<BrandWelcomeAssets>("brandWelcomeAssets"
     images.from(welcomeImages.map { brandWelcomeFolder.file(it) })
 }
 
+// A release whose brand ships no welcome pictures shows the welcome without
+// any (rings and the mark, or no photo) until the admin config names some:
+// allowed, but said on every release build.
+
+abstract class CheckWelcomeImages : DefaultTask() {
+    @get:Input abstract val imageCount: Property<Int>
+    @get:Input abstract val brand: Property<String>
+
+    @TaskAction
+    fun check() {
+        if (imageCount.get() > 0) return
+        logger.warn("w: brands/${brand.get()}/brand.json lists no welcome.images: the welcome shows no pictures until the admin config names some")
+    }
+}
+
+for (store in listOf("bazaar", "play")) {
+    val variant = "${store.replaceFirstChar { it.uppercase() }}Release"
+    val check = tasks.register<CheckWelcomeImages>("check${variant}WelcomeImages") {
+        imageCount.set(welcomeImages.size)
+        brand.set(brandId)
+    }
+    tasks.matching { it.name == "pre${variant}Build" }.configureEach { dependsOn(check) }
+}
+
 // MARK: - Fonts: the brand's own files, else the bundled open ones
 //
 // `fonts.persianFiles` ({ regular, medium, bold }) and `fonts.latinFiles`

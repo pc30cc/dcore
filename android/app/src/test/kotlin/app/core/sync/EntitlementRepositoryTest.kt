@@ -2,7 +2,6 @@ package app.core.sync
 
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
-import app.core.model.Plan
 import app.core.net.Fetched
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -20,7 +19,7 @@ import org.junit.Test
 class EntitlementRepositoryTest {
 
     private val link = "https://example.com/brand/subscriptions"
-    private val read = Entitlements(plan = Plan.Plus, source = EntitlementSource.Bazaar, manageUrl = link)
+    private val read = Entitlements(plan = "plus", source = EntitlementSource.Bazaar, manageUrl = link)
 
     @Test
     fun anEventWithoutALinkKeepsTheOneReadForTheSamePlanAndStore() = runTest {
@@ -42,7 +41,7 @@ class EntitlementRepositoryTest {
     fun anotherPlanStoreOrAGrantDoesNotInheritTheLink() = runTest {
         val repo = EntitlementRepository(fetch = { Fetched(read, true) })
         repo.refresh()
-        repo.apply(read.copy(plan = Plan.Premium, manageUrl = null))
+        repo.apply(read.copy(plan = "premium", manageUrl = null))
         assertNull(repo.entitlements.value?.manageUrl)
 
         repo.apply(read)
@@ -81,7 +80,7 @@ class EntitlementRepositoryTest {
         val repo = EntitlementRepository(fetch = { gate.await(); Fetched(read, true) })
         val reading = launch { repo.refresh() }
         runCurrent()
-        repo.apply(read.copy(plan = Plan.Premium))
+        repo.apply(read.copy(plan = "premium"))
         gate.complete(Unit)
         reading.join()
         assertEquals("the API's own read wins, as before", read, repo.entitlements.value)
@@ -104,7 +103,7 @@ class EntitlementRepositoryTest {
     @Test
     fun aPatchDuringAHintsReadDoesNotThrowItsAnswerAway() = runTest {
         val gate = CompletableDeferred<Unit>()
-        val premium = read.copy(plan = Plan.Premium)
+        val premium = read.copy(plan = "premium")
         val repo = EntitlementRepository(fetch = { gate.await(); Fetched(premium, true) })
         repo.apply(read)
         val reading = async { repo.reread() }
@@ -114,7 +113,7 @@ class EntitlementRepositoryTest {
         assertEquals("shown at once", end, repo.entitlements.value?.boostEndsAt)
         gate.complete(Unit)
         assertTrue(reading.await())
-        assertEquals("the server's newer answer", Plan.Premium, repo.entitlements.value?.plan)
+        assertEquals("the server's newer answer", "premium", repo.entitlements.value?.plan)
         assertEquals("with the patch made while it was read", end, repo.entitlements.value?.boostEndsAt)
 
         // A view the server published meanwhile still wins over the read, as before.

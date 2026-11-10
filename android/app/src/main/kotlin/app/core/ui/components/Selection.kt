@@ -1,10 +1,17 @@
 package app.core.ui.components
 
+import app.core.i18n.brandString
+import app.core.R
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,7 +35,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +46,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -50,11 +61,17 @@ import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
 import app.core.ui.theme.outerShadow
 import androidx.compose.runtime.getValue
+import kotlin.math.floor
 
 /**
  * Two or three options on a 48 dp `--surface-2` track (`--r-button`); the
  * chosen one is the `--seg-thumb` with `--on-seg-thumb` and `--seg-shadow`,
- * the others `--text-2`. Labels stay on one line with an ellipsis.
+ * the others `--text-2`. Labels stay on one line: when one no longer fits
+ * its segment (large text, a narrow phone), every label steps down to one
+ * size at which all fit (11 sp at least) before any is cut. Each option
+ * takes touches over its full 48 dp cell; the press shows inside the
+ * thumb's rounded shape, never as a square over the track. Not [enabled]
+ * (a purchase under way), the options do not change.
  */
 @Composable
 fun SegmentedControl(
@@ -62,6 +79,7 @@ fun SegmentedControl(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val t = AppTheme.template
     val reduced = LocalReducedMotion.current
@@ -77,6 +95,7 @@ fun SegmentedControl(
         val gap = 4.dp
         val segment = (maxWidth - 8.dp - gap * (count - 1)) / count
         val index = selected.coerceIn(0, count - 1)
+        val scale = labelScale(options, segment - SEGMENT_PADDING * 2)
         val x by animateDpAsState((segment + gap) * index, tween(if (reduced) 0 else Motion.MEDIUM_MS, easing = Motion.Standard), label = "segment")
         Box(
             Modifier
@@ -87,27 +106,56 @@ fun SegmentedControl(
                 .outerShadow(shape, t.shadows.segShadow)
                 .background(t.colors.segThumb, shape),
         )
-        // Each option is the full 48 dp tall to touch; the chosen thumb is drawn 4 dp inside.
         Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 4.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(gap)) {
             options.forEachIndexed { i, label ->
                 val on = i == selected
+                val interaction = remember { MutableInteractionSource() }
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .selectable(selected = on, role = Role.Tab, onClick = { onSelect(i) })
-                        .padding(horizontal = 10.dp),
+                        .selectable(selected = on, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Tab, onClick = { onSelect(i) }),
                     contentAlignment = Alignment.Center,
                 ) {
+                    Box(Modifier.fillMaxWidth().height(40.dp).clip(shape).indication(interaction, ripple()))
+                    val style = if (on) t.type.chipStrong else t.type.labelSm
                     Text(
                         label,
-                        style = if (on) t.type.chipStrong else t.type.labelSm,
+                        style = if (scale < 1f) style.copy(fontSize = style.fontSize * scale) else style,
                         color = if (on) t.colors.onSegThumb else t.colors.text2,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = SEGMENT_PADDING),
                     )
                 }
             }
+        }
+    }
+}
+
+private val SEGMENT_PADDING = 10.dp
+private const val SEGMENT_MIN_SP = 11f
+
+/**
+ * How much the segments' labels shrink so that every one fits [width] in the
+ * chosen (bolder) style: 1 when they fit as they are; never below 11 sp.
+ */
+@Composable
+private fun labelScale(labels: List<String>, width: Dp): Float {
+    val t = AppTheme.template
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val style = t.type.chipStrong
+    return remember(labels, width, style, density) {
+        val room = with(density) { width.toPx() }
+        val widest = labels.maxOfOrNull { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width } ?: 0
+        if (widest <= room || widest == 0 || room <= 0f) {
+            1f
+        } else {
+            val base = style.fontSize.value
+            // Whole half points, so the size settles instead of creeping.
+            val fitted = floor(base * room / widest * 2f) / 2f
+            (fitted.coerceAtLeast(SEGMENT_MIN_SP) / base).coerceAtMost(1f)
         }
     }
 }
@@ -158,13 +206,17 @@ fun AppSwitch(
     }
 }
 
+/** The check inside a 24 dp radio (15 dp) and checkbox (16 dp), drawn heavy (3 units). */
+private const val RADIO_CHECK = 15f / 24f
+private const val CHECKBOX_CHECK = 16f / 24f
+
 /** A radio (24 dp): a 2 dp `--outline` ring, or `--primary-fill` with an `--on-primary` check. */
 @Composable
 fun AppRadio(selected: Boolean, modifier: Modifier = Modifier, size: Dp = 24.dp) {
     val t = AppTheme.template
     if (selected) {
         Box(modifier.size(size).background(t.paints.primaryFill, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(AppIcons.Check, contentDescription = null, tint = t.colors.onPrimary, modifier = Modifier.size(size * 0.62f))
+            Icon(AppIcons.CheckHeavy, contentDescription = null, tint = t.colors.onPrimary, modifier = Modifier.size(size * RADIO_CHECK))
         }
     } else {
         Box(modifier.size(size).border(2.dp, t.colors.outline, CircleShape))
@@ -178,7 +230,7 @@ fun AppCheckbox(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 24.d
     val shape = RoundedCornerShape(t.radii.check)
     if (checked) {
         Box(modifier.size(size).background(t.paints.primaryFill, shape), contentAlignment = Alignment.Center) {
-            Icon(AppIcons.Check, contentDescription = null, tint = t.colors.onPrimary, modifier = Modifier.size(size * 0.66f))
+            Icon(AppIcons.CheckHeavy, contentDescription = null, tint = t.colors.onPrimary, modifier = Modifier.size(size * CHECKBOX_CHECK))
         }
     } else {
         Box(modifier.size(size).border(2.dp, t.colors.outline, shape))
@@ -272,16 +324,22 @@ private fun Modifier.trackToTheEdges(thumb: Dp): Modifier = layout { measurable,
 /** The slider thumb's touch target. */
 private val THUMB_TARGET = 48.dp
 
-/** A 24 dp `--slider-thumb` with `--slider-thumb-shadow`, in a 48 dp target. */
+/** A 24 dp `--slider-thumb` with `--slider-thumb-shadow`, in a 48 dp target; [description] names it to TalkBack. */
 @Composable
-private fun SliderThumb() {
+private fun SliderThumb(description: String? = null) {
     val t = AppTheme.template
-    Box(Modifier.size(THUMB_TARGET), contentAlignment = Alignment.Center) {
+    val named = if (description != null) Modifier.semantics { contentDescription = description } else Modifier
+    Box(Modifier.size(THUMB_TARGET).then(named), contentAlignment = Alignment.Center) {
         Box(Modifier.size(24.dp).outerShadow(CircleShape, t.shadows.sliderThumbShadow).background(t.colors.sliderThumb, CircleShape))
     }
 }
 
-/** A slider: `--slider-fill` from the start (the right in Persian), a 24 dp thumb, 48 dp to touch. */
+/**
+ * A slider: `--slider-fill` from the start (the right in Persian), a 24 dp
+ * thumb, 48 dp to touch. Without [filled] (a value not chosen yet) the
+ * track is drawn bare under the thumb. TalkBack reads [label] and
+ * [valueText] («فاصله»، «تا ۲۵ کیلومتر») rather than a bare percentage.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSlider(
@@ -291,25 +349,40 @@ fun AppSlider(
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     steps: Int = 0,
     enabled: Boolean = true,
+    filled: Boolean = true,
+    label: String? = null,
+    valueText: String? = null,
 ) {
     val t = AppTheme.template
+    val named = if (label != null || valueText != null) {
+        Modifier.semantics {
+            if (label != null) contentDescription = label
+            if (valueText != null) stateDescription = valueText
+        }
+    } else {
+        Modifier
+    }
     Slider(
         value = value,
         onValueChange = onValueChange,
         enabled = enabled,
-        modifier = modifier.trackToTheEdges(THUMB_TARGET),
+        modifier = modifier.then(named).trackToTheEdges(THUMB_TARGET),
         valueRange = valueRange,
         steps = steps,
         thumb = { SliderThumb() },
         track = {
             val span = valueRange.endInclusive - valueRange.start
-            val fraction = if (span == 0f) 0f else (it.value - valueRange.start) / span
+            val fraction = if (span == 0f || !filled) 0f else (it.value - valueRange.start) / span
             SliderTrack(0f, fraction, t.paints.sliderFill, t.colors.sliderTrack)
         },
     )
 }
 
-/** A range slider (two thumbs), `--slider-fill` between them. */
+/**
+ * A range slider (two thumbs), `--slider-fill` between them. With a
+ * [label], TalkBack names each thumb by its end: «سن، از ۲۳» and «سن، تا
+ * ۳۴» ([startText], [endText]).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRangeSlider(
@@ -319,8 +392,13 @@ fun AppRangeSlider(
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     steps: Int = 0,
     enabled: Boolean = true,
+    label: String? = null,
+    startText: String? = null,
+    endText: String? = null,
 ) {
     val t = AppTheme.template
+    val startName = if (label != null && startText != null) brandString(R.string.a11y_range_from, label, startText) else null
+    val endName = if (label != null && endText != null) brandString(R.string.a11y_range_to, label, endText) else null
     RangeSlider(
         value = value,
         onValueChange = onValueChange,
@@ -328,8 +406,8 @@ fun AppRangeSlider(
         modifier = modifier.trackToTheEdges(THUMB_TARGET),
         valueRange = valueRange,
         steps = steps,
-        startThumb = { SliderThumb() },
-        endThumb = { SliderThumb() },
+        startThumb = { SliderThumb(startName) },
+        endThumb = { SliderThumb(endName) },
         track = {
             val span = valueRange.endInclusive - valueRange.start
             val from = if (span == 0f) 0f else (it.activeRangeStart - valueRange.start) / span

@@ -1,8 +1,6 @@
 package app.core.feature.auth.welcome
 
 import android.content.Context
-import androidx.compose.runtime.Immutable
-import androidx.compose.ui.graphics.Color
 import app.core.model.WelcomeConfig
 import app.core.model.WelcomeGradient
 import kotlinx.serialization.Serializable
@@ -12,7 +10,8 @@ import kotlinx.serialization.json.Json
  * The brand's `welcome` block as the build wrote it to the assets
  * (`brand/welcome.json`; see app/build.gradle.kts): texts per locale, an
  * optional gradient and the names of the pictures copied next to it
- * (`brand/welcome/<name>`).
+ * (`brand/welcome/<name>`). The welcome draws only the pictures; its one
+ * title is the app's own string.
  */
 @Serializable
 data class BrandWelcome(
@@ -44,7 +43,7 @@ data class BrandWelcome(
     }
 }
 
-/** Where a bubble's picture comes from. */
+/** Where a welcome picture comes from. */
 sealed interface WelcomePicture {
     /** A file the brand ships (`brands/<id>/welcome/<name>`, copied into the assets). */
     data class Asset(val name: String) : WelcomePicture
@@ -53,69 +52,25 @@ sealed interface WelcomePicture {
     data class Remote(val url: String) : WelcomePicture
 }
 
-/** The scene's three colours, top to bottom. */
-@Immutable
-data class WelcomeColors(val top: Color, val middle: Color, val bottom: Color) {
-    companion object {
-        /** Sky at the top, a warm coral in the middle, deep maroon at the bottom. */
-        val Default = WelcomeColors(Color(0xFFA9C2EE), Color(0xFFF06A3C), Color(0xFF2B0A0E))
+/**
+ * The welcome's pictures in the order they are tried: the ones the server's
+ * config names (https only), then the brand's own files, which stay the
+ * fallback when none of the config's can be loaded (offline, a bad URL).
+ */
+data class WelcomeSources(
+    val remote: List<WelcomePicture.Remote> = emptyList(),
+    val brand: List<WelcomePicture.Asset> = emptyList(),
+) {
+    val isEmpty: Boolean get() = remote.isEmpty() && brand.isEmpty()
 
-        fun of(gradient: WelcomeGradient?): WelcomeColors? {
-            gradient ?: return null
-            val top = hex(gradient.top) ?: return null
-            val middle = hex(gradient.middle) ?: return null
-            val bottom = hex(gradient.bottom) ?: return null
-            return WelcomeColors(top, middle, bottom)
-        }
-
-        private fun hex(value: String): Color? {
-            val v = value.trim()
-            if (v.length != 7 || v[0] != '#') return null
-            val rgb = v.substring(1).toLongOrNull(16) ?: return null
-            return Color(0xFF000000L or rgb)
-        }
-    }
+    /** The non-empty sets, config first. */
+    val sets: List<List<WelcomePicture>> get() = listOf(remote, brand).filter { it.isNotEmpty() }
 }
 
-/** What the welcome shows, resolved: the server's config first, then the brand, then the app's defaults. */
-@Immutable
-data class WelcomeContent(
-    val eyebrow: String,
-    /** With its asterisks; see [Headline]. */
-    val headline: String,
-    val subtitle: String,
-    val colors: WelcomeColors,
-    val pictures: List<WelcomePicture>,
-) {
-    companion object {
-        /**
-         * [language] is the screen's (`fa`, `en`, `tr`). A text missing in it
-         * falls back to the brand's default locale; [fallbackEyebrow],
-         * [fallbackHeadline] and [fallbackSubtitle] (the app's own strings)
-         * fill what neither has. Config pictures replace the brand's when
-         * there are any.
-         */
-        fun resolve(
-            brand: BrandWelcome,
-            config: WelcomeConfig?,
-            language: String,
-            fallbackEyebrow: String,
-            fallbackHeadline: String,
-            fallbackSubtitle: String,
-        ): WelcomeContent {
-            fun pick(server: String?, texts: Map<String, String>, fallback: String): String =
-                server?.takeIf { it.isNotBlank() }
-                    ?: texts[language]?.takeIf { it.isNotBlank() }
-                    ?: texts[brand.defaultLocale]?.takeIf { it.isNotBlank() }
-                    ?: fallback
-            val remote = config?.images.orEmpty().filter { it.startsWith("https://") }
-            return WelcomeContent(
-                eyebrow = pick(config?.eyebrow, brand.eyebrow, fallbackEyebrow),
-                headline = pick(config?.headline, brand.headline, fallbackHeadline),
-                subtitle = pick(config?.subtitle, brand.subtitle, fallbackSubtitle),
-                colors = WelcomeColors.of(config?.gradient) ?: WelcomeColors.of(brand.gradient) ?: WelcomeColors.Default,
-                pictures = if (remote.isNotEmpty()) remote.map(WelcomePicture::Remote) else brand.images.map(WelcomePicture::Asset),
-            )
-        }
-    }
+/** Where the welcome's pictures come from. Never a member's photo. */
+object WelcomeContent {
+    fun pictures(brand: BrandWelcome, config: WelcomeConfig?): WelcomeSources = WelcomeSources(
+        remote = config?.images.orEmpty().filter { it.startsWith("https://") }.map(WelcomePicture::Remote),
+        brand = brand.images.map(WelcomePicture::Asset),
+    )
 }

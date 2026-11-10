@@ -5,6 +5,7 @@ import app.core.common.Clock
 import app.core.common.Diag
 import app.core.model.BoostKind
 import app.core.model.Entitlements
+import app.core.model.PlanKey
 import app.core.model.ProblemCodes
 import app.core.model.PurchaseKind
 import app.core.model.PurchaseResult
@@ -517,7 +518,7 @@ class Purchases(
         val ownedProduct = backing.productIds.first()
         val ownedOptions = catalogue.plans.flatMap { it.options }.filter { it.productId == ownedProduct }
         val bar = PlanChanges.bar(ownedOptions, current.basePlanId?.takeIf { current.productId == ownedProduct })
-        return ChangeDecision.Allowed(PlanChange(backing.purchaseToken, PlanChanges.kind(current.plan, ownedProduct, bar, option)))
+        return ChangeDecision.Allowed(PlanChange(backing.purchaseToken, PlanChanges.kind(current.plan, ownedProduct, bar, option, catalogue::rank)))
     }
 
     /** The subscriptions the store account on this phone holds, as the store lists them; null when it cannot be asked. */
@@ -994,7 +995,7 @@ fun BillingUnavailableReason.failure(): PurchaseFailure = when (this) {
 }
 
 /** Whether [entitlements] show a paid plan from this build's own store (cancelled and changed there). */
-fun Entitlements.storePlan(store: Store): Boolean = plan in CatalogueJoin.PLANS && source?.wire == store.id
+fun Entitlements.storePlan(store: Store): Boolean = PlanKey.isPaid(plan) && source?.wire == store.id
 
 /**
  * [storePlan], and not past its own end at [now]. The server counts a

@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,37 +16,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -61,11 +48,18 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.core.LocalAppGraph
 import app.core.R
-import app.core.feature.auth.InlineMessage
-import app.core.feature.auth.PrimaryButton
+import app.core.feature.auth.authSideInsets
+import app.core.feature.auth.authTopInsets
 import app.core.feature.legal.PrivacyNoticeScreen
 import app.core.i18n.brandString
-import app.core.ui.components.BrandMark
+import app.core.push.OpenTarget
+import app.core.ui.components.AppDialog
+import app.core.ui.components.PrimaryButton
+import app.core.ui.components.StepsHeader
+import app.core.ui.components.TextAction
+import app.core.ui.components.TextActionKind
+import app.core.ui.components.skeleton
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
 import app.core.ui.theme.Space
@@ -98,6 +92,7 @@ fun OnboardingRoute() {
         },
     )
     val state by model.state.collectAsStateWithLifecycle()
+    var leaving by rememberSaveable { mutableStateOf(false) }
 
     // Back to the app (from the photo picker, the settings, another app): the account may have moved on.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.refresh(quiet = true) }
@@ -106,13 +101,32 @@ fun OnboardingRoute() {
     androidx.compose.runtime.LaunchedEffect(host) {
         if (host != null && graph.ageCheck.minor(host)) graph.auth.ended(app.core.feature.auth.GateNotice.AccountClosed)
     }
-    BackHandler(enabled = state.canGoBack) { model.back() }
+    // Back from the first step leaves sign-up, after asking; from any other, the step before.
+    val back: () -> Unit = { if (state.canGoBack) model.back() else leaving = true }
+    BackHandler(enabled = state.done == null && !state.loading) { back() }
 
+    val done = state.done
     when {
-        state.loading -> OnboardingLoading()
-        state.loadError != null -> OnboardingLoadFailed(state.loadError, onRetry = model::load, onSignOut = model::signOut)
-        state.finishing && state.error == null -> OnboardingFinishing()
-        else -> OnboardingSteps(state, model)
+        done != null -> DoneStep(state, model, onLeave = { profile ->
+            model.leave(profile) { graph.push.links.open(OpenTarget.Profile) }
+        })
+        state.loading || (state.finishing && state.step == null) -> OnboardingLoading()
+        state.loadError != null -> OnboardingLoadFailed(state.loadError, onRetry = model::load, onSignOut = { leaving = true })
+        else -> OnboardingSteps(state, model, back)
+    }
+    if (leaving) {
+        AppDialog(
+            title = brandString(R.string.dialog_sign_out_title),
+            body = null,
+            confirm = brandString(R.string.dialog_sign_out_confirm),
+            onConfirm = {
+                leaving = false
+                model.signOut()
+            },
+            dismiss = brandString(R.string.dialog_sign_out_stay),
+            onDismiss = { leaving = false },
+            destructive = false,
+        )
     }
 }
 
@@ -122,7 +136,7 @@ internal fun notificationsAskable(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
 
 @Composable
-private fun OnboardingSteps(state: OnboardingUiState, model: OnboardingViewModel) {
+private fun OnboardingSteps(state: OnboardingUiState, model: OnboardingViewModel, back: () -> Unit) {
     val step = state.step ?: return
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val reduced = LocalReducedMotion.current
@@ -140,14 +154,9 @@ private fun OnboardingSteps(state: OnboardingUiState, model: OnboardingViewModel
         },
         label = "onboardingStep",
     ) { current ->
-        val chrome = StepChrome(
-            position = state.position,
-            count = state.count,
-            onBack = if (state.canGoBack) ({ model.back() }) else null,
-            onSignOut = model::signOut,
-        )
+        val chrome = StepChrome(position = state.position, count = state.count, onBack = back)
         when (current) {
-            OnboardingStep.Privacy -> PrivacyNoticeScreen(state.legalVersions, onBack = null, onAccept = model::acceptPrivacy, busy = state.busy)
+            OnboardingStep.Privacy -> PrivacyNoticeScreen(onBack = back, onAccept = model::acceptPrivacy, busy = state.busy)
             OnboardingStep.Name -> NameStep(state, model, chrome)
             OnboardingStep.BirthDate -> BirthDateStep(state, model, chrome)
             OnboardingStep.Gender -> GenderStep(state, model, chrome)
@@ -163,118 +172,66 @@ private fun OnboardingSteps(state: OnboardingUiState, model: OnboardingViewModel
     }
 }
 
-/** What every step's frame needs: where it is in the sign-up, back, and the menu. */
+/** Where a step is in the sign-up, and its back (the step before, or leaving sign-up from the first). */
 data class StepChrome(
     val position: Int,
     val count: Int,
-    val onBack: (() -> Unit)?,
-    val onSignOut: () -> Unit,
+    val onBack: () -> Unit,
 )
 
-/** The progress bar under the top bar, moving with a spring as steps pass. */
-@Composable
-fun StepProgress(chrome: StepChrome) {
-    val target = if (chrome.count == 0) 0f else chrome.position.toFloat() / chrome.count
-    val reduced = LocalReducedMotion.current
-    val progress by animateFloatAsState(target, if (reduced) tween(0) else spring(stiffness = 200f), label = "progress")
-    val label = brandString(R.string.onboarding_progress, chrome.position, chrome.count)
-    LinearProgressIndicator(
-        progress = { progress },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Space.gutter)
-            .height(6.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .semantics { contentDescription = label },
-        drawStopIndicator = {},
-        gapSize = 0.dp,
-    )
-}
-
-/** The top bar's menu: signing out is always possible, sign-up or not. */
-@Composable
-fun StepMenu(chrome: StepChrome) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    var confirm by rememberSaveable { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) {
-            Icon(Icons.Filled.MoreVert, contentDescription = brandString(R.string.action_more))
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(text = { Text(brandString(R.string.action_sign_out)) }, onClick = {
-                open = false
-                confirm = true
-            })
-        }
-    }
-    if (confirm) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text(brandString(R.string.onboarding_sign_out_title)) },
-            text = { Text(brandString(R.string.onboarding_sign_out_body)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirm = false
-                    chrome.onSignOut()
-                }) { Text(brandString(R.string.action_sign_out)) }
-            },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(brandString(R.string.action_cancel)) } },
-        )
-    }
-}
-
-/** While the account is read: the shape of a step, not a spinner. */
+/** While the account is read: the shape of a step (the bar, the title, two rows), not a spinner. */
 @Composable
 private fun OnboardingLoading() {
-    val label = brandString(R.string.onboarding_loading)
-    Column(
-        Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(horizontal = Space.gutter, vertical = Space.xxl)
-            .semantics { contentDescription = label },
-        verticalArrangement = Arrangement.spacedBy(Space.lg),
-    ) {
-        Skeleton(Modifier.fillMaxWidth().height(6.dp))
-        Spacer(Modifier.height(Space.xl))
-        Skeleton(Modifier.fillMaxWidth(0.7f).height(32.dp))
-        Skeleton(Modifier.fillMaxWidth(0.9f).height(18.dp))
-        Spacer(Modifier.height(Space.lg))
-        Skeleton(Modifier.fillMaxWidth().height(56.dp))
+    val t = AppTheme.template
+    val label = brandString(R.string.ui_loading)
+    // One node for TalkBack («در حال بارگذاری»): the bar and shapes inside say nothing of their own.
+    Box(Modifier.fillMaxSize().background(t.colors.bg).clearAndSetSemantics { contentDescription = label }) {
+        Column(Modifier.fillMaxSize().authTopInsets().authSideInsets()) {
+            StepsHeader(step = 0, total = 0, onBack = null)
+            Column(
+                Modifier.padding(horizontal = Space.gutter).padding(top = OnboardingLayout.titleTop),
+                verticalArrangement = Arrangement.spacedBy(OnboardingLayout.optionGap),
+            ) {
+                Box(Modifier.fillMaxWidth(LOADING_TITLE).height(LoadingShapes.title).skeleton())
+                Gap(OnboardingLayout.optionsTop - OnboardingLayout.optionGap)
+                repeat(LOADING_ROWS) { Box(Modifier.fillMaxWidth().height(LoadingShapes.row).skeleton()) }
+            }
+        }
     }
 }
 
-@Composable
-fun Skeleton(modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+private const val LOADING_TITLE = 0.6f
+private const val LOADING_ROWS = 2
+
+private object LoadingShapes {
+    val title = 34.dp
+    val row = 60.dp
 }
 
+/** The account could not be read: one line, try again, or leave sign-up. */
 @Composable
 private fun OnboardingLoadFailed(error: StepError?, onRetry: () -> Unit, onSignOut: () -> Unit) {
-    Box(Modifier.fillMaxSize().safeDrawingPadding().padding(Space.xl), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-            BrandMark(size = 64.dp)
+    val t = AppTheme.template
+    Box(Modifier.fillMaxSize().background(t.colors.bg).authTopInsets().padding(Space.gutter), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.widthIn(max = FailedWidth),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.lg),
+        ) {
             Text(
-                brandString(if (error == StepError.Offline) R.string.error_offline_title else R.string.error_generic_title),
-                style = MaterialTheme.typography.titleLarge,
+                stepErrorText(error) ?: brandString(R.string.error_generic),
+                style = t.type.h2,
+                color = t.colors.text,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.semantics { heading() },
             )
-            InlineMessage(stepErrorText(error), error = false)
-            PrimaryButton(brandString(R.string.action_try_again), onClick = onRetry)
-            TextButton(onClick = onSignOut) { Text(brandString(R.string.action_sign_out)) }
+            PrimaryButton(brandString(R.string.action_try_again), onRetry)
+            TextAction(brandString(R.string.dialog_sign_out_confirm), onSignOut, kind = TextActionKind.Neutral)
         }
     }
 }
 
-@Composable
-private fun OnboardingFinishing() {
-    Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-            BrandMark(size = 80.dp)
-            Text(brandString(R.string.onboarding_finishing), style = MaterialTheme.typography.titleLarge)
-            androidx.compose.material3.CircularProgressIndicator()
-        }
-    }
-}
+private val FailedWidth = 420.dp
 
 /** The sentence for a step's error, or null. */
 @Composable
@@ -289,4 +246,10 @@ fun stepErrorText(error: StepError?): String? = when (error) {
     }
     StepError.Incomplete -> brandString(R.string.onboarding_error_incomplete)
     StepError.Failed -> brandString(R.string.error_generic)
+}
+
+/** A loading shape in the template (`--skeleton`), for the account-state screens too. */
+@Composable
+fun Skeleton(modifier: Modifier) {
+    Box(modifier.skeleton())
 }

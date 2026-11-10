@@ -1,7 +1,10 @@
 package app.core.feature.chat
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
 import app.core.R
 import app.core.feature.call.callLinePreview
 import app.core.feature.card.currentLocale
@@ -74,6 +77,28 @@ class ChatClockText(private val locale: Locale, private val zone: ZoneId = ZoneI
     }
 }
 
+/**
+ * The time now, read again as each minute turns: one value for a whole
+ * list, so its rows skip recomposing in between, and «الان» or «۲ ساعت پیش»
+ * move on by themselves.
+ */
+@Composable
+fun rememberMinuteNow(): Instant {
+    val now by produceState(Instant.now()) {
+        while (true) {
+            delay(MINUTE_MS - System.currentTimeMillis() % MINUTE_MS)
+            value = Instant.now()
+        }
+    }
+    return now
+}
+
+/** Today in the phone's zone, the same object for as long as [now] is. */
+@Composable
+fun rememberToday(now: Instant): LocalDate = remember(now) { now.atZone(ZoneId.systemDefault()).toLocalDate() }
+
+private const val MINUTE_MS = 60_000L
+
 @Composable
 fun rememberChatClock(): ChatClockText {
     val locale = currentLocale()
@@ -89,17 +114,30 @@ fun dayHeader(clock: ChatClockText, date: LocalDate, today: LocalDate): String =
     else -> clock.day(date, today)
 }
 
-/** A list row's time: the time today, "Yesterday", a weekday within the week, else a short date. */
+/**
+ * A list row's time (`time.now`, `time.yesterday`, `time.daysAgo`): «الان»
+ * within the minute before [now], the time today (or, with [hoursToday],
+ * «۲ ساعت پیش» from the first hour on, as a request's line says it),
+ * «دیروز», «۳ روز پیش» within the week, else a short date.
+ */
 @Composable
-fun listTime(clock: ChatClockText, at: Instant, today: LocalDate): String {
+fun listTime(clock: ChatClockText, at: Instant, today: LocalDate, now: Instant? = null, hoursToday: Boolean = false): String {
     val date = clock.date(at)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(date, today)
+    val resources = androidx.compose.ui.platform.LocalResources.current
+    val ago = now?.let { java.time.Duration.between(at, it) }
     return when {
-        date == today -> clock.time(at)
-        date == today.minusDays(1) -> brandString(R.string.chat_day_yesterday)
-        date.isAfter(today.minusDays(7)) && date.isBefore(today) -> clock.weekday(date)
+        ago != null && !ago.isNegative && ago < JUST_NOW -> brandString(R.string.chat_time_now)
+        days == 0L && hoursToday && ago != null && ago.toHours() >= 1 ->
+            resources.getQuantityString(R.plurals.chat_time_hours_ago, ago.toHours().toInt(), clock.digits(ago.toHours().toString()))
+        days == 0L -> clock.time(at)
+        days == 1L -> brandString(R.string.chat_day_yesterday)
+        days in 2..6 -> resources.getQuantityString(R.plurals.chat_time_days_ago, days.toInt(), clock.digits(days.toString()))
         else -> clock.shortDay(date)
     }
 }
+
+private val JUST_NOW: java.time.Duration = java.time.Duration.ofMinutes(1)
 
 /**
  * A conversation's preview line: the last message as text, from the reader's
@@ -117,7 +155,9 @@ fun previewText(message: Message?, me: String?, spoken: Boolean = false): String
         MessageKind.LikeNote -> message.body?.takeIf { it.isNotBlank() }?.let { brandString(R.string.chat_preview_like_note, isolate(it)) }
             ?: brandString(R.string.chat_preview_liked)
         MessageKind.Image -> brandString(R.string.chat_preview_photo)
-        MessageKind.Voice -> brandString(R.string.chat_preview_voice)
+        MessageKind.Voice -> message.media?.durationMs?.takeIf { it > 0 }
+            ?.let { brandString(R.string.chat_preview_voice_length, app.core.feature.call.callDuration((it + 999) / 1000, app.core.feature.call.rememberLanguage())) }
+            ?: brandString(R.string.chat_preview_voice)
         MessageKind.Call -> message.call?.let { callLinePreview(it, me, spoken) } ?: brandString(R.string.chat_preview_call)
         MessageKind.Unsend -> return brandString(if (mine) R.string.chat_preview_you_unsent else R.string.chat_preview_unsent)
         MessageKind.Reaction -> brandString(R.string.chat_preview_reaction, message.body.orEmpty())
@@ -125,3 +165,4 @@ fun previewText(message: Message?, me: String?, spoken: Boolean = false): String
     }
     return if (mine && message.kind != MessageKind.Call) brandString(R.string.chat_preview_you, core) else core
 }
+

@@ -44,6 +44,8 @@ data class ActiveChallenge(
     val sentAtMillis: Long,
     val expiresAtMillis: Long,
     val resendAtMillis: Long,
+    /** A code sent again to the same number on the code step (a call is then offered once the wait is over). */
+    val resent: Boolean = false,
 )
 
 /**
@@ -177,6 +179,7 @@ object OtpFlow {
                 sentAtMillis = nowMillis,
                 expiresAtMillis = nowMillis + challenge.ttlSeconds.coerceAtLeast(1) * 1000L,
                 resendAtMillis = nowMillis + challenge.resendAfterSeconds.coerceAtLeast(0) * 1000L,
+                resent = state.challenge?.e164 == e164,
             ),
             code = "",
             codeError = null,

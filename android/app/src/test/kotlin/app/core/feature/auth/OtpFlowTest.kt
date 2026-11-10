@@ -131,6 +131,12 @@ class OtpFlowTest {
         assertEquals("", renewed.code)
         assertEquals(4, renewed.codeLength)
         assertEquals(30, renewed.resendInSeconds)
+        // Sent again to the same number on the code step: the page then offers a call.
+        assertFalse(onCode().challenge!!.resent)
+        assertTrue(renewed.challenge!!.resent)
+        // A number typed again after «ویرایش» starts over.
+        val again = OtpFlow.sent(OtpFlow.changeNumber(renewed), "+989121234567", OtpChallenge("ch3", codeLength = 6, ttlSeconds = 300, resendAfterSeconds = 30), t0 + 80_000)
+        assertFalse(again.challenge!!.resent)
     }
 
     @Test

@@ -1,6 +1,7 @@
 package app.core.feature.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,49 +16,32 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -67,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,18 +60,30 @@ import app.core.LocalAppGraph
 import app.core.R
 import app.core.feature.card.DetailsSource
 import app.core.feature.card.ProfileDetailsDialog
-import app.core.feature.card.VerifiedBadge
 import app.core.feature.card.isolate
 import app.core.feature.card.rememberNumbers
 import app.core.i18n.brandString
+import app.core.media.PhotoImage
 import app.core.model.CallKind
 import app.core.model.Catalog
 import app.core.model.Conversation
 import app.core.model.Id
 import app.core.model.ReportReason
 import app.core.sync.ChatMessage
+import app.core.ui.components.AppIconButton
+import app.core.ui.components.AppMenu
+import app.core.ui.components.AppMenuItem
+import app.core.ui.components.AppSnackbar
+import app.core.ui.components.Avatar
+import app.core.ui.components.AvatarFocus
 import app.core.ui.components.EmptyState
+import app.core.ui.components.PushedAppBar
+import app.core.ui.components.VerifiedBadge
+import app.core.ui.icons.AppIcons
+import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Space
+import app.core.ui.theme.insetShadow
+import kotlinx.coroutines.launch
 
 /**
  * What another feature adds to a thread's top bar, for the conversation on
@@ -171,8 +168,12 @@ fun ChatRoute(conversationId: Id, onBack: () -> Unit) {
 
 private const val DEFAULT_MESSAGE_MAX = 2_000
 
-/** The thread for a given state: every state drawn, with no server behind it. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The thread (m10): the bar with back, who it is (face, name, badge and
+ * «آنلاین» while they are), the call buttons and the overflow; the
+ * transcript; the composer. A thread that ended keeps its lines and says so
+ * in place of the composer.
+ */
 @Composable
 fun ChatScreen(
     state: ChatUiState,
@@ -181,23 +182,45 @@ fun ChatScreen(
     catalog: Catalog,
     modifier: Modifier = Modifier,
 ) {
+    val t = AppTheme.template
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var draft by rememberSaveable { mutableStateOf("") }
     var sheet by remember { mutableStateOf<ChatSheet?>(null) }
+    val voiceUnavailable = brandString(R.string.chat_voice_unavailable)
 
     NoticeEffect(state.notice, snackbar, actions)
 
-    Scaffold(
-        modifier = modifier,
-        topBar = { ChatTopBar(state, actions, onSheet = { sheet = it }) },
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
+    Box(modifier.fillMaxSize().background(t.colors.bg)) {
+        Column(Modifier.fillMaxSize()) {
+            ChatTopBar(state, actions, onSheet = { sheet = it })
+            ConnectionLine(state.connection, state.offline && !state.loadFailed)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    state.gone -> EmptyState(
+                        title = brandString(R.string.chat_gone_title),
+                        action = brandString(R.string.action_back),
+                        onAction = actions::back,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                    state.loading -> TranscriptSkeleton()
+                    state.loadFailed && state.items.none { it is ChatItem.Bubble || it is ChatItem.Call } -> EmptyState(
+                        title = brandString(if (state.offline) R.string.error_offline else R.string.chat_load_failed_title),
+                        action = brandString(R.string.action_try_again),
+                        onAction = actions::reload,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                    else -> Transcript(state, actions, onSheet = { sheet = it }, onVoice = { scope.launch { snackbar.showSnackbar(voiceUnavailable) } })
+                }
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(horizontal = Space.gutter, vertical = ChatLayout.snackbarGap)) { data ->
+                    AppSnackbar(data.visuals.message)
+                }
+            }
             Box(Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
                 when {
                     state.gone -> Unit
                     state.ended -> EndedBar()
                     else -> Column {
-                        if (state.readReceiptsLocked) ReadReceiptsHint()
                         Composer(
                             text = draft,
                             max = messageMax,
@@ -208,30 +231,6 @@ fun ChatScreen(
                             onSend = { if (actions.send(draft)) draft = "" },
                         )
                     }
-                }
-            }
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            ConnectionLine(state.connection, state.offline && !state.loadFailed)
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    state.gone -> EmptyState(
-                        icon = R.drawable.ic_tab_chats,
-                        title = brandString(R.string.chat_gone_title),
-                        body = brandString(R.string.chat_gone_body),
-                        modifier = Modifier.align(Alignment.Center),
-                        action = { Button(onClick = actions::back) { Text(brandString(R.string.action_back)) } },
-                    )
-                    state.loading -> TranscriptSkeleton()
-                    state.loadFailed && state.items.none { it is ChatItem.Bubble || it is ChatItem.Call } -> EmptyState(
-                        icon = R.drawable.ic_chat_offline,
-                        title = brandString(R.string.chat_load_failed_title),
-                        body = brandString(if (state.offline) R.string.chat_load_failed_offline else R.string.error_generic),
-                        modifier = Modifier.align(Alignment.Center),
-                        action = { Button(onClick = actions::reload) { Text(brandString(R.string.action_try_again)) } },
-                    )
-                    else -> Transcript(state, actions, onSheet = { sheet = it })
                 }
             }
         }
@@ -289,173 +288,174 @@ private fun NoticeEffect(notice: ChatNotice?, snackbar: SnackbarHostState, actio
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The thread's bar (`.appbar`): back; the face (40 dp), the name
+ * (`--type-h3`) with the badge and, while they are online, «آنلاین» in
+ * `--online-text` (the only place the word is shown); then the call buttons
+ * and the overflow. The face and the name open the profile.
+ */
 @Composable
 private fun ChatTopBar(state: ChatUiState, actions: ChatActions, onSheet: (ChatSheet) -> Unit) {
+    val t = AppTheme.template
     val conversation = state.conversation
-    TopAppBar(
-        navigationIcon = {
-            IconButton(onClick = actions::back) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = brandString(R.string.action_back))
-            }
-        },
-        title = {
-            if (conversation != null) {
-                val subtitle = when {
-                    state.ended -> null
-                    state.typing -> brandString(R.string.chat_typing)
-                    conversation.peer.online -> brandString(R.string.chat_online)
-                    conversation.peer.activeRecently -> brandString(R.string.chat_active_recently)
-                    else -> null
-                }
-                val openProfile = brandString(R.string.chat_view_profile)
-                Row(
-                    Modifier
-                        .clickable(onClickLabel = openProfile, onClick = actions::openProfile)
-                        .padding(vertical = Space.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.md),
-                ) {
-                    PeerAvatar(conversation.peer.photo, size = 40.dp, online = conversation.peer.online && !state.ended)
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                            Text(
-                                conversation.peer.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.semantics { heading() },
-                            )
-                            if (conversation.peer.verified) VerifiedBadge(16.dp, description = brandString(R.string.deck_verified))
-                        }
-                        AnimatedVisibility(subtitle != null) {
-                            Text(
-                                subtitle.orEmpty(),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (state.typing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        },
+    PushedAppBar(
+        onBack = actions::back,
         actions = {
             if (conversation != null && !state.ended && !state.gone) {
                 LocalChatHeaderActions.current.invoke(this, conversation)
                 var menu by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { menu = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = brandString(R.string.action_more))
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(brandString(R.string.chat_view_profile)) },
-                            onClick = { menu = false; actions.openProfile() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(brandString(if (conversation.muted) R.string.chat_unmute else R.string.chat_mute)) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_chat_muted), contentDescription = null) },
-                            onClick = { menu = false; actions.setMuted(!conversation.muted) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(brandString(R.string.chat_report)) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_chat_report), contentDescription = null) },
-                            onClick = { menu = false; onSheet(ChatSheet.Report(null)) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(brandString(R.string.chat_block)) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_chat_block), contentDescription = null) },
-                            onClick = { menu = false; onSheet(ChatSheet.Block) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(brandString(R.string.chat_unmatch), color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_chat_unmatch), contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                            onClick = { menu = false; onSheet(ChatSheet.Unmatch) },
-                        )
+                    AppIconButton(AppIcons.More, brandString(R.string.action_more), { menu = true })
+                    AppMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        AppMenuItem(brandString(R.string.chat_view_profile)) { menu = false; actions.openProfile() }
+                        AppMenuItem(brandString(if (conversation.muted) R.string.chat_unmute else R.string.chat_mute)) { menu = false; actions.setMuted(!conversation.muted) }
+                        AppMenuItem(brandString(R.string.chat_report)) { menu = false; onSheet(ChatSheet.Report(null)) }
+                        AppMenuItem(brandString(R.string.chat_block), danger = true) { menu = false; onSheet(ChatSheet.Block) }
+                        AppMenuItem(brandString(R.string.chat_unmatch), danger = true) { menu = false; onSheet(ChatSheet.Unmatch) }
                     }
                 }
             }
         },
-    )
+    ) {
+        if (conversation != null) {
+            val online = conversation.peer.online && !state.ended
+            val openProfile = brandString(R.string.chat_view_profile)
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(t.radii.sm))
+                    .clickable(onClickLabel = openProfile, onClick = actions::openProfile)
+                    .padding(vertical = ChatLayout.whoPad),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ChatLayout.whoGap),
+            ) {
+                Avatar(ChatLayout.avatar, photo = conversation.peer.photo?.let { photo -> { PhotoImage(photo, null, Modifier.fillMaxSize(), alignment = AvatarFocus) } })
+                Column(Modifier.weight(1f, fill = false)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ChatLayout.nameGap)) {
+                        Text(
+                            conversation.peer.name,
+                            style = t.type.h3,
+                            color = t.colors.text,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).semantics { heading() },
+                        )
+                        if (conversation.peer.verified) VerifiedBadge(ChatLayout.badge)
+                    }
+                    AnimatedVisibility(online) {
+                        Text(brandString(R.string.chat_online), style = t.type.caption, color = t.colors.onlineText)
+                    }
+                }
+            }
+        } else {
+            Box(Modifier.weight(1f))
+        }
+    }
 }
 
+/**
+ * The composer (`.cbar`): the field (52 dp, `--surface-field` with
+ * `--field-line`, `--r-button` but never rounder than its one-line height,
+ * «یه پیام بفرست…»), growing to five lines, and the 52 dp send button at the
+ * end: `--surface-2` while there is nothing to send, `--primary-fill` with
+ * `--on-primary` once there is. No attach or voice button: this version
+ * sends text only. The count shows near the limit.
+ */
 @Composable
 private fun Composer(text: String, max: Int, onText: (String) -> Unit, onSend: () -> Unit) {
+    val t = AppTheme.template
     val number = rememberNumbers()
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.sm)) {
-            val near = text.length >= max - COUNTER_AT
-            if (near) {
-                Text(
-                    brandString(R.string.chat_counter, number(text.length), number(max)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (text.length >= max) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.End).padding(horizontal = Space.md),
-                )
-            }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                TextField(
-                    value = text,
-                    onValueChange = { onText(it.take(max)) },
-                    placeholder = { Text(brandString(R.string.chat_composer_hint)) },
-                    // The draft follows the direction of what is typed, not the app's.
-                    textStyle = LocalTextStyle.current.copy(textDirection = TextDirection.Content),
-                    maxLines = 6,
-                    shape = RoundedCornerShape(24.dp),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    colors = TextFieldDefaults.colors(
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                    ),
-                    modifier = Modifier.weight(1f).heightIn(min = Space.minTouch),
-                )
-                FilledIconButton(
-                    onClick = onSend,
-                    enabled = text.isNotBlank(),
-                    colors = IconButtonDefaults.filledIconButtonColors(),
-                    modifier = Modifier.size(Space.minTouch + 4.dp),
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = brandString(R.string.chat_send))
-                }
+    val shape = RoundedCornerShape(min(t.radii.button, ChatLayout.composer / 2))
+    val canSend = text.isNotBlank()
+    // The design's 24 dp under the field holds its gesture bar: the navigation bar's own
+    // height (already under the composer) comes off it, and over the keyboard a small gap.
+    val density = LocalDensity.current
+    val navigation = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val keyboard = WindowInsets.ime.getBottom(density) > 0
+    val bottom = if (keyboard) ChatLayout.composerMinBottom else maxOf(ChatLayout.composerMinBottom, ChatLayout.composerBottom - navigation)
+    Column(Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, top = ChatLayout.composerTop, bottom = bottom)) {
+        if (text.length >= max - COUNTER_AT) {
+            Text(
+                brandString(R.string.chat_counter, number(text.length), number(max)),
+                style = t.type.caption,
+                color = if (text.length >= max) t.colors.error else t.colors.text3,
+                modifier = Modifier.align(Alignment.End).padding(bottom = ChatLayout.counterGap),
+            )
+        }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(ChatLayout.composerGap)) {
+            val hint = brandString(R.string.chat_composer_hint)
+            BasicTextField(
+                value = text,
+                onValueChange = { onText(it.take(max)) },
+                // The draft follows the direction of what is typed, not the app's.
+                textStyle = t.type.field.copy(color = t.colors.text, textDirection = TextDirection.Content),
+                cursorBrush = SolidColor(t.colors.caret),
+                maxLines = COMPOSER_LINES,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = ChatLayout.composer)
+                    .background(t.colors.surfaceField, shape)
+                    .insetShadow(shape, t.shadows.fieldLine)
+                    .semantics { contentDescription = hint },
+                decorationBox = { field ->
+                    Box(Modifier.padding(horizontal = ChatLayout.fieldPadH, vertical = ChatLayout.fieldPadV), contentAlignment = Alignment.CenterStart) {
+                        if (text.isEmpty()) Text(hint, style = t.type.fieldPlaceholder, color = t.colors.text3, maxLines = 1)
+                        field()
+                    }
+                },
+            )
+            val send = brandString(R.string.chat_send)
+            Box(
+                Modifier
+                    .size(ChatLayout.composer)
+                    .clip(CircleShape)
+                    .then(if (canSend) Modifier.background(t.paints.primaryFill, CircleShape) else Modifier.background(t.colors.surface2, CircleShape))
+                    .clickable(enabled = canSend, role = androidx.compose.ui.semantics.Role.Button, onClick = onSend)
+                    .semantics { contentDescription = send },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(AppIcons.Forward, contentDescription = null, tint = if (canSend) t.colors.onPrimary else t.colors.text3, modifier = Modifier.size(ChatLayout.sendIcon))
             }
         }
     }
 }
 
 private const val COUNTER_AT = 100
-
-/** "See when it's read": read receipts are the plan's, and the paywall is one tap away. */
-@Composable
-private fun ReadReceiptsHint() {
-    val paywall = app.core.feature.paywall.LocalPaywall.current
-    androidx.compose.material3.TextButton(
-        onClick = { paywall.plans(app.core.feature.paywall.PaywallEntry.READ_RECEIPTS) },
-        modifier = Modifier.padding(horizontal = Space.sm).heightIn(min = Space.minTouch),
-    ) {
-        Icon(painterResource(R.drawable.ic_chat_read), contentDescription = null, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(Space.xs))
-        Text(brandString(R.string.chat_read_receipts_upsell), style = MaterialTheme.typography.labelLarge)
-    }
-}
+private const val COMPOSER_LINES = 5
 
 @Composable
 private fun EndedBar() {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Space.xxs),
-        ) {
-            Text(brandString(R.string.chat_ended_title), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
-            Text(
-                brandString(R.string.chat_ended_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
+    val t = AppTheme.template
+    Column(
+        Modifier.fillMaxWidth().background(t.colors.surface2).padding(horizontal = Space.gutter, vertical = ChatLayout.endedPad),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(brandString(R.string.chat_ended_title), style = t.type.bodyStrong, color = t.colors.text, textAlign = TextAlign.Center)
+        Text(brandString(R.string.chat_ended_body), style = t.type.bodySm, color = t.colors.text2, textAlign = TextAlign.Center)
     }
+}
+
+/** The thread's layout, from the design's board (`.appbar .who`, `.cbar`). */
+private object ChatLayout {
+    val avatar = 40.dp
+    val whoGap = 10.dp
+    val whoPad = 4.dp
+    val nameGap = 6.dp
+    val badge = 16.dp
+    val composer = 52.dp
+    val composerGap = 8.dp
+    val composerTop = 8.dp
+
+    /** The composer's bottom 24 dp over the screen's edge on the design's phone (its gesture bar inside). */
+    val composerBottom = 24.dp
+    val composerMinBottom = 8.dp
+    val counterGap = 4.dp
+    val sendIcon = 22.dp
+    val fieldPadH = 18.dp
+    val fieldPadV = 12.dp
+    val endedPad = 16.dp
+    val snackbarGap = 12.dp
 }
 
 /** The copy action, shared by the message sheet. */
@@ -475,7 +475,3 @@ fun rememberCopy(actions: ChatActions): (String) -> Unit {
 @Composable
 fun peerName(state: ChatUiState): String = isolate(state.conversation?.peer?.name.orEmpty())
 
-@Composable
-internal fun OutlinedAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier.heightIn(min = Space.minTouch)) { Text(text) }
-}

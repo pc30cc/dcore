@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="store_name">Cafe Bazaar</string>
-    <string name="paywall_store_terms">Ödeme Cafe Bazaar üzerinden yapılır. Abonelik, Cafe Bazaar\'da iptal edene kadar her dönemin sonunda aynı fiyattan Bazaar bakiyenden yenilenir. Yenileme ödenemezse abonelik sona erer.</string>
 </resources>

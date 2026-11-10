@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -259,6 +260,29 @@ class SharedFixturesTest {
     }
 
     @Test
+    fun theStoreListsItsPlansWithTheirNamesBadgesRanksAndWhatTheyGive() {
+        val sent = Wire.json.parseToJsonElement(text("v1", "store-products")).jsonObject
+        val plans = sent["plans"] as kotlinx.serialization.json.JsonArray
+        assertTrue("the fixture lists plans", plans.isNotEmpty())
+        val read = Wire.json.decodeFromString(StoreProducts.serializer(), sent.toString())
+        assertEquals(plans.map { it.jsonObject["key"]!!.stringOrNull }, read.plans.map { it.key })
+        for ((i, plan) in plans.withIndex()) {
+            val p = plan.jsonObject
+            val r = read.plans[i]
+            assertEquals(p["name"]!!.stringOrNull, r.name)
+            assertEquals(p["description"]?.stringOrNull, r.description)
+            assertEquals(p["badge"]?.stringOrNull, r.badge)
+            assertEquals(p["rank"]!!.jsonPrimitive.content.toInt(), r.rank)
+            // Every switch and quota the server sends is read, none falls back to its default.
+            val back = kotlinx.serialization.json.Json { encodeDefaults = true }.encodeToJsonElement(StorePlan.serializer(), r).jsonObject
+            assertEquals(p["features"], back["features"])
+            assertEquals(p["quotas"], back["quotas"])
+        }
+        // Each subscription names one of the listed plans, by key.
+        assertTrue(read.subscriptions.all { s -> read.plans.any { it.key == s.plan } })
+    }
+
+    @Test
     fun theEntitlementEventKeepsTheStoreWhoseViewItIs() {
         val fixture = Wire.json.parseToJsonElement(text("realtime", RealtimeTypes.ENTITLEMENT)).jsonObject
         val sent = fixture["d"]!!.jsonObject
@@ -266,7 +290,7 @@ class SharedFixturesTest {
         assertTrue("the fixture names a store this build knows", store != StoreName.Unknown)
         val event = RealtimeEvents.decode(fixture) as RealtimeEvent.EntitlementsChanged
         assertEquals("the store member is read, not dropped", store, event.store)
-        assertEquals("the entitlements beside it", sent["plan"]?.stringOrNull, event.entitlements.plan.wire)
+        assertEquals("the entitlements beside it", sent["plan"]?.stringOrNull, event.entitlements.plan)
         // Written back, the payload carries it again: nothing of it is lost on the way.
         val back = roundTrip(EntitlementEvent.serializer(), sent.toString()).jsonObject
         assertEquals(sent["store"], back["store"])
