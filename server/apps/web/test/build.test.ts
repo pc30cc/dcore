@@ -178,6 +178,10 @@ describe.each(builds)('the $name build', ({ site, appName, api, listings, live, 
       const isDeletion = /^\/[a-z]{2}\/delete-account\/$/.test(urlPath);
       if (!isRedirect && !isDeletion) expect(scripts, urlPath).toBe(0);
       expect(policy.includes('accounts.google.com'), urlPath).toBe(isDeletion && live);
+      // Hashes, 'none' or Google's client only: a script an edge in front adds (its own host, a path on the site) never runs.
+      const sources = /(?:^|;)\s*script-src\s+([^;]*)/.exec(policy)?.[1]?.trim().split(/\s+/) ?? [];
+      expect(sources.length, urlPath).toBeGreaterThan(0);
+      for (const source of sources) expect(source, urlPath).toMatch(/^('none'|'sha256-[A-Za-z0-9+/]+={0,2}'|https:\/\/accounts\.google\.com\/gsi\/client)$/);
     }
   });
 

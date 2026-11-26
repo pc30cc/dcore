@@ -348,8 +348,15 @@ describe.skipIf(!hasDatabase || !hasRedis)('safety writes (PostgreSQL as app_rw,
       if (view.kind !== 'account') throw new Error('no account view');
       expect(view.view.moderation.map((a) => a.id)).toEqual([ban.actionId]);
 
+      // The ban's own view (what the person read) carries no lift time while it stands.
+      expect(ban.action).toBeDefined();
+      expect(ban.action).not.toHaveProperty('revokedAtMs');
       const lifted = await one(() => revokeModeration(pg, ban.actionId, ids.nextId(), { reasonText: 'Reviewed again.' }));
       expect(lifted).toMatchObject({ outcome: 'revoked', already: false, kind: 3, before: { status: 6 }, after: { status: 4 } });
+      if (lifted.outcome !== 'revoked') throw new Error('not revoked');
+      // What the person reads of it now says it was lifted.
+      expect(lifted.action?.revokedAtMs).toEqual(expect.any(Number));
+      expect((await ownModeration(pg, u)).find((a) => a.id === ban.actionId)?.revokedAtMs).toBe(lifted.action?.revokedAtMs);
       for (const m of ms) expect(await matchState(m)).toBe(4);
       expect(Number(await value(`SELECT count(*) FROM moderation_actions WHERE user_id = $1 AND kind = 5`, [u]))).toBe(1);
       expect(await revokeModeration(pg, ban.actionId, ids.nextId())).toMatchObject({ outcome: 'revoked', already: true, after: { status: 4 } });
@@ -384,6 +391,8 @@ describe.skipIf(!hasDatabase || !hasRedis)('safety writes (PostgreSQL as app_rw,
       if (shadow.outcome !== 'applied') throw new Error('not applied');
       expect(await revokeModeration(pg, shadow.actionId, ids.nextId())).toMatchObject({ after: { status: 3, shadowbanned: false } });
       expect(await status(u)).toEqual({ status: 3, shadowbanned: false });
+      // A shadowban's lift writes no lift record: nothing but the shadowban row itself says there was one.
+      expect(Number(await value(`SELECT count(*) FROM moderation_actions WHERE user_id = $1 AND kind = 5`, [u]))).toBe(0);
 
       const newcomer = await person({ status: 1, name: null, basics: false });
       const ban = await apply(newcomer, 3);

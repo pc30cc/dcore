@@ -234,7 +234,8 @@ export const adminUserRoutes: FastifyPluginAsyncZod = async (app) => {
       const { side, limit, cursor } = request.query;
       const { found, value } = await adminUserReports(app.pg, userId, { side, beforeId: readCursor(cursor), limit: limit + 1 });
       if (!found) throw noSuchUser();
-      return paged(value, limit, (row) => reportSummaryOf(app, row));
+      const scope = userReadScope(app, request);
+      return paged(value, limit, (row) => reportSummaryOf(app, row, scope));
     },
   );
 

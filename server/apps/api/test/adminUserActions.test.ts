@@ -58,7 +58,7 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
     db = await migratedDatabase();
     await installAuditFailure(db);
     h = await startAdminHarness(db, {}, { jobs, realtime, media });
-    for (const role of ['superadmin', 'admin', 'moderator', 'support', 'analyst']) {
+    for (const role of ['superadmin', 'admin', 'moderator', 'support', 'finance', 'analyst']) {
       const signed = await adminAs(h, role);
       tokens.set(role, signed.accessToken);
       sessions.set(role, signed.sessionId);
@@ -240,7 +240,9 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
         after: { status: 'active', shadowbanned: false },
         ended: 0,
       });
-      expect(realtimePayloads.account.parse(events(u, 'account').at(-1)!.d)).toMatchObject({ status: 'active', moderation: { kind: 'warning', reasonText: 'Please do not send links.' } });
+      const heard = realtimePayloads.account.parse(events(u, 'account').at(-1)!.d);
+      expect(heard).toMatchObject({ status: 'active', moderation: { kind: 'warning', reasonText: 'Please do not send links.' } });
+      expect(heard.moderation).not.toHaveProperty('revokedAt');
       const history = moderationHistorySchema.parse((await call(h, '/v1/me/moderation', { token: u.token })).json());
       expect([...history.active, ...history.history].map((i) => [i.kind, i.reasonText])).toEqual([['warning', 'Please do not send links.']]);
     });
@@ -399,7 +401,8 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
       const lift = await row<{ kind: number; reason_text: string }>(db, `SELECT kind, reason_text FROM moderation_actions WHERE user_id = $1 AND kind = 5`, [u.id]);
       expect(lift).toEqual({ kind: 5, reason_text: 'We looked again.' });
       expect((await audited('user.lift', u, 'moderator')).detail).toMatchObject({ actionId: ban.id, kind: 'ban', reasonText: 'We looked again.', before: { status: 'banned' }, after: { status: 'active' } });
-      expect(realtimePayloads.account.parse(events(u, 'account').at(-1)!.d)).toMatchObject({ status: 'active' });
+      // The person reads the ban as lifted, not as standing.
+      expect(realtimePayloads.account.parse(events(u, 'account').at(-1)!.d)).toMatchObject({ status: 'active', moderation: { id: ban.id, kind: 'ban', revokedAt: body.action.revokedAt } });
       const again = await send('POST', `/v1/admin/users/${u.publicUid}/lift`, { actionId: ban.id }, 'moderator');
       expect(again.statusCode).toBe(200);
       expect(statements(again)).toBe(1);
@@ -410,16 +413,77 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
       const u = await person('Warned Lift');
       const other = await person('Other Lift');
       const warning = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/warn`, { reason: 'spam', reasonText: 'Stop.' })).json()).action;
+      const own = async () => moderationHistorySchema.strict().parse((await call(h, '/v1/me/moderation', { token: u.token })).json());
+      const standing = (await own()).history.find((item) => item.id === warning.id);
+      expect(standing).toBeDefined();
+      expect(standing).not.toHaveProperty('revokedAt');
       const heard = events(u).length;
       const res = await send('POST', `/v1/admin/users/${u.publicUid}/lift`, { actionId: warning.id });
-      expect(adminActionResultSchema.parse(res.json()).action.revokedAt).not.toBeNull();
+      const lifted = adminActionResultSchema.parse(res.json()).action;
+      expect(lifted.revokedAt).not.toBeNull();
       expect(events(u).length).toBe(heard);
+      // Still in the history, now with the time it was lifted; nothing is in force.
+      const after = await own();
+      expect(after.active).toEqual([]);
+      expect(after.history.find((item) => item.id === warning.id)).toMatchObject({ kind: 'warning', reasonText: 'Stop.', revokedAt: lifted.revokedAt });
+      // A lifted warning takes no appeal.
+      const appeal = await call(h, '/v1/appeals', { method: 'POST', token: u.token, body: { actionId: warning.id, body: 'It was fine.' } });
+      expect(appeal.statusCode, appeal.body).toBe(422);
+      expect(appeal.json()).toMatchObject({ code: 'not_appealable' });
+      expect(statements(appeal)).toBe(1);
+      // No lift record for a warning: its lift is its revoked_at and revoked_by.
+      expect(await rows(db, `SELECT 1 FROM moderation_actions WHERE user_id = $1 AND kind = 5`, [u.id])).toEqual([]);
+      expect((await audited('user.lift', u)).detail).toMatchObject({ actionId: warning.id, kind: 'warning', liftId: null });
       expect((await send('POST', `/v1/admin/users/${other.publicUid}/lift`, { actionId: warning.id })).statusCode).toBe(404);
       const suspension = adminActionResultSchema.parse(
         (await send('POST', `/v1/admin/users/${other.publicUid}/suspend`, { reason: 'spam', reasonText: 'Pause.', endsAt: new Date(Date.now() + DAY).toISOString() })).json(),
       ).action;
       jobs.jobs.length = 0;
       await refusedLeavesNothing('user.lift', other, () => send('POST', `/v1/admin/users/${other.publicUid}/lift`, { actionId: suspension.id }));
+    });
+
+    it('lifts a shadowban without a lift record; support and finance read nothing of it', async () => {
+      const u = await person('Shadow Lift');
+      const shadowban = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/shadowban`, { reason: 'spam', note: 'ring' }, 'moderator')).json()).action;
+      const res = await send('POST', `/v1/admin/users/${u.publicUid}/lift`, { actionId: shadowban.id, reasonText: 'Checked.' }, 'moderator');
+      expect(res.statusCode, res.body).toBe(200);
+      expect(statements(res)).toBe(2);
+      const body = adminActionResultSchema.parse(res.json());
+      expect(body.action).toMatchObject({ id: shadowban.id, kind: 'shadowban', standing: false });
+      expect(body.action.revokedAt).not.toBeNull();
+      expect(body.user.shadowbanned).toBe(false);
+      expect(await rows(db, `SELECT 1 FROM moderation_actions WHERE user_id = $1 AND kind = 5`, [u.id])).toEqual([]);
+      expect((await audited('user.lift', u, 'moderator')).detail).toMatchObject({ kind: 'shadowban', liftId: null, reasonText: 'Checked.' });
+      const tab = async (role: string) => {
+        const response = await admin(h, `/v1/admin/users/${u.publicUid}/moderation`, undefined, { token: tokens.get(role)! });
+        bodies.push(response.body);
+        expect(response.statusCode, response.body).toBe(200);
+        return response.json<{ items: { id: string; kind: string; revokedAt: string | null; revokedBy: { id: string } | null }[] }>().items;
+      };
+      for (const role of ['support', 'finance']) {
+        const items = await tab(role);
+        expect(items.filter((item) => item.kind === 'shadowban' || item.kind === 'lift'), role).toEqual([]);
+      }
+      const seen = (await tab('moderator')).find((item) => item.id === shadowban.id);
+      expect(seen).toMatchObject({ kind: 'shadowban', revokedAt: body.action.revokedAt });
+      expect(seen?.revokedBy?.id).toBeDefined();
+    });
+
+    it('answers 404 to a role that may lift but not see shadowbans, and writes nothing', async () => {
+      const u = await person('Shadow Hidden');
+      const shadowban = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/shadowban`, { reason: 'spam' })).json()).action;
+      // A custom role: it may lift, but it may not see shadowbans (no users.shadowban, no moderation.read).
+      await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (40, 'lifter', '{"en": "Lifter"}') ON CONFLICT (key) DO NOTHING`);
+      await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (40, 'users.read'), (40, 'users.lift') ON CONFLICT DO NOTHING`);
+      await h.app.adminAuth.roles.reload();
+      const lifter = await adminAs(h, 'lifter');
+      const before = await snapshot(u.id);
+      const res = await admin(h, `/v1/admin/users/${u.publicUid}/lift`, { actionId: shadowban.id }, { token: lifter.accessToken, ip: ADMIN_IP });
+      bodies.push(res.body);
+      expect(res.statusCode, res.body).toBe(404);
+      expect(res.body).not.toContain('shadowban');
+      expect(await snapshot(u.id)).toEqual(before);
+      expect(await auditRows(db, { action: 'user.lift', targetType: USER_TARGET, targetId: u.id })).toEqual([]);
     });
   });
 
@@ -436,10 +500,29 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
       expect(await row(db, `SELECT revoke_reason FROM sessions WHERE id = $1`, [u.sessionId])).toEqual({ revoke_reason: 4 });
       expect((await call(h, '/v1/me', { token: u.token })).statusCode).toBe(401);
       expect(realtime.disconnected).toContain(u.publicUid);
+      // The cutoff outlives a connection token minted just before it (access TTL, skew, margin, realtime TTL, close delay).
+      expect(await h.redis.pttl(`${h.prefix}deny:uid:${u.id}`)).toBeGreaterThan((900 + 30 + 30 + 3_600 + 25 - 10) * 1_000);
       expect((await call(h, '/v1/auth/refresh', { method: 'POST', body: { refreshToken } })).statusCode).toBe(401);
       const record = await row<{ kind: number; reason_code: number; note: string }>(db, `SELECT kind, reason_code, note FROM moderation_actions WHERE user_id = $1`, [u.id]);
       expect(record).toEqual({ kind: 10, reason_code: 99, note: 'lost phone' });
       expect((await audited('user.revoke_sessions', u, 'moderator')).detail).toMatchObject({ sessions: 1, note: 'lost phone' });
+    });
+
+    it('queues the realtime kick for the worker when Centrifugo cannot take it, and says the side failed only when that fails too', async () => {
+      const u = await person('Sign Out Kick');
+      realtime.failWith = new Error('centrifugo down');
+      const res = await send('POST', `/v1/admin/users/${u.publicUid}/revoke-sessions`, {}, 'moderator');
+      expect(res.statusCode, res.body).toBe(200);
+      expect(adminRevokeSessionsResultSchema.parse(res.json()).sideEffects).toBe('done');
+      expect(jobs.jobs.filter((j) => j.name === accountJobNames.realtimeEnd).map((j) => j.data['userId'])).toEqual([u.id]);
+      jobs.failWith = new Error('valkey down');
+      try {
+        const other = await person('Sign Out Kick Lost');
+        const lost = await send('POST', `/v1/admin/users/${other.publicUid}/revoke-sessions`, {}, 'moderator');
+        expect(adminRevokeSessionsResultSchema.parse(lost.json()).sideEffects).toBe('failed');
+      } finally {
+        jobs.failWith = null;
+      }
     });
 
     it('rolls back with a refused row and answers 404 for no one', async () => {

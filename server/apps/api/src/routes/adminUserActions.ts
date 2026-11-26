@@ -47,6 +47,7 @@ import { englishReason } from '../admin/reasons.js';
 import { accountStateOf as stateOf, actionOf, noSuchUser, personLocale, readUserParam, removedBanAuditOf, userDetailOf, userReadScope } from '../admin/refs.js';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
+import { endRealtime } from '../realtime/end.js';
 import { adminDeleteAndFinish } from '../services/deletion.js';
 import { textRejectText } from '../services/me.js';
 import { adminIdOf } from './adminAuth.js';
@@ -245,11 +246,13 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
       const userId = readUserParam(app, request.params.id);
       const { actionId, reasonText } = request.body;
       const adminId = adminIdOf(request);
+      const scope = userReadScope(app, request);
       const liftId = await withIdLease(() => app.ids.nextId());
       const result = await adminWrite(app, request, async (tx, trail) => {
         const written = await adminRevokeModeration(tx, actionId, liftId, { adminId, reasonText });
         const outcome = written.outcome;
-        if (outcome.outcome !== 'revoked' || outcome.userId !== userId || !written.view || !written.action) {
+        // A shadowban is not there for a caller who may not see shadowbans: the transaction rolls back.
+        if (outcome.outcome !== 'revoked' || outcome.userId !== userId || !written.view || !written.action || (outcome.kind === 4 && !scope.shadow)) {
           throw new HttpProblem('not_found', { detail: 'No such action on this person.' });
         }
         // The bans made for the action go with it, each with its row.
@@ -258,7 +261,8 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
           trail.unchanged();
           return { outcome, view: written.view, action: written.action, changed: false };
         }
-        const lifted = !outcome.already && outcome.kind >= 2;
+        // A lift record is written for a suspension or a ban only.
+        const lifted = !outcome.already && (outcome.kind === 2 || outcome.kind === 3);
         trail.record({
           action: 'user.lift',
           target: 'user',
@@ -285,8 +289,8 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
         sideEffects = await afterCommit(request, 'account version', () => accountChanged(app, userId, false), { userId: request.params.id, actionId });
       }
       return {
-        user: userDetailOf(app, app.cfg.get(), result.view, userReadScope(app, request)),
-        action: actionOf(result.action, userReadScope(app, request)),
+        user: userDetailOf(app, app.cfg.get(), result.view, scope),
+        action: actionOf(result.action, scope),
         deviceBansRemoved: result.outcome.deviceBans.length,
         sideEffects,
       };
@@ -311,14 +315,14 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
         trail.record({ action: 'user.revoke_sessions', target: 'user', targetId: userId, detail: { sessions: result.sessionIds.length, actionId, note } });
         return result.sessionIds;
       });
-      // As a sign-out everywhere: the access tokens stop at once, the refresh grace is forgotten, the socket closes.
+      // As a sign-out everywhere: the access tokens stop at once, the refresh grace is forgotten, the socket closes (or is queued to).
       const sideEffects = await afterCommit(
         request,
         'sign out',
         async () => {
           await app.denyList.revokeUser(userId);
           await app.refreshGrace.forget(sessionIds);
-          await app.realtime?.disconnect(app.publicIds.user.encode(userId));
+          await endRealtime(app, request.log, userId);
         },
         { userId: request.params.id },
       );

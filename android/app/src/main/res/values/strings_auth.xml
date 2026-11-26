@@ -41,6 +41,8 @@
     <string name="restricted_appeal_send">Send appeal</string>
     <string name="restricted_appeal_open">Appeal sent. The answer will come here.</string>
     <string name="restricted_appeal_upheld">Your appeal was reviewed. The decision stands.</string>
+    <string name="restricted_lifted_title">The restriction was lifted</string>
+    <string name="restricted_lifted">There’s nothing to appeal. Your account opens again in a moment.</string>
     <string name="restore_title">Your account is being deleted</string>
     <string name="restore_body">You can still bring it back.</string>
     <string name="restore_body_date">You can bring it back until %1$s.</string>

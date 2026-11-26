@@ -417,8 +417,9 @@ export const appealSchema = z.object({
 export type Appeal = z.infer<typeof appealSchema>;
 
 /**
- * A warning, suspension or ban, with the reason its holder reads and the
- * appeal filed against it. A shadowban is never sent.
+ * A warning, suspension or ban, with the reason its holder reads, when it
+ * was lifted (if it was) and the appeal filed against it. A shadowban is
+ * never sent.
  */
 export const moderationActionSchema = z.object({
   id: idSchema,
@@ -426,6 +427,8 @@ export const moderationActionSchema = z.object({
   reasonText: z.string().min(1),
   startsAt: timeSchema,
   endsAt: timeSchema.optional(),
+  /** When it was lifted (by the team or an overturned appeal); absent while it stands. A lifted action is not in force and takes no appeal. */
+  revokedAt: timeSchema.optional(),
   appeal: appealSchema.optional(),
 });
 export type ModerationAction = z.infer<typeof moderationActionSchema>;

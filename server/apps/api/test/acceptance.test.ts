@@ -18,7 +18,7 @@ import {
   type TempDatabase,
 } from './authSupport.js';
 import { ME_VIEW_SHAPE } from '../src/services/account.js';
-import { REALTIME_SECRET } from './accountSupport.js';
+import { REALTIME_PROXY_KEY, REALTIME_SECRET } from './accountSupport.js';
 import { TEST_REDIS_URL, hasInfrastructure } from './support.js';
 
 /**
@@ -44,7 +44,7 @@ describe.skipIf(!hasInfrastructure)('W2 acceptance', () => {
 
   beforeAll(async () => {
     db = await migratedDatabase();
-    h = await authApp(db, { env: { CENTRIFUGO_TOKEN_HMAC_SECRET: REALTIME_SECRET } });
+    h = await authApp(db, { env: { CENTRIFUGO_TOKEN_HMAC_SECRET: REALTIME_SECRET, CENTRIFUGO_PROXY_KEY: REALTIME_PROXY_KEY } });
     redis = new Redis(TEST_REDIS_URL ?? '');
   }, 60_000);
   afterAll(async () => {

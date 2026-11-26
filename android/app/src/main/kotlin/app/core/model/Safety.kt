@@ -38,6 +38,11 @@ data class BlockedUser(
 @Serializable
 data class BlockList(val items: List<BlockedUser> = emptyList())
 
+/**
+ * `GET /v1/me/moderation`: [active] is what is in force now; [history] is
+ * the rest, newest first (warnings, ended actions, and lifted ones, which
+ * carry [ModerationAction.revokedAt]).
+ */
 @Serializable
 data class ModerationHistory(
     val active: List<ModerationAction> = emptyList(),

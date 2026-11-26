@@ -3,6 +3,7 @@ import { ACCOUNT_QUEUE, accountJobAttempts, accountJobIds, accountJobNames, endC
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { scrubbed } from '../lib/dbErrors.js';
 import { HttpProblem } from '../lib/problem.js';
+import { endRealtime } from '../realtime/end.js';
 import { endCallsOf } from './calls.js';
 import { deletionReasonLabels } from './labels.js';
 
@@ -15,6 +16,7 @@ import { deletionReasonLabels } from './labels.js';
  * - `deny:uid` with the deletion time as cutoff, so every access token
  *   issued before it stops at once (a restore session signed in later is
  *   not touched), and the sessions' refresh grace is forgotten;
+ * - the person's realtime connections close (the fan-out repeats it);
  * - the own-account version, so `GET /v1/me` shows the deleted form;
  * - the jobs: the fan-out at once (peers' lists, `conversation_end`, the
  *   Centrifugo disconnect, the card and deck queue), the purge at the purge
@@ -106,6 +108,7 @@ export async function finishDeletion(app: FastifyInstance, request: FastifyReque
       cause: error,
     });
   }
+  await endRealtime(app, request.log, userId).catch((error: unknown) => request.log.error({ err: error }, 'deletion: realtime end not queued'));
   // Logged and carried on when it fails: the view expires by itself (24 h) and the cutoff above already ends the sessions.
   await app.account.changed(userId);
 }

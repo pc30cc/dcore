@@ -106,6 +106,7 @@ fi
 # The start scripts in their "write the file and stop" mode, with sample values.
 sample_secret=sample0123456789abcdefghijklmnopqrstuvwxyz
 if CENTRIFUGO_TOKEN_HMAC_SECRET="$sample_secret" CENTRIFUGO_API_KEY=sample-api-key-0123456789 KV_RT_PASSWORD=sample \
+   CENTRIFUGO_PROXY_KEY=sample-proxy-key-0123456789abcdefghij CENTRIFUGO_PROXY_URL=http://api:8081 \
    CENTRIFUGO_ALLOWED_ORIGINS=https://admin.example.com CENTRIFUGO_TEMPLATE="$root/deploy/centrifugo/config.json" \
    CENTRIFUGO_CONFIG_OUT="$work/centrifugo.json" CENTRIFUGO_CONFIG_ONLY=1 sh "$root/deploy/centrifugo/start.sh" \
    && LIVEKIT_API_KEY=sample LIVEKIT_API_SECRET="$sample_secret" LIVEKIT_WEBHOOK_URL=http://api:8080/v1/webhooks/livekit \

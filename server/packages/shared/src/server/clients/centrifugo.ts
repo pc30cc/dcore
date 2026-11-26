@@ -3,7 +3,7 @@ import { bodySnippet, defaultFetch, fetchWithTimeout, isRetryableStatus, Provide
 
 /**
  * Publishing to Centrifugo v6 through its per-method HTTP API (`/api/publish`,
- * `/api/broadcast`, `/api/disconnect`) with `X-API-Key`. The envelope id is
+ * `/api/broadcast`, `/api/refresh`) with `X-API-Key`. The envelope id is
  * the publication's idempotency key, so a retried publish is delivered once.
  * Events like `typing` skip the channel history.
  */
@@ -12,7 +12,11 @@ export interface RealtimePublisher {
   publish(channel: string, envelope: RealtimeEnvelope): Promise<void>;
   /** Several channels with identical data (both people of a pair). */
   broadcast(channels: readonly string[], envelope: RealtimeEnvelope): Promise<void>;
-  /** Closes every connection of a user (ban, suspension, deletion, sign-out everywhere). */
+  /**
+   * Closes every connection of a user (ban, suspension, deletion, sign-out)
+   * with 3005 "connection expired": apps drop their connection token and ask
+   * for a new one, which the API refuses for a revoked session or account.
+   */
   disconnect(publicUid: string): Promise<void>;
 }
 
@@ -101,7 +105,8 @@ export class CentrifugoPublisher implements RealtimePublisher {
   }
 
   async disconnect(publicUid: string): Promise<void> {
-    await this.call('disconnect', { user: publicUid });
+    // Always `expired`: a refresh without it (or expire_at) makes the user's connections non-expiring.
+    await this.call('refresh', { user: publicUid, expired: true });
   }
 }
 

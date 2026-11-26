@@ -35,8 +35,9 @@ export const accountLocationSchema = z.object({
 /**
  * `GET /v1/me` (restricted sessions included). A deleted account in its
  * grace period gets the minimal form: `id`, `status` and `deletion`.
- * `moderation` holds the active warnings, suspensions and bans; a shadowban
- * never appears.
+ * `moderation` holds the suspensions and bans in effect now (never a
+ * warning, an ended or a lifted action: those are in GET /v1/me/moderation);
+ * a shadowban never appears.
  */
 export const meSchema = z.object({
   id: publicUidSchema,
@@ -170,7 +171,11 @@ export const citiesQuerySchema = z.object({
 });
 export const cityListSchema = z.object({ items: z.array(citySchema) });
 
-/** `GET /v1/me/moderation`: shadowbans never appear. */
+/**
+ * `GET /v1/me/moderation`: `active`, the suspensions and bans in effect now;
+ * `history`, the rest, newest first (warnings, ended actions, and lifted ones
+ * carrying `revokedAt`). Shadowbans never appear.
+ */
 export const moderationHistorySchema = z.object({
   active: z.array(moderationActionSchema),
   history: z.array(moderationActionSchema),

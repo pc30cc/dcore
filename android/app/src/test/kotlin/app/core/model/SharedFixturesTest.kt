@@ -11,10 +11,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -210,6 +212,42 @@ class SharedFixturesTest {
         val me = Wire.json.parseToJsonElement(text("v1", "me")).jsonObject
         val meWith = me.with("profile", (me["profile"] as JsonObject).withSettings(JsonPrimitive("default")))
         assertEquals("default", Wire.json.decodeFromString(Me.serializer(), meWith.toString()).profile!!.settings.template)
+    }
+
+    /**
+     * `revokedAt` on a moderation action, read field by field from the JSON
+     * (unknown keys are ignored, so a field the model lacked would pass
+     * unseen): the fixture as it is, and with a lifted action put in when
+     * the fixture does not carry one yet.
+     */
+    @Test
+    fun aLiftedActionReadsLifted() {
+        val liftedId = "1287390234923455002"
+        val json = Wire.json.parseToJsonElement(text("v1", "moderation")).jsonObject
+        val history = json["history"] as kotlinx.serialization.json.JsonArray
+        val lifted = kotlinx.serialization.json.buildJsonObject {
+            put("id", JsonPrimitive(liftedId))
+            put("kind", JsonPrimitive("warning"))
+            put("reasonText", JsonPrimitive("Links are not allowed in messages."))
+            put("startsAt", JsonPrimitive("2026-11-02T09:00:00.000Z"))
+            put("revokedAt", JsonPrimitive("2026-11-02T15:30:00.000Z"))
+        }
+        val carried = history.any { it.jsonObject["id"]?.stringOrNull == liftedId }
+        val withLifted = if (carried) json else JsonObject(json + ("history" to kotlinx.serialization.json.JsonArray(listOf(lifted) + history)))
+        for ((variant, value) in listOf("as is" to json, "with a lifted one" to withLifted)) {
+            val read = Wire.json.decodeFromString(ModerationHistory.serializer(), value.toString())
+            val items = (value["active"] as kotlinx.serialization.json.JsonArray) + (value["history"] as kotlinx.serialization.json.JsonArray)
+            val actions = read.active + read.history
+            assertEquals(variant, items.size, actions.size)
+            items.zip(actions).forEach { (item, action) ->
+                val expected = item.jsonObject["revokedAt"]?.stringOrNull?.let(Instant::parse)
+                assertEquals("$variant: ${action.id}", expected, action.revokedAt)
+            }
+        }
+        val read = Wire.json.decodeFromString(ModerationHistory.serializer(), withLifted.toString())
+        assertEquals(Instant.parse("2026-11-02T15:30:00Z"), read.history.single { it.id == liftedId }.revokedAt)
+        assertNull("a standing action is not lifted", read.active.single().revokedAt)
+        assertNull(read.history.single { it.id == "1287390234923455000" }.revokedAt)
     }
 
     @Test

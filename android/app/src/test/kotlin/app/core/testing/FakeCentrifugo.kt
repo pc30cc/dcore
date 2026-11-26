@@ -2,6 +2,7 @@ package app.core.testing
 
 import app.core.realtime.RealtimeSocket
 import app.core.realtime.RealtimeTransport
+import app.core.realtime.ReplyError
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -12,8 +13,9 @@ import kotlinx.serialization.json.longOrNull
 /**
  * A scripted Centrifugo server for the realtime client's tests: connect,
  * subscribe with recovery from a bounded history with epochs and offsets,
- * in-band refresh, pings, publications, server disconnects and dropped
- * sockets, all on whatever clock the test runs.
+ * in-band refresh, pings, publications, server disconnects (with a push, or
+ * a close frame alone as v6 sends them over WebSocket), refused subscribes
+ * and dropped sockets, all on whatever clock the test runs.
  */
 class FakeCentrifugo(val channel: String = CHANNEL) : RealtimeTransport {
 
@@ -34,6 +36,12 @@ class FakeCentrifugo(val channel: String = CHANNEL) : RealtimeTransport {
 
     /** An error code for the next refresh replies. */
     var refreshError: Int? = null
+
+    /** Answer every client subscribe by closing the socket with this code alone: no reply, no push. */
+    var subscribeClose: Int? = null
+
+    /** Answer every client subscribe with this error. */
+    var subscribeError: ReplyError? = null
 
     /** How many of the next opens fail at once. */
     var failOpens = 0
@@ -87,6 +95,11 @@ class FakeCentrifugo(val channel: String = CHANNEL) : RealtimeTransport {
             it.push("""{"push":{"disconnect":{"code":$code,"reason":"test"}}}""")
             it.serverClose(code)
         }
+    }
+
+    /** The server ends the connection with [code] in the close frame alone, with no `disconnect` push first. */
+    fun closeWith(code: Int) {
+        current?.serverClose(code)
     }
 
     /** The network drops the socket under the client. */
@@ -162,6 +175,14 @@ class FakeCentrifugo(val channel: String = CHANNEL) : RealtimeTransport {
                 }
                 frame["subscribe"] != null -> {
                     val sub = frame["subscribe"] as JsonObject
+                    subscribeClose?.let {
+                        serverClose(it)
+                        return
+                    }
+                    subscribeError?.let {
+                        push("""{"id":$id,"error":{"code":${it.code},"message":"${it.message.orEmpty()}","temporary":${it.temporary}}}""")
+                        return
+                    }
                     if (serverSide) {
                         push("""{"id":$id,"error":{"code":105,"message":"already subscribed"}}""")
                         return

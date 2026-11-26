@@ -170,6 +170,24 @@ describe('the user page: review fixes', () => {
     expect(screen.queryByText('Lifted.')).toBeNull();
   });
 
+  it('shows no note line for a lift whose text was withheld from the caller', async () => {
+    const api = pageApi({
+      [`GET /v1/admin/users/${SARA}/moderation`]: () => ({
+        items: [
+          action('64', { kind: 'lift', reason: 'spam', reasonText: '', standing: false }),
+          action('63', { kind: 'lift', reason: 'spam', reasonText: 'Reporter withdrew.', standing: false }),
+        ],
+        nextCursor: null,
+      }),
+    });
+    const user = userEvent.setup();
+    renderPanel(`/users/${SARA}`, api);
+    await user.click(await screen.findByRole('tab', { name: 'Moderation' }));
+    expect(await screen.findByText('Reporter withdrew.')).toBeTruthy();
+    // One note line: the lift with a text; the one sent empty has none.
+    expect(screen.getAllByText('Note:', { exact: false })).toHaveLength(1);
+  });
+
   it('shows countries, languages and plans by their names', async () => {
     signInAs(adminWith([...ADMIN, 'billing.read']));
     const api = pageApi({

@@ -15,6 +15,7 @@ import { accountStatus, revokeReason, wireTime, type AuthResult, type ErrorCode,
 import { IdGeneratorUnavailableError, hashDomains, type KeyedHash } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { HttpProblem } from '../lib/problem.js';
+import { endRealtime } from '../realtime/end.js';
 import type { SessionScope } from './tokens.js';
 
 /**
@@ -344,6 +345,8 @@ export async function refresh(app: FastifyInstance, request: FastifyRequest, tok
       await Promise.all([app.denyList.revokeSession(sessionId), grace.forget([sessionId])]).catch((error: unknown) =>
         request.log.error({ err: error }, 'reuse: deny list not written'),
       );
+      // Live connections close; a copy of the connection token is refused by the subscribe check.
+      await endRealtime(app, request.log, outcome.userId).catch((error: unknown) => request.log.error({ err: error }, 'reuse: realtime end not queued'));
       claimed = false;
       throw new HttpProblem('refresh_reused');
     }
@@ -376,7 +379,7 @@ export async function refresh(app: FastifyInstance, request: FastifyRequest, tok
 
 // ─── Signing out ───────────────────────────────────────────────────────────
 
-/** Ends this session, or every session of the user; their access tokens stop at once. */
+/** Ends this session, or every session of the user; their access tokens stop at once, their realtime connections close. */
 export async function logout(app: FastifyInstance, request: FastifyRequest, all: boolean): Promise<void> {
   const principal = request.principal;
   if (!principal) throw new HttpProblem('unauthorized');
@@ -395,4 +398,6 @@ export async function logout(app: FastifyInstance, request: FastifyRequest, all:
     request.log.error({ err: error }, 'logout: deny list not written');
     throw new HttpProblem('service_unavailable', { detail: 'Signed out; try again to end the access token too.', cause: error });
   }
+  // The person's connections close (all of them: a connection names its user, not its session); never fails the sign-out.
+  await endRealtime(app, request.log, userId).catch((error: unknown) => request.log.error({ err: error }, 'logout: realtime end not queued'));
 }

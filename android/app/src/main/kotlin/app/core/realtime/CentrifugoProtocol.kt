@@ -28,8 +28,10 @@ import kotlinx.serialization.json.put
  *    connection token, or the server's personal-channel option is on): the
  *    connect reply carries it under `subs`, with its recovery result, and the
  *    client does not subscribe again;
- *  - otherwise the client sends `subscribe` for its user-limited channel,
- *    with no subscription token.
+ *  - otherwise the client sends `subscribe` for its personal channel, with
+ *    no subscription token: the server checks every subscribe against the
+ *    connection, and one it refuses for the token ends the socket with
+ *    [DISCONNECT_REVOKED].
  *
  * Pure functions, so every frame this app sends and every shape it can
  * receive is pinned by a JVM test with no socket in sight.
@@ -75,8 +77,8 @@ object CentrifugoProtocol {
         }.toString()
 
     /**
-     * `subscribe` to the user-limited channel: no token (the server checks
-     * that the channel's user is the connection's). With [recover] the server
+     * `subscribe` to the personal channel: no token (the server checks that
+     * the channel's user is the connection's). With [recover] the server
      * replays everything published since that position, when its history
      * still reaches it.
      */
@@ -198,8 +200,23 @@ object CentrifugoProtocol {
     /** Disconnect: the connection token is invalid (`3500`); the next attempt asks for a new one. */
     const val DISCONNECT_INVALID_TOKEN = 3500
 
-    /** Disconnect: the connection expired without a refresh (`3005`). */
+    /** Disconnect: the connection expired without a refresh (`3005`), or the server expired it on purpose. */
     const val DISCONNECT_EXPIRED = 3005
+
+    /** Disconnect: the connection's state is no longer valid on the server (`3014`). */
+    const val DISCONNECT_STATE_INVALIDATED = 3014
+
+    /** Disconnect: the server refused the token behind a subscribe (`4501`); terminal. */
+    const val DISCONNECT_REVOKED = 4501
+
+    /**
+     * Whether a close code says the token in hand is no longer good, so the
+     * next attempt asks for a new one instead of reusing it: 3500, 3005,
+     * 3014 and 4501. Every other code reuses it while it has time left.
+     */
+    fun needsNewToken(code: Int): Boolean =
+        code == DISCONNECT_INVALID_TOKEN || code == DISCONNECT_EXPIRED ||
+            code == DISCONNECT_STATE_INVALIDATED || code == DISCONNECT_REVOKED
 
     private fun JsonElement?.primitive(): JsonPrimitive? = this as? JsonPrimitive
     private fun JsonElement?.int(): Int? = primitive()?.intOrNull

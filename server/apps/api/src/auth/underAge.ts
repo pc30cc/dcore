@@ -1,6 +1,7 @@
 import { closeUnderAge, withTransaction } from '@app/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { HttpProblem } from '../lib/problem.js';
+import { endRealtime } from '../realtime/end.js';
 import { nextId } from './sessions.js';
 
 /**
@@ -65,5 +66,6 @@ export async function refuseUnderAge(app: FastifyInstance, request: FastifyReque
     // The database holds the refusal and the sessions are gone (no refresh works); only the cache is missing.
     request.log.error({ err: error }, 'under age: Valkey not written');
   }
+  await endRealtime(app, request.log, userId).catch((error: unknown) => request.log.error({ err: error }, 'under age: realtime end not queued'));
   return true;
 }

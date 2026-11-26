@@ -37,14 +37,15 @@ export function ModerationTab({ user }: { user: AdminUserDetail }) {
 /**
  * One record. What the person read (a warning's, suspension's or ban's
  * text) is in a box; a text rejection names its parts in words (its note is
- * written by the server); a lift's text is internal; a sign-out or a device
- * ban has no reason of its own.
+ * written by the server); a lift's text is internal (empty for a caller
+ * without moderation.read); a sign-out or a device ban has no reason of its own.
  */
 export function ActionRow({ action }: { action: AdminAction }) {
   const { t, locale } = useI18n();
   const by = action.admin ? t('moderation.by', { name: action.admin.displayName }) : t('common.automatic');
   const parts = action.kind === 'text_rejected' && action.note ? textPartsOf(action.note, t) : null;
-  const note = parts ? null : action.kind === 'lift' ? (action.reasonText !== LIFT_DEFAULT_TEXT ? action.reasonText : null) : action.note;
+  // A lift's text comes empty to a caller without moderation.read (it is internal).
+  const note = parts ? null : action.kind === 'lift' ? (action.reasonText && action.reasonText !== LIFT_DEFAULT_TEXT ? action.reasonText : null) : action.note;
   return (
     <li className="grid gap-2 p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">

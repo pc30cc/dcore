@@ -189,7 +189,16 @@ describe.skipIf(!hasInfrastructure)('location, devices and the realtime token', 
       expect(body.wsUrl).toBe('wss://rt.example.com/connection/websocket');
       const { payload, protectedHeader } = await jwtVerify(body.token, new TextEncoder().encode(REALTIME_SECRET), { algorithms: ['HS256'] });
       expect(protectedHeader.alg).toBe('HS256');
-      expect(Object.keys(payload).sort()).toEqual(['exp', 'iat', 'sub']);
+      // Exactly these: `channels`, `subs` or `channel` would subscribe past the check, `info` would reach peers.
+      expect(Object.keys(payload).sort()).toEqual(['exp', 'iat', 'meta', 'sub']);
+      for (const claim of ['channels', 'subs', 'channel', 'info', 'b64info', 'expire_at']) expect(payload, claim).not.toHaveProperty(claim);
+      // The session and the access token's issue time, which the subscribe check reads the deny list with.
+      const meta = payload['meta'] as Record<string, unknown>;
+      expect(Object.keys(meta).sort()).toEqual(['ati', 'sid']);
+      expect(meta['sid']).toBe(user.sessionId);
+      const [, accessPayload] = user.token.split('.');
+      const access = JSON.parse(Buffer.from(accessPayload!, 'base64url').toString('utf8')) as { iat: number };
+      expect(meta['ati']).toBe(access.iat);
       expect(payload.sub).toMatch(PUBLIC_UID_PATTERN);
       expect(payload.sub).toBe(user.publicUid);
       expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(3_600);

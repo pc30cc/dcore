@@ -130,6 +130,7 @@ describe('statement budgets', () => {
       CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
       CENTRIFUGO_API_URL: 'http://centrifugo:8000',
       CENTRIFUGO_API_KEY: 'a'.repeat(32),
+      CENTRIFUGO_PROXY_KEY: 'p'.repeat(32),
       // Photo storage and its CDN are required in production.
       S3_ENDPOINT: 'https://s3.example.com',
       S3_BUCKET_PRIVATE: 'uploads',
@@ -154,6 +155,7 @@ describe('statement budgets', () => {
       CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
       CENTRIFUGO_API_URL: 'http://centrifugo:8000',
       CENTRIFUGO_API_KEY: 'a'.repeat(32),
+      CENTRIFUGO_PROXY_KEY: 'p'.repeat(32),
       S3_ENDPOINT: 'https://s3.example.com',
       S3_BUCKET_PRIVATE: 'uploads',
       S3_BUCKET_MEDIA: 'media',
@@ -175,6 +177,39 @@ describe('statement budgets', () => {
     // Development and tests may run without it (GET /v1/origins then answers 503).
     expect(testConfig({ NODE_ENV: 'development' }).origins.signingKey).toBeUndefined();
     expect(testConfig().origins.signingKey).toBeUndefined();
+  });
+
+  it('refuses connection tokens without the subscribe-check key (in production and elsewhere), a key shared with another secret, and a port shared with the API', () => {
+    const production = {
+      NODE_ENV: 'production',
+      BRAND: 'live',
+      LOG_LEVEL: 'info',
+      PG_BUDGET: 'count',
+      CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
+      CENTRIFUGO_API_URL: 'http://centrifugo:8000',
+      CENTRIFUGO_API_KEY: 'a'.repeat(32),
+      S3_ENDPOINT: 'https://s3.example.com',
+      S3_BUCKET_PRIVATE: 'uploads',
+      S3_BUCKET_MEDIA: 'media',
+      S3_ACCESS_KEY_ID: 'id',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      CDN_BASE_URL: 'https://cdn.example.com',
+      CDN_SIGNING_KEY: 'k'.repeat(32),
+      ORIGINS_SIGNING_KEY: 'A'.repeat(43),
+    };
+    expect(() => testConfig(production)).toThrow(/CENTRIFUGO_PROXY_KEY/);
+    for (const same of ['c'.repeat(32), 'a'.repeat(32)]) expect(() => testConfig({ ...production, CENTRIFUGO_PROXY_KEY: same })).toThrow(/CENTRIFUGO_PROXY_KEY/);
+    expect(() => testConfig({ ...production, CENTRIFUGO_PROXY_KEY: 'short' })).toThrow(/CENTRIFUGO_PROXY_KEY/);
+    expect(() => testConfig({ ...production, CENTRIFUGO_PROXY_KEY: `${'p'.repeat(32)}"` })).toThrow(/CENTRIFUGO_PROXY_KEY/);
+    expect(() => testConfig({ ...production, CENTRIFUGO_PROXY_KEY: 'p'.repeat(32), PORT: '8081' })).toThrow(/REALTIME_PROXY_PORT/);
+    expect(testConfig({ ...production, CENTRIFUGO_PROXY_KEY: 'p'.repeat(32) }).realtime.proxy).toEqual({ key: 'p'.repeat(32), port: 8081 });
+    expect(testConfig({ ...production, CENTRIFUGO_PROXY_KEY: 'p'.repeat(32), REALTIME_PROXY_PORT: '9101' }).realtime.proxy?.port).toBe(9101);
+    // Elsewhere too, connection tokens come with the check (every Centrifugo configuration here asks it); without tokens, no key and no listener.
+    for (const NODE_ENV of ['development', 'test']) {
+      expect(() => testConfig({ NODE_ENV, CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32) }), NODE_ENV).toThrow(/CENTRIFUGO_PROXY_KEY.*CENTRIFUGO_TOKEN_HMAC_SECRET/s);
+      expect(testConfig({ NODE_ENV, CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32), CENTRIFUGO_PROXY_KEY: 'p'.repeat(32) }).realtime.proxy?.key, NODE_ENV).toBe('p'.repeat(32));
+    }
+    expect(testConfig().realtime.proxy).toBeUndefined();
   });
 });
 

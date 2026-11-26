@@ -6,7 +6,9 @@
 #
 #   infra/dev/native.sh install   add apt.postgresql.org, install PostgreSQL 17,
 #                                 PostGIS 3, pgvector, PgBouncer, redis-server and coturn (root;
-#                                 coturn only for the relay tests, which start their own)
+#                                 coturn only for the relay tests, which start their own),
+#                                 and the release build of Centrifugo into $STATE_DIR/bin
+#                                 (checksum-pinned; the realtime end-to-end test runs it)
 #   infra/dev/native.sh start     create (once) and start the dev cluster, PgBouncer
 #                                 (transaction mode) and redis
 #   infra/dev/native.sh stop      stop both
@@ -36,6 +38,10 @@ STATE_DIR="${STATE_DIR:-/var/tmp/app-dev}"
 REDIS_DIR="$STATE_DIR/redis"
 PGBOUNCER_DIR="$STATE_DIR/pgbouncer"
 PG_BIN="/usr/lib/postgresql/$PG_MAJOR/bin"
+# The Centrifugo release the deploy image runs (deploy/docker/centrifugo.Dockerfile), pinned by checksum.
+CENTRIFUGO_VERSION=6.10.2
+CENTRIFUGO_SHA256_LINUX_AMD64=fea3767686d2bcc55df02094cc323268d9a02bb255eb60884d9e74ce4162eb45
+CENTRIFUGO_BIN="$STATE_DIR/bin/centrifugo"
 
 log() { printf '[native] %s\n' "$*" >&2; }
 die() { printf '[native] error: %s\n' "$*" >&2; exit 1; }
@@ -101,6 +107,48 @@ cmd_install() {
     redis-server \
     coturn >/dev/null
   log "installed: $("$PG_BIN/postgres" --version), $(redis-server --version | cut -d' ' -f1-3)"
+  centrifugo_best_effort
+}
+
+# Best effort: only the realtime end-to-end test needs the binary (REQUIRE_INTEGRATION=1 fails that test
+# without it), so a failed download, a checksum mismatch or a failed copy is a warning and status 1, never
+# the end of the script. Called in an `||` list, where errexit is off: every step checks its own status.
+install_centrifugo() {
+  if [ -x "$CENTRIFUGO_BIN" ] && "$CENTRIFUGO_BIN" version 2>/dev/null | grep -q "v$CENTRIFUGO_VERSION"; then return 0; fi
+  if [ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]; then
+    log "warning: no pinned Centrifugo build for $(uname -s) $(uname -m); the realtime end-to-end test is skipped"
+    return 0
+  fi
+  if ! command -v curl >/dev/null; then
+    log "warning: curl not found (needed for Centrifugo)"
+    return 1
+  fi
+  local tmp
+  tmp="$(mktemp -d)" || return 1
+  log "installing Centrifugo $CENTRIFUGO_VERSION into $STATE_DIR/bin"
+  if ! curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$tmp/centrifugo.tar.gz" \
+    "https://github.com/centrifugal/centrifugo/releases/download/v$CENTRIFUGO_VERSION/centrifugo_${CENTRIFUGO_VERSION}_linux_amd64.tar.gz"; then
+    rm -rf "$tmp"
+    log "warning: the Centrifugo download failed"
+    return 1
+  fi
+  if ! echo "$CENTRIFUGO_SHA256_LINUX_AMD64  $tmp/centrifugo.tar.gz" | sha256sum -c --quiet -; then
+    rm -rf "$tmp"
+    log "warning: the Centrifugo download does not match its pinned checksum"
+    return 1
+  fi
+  if ! tar -xzf "$tmp/centrifugo.tar.gz" -C "$tmp" centrifugo || ! install -d -m 0755 "$STATE_DIR/bin" \
+    || ! install -m 0755 "$tmp/centrifugo" "$CENTRIFUGO_BIN"; then
+    rm -rf "$tmp"
+    log "warning: Centrifugo could not be put into $STATE_DIR/bin"
+    return 1
+  fi
+  rm -rf "$tmp"
+  log "installed: $("$CENTRIFUGO_BIN" version)"
+}
+
+centrifugo_best_effort() {
+  install_centrifugo || log "warning: Centrifugo is not installed; the realtime end-to-end test is skipped (REQUIRE_INTEGRATION=1 fails it)"
 }
 
 pg_cluster_exists() {
@@ -293,6 +341,7 @@ export TEST_PGBOUNCER_URL=postgres://$APP_DB_USER:$APP_DB_PASSWORD@127.0.0.1:$PG
 export REDIS_URL=redis://127.0.0.1:$REDIS_PORT/0
 export TEST_REDIS_URL=redis://127.0.0.1:$REDIS_PORT/15
 EOF
+  if [ -x "$CENTRIFUGO_BIN" ]; then echo "export CENTRIFUGO_BIN=$CENTRIFUGO_BIN"; fi
 }
 
 cmd_up() {
@@ -301,6 +350,8 @@ cmd_up() {
      || [ ! -d "/usr/share/postgresql/$PG_MAJOR/extension" ] \
      || [ ! -f "/usr/share/postgresql/$PG_MAJOR/extension/postgis.control" ]; then
     cmd_install
+  elif [ ! -x "$CENTRIFUGO_BIN" ]; then
+    centrifugo_best_effort
   fi
   cmd_start
 }

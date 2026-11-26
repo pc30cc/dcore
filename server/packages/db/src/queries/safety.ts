@@ -195,13 +195,14 @@ export const fileReport = defineQuery({ name: 'safety.fileReport', statements: 1
 const stateSchema = z.object({ status: z.number().int().min(1).max(8), shadowbanned: z.boolean() });
 export type AccountVisibilityState = z.infer<typeof stateSchema>;
 
-/** What the person reads of an action (never a shadowban), times in ms. */
+/** What the person reads of an action (never a shadowban), times in ms; `revokedAtMs` once it was lifted. */
 export const actionViewSchema = z.object({
   id,
   kind: z.number().int().min(1).max(3),
   reasonText: z.string(),
   startsAtMs: epochMs,
   endsAtMs: epochMs.optional(),
+  revokedAtMs: epochMs.optional(),
   appeal: z.object({ id, status: z.number().int().min(1).max(3), decisionText: z.string().optional() }).optional(),
 });
 export type ActionView = z.infer<typeof actionViewSchema>;
@@ -281,7 +282,7 @@ export const revokeOutcomeSchema = z.union([
 const revokeSchema = revokeOutcomeSchema;
 export type ModerationRevokeOutcome = z.infer<typeof revokeSchema>;
 
-/** Lifts an action before its end; `liftId` is the id of its lift record (kind 5). */
+/** Lifts an action before its end; `liftId` is the id of its lift record (kind 5; written for a suspension or a ban only). */
 export const revokeModeration = defineQuery(
   { name: 'safety.revokeModeration', statements: 1 },
   async (db, actionId: string, liftId: string, options: { adminId?: number | undefined; reasonText?: string | undefined } = {}): Promise<ModerationRevokeOutcome> => {

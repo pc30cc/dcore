@@ -313,7 +313,25 @@ describe.skipIf(!hasInfrastructure)('admin: people (reads)', () => {
       );
       const hold = h.app.ids.nextId();
       await db.sql.query(`INSERT INTO legal_holds (id, user_id, kind) VALUES ($1, $2, 1)`, [hold, sara.id]);
+      // A lifted ban, its lift record and a device-ban record: the lift's and the device ban's texts are internal.
+      const [ban, lift, deviceBan] = [h.app.ids.nextId(), h.app.ids.nextId(), h.app.ids.nextId()];
+      await db.sql.query(`INSERT INTO moderation_actions (id, user_id, kind, reason_code, reason_text, revoked_at) VALUES ($1, $2, 3, 7, 'Banned for spam.', now())`, [ban, shadow.id]);
+      await db.sql.query(`INSERT INTO moderation_actions (id, user_id, kind, reason_code, reason_text) VALUES ($1, $2, 5, 7, 'Reporter withdrew.')`, [lift, shadow.id]);
+      await db.sql.query(`INSERT INTO moderation_actions (id, user_id, kind, reason_code, reason_text) VALUES ($1, $2, 9, 99, 'Same device as another account.')`, [deviceBan, shadow.id]);
+      const texts = async (role: string) => {
+        const records = adminActionPageSchema.parse((await get(`/v1/admin/users/${shadow.publicUid}/moderation?limit=100`, role)).json());
+        return new Map(records.items.map((a) => [a.id, { text: a.reasonText, note: a.note }]));
+      };
       try {
+        for (const role of ['support', 'finance']) {
+          const seen = await texts(role);
+          expect(seen.get(ban), role).toEqual({ text: 'Banned for spam.', note: null });
+          expect(seen.get(lift), role).toEqual({ text: '', note: null });
+          expect(seen.get(deviceBan), role).toEqual({ text: '', note: null });
+          expect([...seen.values()].every((x) => x.note === null), role).toBe(true);
+        }
+        const all = await texts('moderator');
+        expect([all.get(ban)?.text, all.get(lift)?.text, all.get(deviceBan)?.text]).toEqual(['Banned for spam.', 'Reporter withdrew.', 'Same device as another account.']);
         for (const role of ['support', 'finance']) {
           expect((await get('/v1/admin/users?filter=shadowbanned', role)).statusCode, role).toBe(403);
           const list = adminUserListSchema.parse((await get('/v1/admin/users?limit=100', role)).json());
@@ -340,7 +358,7 @@ describe.skipIf(!hasInfrastructure)('admin: people (reads)', () => {
         const devices = adminUserDevicesSchema.parse((await get(`/v1/admin/users/${sara.publicUid}/devices`, moderator)).json());
         expect(devices.items.flatMap((d) => d.linked.map((u) => u.id))).toEqual([other.publicUid]);
       } finally {
-        await db.sql.query(`DELETE FROM moderation_actions WHERE id = $1`, [shadowban]);
+        await db.sql.query(`DELETE FROM moderation_actions WHERE id = ANY($1::bigint[])`, [[shadowban, ban, lift, deviceBan]]);
         await db.sql.query(`DELETE FROM legal_holds WHERE id = $1`, [hold]);
       }
     });

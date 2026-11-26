@@ -131,6 +131,13 @@ const envSchema = z
     /** Centrifugo's server API, for the events the API publishes itself (likes, ended conversations); unset: none are published. */
     CENTRIFUGO_API_URL: envUrl(['http', 'https']).optional(),
     CENTRIFUGO_API_KEY: z.string().min(16).optional(),
+    /** The key Centrifugo sends with each subscribe check (X-Realtime-Proxy-Key); unset: no subscribe-check listener. Required with CENTRIFUGO_TOKEN_HMAC_SECRET. */
+    CENTRIFUGO_PROXY_KEY: z
+      .string()
+      .regex(/^[A-Za-z0-9_.~+/=-]{32,256}$/, 'must be 32 to 256 letters, digits or _ . ~ + / = -')
+      .optional(),
+    /** The port of the internal subscribe-check listener (HOST); reached on the stack network only. */
+    REALTIME_PROXY_PORT: envInt(8081, { min: 1, max: 65_535 }),
     /** Replicas a chat send waits for (`WAIT n`) once its stream entry is appended; 0 (no replica): no wait. */
     WRITE_BEHIND_WAIT_REPLICAS: envInt(0, { min: 0, max: 5 }),
     WRITE_BEHIND_WAIT_MS: envInt(50, { min: 1, max: 1_000 }),
@@ -201,6 +208,16 @@ const envSchema = z
       ctx.addIssue({ code: 'custom', path: ['CENTRIFUGO_API_KEY'], message: 'CENTRIFUGO_API_URL and CENTRIFUGO_API_KEY come together' });
     }
     if (env.NODE_ENV === 'production') need('CENTRIFUGO_API_URL', 'in production');
+    // Every Centrifugo configuration of the repository sends each subscription to the subscribe check: tokens
+    // minted without its listener would connect and then fail every subscription (and, without the check, a
+    // revoked session's cached token would still subscribe).
+    if (env.CENTRIFUGO_TOKEN_HMAC_SECRET !== undefined) need('CENTRIFUGO_PROXY_KEY', 'with CENTRIFUGO_TOKEN_HMAC_SECRET (the subscribe check Centrifugo calls)');
+    if (env.CENTRIFUGO_PROXY_KEY !== undefined && (env.CENTRIFUGO_PROXY_KEY === env.CENTRIFUGO_TOKEN_HMAC_SECRET || env.CENTRIFUGO_PROXY_KEY === env.CENTRIFUGO_API_KEY)) {
+      ctx.addIssue({ code: 'custom', path: ['CENTRIFUGO_PROXY_KEY'], message: 'must differ from CENTRIFUGO_TOKEN_HMAC_SECRET and CENTRIFUGO_API_KEY' });
+    }
+    if (env.REALTIME_PROXY_PORT === env.PORT) {
+      ctx.addIssue({ code: 'custom', path: ['REALTIME_PROXY_PORT'], message: 'must differ from PORT' });
+    }
     // Without it apps never learn of a host change and keep the hosts they were built with.
     if (env.NODE_ENV === 'production') need('ORIGINS_SIGNING_KEY', 'in production (the origins document; `origins:keygen` makes one)');
     if (env.SMS_KAVENEGAR_API_KEY !== undefined) need('SMS_KAVENEGAR_TEMPLATE', 'with SMS_KAVENEGAR_API_KEY');
@@ -281,6 +298,8 @@ export interface ApiConfig {
     tokenTtlSeconds: number;
     /** Centrifugo's server API; undefined: the API publishes nothing. */
     api: { apiUrl: string; apiKey: string } | undefined;
+    /** The internal subscribe-check listener; undefined without CENTRIFUGO_PROXY_KEY. */
+    proxy: { key: string; port: number } | undefined;
   };
   /** The chat send's wait for replicas after its stream append (0: none). */
   writeBehind: { waitReplicas: number; waitTimeoutMs: number };
@@ -382,6 +401,7 @@ export function loadConfig(source: Env = process.env): ApiConfig {
       wsUrl: env.CENTRIFUGO_WS_URL,
       tokenTtlSeconds: env.REALTIME_TOKEN_TTL_SECONDS,
       api: env.CENTRIFUGO_API_URL && env.CENTRIFUGO_API_KEY ? { apiUrl: env.CENTRIFUGO_API_URL, apiKey: env.CENTRIFUGO_API_KEY } : undefined,
+      proxy: env.CENTRIFUGO_PROXY_KEY ? { key: env.CENTRIFUGO_PROXY_KEY, port: env.REALTIME_PROXY_PORT } : undefined,
     },
     writeBehind: { waitReplicas: env.WRITE_BEHIND_WAIT_REPLICAS, waitTimeoutMs: env.WRITE_BEHIND_WAIT_MS },
     google: { webClientId: env.GOOGLE_WEB_CLIENT_ID },

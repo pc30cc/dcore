@@ -110,6 +110,10 @@ class RealtimePositions(dedupeCapacity: Int = RealtimeTiming().dedupeCapacity) {
  *  - **Backoff with jitter** between attempts (1, 2, 4, 8, 15, 30 s, capped at
  *    60, times 0.8-1.2), at least 30 s after a terminal disconnect, cut short
  *    when the network comes back ([nudge]).
+ *  - **Token drop** on a close code that says the token is no longer good
+ *    ([CentrifugoProtocol.needsNewToken]), at any stage (connect, subscribe,
+ *    the session) and on a subscribe refused for good: the next attempt asks
+ *    for a new one; a signed-out or restricted answer to it ends the run.
  *  - **In-band refresh**: two minutes before the token expires, a fresh one
  *    is fetched and sent as `refresh` on the same socket. No reconnect, no
  *    recovery traffic.
@@ -168,6 +172,31 @@ class RealtimeClient(
         /** No token can be had: signed out, or the account may not use realtime now. */
         data object SignedOut : Outcome
     }
+
+    /** How waiting for a command's reply ended. */
+    private sealed interface Awaited {
+        data class Got(val reply: Inbound.Reply) : Awaited
+    }
+
+    /** How the client's own subscribe ended. */
+    private sealed interface Subscribed {
+        data class Ok(val result: SubscribeResult) : Subscribed
+
+        /** An error reply (other than "already subscribed"). */
+        data class Refused(val error: ReplyError) : Subscribed
+    }
+
+    /** The socket ended before the reply: a `disconnect` push's code, else the close frame's, when there was one. */
+    private data class Ended(val code: Int?) : Awaited, Subscribed
+
+    private data object TimedOut : Awaited, Subscribed
+
+    /** A socket that ended with [code]; [what] names where, for the log. */
+    private fun ended(what: String, code: Int?): Outcome.Failed = Outcome.Failed(
+        "$what ${code ?: "-"}",
+        terminal = code != null && CentrifugoProtocol.isTerminal(code),
+        newToken = code != null && CentrifugoProtocol.needsNewToken(code),
+    )
 
     suspend fun run() {
         var failures = 0
@@ -288,7 +317,11 @@ class RealtimeClient(
             val recoverAtConnect = if (serverSide) positions[channel]?.let { mapOf(channel to it) }.orEmpty() else emptyMap()
             val connectId = nextId()
             socket.send(CentrifugoProtocol.connect(connectId, held.token.token, CLIENT_NAME, appVersion, recoverAtConnect))
-            val connectReply = awaitReply(socket, connectId, channel) ?: return Outcome.Failed("no connect reply")
+            val connectReply = when (val awaited = awaitReply(socket, connectId, channel)) {
+                is Awaited.Got -> awaited.reply
+                is Ended -> return ended("closed at connect", awaited.code)
+                TimedOut -> return Outcome.Failed("no connect reply")
+            }
             connectReply.error?.let { error ->
                 return when (error.code) {
                     CentrifugoProtocol.ERROR_TOKEN_EXPIRED -> Outcome.Failed("token expired", newToken = true)
@@ -298,8 +331,17 @@ class RealtimeClient(
             }
             val from = positions[channel]
             val result: SubscribeResult = connectReply.connect?.subs?.get(channel)?.also { serverSide = true }
-                ?: subscribe(socket, channel)
-                ?: return Outcome.Failed("subscribe refused")
+                ?: when (val subscribed = subscribe(socket, channel)) {
+                    is Subscribed.Ok -> subscribed.result
+                    // A temporary refusal keeps the token; any other says it will not do.
+                    is Subscribed.Refused -> return if (subscribed.error.temporary) {
+                        Outcome.Failed("subscribe refused ${subscribed.error.code}")
+                    } else {
+                        Outcome.Failed("subscribe refused ${subscribed.error.code}", terminal = true, newToken = true)
+                    }
+                    is Ended -> return ended("closed at subscribe", subscribed.code)
+                    TimedOut -> return Outcome.Failed("no subscribe reply")
+                }
             result.publications.forEach { deliver(channel, it, track = false) }
             if (result.epoch != null && result.offset != null) {
                 positions[channel] = StreamPosition(result.offset, result.epoch)
@@ -324,50 +366,62 @@ class RealtimeClient(
     }
 
     /**
-     * Subscribes the user-limited channel, resuming from its last position
-     * when there is one. Null when the server refused it.
+     * Subscribes the personal channel, resuming from its last position when
+     * there is one.
      */
-    private suspend fun subscribe(socket: RealtimeSocket, channel: String): SubscribeResult? {
+    private suspend fun subscribe(socket: RealtimeSocket, channel: String): Subscribed {
         val from = positions[channel]
         var id = nextId()
         socket.send(CentrifugoProtocol.subscribe(id, channel, from))
-        var reply = awaitReply(socket, id, channel) ?: return null
+        var reply = when (val awaited = awaitReply(socket, id, channel)) {
+            is Awaited.Got -> awaited.reply
+            is Ended -> return awaited
+            TimedOut -> return TimedOut
+        }
         if (reply.error?.code == CentrifugoProtocol.ERROR_UNRECOVERABLE_POSITION) {
             // History no longer reaches that far back. Subscribe plainly; the
             // sync layer reads over REST because this is not "recovered".
             positions.remove(channel)
             id = nextId()
             socket.send(CentrifugoProtocol.subscribe(id, channel, null))
-            reply = awaitReply(socket, id, channel) ?: return null
+            reply = when (val awaited = awaitReply(socket, id, channel)) {
+                is Awaited.Got -> awaited.reply
+                is Ended -> return awaited
+                TimedOut -> return TimedOut
+            }
         }
         val error = reply.error
-        if (error != null && error.code != CentrifugoProtocol.ERROR_ALREADY_SUBSCRIBED) return null
-        return reply.subscribe ?: SubscribeResult(false, false, false, null, null, emptyList())
+        if (error != null && error.code != CentrifugoProtocol.ERROR_ALREADY_SUBSCRIBED) return Subscribed.Refused(error)
+        return Subscribed.Ok(reply.subscribe ?: SubscribeResult(false, false, false, null, null, emptyList()))
     }
 
-    /** Reads until the reply to [id], answering pings and delivering publications meanwhile. */
-    private suspend fun awaitReply(socket: RealtimeSocket, id: Int, channel: String): Inbound.Reply? =
+    /**
+     * Reads until the reply to [id], answering pings and delivering
+     * publications meanwhile. A socket that ends first is [Ended], with the
+     * code of a `disconnect` push or, once nothing more can be read, of the
+     * close frame (a server that closes with its code alone sends no push).
+     */
+    private suspend fun awaitReply(socket: RealtimeSocket, id: Int, channel: String): Awaited =
         withTimeoutOrNull(timing.replyTimeoutMs) {
-            var reply: Inbound.Reply? = null
-            var ended = false
-            while (reply == null && !ended) {
+            var outcome: Awaited? = null
+            while (outcome == null) {
                 val text = socket.receive()
                 if (text == null) {
-                    ended = true
+                    outcome = Ended(socket.closeCode())
                 } else {
                     for (frame in CentrifugoProtocol.parse(text)) {
                         when (frame) {
                             Inbound.Ping -> socket.send(CentrifugoProtocol.PONG)
-                            is Inbound.Reply -> if (frame.id == id) reply = frame
+                            is Inbound.Reply -> if (frame.id == id && outcome == null) outcome = Awaited.Got(frame)
                             is Inbound.Publication -> deliver(frame.channel.ifEmpty { channel }, frame, track = false)
-                            is Inbound.Disconnect -> ended = true
+                            is Inbound.Disconnect -> if (outcome == null) outcome = Ended(frame.code)
                             else -> Unit
                         }
                     }
                 }
             }
-            reply
-        }
+            outcome
+        } ?: TimedOut
 
     /** What the refresh job tells the read loop. */
     private class RefreshState {
@@ -432,12 +486,7 @@ class RealtimeClient(
                     null -> return@coroutineScope Outcome.Failed("stale: nothing heard in ${timing.staleAfterMs / 1000}s")
                     Closed -> {
                         if (refresh.signedOut) return@coroutineScope Outcome.SignedOut
-                        val code = socket.closeCode()
-                        return@coroutineScope Outcome.Failed(
-                            "closed ${code ?: "-"}",
-                            terminal = code != null && CentrifugoProtocol.isTerminal(code),
-                            newToken = code == CentrifugoProtocol.DISCONNECT_INVALID_TOKEN || code == CentrifugoProtocol.DISCONNECT_EXPIRED,
-                        )
+                        return@coroutineScope ended("closed", socket.closeCode())
                     }
                     is String -> {
                         lastHeard = clock()
@@ -460,12 +509,7 @@ class RealtimeClient(
                                         diag.info(AREA, "token refreshed in band")
                                     }
                                 }
-                                is Inbound.Disconnect -> return@coroutineScope Outcome.Failed(
-                                    "server disconnect ${frame.code}",
-                                    terminal = CentrifugoProtocol.isTerminal(frame.code),
-                                    newToken = frame.code == CentrifugoProtocol.DISCONNECT_INVALID_TOKEN ||
-                                        frame.code == CentrifugoProtocol.DISCONNECT_EXPIRED,
-                                )
+                                is Inbound.Disconnect -> return@coroutineScope ended("server disconnect", frame.code)
                                 is Inbound.Unsubscribed -> if (frame.channel == channel) {
                                     return@coroutineScope Outcome.Failed("unsubscribed ${frame.code}")
                                 }

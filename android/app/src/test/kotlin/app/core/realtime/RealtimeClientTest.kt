@@ -1,6 +1,8 @@
 package app.core.realtime
 
 import app.core.common.Diag
+import app.core.model.Problem
+import app.core.model.ProblemCodes
 import app.core.model.RealtimeEvent
 import app.core.model.RealtimeToken
 import app.core.net.ApiError
@@ -17,6 +19,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,7 +29,8 @@ import kotlin.random.Random
 /**
  * The realtime client against a scripted server on a virtual clock:
  * connect, the personal channel, recovery, dedupe, in-band refresh, backoff,
- * terminal codes, stale sockets, signed out.
+ * terminal codes, stale sockets, signed out, and the codes that drop the
+ * token in hand.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RealtimeClientTest {
@@ -43,6 +47,9 @@ class RealtimeClientTest {
         val positions = RealtimePositions()
         val clock: () -> Long = { test.testScheduler.currentTime }
 
+        /** When each socket was opened, by the virtual clock. */
+        val openTimes = mutableListOf<Long>()
+
         val sink = object : RealtimeSink {
             override fun onEvent(event: RealtimeEvent) { events += event }
             override fun onConnected(recovered: Boolean, first: Boolean) { connects += recovered to first }
@@ -55,7 +62,10 @@ class RealtimeClientTest {
                 tokenError?.let { throw it }
                 RealtimeToken(wsUrl, "t$tokens", Instant.ofEpochMilli(clock() + ttlMs), FakeCentrifugo.CHANNEL)
             },
-            transport = server,
+            transport = RealtimeTransport { url ->
+                openTimes += clock()
+                server.open(url)
+            },
             sink = sink,
             fallbackUrl = "wss://fallback.test/connection/websocket",
             positions = positions,
@@ -82,6 +92,8 @@ class RealtimeClientTest {
         }
 
         fun messages(): List<String> = events.filterIsInstance<RealtimeEvent.MessageArrived>().map { it.message.id }
+
+        fun connectTokens(): List<String> = server.commandsOf("connect").map { it["connect"]!!.jsonObject["token"]!!.jsonPrimitive.content }
     }
 
     private fun JsonObject.sub(): JsonObject = this["subscribe"]!!.jsonObject
@@ -328,5 +340,148 @@ class RealtimeClientTest {
         assertEquals(1_000 + 25 * 60_000L, h.client.deadlineOf(token, receivedAt = 1_000))
         val fine = RealtimeToken("wss://x", "t", Instant.ofEpochMilli(1_000 + 3_600_000), FakeCentrifugo.CHANNEL)
         assertEquals(1_000 + 3_600_000L, h.client.deadlineOf(fine, receivedAt = 1_000))
+    }
+
+    // A revoked session or account: the server closes the live socket with
+    // 3005, and closes a reconnect with the old token at its subscribe with
+    // 4501 (a close frame alone).
+
+    @Test
+    fun anExpiredConnectionAsksForANewTokenAndASignedOutAnswerEndsTheRun() = runTest {
+        val h = Harness(this)
+        h.start()
+        h.tokenError = ApiError.Unauthorized(null)
+        h.server.closeWith(CentrifugoProtocol.DISCONNECT_EXPIRED)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertTrue("the run ended", h.job!!.isCompleted)
+        assertEquals(1, h.server.opens.size)
+        assertEquals("the held token was dropped", 2, h.tokens)
+        assertEquals(RealtimeHealth.IDLE, h.health.last())
+    }
+
+    @Test
+    fun anExpiredConnectionOfARestrictedAccountEndsTheRun() = runTest {
+        val h = Harness(this)
+        h.start()
+        h.tokenError = ApiError.Http(403, Problem.of(403, ProblemCodes.ACCOUNT_BANNED))
+        h.server.closeWith(CentrifugoProtocol.DISCONNECT_EXPIRED)
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertTrue(h.job!!.isCompleted)
+        assertEquals(1, h.server.opens.size)
+        assertEquals(2, h.tokens)
+    }
+
+    @Test
+    fun aForcedDisconnectReusesTheTokenAfterThirtySeconds() = runTest {
+        val h = Harness(this)
+        h.start()
+        h.server.closeWith(3503)
+        runCurrent()
+        advanceTimeBy(29_000)
+        runCurrent()
+        assertEquals(1, h.server.opens.size)
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertEquals(2, h.server.opens.size)
+        assertEquals("the same token", listOf("t1", "t1"), h.connectTokens())
+        assertEquals(1, h.tokens)
+        assertEquals(RealtimeHealth.CONNECTED, h.health.last())
+    }
+
+    @Test
+    fun aSubscribeClosedAsRevokedDropsTheTokenAndASignedOutAnswerEndsTheRun() = runTest {
+        val h = Harness(this)
+        h.server.subscribeClose = CentrifugoProtocol.DISCONNECT_REVOKED
+        h.start()
+        assertEquals(1, h.server.opens.size)
+        assertFalse("never connected", h.health.contains(RealtimeHealth.CONNECTED))
+        h.tokenError = ApiError.Unauthorized(null)
+        advanceTimeBy(29_000)
+        runCurrent()
+        assertEquals("nothing asked again before 30 s", 1, h.tokens)
+        assertEquals(1, h.server.opens.size)
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertEquals("a new token was asked for", 2, h.tokens)
+        assertTrue("the run ended", h.job!!.isCompleted)
+        assertEquals(1, h.server.opens.size)
+    }
+
+    private fun TestScope.revokedInTheSessionDropsTheToken(end: (FakeCentrifugo) -> Unit) {
+        val h = Harness(this)
+        h.start()
+        assertEquals(RealtimeHealth.CONNECTED, h.health.last())
+        h.tokenError = ApiError.Unauthorized(null)
+        end(h.server)
+        runCurrent()
+        advanceTimeBy(29_000)
+        runCurrent()
+        assertEquals(1, h.tokens)
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertEquals(2, h.tokens)
+        assertTrue(h.job!!.isCompleted)
+        assertEquals(1, h.server.opens.size)
+    }
+
+    @Test
+    fun aSessionClosedAsRevokedDropsTheToken() = runTest {
+        revokedInTheSessionDropsTheToken { it.closeWith(CentrifugoProtocol.DISCONNECT_REVOKED) }
+    }
+
+    @Test
+    fun aRevokedDisconnectPushDropsTheToken() = runTest {
+        revokedInTheSessionDropsTheToken { it.disconnect(CentrifugoProtocol.DISCONNECT_REVOKED) }
+    }
+
+    @Test
+    fun aSubscribeRefusedForGoodAsksForANewToken() = runTest {
+        val h = Harness(this)
+        h.server.subscribeError = ReplyError(403, "permission denied")
+        h.start()
+        h.server.subscribeError = null
+        advanceTimeBy(29_000)
+        runCurrent()
+        assertEquals(1, h.server.opens.size)
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertEquals(2, h.server.opens.size)
+        assertEquals(listOf("t1", "t2"), h.connectTokens())
+        assertEquals(RealtimeHealth.CONNECTED, h.health.last())
+    }
+
+    @Test
+    fun aTemporarySubscribeRefusalKeepsTheToken() = runTest {
+        val h = Harness(this)
+        h.server.subscribeError = ReplyError(503, "try again", temporary = true)
+        h.start()
+        h.server.subscribeError = null
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(2, h.server.opens.size)
+        assertEquals(listOf("t1", "t1"), h.connectTokens())
+        assertEquals(1, h.tokens)
+        assertEquals(RealtimeHealth.CONNECTED, h.health.last())
+    }
+
+    @Test
+    fun aSubscribeAlwaysClosedAsRevokedIsAskedAgainAtMostEveryThirtySeconds() = runTest {
+        val h = Harness(this)
+        h.server.subscribeClose = CentrifugoProtocol.DISCONNECT_REVOKED
+        h.start()
+        advanceTimeBy(10 * 60_000L)
+        runCurrent()
+        val times = h.openTimes
+        assertTrue("${times.size} opens in 10 minutes", times.size in 2..21)
+        val gaps = times.zipWithNext { a, b -> b - a }
+        assertTrue("gaps $gaps", gaps.all { it >= 30_000 })
+        assertEquals("a new token for every attempt", times.size, h.tokens)
+        assertEquals(times.size, h.connectTokens().toSet().size)
+        assertTrue("still trying", h.job!!.isActive)
+        assertEquals(RealtimeHealth.DEGRADED, h.health.last())
     }
 }

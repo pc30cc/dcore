@@ -113,6 +113,11 @@ services:
       KV_RT_PASSWORD: ${KV_RT_PASSWORD:?set KV_RT_PASSWORD in infra/.env}
       KV_RT_ADDRESS: kv-rt:6379
       CENTRIFUGO_ALLOWED_ORIGINS: ${CENTRIFUGO_ALLOWED_ORIGINS:-}
+      # The subscribe checks go to the API's internal listener on the host (CENTRIFUGO_PROXY_KEY in the API's env too).
+      CENTRIFUGO_PROXY_KEY: ${CENTRIFUGO_PROXY_KEY:?set CENTRIFUGO_PROXY_KEY in infra/.env}
+      CENTRIFUGO_PROXY_URL: http://host.docker.internal:8081
+    extra_hosts:
+      - host.docker.internal:host-gateway
     ports:
       - 127.0.0.1:8000:8000
       - 127.0.0.1:8001:9000

@@ -524,6 +524,36 @@ describe.skipIf(!hasInfrastructure)('the own account', () => {
       expect((await call(h, '/v1/appeals', { method: 'POST', token: user.token, body: { actionId: other.actionId, body: 'x' } })).statusCode).toBe(404);
     });
 
+    it('reads lifted actions as lifted: in the history with revokedAt, never in force, never appealable', async () => {
+      const { user, actionId } = await penalised(5);
+      const liftedSuspension = h.app.ids.nextId();
+      const liftedWarning = h.app.ids.nextId();
+      await db.sql.query(
+        `INSERT INTO moderation_actions (id, user_id, kind, reason_code, reason_text, ends_at, revoked_at)
+         VALUES ($1, $3, 2, 1, 'An earlier pause.', now() + interval '7 days', now() - interval '1 hour'),
+                ($2, $3, 1, 2, 'Links are not allowed in messages.', NULL, now() - interval '1 hour')`,
+        [liftedSuspension, liftedWarning, user.id],
+      );
+      const history = await call(h, '/v1/me/moderation', { token: user.token });
+      expect(statements(history)).toBe(1);
+      const body = moderationHistorySchema.strict().parse(history.json());
+      expect(body.active.map((a) => a.id)).toEqual([actionId]);
+      expect(body.active[0]).not.toHaveProperty('revokedAt');
+      for (const id of [liftedSuspension, liftedWarning]) {
+        const item = body.history.find((a) => a.id === id);
+        expect(item?.revokedAt, id).toEqual(expect.any(String));
+        expect(Date.parse(item!.revokedAt!)).toBeLessThan(Date.now());
+      }
+      const me = meSchema.parse((await call(h, '/v1/me', { token: user.token })).json());
+      expect(me.moderation?.map((a) => a.id)).toEqual([actionId]);
+      for (const id of [liftedSuspension, liftedWarning]) {
+        const appeal = await call(h, '/v1/appeals', { method: 'POST', token: user.token, body: { actionId: id, body: 'Please.' } });
+        expect(appeal.statusCode, id).toBe(422);
+        expect(appeal.json()).toMatchObject({ code: 'not_appealable' });
+        expect(statements(appeal)).toBe(1);
+      }
+    });
+
     it('refuses a restricted session with its reason on the routes that cost no statement, also on a cold cache', async () => {
       for (const [method, url] of [
         ['POST', '/v1/realtime/token'],

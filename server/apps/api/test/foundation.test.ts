@@ -118,8 +118,9 @@ describe.skipIf(!hasInfrastructure)('foundation plugins (PostgreSQL and Redis)',
       expect(revoked.json()).toMatchObject({ code: 'unauthorized' });
       expect((await call(instance, b.token)).statusCode).toBe(200);
       const ttl = await redis.ttl(instance.keys.denySession('112314686237569100'));
-      expect(ttl).toBeGreaterThan(900);
-      expect(ttl).toBeLessThanOrEqual(900 + 30 + 30);
+      // As long as a connection token minted just before could still subscribe: access TTL, skew, margin, realtime TTL, close delay.
+      expect(ttl).toBeGreaterThan(900 + 30 + 30 + 3_600);
+      expect(ttl).toBeLessThanOrEqual(900 + 30 + 30 + 3_600 + 25);
     });
 
     it('revokes every token of a user issued up to the cutoff, and none issued after it', async () => {

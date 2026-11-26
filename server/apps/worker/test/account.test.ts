@@ -17,6 +17,7 @@ import {
   type DeletionFanoutData,
   type MediaStore,
   type PurgeData,
+  type RealtimeEndData,
 } from '@app/shared/server';
 import { DelayedError, Queue, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -24,7 +25,7 @@ import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig, startWorker, type JobContext } from '../src/index.js';
 import { FakePhotoModerator } from '../src/photos/moderation.js';
-import { SWEEP_RECENT_MS, accountQueue, deletionFanoutJob, deletionSweepJob, purgeJob } from '../src/queues/account.js';
+import { SWEEP_RECENT_MS, accountQueue, deletionFanoutJob, deletionSweepJob, purgeJob, realtimeEndJob } from '../src/queues/account.js';
 import type { WorkerServices } from '../src/services.js';
 import { ensureGroupRoles, hasDatabase, loginRole, migratedDatabase, type TestDatabase } from './db.js';
 import { TEST_REDIS_URL, baseEnv, connect, eventually, hasRedis } from './support.js';
@@ -258,6 +259,27 @@ describe.skipIf(!hasDatabase || !hasRedis)('the account jobs (PostgreSQL, Valkey
       expect(result).toMatchObject({ outcome: 'done', ended: 1, hidden: false, disconnected: false });
       expect(await redis.zscore(keys.raw('cl', b), ab)).toBeNull();
       expect(await redis.zscore(keys.accountsHidden(), a)).toBeNull();
+    });
+  });
+
+  describe('realtime-end', () => {
+    it('expires every connection of the person without a statement; a failed call throws for a retry', async () => {
+      const a = await person();
+      const job = fakeJob<RealtimeEndData>('realtime-end', { userId: a, atMs: Date.now() });
+      const { result, tally } = await statementCounter.measure(() => realtimeEndJob(job, context));
+      expect(result).toEqual({ outcome: 'ended' });
+      expect(tally.statements).toBe(0);
+      expect(realtime.disconnected.at(-1)).toBe(publicIds.user.encode(a));
+      realtime.failWith = new Error('centrifugo down');
+      try {
+        await expect(realtimeEndJob(job, context)).rejects.toThrow('centrifugo down');
+      } finally {
+        realtime.failWith = null;
+      }
+      const quiet = { ...context, services: { ...services, realtime: null } };
+      expect(await realtimeEndJob(job, quiet)).toEqual({ outcome: 'skipped' });
+      // Through the queue's processor, by name, as the API queues it.
+      expect(await accountQueue().process(job as never, context)).toEqual({ outcome: 'ended' });
     });
   });
 

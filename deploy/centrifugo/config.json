@@ -11,6 +11,7 @@
     "user_connection_limit": 4,
     "allow_anonymous_connect_without_token": false,
     "disallow_anonymous_connection_tokens": true,
+    "expired_close_delay": "25s",
     "token": { "hmac_secret_key": "@TOKEN_HMAC_SECRET@" }
   },
   "http_api": { "key": "@API_KEY@" },
@@ -20,6 +21,14 @@
   },
   "channel": {
     "history_meta_ttl": "168h",
+    "proxy": {
+      "subscribe": {
+        "endpoint": "@PROXY_URL@/internal/realtime/subscribe",
+        "timeout": "1s",
+        "include_connection_meta": true,
+        "http": { "static_headers": { "X-Realtime-Proxy-Key": "@PROXY_KEY@" } }
+      }
+    },
     "without_namespace": {
       "presence": false,
       "history_size": 0,
@@ -38,7 +47,8 @@
     "namespaces": [
       {
         "name": "user",
-        "allow_user_limited_channels": true,
+        "allow_user_limited_channels": false,
+        "subscribe_proxy_enabled": true,
         "presence": true,
         "join_leave": false,
         "force_push_join_leave": false,

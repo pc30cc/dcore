@@ -326,7 +326,11 @@ class SampleApi(
         return me
     }
 
-    private fun activeReason(): String = moderation.lastOrNull { it.kind != ModerationKind.Warning }?.reasonText.orEmpty()
+    private fun activeReason(): String = moderation.lastOrNull { standing(it) }?.reasonText.orEmpty()
+
+    /** A suspension or ban in force now: not lifted, not ended. */
+    private fun standing(action: ModerationAction): Boolean =
+        action.kind != ModerationKind.Warning && action.revokedAt == null && (action.endsAt == null || action.endsAt > now())
 
     private fun bumpMe() {
         meVersion++
@@ -690,6 +694,24 @@ class SampleApi(
         bumpMe()
     }
 
+    /**
+     * The team lifts [actionId]: it stays in the history with `revokedAt`,
+     * an open appeal of it is overturned, and the account is active again
+     * once no suspension or ban stands. With [accountCatchesUp] false the
+     * account keeps its restricted status (as when the server's account
+     * update after the lift did not go through) until [setAccountStatus]
+     * moves it.
+     */
+    suspend fun liftModeration(actionId: Id, accountCatchesUp: Boolean = true) = route("sample.lift") {
+        val me = user()
+        val index = moderation.indexOfFirst { it.id == actionId }
+        if (index < 0) fail(404, ProblemCodes.NOT_FOUND)
+        if (moderation[index].revokedAt == null) moderation[index] = moderation[index].copy(revokedAt = now())
+        appeals[actionId]?.takeIf { it.status == AppealStatus.Open }?.let { appeals[actionId] = it.copy(status = AppealStatus.Overturned) }
+        if (accountCatchesUp && me.status.isRestricted && moderation.none(::standing)) session = me.copy(status = AccountStatus.Active)
+        bumpMe()
+    }
+
     // MARK: - Config
 
     private val configVersion = 1L
@@ -895,7 +917,7 @@ class SampleApi(
             location = location.copy(city = location.city?.let { SampleData.city(it.id, language()) }),
             notifications = notifications,
             flags = mapOf("voice_prompts" to true, "message_requests" to true),
-            moderation = moderation.filter { it.kind != ModerationKind.Warning && (it.endsAt == null || it.endsAt > now()) },
+            moderation = moderation.filter(::standing),
             deletion = deletion,
             consentsDue = LEGAL.filter { (consents[it] ?: 0) < 1 },
         )
@@ -1766,14 +1788,17 @@ class SampleApi(
     override suspend fun moderation(): ModerationHistory = route("me.moderation") {
         user()
         val withAppeals = moderation.map { action -> appeals[action.id]?.let { action.copy(appeal = it) } ?: action }
-        val live = withAppeals.filter { it.kind != ModerationKind.Warning && (it.endsAt == null || it.endsAt > now()) }
+        val live = withAppeals.filter(::standing)
         ModerationHistory(active = live, history = withAppeals - live.toSet())
     }
 
     override suspend fun appeal(actionId: Id, body: String): Appeal = route("appeals") {
         user()
         val action = moderation.firstOrNull { it.id == actionId } ?: fail(404, ProblemCodes.NOT_FOUND)
-        if (action.kind == ModerationKind.Warning) fail(422, ProblemCodes.NOT_APPEALABLE)
+        // As the server: a lifted or ended action takes no appeal.
+        if (action.kind == ModerationKind.Warning || action.revokedAt != null || (action.endsAt != null && action.endsAt <= now())) {
+            fail(422, ProblemCodes.NOT_APPEALABLE)
+        }
         if (appeals[actionId]?.status == AppealStatus.Open) fail(409, ProblemCodes.APPEAL_OPEN)
         if (body.isBlank()) fail(422, ProblemCodes.FIELD_INVALID)
         Appeal(nextId(), AppealStatus.Open).also { appeals[actionId] = it }

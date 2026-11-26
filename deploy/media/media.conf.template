@@ -7,15 +7,26 @@ upstream media_store {
 server {
     listen 8080;
     server_name _;
+    # Responses of blocks without headers of their own (/healthz, nginx's
+    # error pages): never cached, never rewritten on the way.
+    add_header Cache-Control "no-store, no-transform" always;
 
     location = /healthz {
         default_type text/plain;
         return 200 "ok\n";
     }
 
+    # Every refusal and miss: nginx's 404 page, never cached or rewritten.
     location @missing {
-        add_header Cache-Control "no-store" always;
+        add_header Cache-Control "no-store, no-transform" always;
         return 404;
+    }
+
+    # The store failing, refusing to connect or not answering in time (its own
+    # 5xx or nginx's 502/504): nginx's 502 page, never cached or rewritten.
+    location @unavailable {
+        add_header Cache-Control "no-store, no-transform" always;
+        return 502;
     }
 
     # The signed origins document the worker publishes: public by design (it
@@ -38,6 +49,7 @@ server {
 
         proxy_intercept_errors on;
         error_page 400 403 404 = @missing;
+        error_page 500 502 503 504 = @unavailable;
         proxy_hide_header Set-Cookie;
         proxy_hide_header Cache-Control;
         proxy_hide_header x-amz-request-id;
@@ -71,6 +83,7 @@ server {
 
         proxy_intercept_errors on;
         error_page 400 403 404 = @missing;
+        error_page 500 502 503 504 = @unavailable;
         proxy_hide_header Set-Cookie;
         proxy_hide_header Cache-Control;
         proxy_hide_header x-amz-request-id;

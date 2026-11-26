@@ -1,5 +1,7 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
-import type { ComponentProps } from 'react';
+import { useRef, type ComponentProps, type ReactNode } from 'react';
+import { useI18n } from '@/i18n/useI18n';
+import { useSelectedInView } from '@/lib/useSelectedInView';
 import { cn } from '@/lib/utils';
 
 export function Tabs({ className, ...props }: ComponentProps<typeof TabsPrimitive.Root>) {
@@ -13,6 +15,22 @@ export function TabsList({ className, ...props }: ComponentProps<typeof TabsPrim
       className={cn('inline-flex h-10 w-fit items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground', className)}
       {...props}
     />
+  );
+}
+
+/**
+ * A tab list that may be wider than its column: scrolls sideways (edge to
+ * edge below the breakpoint the page undoes in className) and keeps the
+ * selected tab in view.
+ */
+export function TabsScroller({ value, className, children }: { value: string; className?: string; children: ReactNode }) {
+  const { locale } = useI18n();
+  const ref = useRef<HTMLDivElement>(null);
+  useSelectedInView(ref, value, locale);
+  return (
+    <div ref={ref} data-slot="tabs-scroller" className={cn('-mx-4 overflow-x-auto px-4', className)}>
+      {children}
+    </div>
   );
 }
 

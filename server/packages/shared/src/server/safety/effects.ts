@@ -140,13 +140,14 @@ export interface ModerationEffectInput {
   action?: ActionViewLike | null | undefined;
 }
 
-/** `moderation_action_view()`: what the person reads of an action, times in ms. */
+/** `moderation_action_view()`: what the person reads of an action, times in ms; `revokedAtMs` once it was lifted. */
 export interface ActionViewLike {
   id: string;
   kind: number;
   reasonText: string;
   startsAtMs: number;
   endsAtMs?: number | undefined;
+  revokedAtMs?: number | undefined;
   appeal?: { id: string; status: number; decisionText?: string | undefined } | undefined;
 }
 
@@ -163,6 +164,7 @@ export function moderationActionWire(view: ActionViewLike): ModerationAction | n
     reasonText: view.reasonText,
     startsAt: wireTime(view.startsAtMs),
     ...(view.endsAtMs !== undefined ? { endsAt: wireTime(view.endsAtMs) } : {}),
+    ...(view.revokedAtMs !== undefined ? { revokedAt: wireTime(view.revokedAtMs) } : {}),
     ...(view.appeal && appealStatus
       ? { appeal: { id: view.appeal.id, status: appealStatus, ...(view.appeal.decisionText ? { decisionText: view.appeal.decisionText } : {}) } }
       : {}),

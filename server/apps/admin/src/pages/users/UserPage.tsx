@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsScroller, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { CopyId } from '@/components/CopyId';
 import { Avatar } from '@/components/UserRef';
@@ -197,7 +197,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
         dir={dir}
         className="min-w-0"
       >
-        <div className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+        <TabsScroller value={tab} className="lg:mx-0 lg:px-0">
           <TabsList>
             {tabs
               .filter((item) => item.shown)
@@ -207,7 +207,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
                 </TabsTrigger>
               ))}
           </TabsList>
-        </div>
+        </TabsScroller>
         <TabsContent value="profile">
           <ProfileTab user={user} />
         </TabsContent>

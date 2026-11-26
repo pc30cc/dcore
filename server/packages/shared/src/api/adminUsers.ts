@@ -102,7 +102,9 @@ export const adminActionAppealSchema = z.object({
  * (`moderationReason`; `photoRejectReason` for a rejected photo,
  * `textRejectReason` for a rejected text), `other` for an unknown code.
  * `standing`: a warning, suspension, ban or shadowban that is not revoked,
- * has started and has not ended. `admin` null: an automatic rule.
+ * has started and has not ended. `admin` null: an automatic rule. A lift's
+ * and a device ban's reasonText are internal: empty for a caller without
+ * moderation.read.
  */
 export const adminActionSchema = z.object({
   id: idSchema,

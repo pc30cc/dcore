@@ -2,6 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { ConfigError } from '@app/config';
 import { buildApp, createLogger } from './app.js';
 import { loadConfig } from './config.js';
+import { buildSubscribeProxy } from './realtime/subscribeProxy.js';
 
 /**
  * The API process: listen, then stop cleanly on SIGTERM/SIGINT.
@@ -11,6 +12,10 @@ import { loadConfig } from './config.js';
  * in-flight requests finish, idle keep-alive sockets close, the pool and Redis
  * disconnect. If that takes longer than SHUTDOWN_TIMEOUT_MS the process exits
  * with status 1.
+ *
+ * With CENTRIFUGO_PROXY_KEY set, a second listener on REALTIME_PROXY_PORT
+ * answers Centrifugo's subscribe checks (realtime/subscribeProxy.ts); it
+ * closes before the main server.
  */
 async function main(): Promise<void> {
   let config;
@@ -26,6 +31,9 @@ async function main(): Promise<void> {
 
   const logger = createLogger(config);
   const app = await buildApp(config, { logger });
+  const proxy = config.realtime.proxy
+    ? await buildSubscribeProxy({ denyList: app.denyList, publicIds: app.publicIds, key: config.realtime.proxy.key, logger })
+    : null;
 
   let stopping = false;
   const stop = async (signal: NodeJS.Signals): Promise<void> => {
@@ -39,6 +47,7 @@ async function main(): Promise<void> {
     app.readiness.beginShutdown();
     if (config.shutdown.drainMs > 0) await sleep(config.shutdown.drainMs);
     try {
+      await proxy?.close();
       await app.close();
       logger.info('stopped');
       process.exitCode = 0;
@@ -64,6 +73,7 @@ async function main(): Promise<void> {
   });
 
   await app.listen({ host: config.host, port: config.port });
+  if (proxy && config.realtime.proxy) await proxy.listen({ host: config.host, port: config.realtime.proxy.port });
 }
 
 main().catch((error: unknown) => {

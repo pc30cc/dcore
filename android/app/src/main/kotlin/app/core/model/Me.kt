@@ -43,7 +43,7 @@ data class Me(
     val location: AccountLocation? = null,
     val notifications: NotificationPrefs? = null,
     val flags: Map<String, Boolean> = emptyMap(),
-    /** Active ones only; the history is a separate read. */
+    /** The suspensions and bans in force now (never a warning or a lifted one); the history is a separate read. */
     val moderation: List<ModerationAction> = emptyList(),
     val deletion: PendingDeletion? = null,
     /** Legal texts whose current version the person has not accepted yet. */

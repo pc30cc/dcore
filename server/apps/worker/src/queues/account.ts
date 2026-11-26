@@ -13,9 +13,11 @@ import {
   photoVariantKeys,
   purgeDataSchema,
   queueRetention,
+  realtimeEndDataSchema,
   type DeletionFanoutData,
   type MediaStore,
   type PurgeData,
+  type RealtimeEndData,
 } from '@app/shared/server';
 import { DelayedError, Queue, type Job } from 'bullmq';
 import { endCallsOf } from '../calls/queue.js';
@@ -47,6 +49,9 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   for every account deleted in the last 50 minutes (one the API could not
  *   queue; a fan-out finished within the hour is still kept, so it is not
  *   run twice).
+ * - `realtime-end` (queued by the API when its own kick failed): expires
+ *   every Centrifugo connection of the person; a failure throws, so BullMQ
+ *   retries it. No statement.
  *
  * Conversation media (`m/<matchId>/`) does not exist yet; its deletion
  * belongs with chat media.
@@ -71,6 +76,8 @@ export type FanoutResult = { outcome: 'missing' } | { outcome: 'done'; ended: nu
 export type PurgeResult =
   | { outcome: 'purged'; matches: number; heldMatches: number; photos: number; objects: number }
   | { outcome: 'not_deleted' | 'missing' };
+
+export type RealtimeEndResult = { outcome: 'ended' } | { outcome: 'skipped' };
 
 export interface SweepResult {
   leased: boolean;
@@ -164,6 +171,18 @@ export async function deletionFanoutJob(job: Job<DeletionFanoutData>, context: J
   }
   log.info({ ended: target.ended.length, hidden, published }, 'deletion fan-out done');
   return { outcome: 'done', ended: target.ended.length, hidden, published, disconnected };
+}
+
+/** The kick of a revocation whose own call failed: every connection of the person expires (3005). */
+export async function realtimeEndJob(job: Job<RealtimeEndData>, context: JobContext): Promise<RealtimeEndResult> {
+  const { services, log } = context;
+  const { userId } = realtimeEndDataSchema.parse(job.data);
+  if (!services.realtime) {
+    log.warn('realtime end: no Centrifugo configured; nothing to close');
+    return { outcome: 'skipped' };
+  }
+  await services.realtime.disconnect(services.publicIds.user.encode(userId));
+  return { outcome: 'ended' };
 }
 
 async function deleteBlobs(media: MediaStore, photos: readonly { id: string; blobVer: number }[]): Promise<number> {
@@ -275,7 +294,10 @@ export async function deletionSweepJob(context: JobContext, now: () => number): 
 
 export function accountQueue(
   options: AccountQueueOptions = {},
-): QueueDefinition<DeletionFanoutData | PurgeData | Record<string, never>, FanoutResult | PurgeResult | SweepResult | UnmatchPurgeResult | ExportResult> {
+): QueueDefinition<
+  DeletionFanoutData | PurgeData | RealtimeEndData | Record<string, never>,
+  FanoutResult | PurgeResult | SweepResult | UnmatchPurgeResult | ExportResult | RealtimeEndResult
+> {
   const now = options.now ?? Date.now;
   return {
     name: ACCOUNT_QUEUE,
@@ -285,6 +307,7 @@ export function accountQueue(
       if (job.name === accountJobNames.fanout) return deletionFanoutJob(job as Job<DeletionFanoutData>, context);
       if (job.name === accountJobNames.purge) return purgeJob(job as Job<PurgeData>, context, now);
       if (job.name === accountJobNames.sweep) return deletionSweepJob(context, now);
+      if (job.name === accountJobNames.realtimeEnd) return realtimeEndJob(job as Job<RealtimeEndData>, context);
       if (job.name === 'unmatch-purge') return unmatchPurgeJob(job, context);
       if (job.name === EXPORT_JOB) return exportJob(job, context);
       throw new Error(`the account queue has no job named "${job.name}"`);

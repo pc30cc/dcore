@@ -49,6 +49,7 @@ import app.core.model.AppealStatus
 import app.core.model.AuthUser
 import app.core.model.Entitlements
 import app.core.model.ModerationAction
+import app.core.model.ModerationHistory
 import app.core.model.ModerationKind
 import app.core.model.Problem
 import app.core.model.ProblemCodes
@@ -64,6 +65,8 @@ import app.core.ui.components.TextAction
 import app.core.ui.components.TextActionKind
 import app.core.ui.components.overhangingTarget
 import app.core.ui.theme.AppTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,7 +83,11 @@ data class AccountStateUi(
     val loading: Boolean = true,
     val error: StepError? = null,
     val status: AccountStatus = AccountStatus.Unknown,
-    /** The active suspension or ban, with its reason. */
+    /**
+     * The suspension or ban in force, with its reason; or, while the account
+     * still reads restricted just after one was lifted, that lifted one
+     * (its [ModerationAction.revokedAt] set).
+     */
     val action: ModerationAction? = null,
     /** The refusal that brought the app here, when no action could be read yet. */
     val problem: Problem? = null,
@@ -110,8 +117,8 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
             runCatchingUnlessCancelled {
                 val me = api.me().value
                 val action = if (me.status.isRestricted) {
-                    runCatchingUnlessCancelled { api.moderation().active }.getOrNull()
-                        ?.firstOrNull { it.kind != ModerationKind.Warning } ?: me.moderation.firstOrNull { it.kind != ModerationKind.Warning }
+                    val read = runCatchingUnlessCancelled { api.moderation() }.getOrNull()
+                    if (read != null) restrictingAction(read) else me.moderation.firstOrNull { it.restricts() && it.revokedAt == null }
                 } else {
                     null
                 }
@@ -119,6 +126,7 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
             }.onSuccess { (me, action, purgeAt) ->
                 _state.update { it.copy(loading = false, status = me.status, action = action, purgeAt = purgeAt) }
                 gate.accountChanged(AuthUser(me.id, me.status, me.onboardingStep))
+                if (action?.revokedAt != null) recheckLifted() else stopLiftedRechecks()
             }.onFailure { e ->
                 _state.update { it.copy(loading = false, error = if (e is ApiError.Network) StepError.Offline else StepError.Failed) }
             }
@@ -133,7 +141,14 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
             runCatchingUnlessCancelled { api.appeal(action.id, body.trim()) }
                 .onSuccess { appeal -> _state.update { it.copy(busy = false, appealSent = true, action = action.copy(appeal = appeal)) } }
                 .onFailure { e ->
-                    val already = (e as? ApiError.Http)?.code == ProblemCodes.APPEAL_OPEN
+                    val code = (e as? ApiError.Http)?.code
+                    if (code == ProblemCodes.NOT_APPEALABLE) {
+                        // Lifted or decided meanwhile: read again where it stands.
+                        _state.update { it.copy(busy = false) }
+                        refresh()
+                        return@onFailure
+                    }
+                    val already = code == ProblemCodes.APPEAL_OPEN
                     _state.update {
                         it.copy(busy = false, appealSent = already, error = if (already) null else if (e is ApiError.Network) StepError.Offline else StepError.Failed)
                     }
@@ -154,6 +169,30 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
         }
     }
 
+    private var liftedRecheck: Job? = null
+    private var liftedRechecks = 0
+
+    /**
+     * Lifted while the account still reads restricted: read again after each
+     * of [LIFTED_RECHECK_MS], one at a time, then only on a tap or a resume.
+     */
+    private fun recheckLifted() {
+        if (liftedRecheck?.isActive == true) return
+        val wait = LIFTED_RECHECK_MS.getOrNull(liftedRechecks) ?: return
+        liftedRechecks++
+        liftedRecheck = viewModelScope.launch {
+            delay(wait)
+            liftedRecheck = null
+            refresh()
+        }
+    }
+
+    private fun stopLiftedRechecks() {
+        liftedRecheck?.cancel()
+        liftedRecheck = null
+        liftedRechecks = 0
+    }
+
     private var signingOut = false
 
     /** Once: a second tap while the first sign-out is on its way does nothing. */
@@ -169,6 +208,19 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
         }
     }
 }
+
+/** Anything but a warning: a suspension, a ban, or a kind this build does not know yet. */
+private fun ModerationAction.restricts(): Boolean = kind != ModerationKind.Warning
+
+/**
+ * What the restricted screen shows from `GET /v1/me/moderation`: the
+ * suspension or ban in force; else, when the newest of them in the history
+ * was lifted, that one (the account reads restricted until its state
+ * catches up); else nothing, and the refusal's own reason stands.
+ */
+internal fun restrictingAction(read: ModerationHistory): ModerationAction? =
+    read.active.firstOrNull { it.restricts() && it.revokedAt == null }
+        ?: read.history.filter { it.restricts() }.maxByOrNull { it.startsAt }?.takeIf { it.revokedAt != null }
 
 /**
  * «از حسابت خارج می‌شی؟» before a state screen signs out, as Settings asks:
@@ -204,9 +256,12 @@ private fun accountModel(): AccountStateViewModel {
 /**
  * Suspended or banned (m19): the title (no date in it), one line, a card
  * with the reason and, for a suspension, until when; the appeal (a field and
- * its button) while one can be sent, else where it stands; the one line a
- * store subscription that keeps renewing needs, with «مدیریت اشتراک»; and at
- * the bottom «خروج از حساب» and «حذف حساب» (the in-app deletion, [onDelete]).
+ * its button) while one can be sent, else where it stands (sent or
+ * decided); the one line a store subscription that keeps renewing needs,
+ * with «مدیریت اشتراک»; and at the bottom «خروج از حساب» and «حذف حساب»
+ * (the in-app deletion, [onDelete]).
+ * A lift the account has not caught up with yet shows none of that, only
+ * its own title and line and a way to read again.
  */
 @Composable
 fun RestrictedRoute(onDelete: () -> Unit = {}) {
@@ -224,27 +279,32 @@ fun RestrictedRoute(onDelete: () -> Unit = {}) {
     LaunchedEffect(endsAt) {
         val wait = endsAt?.let { java.time.Duration.between(Instant.now(), it).toMillis() } ?: return@LaunchedEffect
         if (wait > 0) {
-            kotlinx.coroutines.delay(wait + ENDED_GRACE_MS)
+            delay(wait + ENDED_GRACE_MS)
             model.refresh()
         }
     }
     val askSignOut = rememberSignOut(model::signOut)
 
     val action = state.action
+    // Lifted while the account still reads restricted: the model reads again
+    // until the gate catches up; the page says so in place of the restriction.
+    val lifted = action?.revokedAt != null
     val banned = action?.kind == ModerationKind.Ban || state.status == AccountStatus.Banned ||
         (action == null && state.problem?.code == ProblemCodes.ACCOUNT_BANNED)
     val reason = action?.reasonText?.takeIf { it.isNotBlank() } ?: state.problem?.reasonText
-    val until = action?.endsAt ?: state.problem?.until
-    val appealable = (action != null && action.appeal == null && !state.appealSent) && (state.problem?.appealable != false)
+    val until = if (lifted) null else action?.endsAt ?: state.problem?.until
+    val appealable = !lifted && (action != null && action.appeal == null && !state.appealSent) && (state.problem?.appealable != false)
     val appealOpen = state.appealSent || action?.appeal?.status == AppealStatus.Open
     val renewing = renewingStorePlan(entitlements, graph.purchases.store)
 
     RestrictedPage(
         banned = banned,
+        lifted = lifted,
         reason = reason,
         until = if (banned) null else until?.let { untilText(it, language) },
         loading = state.loading && reason == null,
         appeal = when {
+            lifted -> AppealState.None
             appealOpen -> AppealState.Sent
             action?.appeal?.status == AppealStatus.Upheld -> AppealState.Upheld(action.appeal.decisionText)
             appealable -> AppealState.Open
@@ -282,11 +342,18 @@ sealed interface AppealState {
     data object None : AppealState
 }
 
-/** The restricted screen drawn from its parts: see [RestrictedRoute]. */
+/**
+ * The restricted screen drawn from its parts: see [RestrictedRoute]. While
+ * [lifted] (the action is lifted and the account has not caught up yet) it
+ * draws none of the restriction: its own title and line, the way to read
+ * again, and the footer; [reason], [until], [appeal] and [renewing] are not
+ * shown then.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RestrictedPage(
     banned: Boolean,
+    lifted: Boolean,
     reason: String?,
     until: String?,
     loading: Boolean,
@@ -303,8 +370,18 @@ fun RestrictedPage(
     onDelete: () -> Unit,
 ) {
     val t = AppTheme.template
+    val title = when {
+        lifted -> R.string.restricted_lifted_title
+        banned -> R.string.restricted_banned_title
+        else -> R.string.restricted_suspended_title
+    }
+    val body = when {
+        lifted -> R.string.restricted_lifted
+        banned -> R.string.restricted_body_banned
+        else -> R.string.restricted_body
+    }
     AuthPage(
-        title = brandString(if (banned) R.string.restricted_banned_title else R.string.restricted_suspended_title),
+        title = brandString(title),
         onBack = null,
         hero = false,
         titleTop = 0.dp,
@@ -315,16 +392,18 @@ fun RestrictedPage(
             }
         },
     ) {
-        Sub(brandString(if (banned) R.string.restricted_body_banned else R.string.restricted_body))
-        if (loading) {
-            Skeleton(Modifier.padding(top = StateLayout.cardTop).fillMaxWidth().height(StateLayout.skeleton))
-        } else if (reason != null || until != null) {
-            SettingsGroup(Modifier.padding(top = StateLayout.cardTop)) {
-                if (reason != null) Fact(brandString(R.string.restricted_reason), reason, divider = false)
-                if (until != null) Fact(brandString(R.string.restricted_until), until, divider = reason != null)
+        Sub(brandString(body))
+        if (!lifted) {
+            if (loading) {
+                Skeleton(Modifier.padding(top = StateLayout.cardTop).fillMaxWidth().height(StateLayout.skeleton))
+            } else if (reason != null || until != null) {
+                SettingsGroup(Modifier.padding(top = StateLayout.cardTop)) {
+                    if (reason != null) Fact(brandString(R.string.restricted_reason), reason, divider = false)
+                    if (until != null) Fact(brandString(R.string.restricted_until), until, divider = reason != null)
+                }
             }
         }
-        when (appeal) {
+        if (!lifted) when (appeal) {
             AppealState.Open -> {
                 Text(
                     brandString(R.string.restricted_appeal_title),
@@ -357,11 +436,16 @@ fun RestrictedPage(
             AppealState.None -> Unit
         }
         if (error != null) HelperLine(error, Modifier.padding(top = StateLayout.errorTop), error = true)
-        // A read that failed, or nothing read yet: asked again from here, not only on the way back to the app.
-        if (error != null || (!loading && reason == null)) {
-            TextAction(brandString(R.string.action_try_again), onRetry, Modifier.padding(top = StateLayout.retryTop))
+        // A read that failed, nothing read yet, or a lift the account has not
+        // caught up with: asked again from here, not only on the way back to the app.
+        if (lifted || error != null || (!loading && reason == null)) {
+            TextAction(
+                brandString(R.string.action_try_again),
+                onRetry,
+                Modifier.padding(top = if (lifted && error == null) StateLayout.liftedRetryTop else StateLayout.retryTop),
+            )
         }
-        if (renewing) {
+        if (renewing && !lifted) {
             FlowRow(
                 Modifier.padding(top = StateLayout.billingTop),
                 horizontalArrangement = Arrangement.spacedBy(StateLayout.manageGap),
@@ -419,6 +503,12 @@ internal const val APPEAL_MAX = 2000
 
 /** How long after a suspension's end it is read again (the server lifts it on its own clock). */
 private const val ENDED_GRACE_MS = 5_000L
+
+/**
+ * While a lifted action is shown, the waits before each automatic read
+ * (each read asks for the moderation history too, so they stop after these).
+ */
+internal val LIFTED_RECHECK_MS = listOf(3_000L, 10_000L, 30_000L)
 
 /** Deleted, inside the grace period: restore, or sign out and leave it to finish. */
 @Composable
@@ -513,5 +603,6 @@ private object StateLayout {
     val decisionTop: Dp = 4.dp
     val errorTop: Dp = 10.dp
     val retryTop: Dp = 4.dp
+    val liftedRetryTop: Dp = 14.dp
     val manageGap: Dp = 6.dp
 }

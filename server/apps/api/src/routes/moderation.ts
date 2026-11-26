@@ -8,10 +8,12 @@ import { requireScope, sessionOf } from '../services/session.js';
 
 /**
  * `GET /v1/me/moderation` (the person's warnings, suspensions and bans,
- * with the reason written for them; a shadowban never appears) and
- * `POST /v1/appeals`. Both answer suspended and banned sessions: every
- * penalty carries its reason and an appeal in the app. The actions
- * themselves are written by moderation (reports, the panel).
+ * with the reason written for them; a lifted one carries `revokedAt` and
+ * stays in `history`; a shadowban never appears) and `POST /v1/appeals`
+ * (422 `not_appealable` for a lifted or ended action). Both answer
+ * suspended and banned sessions: every penalty carries its reason and an
+ * appeal in the app. The actions themselves are written by moderation
+ * (reports, the panel).
  */
 
 function actionOf(row: OwnAction): ModerationAction {
@@ -21,6 +23,7 @@ function actionOf(row: OwnAction): ModerationAction {
     reasonText: row.reasonText,
     startsAt: wireTime(row.startsAtMs),
     ...(row.endsAtMs !== null ? { endsAt: wireTime(row.endsAtMs) } : {}),
+    ...(row.revokedAtMs !== null ? { revokedAt: wireTime(row.revokedAtMs) } : {}),
     ...(row.appeal
       ? {
           appeal: {

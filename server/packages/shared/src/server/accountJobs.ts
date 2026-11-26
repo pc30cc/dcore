@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { jobId } from './queues.js';
 
 /**
- * The `account` queue's deletion jobs, as the API queues them and the
- * worker runs them:
+ * The `account` queue's deletion jobs (and the realtime kick that could not
+ * be sent at once), as the API queues them and the worker runs them:
  *
  * - `deletion-fanout` (`deletion-fanout.<uid>.<deletedAtMs>`, at once): the
  *   Valkey side of a deletion (the person's conversations leave their
@@ -13,6 +13,10 @@ import { jobId } from './queues.js';
  *   tombstone (`account_purge()`), then the photo blobs and rows.
  * - `deletion-sweep` (scheduled): queues again a purge whose job was lost,
  *   and a fan-out that could not be queued.
+ * - `realtime-end` (`realtime-end.<uid>.<atMs>`, at once): the Centrifugo
+ *   kick of a revocation (sign-out, ban, deletion) whose own call failed;
+ *   retried for longer than a connection token lives, so a live connection
+ *   of a revoked session does not outlast it.
  *
  * The deletion time is part of both ids, so a deletion after a restore gets
  * jobs of its own while the earlier ones are still kept.
@@ -24,6 +28,7 @@ export const accountJobNames = {
   fanout: 'deletion-fanout',
   purge: 'purge',
   sweep: 'deletion-sweep',
+  realtimeEnd: 'realtime-end',
 } as const;
 
 const id = z.string().regex(/^[1-9][0-9]{0,18}$/);
@@ -45,16 +50,29 @@ export const purgeDataSchema = z.object({
 });
 export type PurgeData = z.infer<typeof purgeDataSchema>;
 
+export const realtimeEndDataSchema = z.object({
+  userId: id,
+  /** When the revocation asked for it (part of the job id: each revocation gets a job of its own). */
+  atMs: epochMs,
+});
+export type RealtimeEndData = z.infer<typeof realtimeEndDataSchema>;
+
 export const accountJobIds = {
   fanout: (userId: string, deletedAtMs: number) => jobId(accountJobNames.fanout, userId, deletedAtMs),
   purge: (userId: string, deletedAtMs: number) => jobId(accountJobNames.purge, userId, deletedAtMs),
+  realtimeEnd: (userId: string, atMs: number) => jobId(accountJobNames.realtimeEnd, userId, atMs),
 };
 
-/** Attempts of the deletion jobs: a fan-out retries for about an hour, a purge for about a day; an export for about two hours. */
+/**
+ * Attempts of the account jobs: a fan-out retries for about an hour, a purge
+ * for about a day, an export for about two hours, a realtime kick for about
+ * three hours (exponential from 5 s: longer than a connection token lives).
+ */
 export const accountJobAttempts = {
   fanout: { attempts: 8, backoffMs: 15_000 },
   purge: { attempts: 12, backoffMs: 60_000 },
   export: { attempts: 8, backoffMs: 30_000 },
+  realtimeEnd: { attempts: 12, backoffMs: 5_000 },
 } as const;
 
 /**

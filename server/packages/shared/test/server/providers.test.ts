@@ -55,15 +55,17 @@ describe('Centrifugo publisher (against a local server)', () => {
     });
   });
 
-  it('broadcasts to both members, skips history for typing, disconnects a user', async () => {
+  it('broadcasts to both members, skips history for typing, expires a user\'s connections', async () => {
     await publisher.broadcast(['user:#bq3vx7k2mze4a', 'user:#cn5wy6l3naf5b'], envelope);
     expect(received.at(-1)?.path).toBe('/api/broadcast');
     expect(received.at(-1)?.body['channels']).toEqual(['user:#bq3vx7k2mze4a', 'user:#cn5wy6l3naf5b']);
     const typing = realtimeEnvelope('typing', '1287390234923417611', 0, { conversationId: '1', by: 'cn5wy6l3naf5b' });
     await publisher.publish('user:#bq3vx7k2mze4a', typing);
     expect(received.at(-1)?.body['skip_history']).toBe(true);
+    // A kick is a refresh that expires the connections (3005): apps fetch a new token, which a revoked session cannot get.
     await publisher.disconnect('bq3vx7k2mze4a');
-    expect(received.at(-1)).toMatchObject({ path: '/api/disconnect', body: { user: 'bq3vx7k2mze4a' } });
+    expect(received.at(-1)).toEqual({ path: '/api/refresh', key: 'test-key', body: { user: 'bq3vx7k2mze4a', expired: true } });
+    expect(received.some((r) => r.path === '/api/disconnect')).toBe(false);
   });
 
   it('turns refusals and outages into provider errors', async () => {

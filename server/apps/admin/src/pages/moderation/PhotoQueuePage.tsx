@@ -18,6 +18,7 @@ import { isSensitive, photoReasons, positionText } from '@/lib/moderation';
 import { conflictText, problemText } from '@/lib/problemText';
 import { dropFromPages, queryClient, queryKeys, usePhotoQueue } from '@/lib/queries';
 import { useQueueKeys } from '@/lib/queueKeys';
+import { motionBehavior } from '@/lib/useSelectedInView';
 import { can } from '@/lib/session';
 import { showToast } from '@/lib/toast';
 import { useSession } from '@/lib/useSession';
@@ -94,7 +95,7 @@ export function PhotoQueuePage() {
 
   function tap(i: number) {
     select(i);
-    if (!window.matchMedia?.(WIDE).matches) pane.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    if (!window.matchMedia?.(WIDE).matches) pane.current?.scrollIntoView?.({ block: 'start', behavior: motionBehavior() });
   }
 
   function leave(photo: AdminQueuePhoto) {

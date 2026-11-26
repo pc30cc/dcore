@@ -14,6 +14,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
+import app.core.model.ModerationAction
+import app.core.model.ModerationHistory
+import app.core.model.ModerationKind
 import app.core.store.Store
 import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Templates
@@ -25,11 +28,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import java.time.Instant
 
 /**
  * The restricted screen (m19): the reason and until when, the appeal while
  * one can be sent, the renewal line only for a plan of this store that keeps
- * renewing (with its store page), and signing out or deleting at the bottom.
+ * renewing (with its store page), signing out or deleting at the bottom; and
+ * for a lifted action none of the restriction, only its own lines and a way
+ * to read again.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
@@ -44,6 +50,7 @@ class RestrictedPageTest {
 
     private fun show(
         banned: Boolean = false,
+        lifted: Boolean = false,
         reason: String? = "Repeated reports of harassment.",
         until: String? = "November 17, 2026, 6:00 PM",
         appeal: AppealState = AppealState.Open,
@@ -54,6 +61,7 @@ class RestrictedPageTest {
             AppTheme(template = Templates.White) {
                 RestrictedPage(
                     banned = banned,
+                    lifted = lifted,
                     reason = reason,
                     until = until,
                     loading = false,
@@ -154,6 +162,62 @@ class RestrictedPageTest {
         show(appeal = AppealState.Upheld("We checked the messages again."))
         compose.onNodeWithText("Your appeal was reviewed. The decision stands.").assertIsDisplayed()
         compose.onNodeWithText("We checked the messages again.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aLiftedActionDrawsNoneOfTheRestrictionAndOffersToReadAgain() {
+        // Whatever else is passed, a lift the account has not caught up with reads as one.
+        show(lifted = true, appeal = AppealState.Open, renewing = true)
+        compose.onNodeWithText("The restriction was lifted").assertIsDisplayed()
+        compose.onNodeWithText("There’s nothing to appeal. Your account opens again in a moment.").assertIsDisplayed()
+        absent("Your account is suspended")
+        absent("until then")
+        absent("Reason")
+        absent("Repeated reports of harassment.")
+        absent("Until")
+        absent("November 17")
+        absent("Send appeal")
+        absent("Appeal")
+        absent("Your subscription still renews")
+        absent("Manage subscription")
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(listOf("retry"), calls)
+        compose.onNodeWithText("Sign out").assertIsDisplayed()
+        compose.onNodeWithText("Delete account").assertIsDisplayed()
+    }
+
+    @Test
+    fun aLiftedBanHasNeitherTheBanTitleNorItsLine() {
+        show(banned = true, lifted = true, until = null, appeal = AppealState.None)
+        compose.onNodeWithText("The restriction was lifted").assertIsDisplayed()
+        absent("Your account is closed")
+        absent("No one can see your profile")
+        compose.onNodeWithText("Try again").assertIsDisplayed()
+    }
+
+    @Test
+    fun aLiftedActionWhoseReadFailedShowsTheErrorAndOneTryAgain() {
+        show(lifted = true, appeal = AppealState.None, error = "You’re offline.")
+        compose.onNodeWithText("You’re offline.").assertIsDisplayed()
+        assertEquals(1, compose.onAllNodesWithText("Try again").fetchSemanticsNodes().size)
+    }
+
+    private fun action(id: String, kind: ModerationKind, startsAt: String, endsAt: String? = null, revokedAt: String? = null) =
+        ModerationAction(id, kind, "Reason $id", Instant.parse(startsAt), endsAt?.let(Instant::parse), revokedAt?.let(Instant::parse))
+
+    @Test
+    fun theScreenShowsTheActionInForceElseTheNewestOneIfLifted() {
+        val standing = action("3", ModerationKind.Suspension, "2026-11-20T10:00:00Z", endsAt = "2026-11-27T10:00:00Z")
+        val lifted = action("2", ModerationKind.Suspension, "2026-11-10T10:00:00Z", endsAt = "2026-11-17T10:00:00Z", revokedAt = "2026-11-11T10:00:00Z")
+        val ended = action("4", ModerationKind.Suspension, "2026-11-12T10:00:00Z", endsAt = "2026-11-13T10:00:00Z")
+        val liftedWarning = action("5", ModerationKind.Warning, "2026-11-21T10:00:00Z", revokedAt = "2026-11-21T11:00:00Z")
+        assertEquals(standing, restrictingAction(ModerationHistory(active = listOf(standing), history = listOf(liftedWarning, lifted))))
+        // Just lifted, while the account still reads restricted: that one, so the screen says so.
+        assertEquals(lifted, restrictingAction(ModerationHistory(history = listOf(liftedWarning, lifted))))
+        // The newest one ended on its own: an older lifted one is not shown in its place.
+        assertNull(restrictingAction(ModerationHistory(history = listOf(ended, lifted))))
+        assertNull("a warning never stands for the restriction", restrictingAction(ModerationHistory(history = listOf(liftedWarning))))
+        assertNull(restrictingAction(ModerationHistory()))
     }
 
     @Test

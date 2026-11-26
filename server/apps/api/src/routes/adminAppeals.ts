@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
 import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { adminModeration, afterCommit, publishToUser, withIdLease } from '../admin/effects.js';
-import { accountStateOf as stateOf, appealOf, removedBanAuditOf } from '../admin/refs.js';
+import { accountStateOf as stateOf, appealOf, removedBanAuditOf, userReadScope } from '../admin/refs.js';
 import { HttpProblem } from '../lib/problem.js';
 import { adminIdOf } from './adminAuth.js';
 
@@ -89,7 +89,7 @@ async function decide(app: FastifyInstance, request: FastifyRequest, appealId: s
     );
   }
   const removed = 'deviceBans' in outcome ? { deviceBansRemoved: outcome.deviceBans.length } : {};
-  return { appeal: appealOf(app, appeal), ...removed, sideEffects };
+  return { appeal: appealOf(app, appeal, userReadScope(app, request)), ...removed, sideEffects };
 }
 
 export const adminAppealRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -107,7 +107,8 @@ export const adminAppealRoutes: FastifyPluginAsyncZod = async (app) => {
       const { status, limit, cursor } = request.query;
       const key = readCursorKey(appealCursor, cursor);
       const rows = await adminAppealList(app.pg, { status, cursorId: key?.id ?? null, limit: limit + 1 });
-      return pageOf(rows, limit, (row) => appealOf(app, row), (row) => ({ id: row.id }));
+      const scope = userReadScope(app, request);
+      return pageOf(rows, limit, (row) => appealOf(app, row, scope), (row) => ({ id: row.id }));
     },
   );
 

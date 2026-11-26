@@ -423,6 +423,52 @@ describe.skipIf(!hasInfrastructure)('admin: reports', () => {
       expect((await post(`/v1/admin/reports/${keep}/dismiss`, { resolution: 'other' }, 'support')).statusCode).toBe(403);
     });
 
+    it('shows a role that reads and closes reports but may not see shadowbans no shadowban resolution, and answers its shadowban close alike either way', async () => {
+      await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (42, 'report_closer', '{"en": "Report closer"}') ON CONFLICT (key) DO NOTHING`);
+      await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (42, 'users.read'), (42, 'reports.read'), (42, 'reports.resolve') ON CONFLICT DO NOTHING`);
+      await h.app.adminAuth.roles.reload();
+      admins.set('report_closer', await adminAs(h, 'report_closer'));
+
+      const hidden = await person('Quietly Hidden');
+      const closed = await seedReport(h, { targetId: hidden.id });
+      const stillOpen = await seedReport(h, { targetId: hidden.id, reason: 7 });
+      await seedAction(h, hidden.id, 4, 'Spam.', { reportId: closed });
+      expect((await post(`/v1/admin/reports/${closed}/resolve`, { resolution: 'shadowban' })).statusCode).toBe(200);
+      const plain = await person('Not Hidden');
+      const plainReport = await seedReport(h, { targetId: plain.id });
+
+      // The moderator reads the resolution as it is.
+      expect(adminReportDetailSchema.parse((await get(`/v1/admin/reports/${closed}`)).json()).resolution).toBe('shadowban');
+
+      const detail = await get(`/v1/admin/reports/${closed}`, 'report_closer');
+      expect(detail.statusCode, detail.body).toBe(200);
+      const page = adminReportDetailSchema.parse(detail.json());
+      expect(page).toMatchObject({ resolution: 'other_action', reported: { id: hidden.publicUid } });
+      expect(page.actions.map((a) => a.kind)).not.toContain('shadowban');
+      expect(detail.body).not.toContain('shadowban');
+      const resolved = await get('/v1/admin/reports?view=resolved&limit=100', 'report_closer');
+      expect(adminReportPageSchema.parse(resolved.json()).items.find((r) => r.id === closed)?.resolution).toBe('other_action');
+      expect(resolved.body).not.toContain('shadowban');
+      const tab = await get(`/v1/admin/users/${hidden.publicUid}/reports?side=received`, 'report_closer');
+      expect(tab.statusCode, tab.body).toBe(200);
+      expect(adminReportPageSchema.parse(tab.json()).items.find((r) => r.id === closed)?.resolution).toBe('other_action');
+      expect(tab.body).not.toContain('shadowban');
+
+      // Closing as "shadowban" is refused before anything is read: the same answer for a shadowbanned person and for one who is not.
+      const onHidden = await post(`/v1/admin/reports/${stillOpen}/resolve`, { resolution: 'shadowban' }, 'report_closer');
+      const onPlain = await post(`/v1/admin/reports/${plainReport}/resolve`, { resolution: 'shadowban' }, 'report_closer');
+      expect([onHidden.statusCode, onPlain.statusCode]).toEqual([422, 422]);
+      expect(errorOf(onHidden)).toEqual(errorOf(onPlain));
+      expect(errorOf(onHidden)).toMatchObject({ pointer: '/resolution', code: 'wrong_resolution' });
+      expect(statements(onHidden)).toBe(0);
+      for (const id of [stillOpen, plainReport]) expect((await reportRow(id)).status).toBe(1);
+
+      // Another action closes as usual, and its answer names no shadowban either.
+      const other = await post(`/v1/admin/reports/${stillOpen}/resolve`, { resolution: 'other_action' }, 'report_closer');
+      expect(other.statusCode, other.body).toBe(200);
+      expect(adminReportCloseSchema.parse(other.json()).items.map((r) => [r.id, r.resolution])).toEqual([[stillOpen, 'other_action']]);
+    });
+
     it('rolls back with a refused audit row', async () => {
       const target = await person('Close Refused');
       const report = await seedReport(h, { targetId: target.id });

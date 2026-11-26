@@ -7,7 +7,7 @@ import { LoadError, TableSkeleton } from '@/components/QueryState';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsScroller, TabsTrigger } from '@/components/ui/tabs';
 import { UserRef } from '@/components/UserRef';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
@@ -29,7 +29,7 @@ export function ReportsPage() {
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6">
       <PageHeader icon={Flag} title={t('reports.title')} actions={<RefreshButton onClick={() => void reports.refetch()} busy={reports.isFetching} />} />
       <Tabs value={view} onValueChange={(value) => setParams(value === 'queue' ? {} : { view: value }, { replace: true })} dir={dir} className="gap-4">
-        <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <TabsScroller value={view} className="sm:mx-0 sm:px-0">
           <TabsList aria-label={t('reports.title')}>
             {reportViews.map((v) => (
               <TabsTrigger key={v} value={v}>
@@ -37,7 +37,7 @@ export function ReportsPage() {
               </TabsTrigger>
             ))}
           </TabsList>
-        </div>
+        </TabsScroller>
         <TabsContent value={view}>
       <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-xs">
         {reports.isPending ? (

@@ -10,6 +10,7 @@ import {
   type Queryable,
 } from '@app/db';
 import {
+  ModerationEffectsError,
   SAFETY_QUEUE,
   applyModerationEffects,
   endCallsWithConversations,
@@ -19,6 +20,7 @@ import {
   type ModerationEffectsResult,
 } from '@app/shared/server';
 import type { FastifyInstance } from 'fastify';
+import { queueRealtimeEnd } from '../realtime/end.js';
 
 /**
  * Moderation actions the server writes: warnings, suspensions, bans and
@@ -82,22 +84,34 @@ export class ModerationActions {
     return { outcome, effects: await this.effects(outcome) };
   }
 
-  /** The Valkey and realtime side of a moderation write (after its commit). */
+  /**
+   * The Valkey and realtime side of a moderation write (after its commit).
+   * A kick of the person's connections that failed is queued for the worker
+   * (`realtime-end`) before the error goes up.
+   */
   async effects(effect: ModerationEffect): Promise<ModerationEffectsResult> {
     const { app } = this;
-    const result = await applyModerationEffects(
-      {
-        redis: app.redis,
-        cache: app.cache,
-        keys: app.keys,
-        publicIds: app.publicIds,
-        realtime: app.realtime,
-        denyList: app.denyList,
-        nextId: () => app.ids.nextId(),
-        log: this.log,
-      },
-      effect,
-    );
+    let result: ModerationEffectsResult;
+    try {
+      result = await applyModerationEffects(
+        {
+          redis: app.redis,
+          cache: app.cache,
+          keys: app.keys,
+          publicIds: app.publicIds,
+          realtime: app.realtime,
+          denyList: app.denyList,
+          nextId: () => app.ids.nextId(),
+          log: this.log,
+        },
+        effect,
+      );
+    } catch (error) {
+      if (error instanceof ModerationEffectsError && error.failures.some((f) => f.step === 'disconnect')) {
+        await queueRealtimeEnd(app, effect.userId).catch((queueError: unknown) => this.log.error({ err: queueError }, 'moderation: realtime end not queued'));
+      }
+      throw error;
+    }
     // A call in a conversation the action ended (a ban, a suspension) ends with it.
     if (app.calls && effect.ended.length > 0) {
       await endCallsWithConversations(

@@ -1,76 +1,39 @@
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { userChannel } from '@app/shared';
 import { afterAll, describe, expect, it } from 'vitest';
-import { DEPLOY, composeEnv } from './deploySupport.js';
+import { CENTRIFUGO_SAMPLE, centrifugoRenderer, composeEnv, composeServices } from './deploySupport.js';
 
 /**
  * The realtime server's configuration as production writes it
- * (deploy/centrifugo/start.sh from config.json and the environment), and
+ * (deploy/centrifugo/start.sh from deploy/centrifugo/config.json), checked for
  * what the API and the app rely on in it: one personal namespace with
- * recovery and no client access to history or presence, no anonymous
- * access, the Redis engine on the realtime Valkey, browser origins from the
- * environment, and the compose wiring the API and Centrifugo share.
+ * recovery and no client access to history or presence, the person's
+ * channel kept to them by exactly one check (Centrifugo's user-limited
+ * channel or the API's subscribe check, which deployRealtimeProxy.test.ts
+ * holds to its details), no anonymous access, the Redis engine on the
+ * realtime Valkey, browser origins from the environment, the subscribe-check
+ * inputs start.sh validates, and the compose wiring the API and Centrifugo
+ * share.
  */
 
-const START = join(DEPLOY, 'centrifugo/start.sh');
-const TEMPLATE = join(DEPLOY, 'centrifugo/config.json');
 const work = mkdtempSync(join(tmpdir(), 'realtime-config-'));
-
-const SECRET = 'tokenSecret_0123456789abcdefghijklmnopqrstuvwxyz';
-const API_KEY = 'apiKey-0123456789abcdef';
+const { secret: SECRET, apiKey: API_KEY, proxyKey: PROXY_KEY } = CENTRIFUGO_SAMPLE;
+const render = centrifugoRenderer(work);
 
 afterAll(() => rmSync(work, { recursive: true, force: true }));
-
-interface CentrifugoConfig {
-  client: {
-    allowed_origins: string[];
-    token: { hmac_secret_key: string };
-    allow_anonymous_connect_without_token: boolean;
-    disallow_anonymous_connection_tokens: boolean;
-    [key: string]: unknown;
-  };
-  http_api: { key: string };
-  http_server: { port: number; internal_port: string };
-  engine: { type: string; redis: { address: string } };
-  channel: { history_meta_ttl: string; without_namespace: Record<string, unknown>; namespaces: Record<string, unknown>[] };
-  health: { enabled: boolean };
-  admin: { enabled: boolean };
-}
-
-let runs = 0;
-function render(env: Record<string, string | undefined>): { status: number; stderr: string; config?: CentrifugoConfig } {
-  const out = join(work, `centrifugo-${++runs}.json`);
-  const merged: Record<string, string> = {
-    PATH: process.env['PATH'] ?? '/usr/bin:/bin',
-    CENTRIFUGO_TOKEN_HMAC_SECRET: SECRET,
-    CENTRIFUGO_API_KEY: API_KEY,
-    KV_RT_PASSWORD: 'kv-rt-password_1',
-    CENTRIFUGO_TEMPLATE: TEMPLATE,
-    CENTRIFUGO_CONFIG_OUT: out,
-    CENTRIFUGO_CONFIG_ONLY: '1',
-  };
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) delete merged[key];
-    else merged[key] = value;
-  }
-  const run = spawnSync('sh', [START], { env: merged, encoding: 'utf8' });
-  if (run.status !== 0) return { status: run.status ?? -1, stderr: run.stderr };
-  return { status: 0, stderr: run.stderr, config: JSON.parse(readFileSync(out, 'utf8')) as CentrifugoConfig };
-}
 
 const CLIENT_SIDE = /^allow_(subscribe|publish|presence|history)_for_(client|subscriber|anonymous)$/;
 
 describe('the realtime server configuration (criterion 4)', () => {
-  const { config, status, stderr } = render({ CENTRIFUGO_ALLOWED_ORIGINS: 'https://admin.example.com, https://example.com' });
+  const { config, status, stderr, path } = render({ CENTRIFUGO_ALLOWED_ORIGINS: 'https://admin.example.com, https://example.com' });
 
   it('is written from the environment, complete, to a file only its owner reads', () => {
     expect(status, stderr).toBe(0);
     expect(config).toBeDefined();
     expect(JSON.stringify(config)).not.toMatch(/@[A-Z_]+@/);
-    expect(statSync(join(work, 'centrifugo-1.json')).mode & 0o077).toBe(0);
+    expect(statSync(path!).mode & 0o077).toBe(0);
     expect(config!.client.token.hmac_secret_key).toBe(SECRET);
     expect(config!.http_api.key).toBe(API_KEY);
     expect(config!.client.allowed_origins).toEqual(['https://admin.example.com', 'https://example.com']);
@@ -99,14 +62,13 @@ describe('the realtime server configuration (criterion 4)', () => {
     expect(config!.admin.enabled).toBe(false);
   });
 
-  it('has one personal namespace: user-limited, history 100 for 900 s with forced recovery, presence for the server only, no join/leave', () => {
+  it('has one personal namespace: the channel kept to its person by exactly one check, history 100 for 900 s with forced recovery, presence for the server only, no join/leave', () => {
     const namespaces = config!.channel.namespaces;
     expect(namespaces.map((n) => n['name'])).toEqual(['user']);
     // Centrifugo refuses to start on a namespace name outside ^[-a-zA-Z0-9_.]{2,}$ (v6.10 checks it).
     for (const n of namespaces) expect(String(n['name'])).toMatch(/^[-a-zA-Z0-9_.]{2,}$/);
     expect(namespaces[0]).toMatchObject({
       name: 'user',
-      allow_user_limited_channels: true,
       history_size: 100,
       history_ttl: '900s',
       force_recovery: true,
@@ -114,11 +76,19 @@ describe('the realtime server configuration (criterion 4)', () => {
       join_leave: false,
       force_push_join_leave: false,
     });
-    // The channel the API hands out is a user-limited channel of that namespace.
+    // A user-limited channel passes the subscribe check by, so a scope has one or the other, never both; the
+    // namespace without a name takes no client subscription at all.
+    const userLimited = namespaces[0]!['allow_user_limited_channels'] === true;
+    const checked = namespaces[0]!['subscribe_proxy_enabled'] === true;
+    expect(userLimited !== checked, `user-limited ${userLimited}, subscribe check ${checked}`).toBe(true);
+    if (checked) expect(config!.channel.proxy?.subscribe?.endpoint).toBeDefined();
+    expect(config!.channel.without_namespace['allow_user_limited_channels'] ?? false).toBe(false);
+    expect(config!.channel.without_namespace['subscribe_proxy_enabled'] ?? false).toBe(false);
+    // The channel the API hands out is a channel of that namespace (that check makes sure it is the person's own).
     const channel = userChannel('abcdefghijklm');
     expect(channel).toBe('user:#abcdefghijklm');
     expect(channel.split(':')[0]).toBe(namespaces[0]!['name']);
-    // History metadata outlives the history itself (recovery positions stay valid).
+    // Positions outlive the history window, so a client coming back finds out it is too late rather than silently missing events.
     expect(hours(config!.channel.history_meta_ttl)).toBeGreaterThan(900 / 3_600);
   });
 
@@ -128,6 +98,28 @@ describe('the realtime server configuration (criterion 4)', () => {
     expect(config!.http_server).toEqual({ port: 8000, internal_port: '9000' });
     expect(config!.health.enabled).toBe(true);
     expect(config!.client).toMatchObject({ ping_interval: '25s', channel_limit: 8, user_connection_limit: 4 });
+  });
+
+  it('refuses a missing, short, reused or unsafe proxy key and a proxy URL with a path, without echoing a key', () => {
+    const cases: Record<string, string | undefined>[] = [
+      { CENTRIFUGO_PROXY_KEY: undefined },
+      { CENTRIFUGO_PROXY_KEY: 'short-proxy-key' },
+      { CENTRIFUGO_PROXY_KEY: `${PROXY_KEY}"` },
+      { CENTRIFUGO_PROXY_KEY: `${PROXY_KEY}&` },
+      { CENTRIFUGO_PROXY_KEY: SECRET },
+      { CENTRIFUGO_PROXY_KEY: `${API_KEY}${API_KEY}`, CENTRIFUGO_API_KEY: `${API_KEY}${API_KEY}` },
+      { CENTRIFUGO_PROXY_URL: 'http://api:8081/path' },
+      { CENTRIFUGO_PROXY_URL: 'http://api:8081?x=1' },
+      { CENTRIFUGO_PROXY_URL: 'http://api:8081&x' },
+      { CENTRIFUGO_PROXY_URL: 'ftp://api:8081' },
+      { CENTRIFUGO_PROXY_URL: 'http://' },
+    ];
+    for (const env of cases) {
+      const refused = render(env);
+      expect(refused.status, JSON.stringify(env)).toBe(64);
+      expect(refused.stderr).not.toContain(PROXY_KEY);
+      expect(refused.stderr).not.toContain(SECRET);
+    }
   });
 
   it('allows no origin unless told, and refuses a wildcard, a path or a bad value without echoing a secret', () => {
@@ -171,6 +163,13 @@ describe('the realtime server configuration (criterion 4)', () => {
     expect(centrifugo).toHaveProperty('CENTRIFUGO_ALLOWED_ORIGINS');
     // Clients reach the public port only.
     expect(Object.keys(centrifugo).find((k) => k.startsWith('SERVICE_URL_CENTRIFUGO_'))).toBe(`SERVICE_URL_CENTRIFUGO_${config!.http_server.port}`);
+    // The subscribe checks: one shared key, Centrifugo calls the API's internal port, which no domain or published port exposes.
+    expect(api['CENTRIFUGO_PROXY_KEY']).toBe('${SERVICE_PASSWORD_64_CENTRIFUGOPROXY}');
+    expect(centrifugo['CENTRIFUGO_PROXY_KEY']).toBe(api['CENTRIFUGO_PROXY_KEY']);
+    expect(new URL(centrifugo['CENTRIFUGO_PROXY_URL']!)).toMatchObject({ hostname: 'api', port: api['REALTIME_PROXY_PORT'] });
+    expect(api['REALTIME_PROXY_PORT']).not.toBe(api['PORT']);
+    expect(Object.keys(api).filter((k) => k.startsWith('SERVICE_URL_API_'))).toEqual([`SERVICE_URL_API_${api['PORT']}`]);
+    expect(composeServices()['api']?.ports).toBeUndefined();
   });
 });
 

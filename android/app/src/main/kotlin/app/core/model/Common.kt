@@ -381,7 +381,8 @@ data class Appeal(
 
 /**
  * A warning, suspension or ban the account received, with the reason its
- * holder reads and its appeal, if one was filed.
+ * holder reads and its appeal, if one was filed. One that was lifted
+ * carries [revokedAt] and is only ever in the history.
  */
 @Serializable
 data class ModerationAction(
@@ -390,5 +391,11 @@ data class ModerationAction(
     val reasonText: String = "",
     val startsAt: Instant,
     val endsAt: Instant? = null,
+    /**
+     * When it was lifted (by the team, or an appeal that was overturned);
+     * null while it stands. A lifted action is not in force and takes no
+     * appeal.
+     */
+    val revokedAt: Instant? = null,
     val appeal: Appeal? = null,
 )

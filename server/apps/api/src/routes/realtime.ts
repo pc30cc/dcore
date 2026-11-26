@@ -1,4 +1,4 @@
-import { realtimeTokenSchema, userChannel, wireTime } from '@app/shared';
+import { realtimeTokenSchema, userChannel, wireTime, type RealtimeConnectionMeta } from '@app/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { SignJWT } from 'jose';
 import { HttpProblem } from '../lib/problem.js';
@@ -8,7 +8,12 @@ import { requireScope, sessionOf } from '../services/session.js';
  * `POST /v1/realtime/token`: a Centrifugo connection token for the person's
  * one channel, `user:#<publicUid>`. HS256 with the secret Centrifugo verifies
  * it with; `sub` is the public id, it expires after
- * REALTIME_TOKEN_TTL_SECONDS and carries no `info`. No statement, no Valkey.
+ * REALTIME_TOKEN_TTL_SECONDS and carries no `info`. `meta` holds the session
+ * and the issue time of the access token it was minted with; Centrifugo hands
+ * it to the subscribe check (realtime/subscribeProxy.ts), which refuses the
+ * token once that session or the account's tokens are revoked. The claims
+ * are exactly exp, iat, meta and sub: `channels`, `subs` or `channel` would
+ * pass the check by. No statement, no Valkey.
  */
 export const realtimeRoutes: FastifyPluginAsyncZod = async (app) => {
   const fullOnly = requireScope(app, app.account, ['full']);
@@ -43,7 +48,10 @@ export const realtimeRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!secret || !wsUrl) throw new HttpProblem('service_unavailable', { detail: 'Realtime is not configured.' });
       const now = Math.floor(Date.now() / 1_000);
       const exp = now + tokenTtlSeconds;
-      const token = await new SignJWT({})
+      // sessionOf answered for an app principal, so it is set.
+      const issuedAt = request.principal?.issuedAt ?? new Date(0);
+      const meta: RealtimeConnectionMeta = { sid: session.sessionId, ati: Math.floor(issuedAt.getTime() / 1_000) };
+      const token = await new SignJWT({ meta })
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
         .setSubject(session.publicUid)
         .setIssuedAt(now)

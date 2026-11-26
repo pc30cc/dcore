@@ -14,11 +14,16 @@ import { luaScript, runScript } from '../kv/scripts.js';
  *   issued after it, such as those of a session signed in later, pass: a
  *   revocation never locks a person out of a new sign-in.
  *
- * Both keys live as long as a token issued just before them could
- * (access TTL plus the clock tolerance plus a margin), so they never pile up.
- * `iat` has a resolution of one second: a token signed in the same second
- * as a user-wide revocation counts as before it (the client's next refresh,
- * a second later, gets a token that passes).
+ * Realtime connection tokens carry their session and the issue time of the
+ * access token they were minted with (`meta: {sid, ati}`), and the subscribe
+ * check reads the same two keys for them. So both keys live as long as a
+ * connection token minted from an access token issued just before them could
+ * still subscribe: the access TTL plus the clock tolerance plus a margin
+ * (until that access token expires), plus the connection token's TTL, plus
+ * Centrifugo's close delay after a connection expires. Then they go, so
+ * they never pile up. `iat` has a resolution of one second: a token signed
+ * in the same second as a user-wide revocation counts as before it (the
+ * client's next refresh, a second later, gets a token that passes).
  *
  * The API reads the list on every request; the worker writes it too (bans,
  * deletions), which is why it lives here.
@@ -33,9 +38,13 @@ export interface DenyListOptions {
   accessTokenTtlSeconds: number;
   /** The verifier's clock tolerance (`AUTH_CLOCK_SKEW_SECONDS`). */
   clockSkewSeconds: number;
+  /** The realtime connection token lifetime (`REALTIME_TOKEN_TTL_SECONDS`). */
+  realtimeTokenTtlSeconds: number;
 }
 
 const MARGIN_SECONDS = 30;
+/** Centrifugo's `client.expired_close_delay`: how long an expired connection stays open (deploy/centrifugo/config.json). */
+export const REALTIME_EXPIRED_CLOSE_DELAY_SECONDS = 25;
 
 export type DenyVerdict = 'allowed' | 'session_revoked' | 'user_revoked';
 
@@ -47,7 +56,8 @@ export class DenyList {
   constructor(options: DenyListOptions) {
     this.redis = options.redis;
     this.keys = options.keys;
-    this.ttlSeconds = options.accessTokenTtlSeconds + options.clockSkewSeconds + MARGIN_SECONDS;
+    this.ttlSeconds =
+      options.accessTokenTtlSeconds + options.clockSkewSeconds + MARGIN_SECONDS + options.realtimeTokenTtlSeconds + REALTIME_EXPIRED_CLOSE_DELAY_SECONDS;
   }
 
   /** Revokes the access tokens of one session. */

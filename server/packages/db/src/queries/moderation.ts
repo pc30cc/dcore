@@ -5,8 +5,8 @@ import { defineQuery } from './define.js';
 /**
  * What a person sees of the moderation of their own account: warnings,
  * suspensions and bans (never a shadowban or an internal action), with the
- * reason written for them and the latest appeal of each; and the appeal
- * they file against one.
+ * reason written for them, when it was lifted, if it was, and the latest
+ * appeal of each; and the appeal they file against one.
  */
 
 const id = z.string().regex(/^[1-9][0-9]{0,18}$/);
@@ -18,7 +18,7 @@ export const ownActionSchema = z.object({
   reasonText: z.string(),
   startsAtMs: epochMs,
   endsAtMs: epochMs.nullable(),
-  revoked: z.boolean(),
+  revokedAtMs: epochMs.nullable(),
   active: z.boolean(),
   appeal: z.object({ id, status: z.number().int().min(1).max(3), decisionText: z.string().nullable() }).nullable(),
 });
@@ -32,7 +32,7 @@ export const ownModeration = defineQuery({ name: 'moderation.own', statements: 1
 SELECT m.id::text AS id, m.kind, m.reason_text AS "reasonText",
        floor(extract(epoch FROM m.starts_at) * 1000)::bigint AS "startsAtMs",
        floor(extract(epoch FROM m.ends_at) * 1000)::bigint AS "endsAtMs",
-       m.revoked_at IS NOT NULL AS revoked,
+       floor(extract(epoch FROM m.revoked_at) * 1000)::bigint AS "revokedAtMs",
        (m.kind IN (2, 3) AND m.revoked_at IS NULL AND m.starts_at <= now() AND (m.ends_at IS NULL OR m.ends_at > now())) AS active,
        a.appeal
   FROM moderation_actions m
@@ -45,7 +45,12 @@ SELECT m.id::text AS id, m.kind, m.reason_text AS "reasonText",
  LIMIT 50`,
   );
   return rows.map((r) =>
-    ownActionSchema.parse({ ...r, startsAtMs: Number(r['startsAtMs']), endsAtMs: r['endsAtMs'] === null ? null : Number(r['endsAtMs']) }),
+    ownActionSchema.parse({
+      ...r,
+      startsAtMs: Number(r['startsAtMs']),
+      endsAtMs: r['endsAtMs'] === null ? null : Number(r['endsAtMs']),
+      revokedAtMs: r['revokedAtMs'] === null ? null : Number(r['revokedAtMs']),
+    }),
   );
 });
 
@@ -57,9 +62,9 @@ export type AppealOutcome =
 
 /**
  * Files an appeal against one of the person's own warnings, suspensions or
- * bans: only while the action stands (not revoked, not over) and only once
- * per action (an open appeal answers `open`, a decided one
- * `not_appealable`). One statement.
+ * bans: only while the action stands (not revoked, not over; otherwise
+ * `not_appealable`, whatever its appeals) and only once per action (an open
+ * appeal answers `open`, a decided one `not_appealable`). One statement.
  */
 export const fileAppeal = defineQuery(
   { name: 'moderation.fileAppeal', statements: 1 },
@@ -89,9 +94,10 @@ SELECT EXISTS (SELECT 1 FROM a) AS found,
     );
     if (!row.found) return { kind: 'not_found' };
     if (row.filed !== null) return { kind: 'filed', appealId: row.filed };
+    if (!row.standing) return { kind: 'not_appealable' };
     if (row.open) return { kind: 'open' };
     // A concurrent filing won the partial unique index between the check and the insert.
-    if (row.standing && !row.decided) return { kind: 'open' };
+    if (!row.decided) return { kind: 'open' };
     return { kind: 'not_appealable' };
   },
 );

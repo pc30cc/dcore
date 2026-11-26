@@ -125,7 +125,10 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
     expect(body.appeal.history.map((x) => x.kind)).toEqual(['lift']);
     expect(await status(u.id)).toBe(3);
     const event = realtime.on(userChannel(u.publicUid)).filter((e) => e.t === 'account').at(-1);
-    expect(realtimePayloads.account.parse(event?.d)).toMatchObject({ status: 'active', moderation: { appeal: { status: 'overturned', decisionText: 'You were right, sorry.' } } });
+    expect(realtimePayloads.account.parse(event?.d)).toMatchObject({
+      status: 'active',
+      moderation: { id: suspension, revokedAt: body.appeal.action.revokedAt, appeal: { status: 'overturned', decisionText: 'You were right, sorry.' } },
+    });
     const audits = await auditRows(db, { action: 'appeal.overturn', targetType: APPEAL_TARGET, targetId: appeal });
     expect(audits[0]?.detail).toEqual({
       actionId: suspension,
@@ -136,7 +139,10 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
       deviceBansRemoved: 0,
     });
     const history = moderationHistorySchema.parse((await call(h, '/v1/me/moderation', { token: (await seedUserToken(u)).token })).json());
-    expect([...history.active, ...history.history].find((x) => x.id === suspension)?.appeal).toMatchObject({ status: 'overturned', decisionText: 'You were right, sorry.' });
+    const item = [...history.active, ...history.history].find((x) => x.id === suspension);
+    expect(item?.appeal).toMatchObject({ status: 'overturned', decisionText: 'You were right, sorry.' });
+    expect(history.history.map((x) => x.id)).toContain(suspension);
+    expect(item?.revokedAt).toBeDefined();
   });
 
   it('decides the appeal of an account the purge emptied since: an overturn lifts the action on the record, nothing to send', async () => {
@@ -168,7 +174,9 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
     const decided = await row<{ status: number; decision_text: string | null }>(db, `SELECT status, decision_text FROM appeals WHERE id = $1`, [appeal]);
     expect(decided).toEqual({ status: 3, decision_text: null });
     const heard = realtime.on(userChannel(u.publicUid)).filter((e) => e.t === 'account').at(-1);
-    expect(realtimePayloads.account.parse(heard?.d)).toMatchObject({ status: 'active', moderation: { appeal: { status: 'overturned' } } });
+    const heardPayload = realtimePayloads.account.parse(heard?.d);
+    expect(heardPayload).toMatchObject({ status: 'active', moderation: { appeal: { status: 'overturned' } } });
+    expect(heardPayload.moderation?.revokedAt).toEqual(expect.any(String));
     expect(JSON.stringify(heard)).not.toContain('Internal');
     expect((await send(`/v1/admin/appeals/${appeal}/uphold`, { text: 'It stands.' })).statusCode).toBe(409);
 
@@ -180,6 +188,29 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
     expect(refused.statusCode).toBe(409);
     expect(json(refused)['detail']).toBe('The action was lifted.');
     expect((await row<{ status: number }>(db, `SELECT status FROM appeals WHERE id = $1`, [stale])).status).toBe(1);
+  });
+
+  it('shows a role that reads appeals but not moderation no shadowban and no internal note', async () => {
+    const u = await person('Appeal Reader');
+    const ban = await seedAction(h, u.id, 3, 'Spam links.');
+    const shadow = await seedAction(h, u.id, 4, 'Your account sent spam or unwanted promotion.');
+    await db.sql.query(`UPDATE moderation_actions SET note = 'internal ring' WHERE id = $1`, [ban]);
+    const appeal = await seedAppeal(h, u.id, ban, 'Please.');
+    await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (41, 'appeal_reader', '{"en": "Appeal reader"}') ON CONFLICT (key) DO NOTHING`);
+    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (41, 'appeals.read') ON CONFLICT DO NOTHING`);
+    await h.app.adminAuth.roles.reload();
+    admins.set('appeal_reader', await adminAs(h, 'appeal_reader'));
+    const read = async (role: string) => {
+      const page = adminAppealPageSchema.parse((await send('/v1/admin/appeals?limit=100', undefined, role)).json());
+      return page.items.find((x) => x.id === appeal)!;
+    };
+    const limited = await read('appeal_reader');
+    expect(limited.action).toMatchObject({ id: ban, note: null });
+    expect(limited.history.map((x) => x.id)).not.toContain(shadow);
+    expect(limited.history.every((x) => x.note === null)).toBe(true);
+    const full = await read('moderator');
+    expect(full.action.note).toBe('internal ring');
+    expect(full.history.map((x) => x.id)).toContain(shadow);
   });
 
   it('rolls back with a refused audit row: the appeal open, the action standing, nothing sent', async () => {

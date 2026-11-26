@@ -48,6 +48,7 @@ import {
   type AuditEntry,
   type Locale,
   type Permission,
+  type ReportResolution,
 } from '@app/shared';
 import { photoVariantUrl } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -128,9 +129,10 @@ export function userRefOf(app: FastifyInstance, row: AdminUserRefRow): AdminUser
  * What a caller's roles let them read on a person beyond `users.read`
  * (support and finance hold that alone): shadowbans (`users.shadowban` or
  * `moderation.read`: the flag, the records, the list filter), internal notes
- * and the accounts linked by device (`moderation.read`), legal holds
- * (`reports.hold`). Those are the things most likely to reach their subject
- * through someone who answers them.
+ * (a record's note, a lift's text, a device ban's reason) and the accounts
+ * linked by device (`moderation.read`), legal holds (`reports.hold`). Those
+ * are the things most likely to reach their subject through someone who
+ * answers them.
  */
 export interface UserReadScope {
   shadow: boolean;
@@ -152,6 +154,8 @@ export function userReadScope(app: FastifyInstance, request: FastifyRequest): Us
 }
 
 const SHADOWBAN_KIND = 4;
+/** Records whose reasonText is written by an admin for the team, not for the person: internal notes. */
+const INTERNAL_TEXT_KINDS: ReadonlySet<number> = new Set([moderationKind.code('lift'), moderationKind.code('device_ban')]);
 
 export function userSummaryOf(app: FastifyInstance, row: AdminUserSummaryRow, scope: UserReadScope = FULL_USER_SCOPE): AdminUserSummary {
   return {
@@ -182,7 +186,7 @@ export function actionOf(row: AdminActionRow, scope: UserReadScope = FULL_USER_S
     id: row.id,
     kind: moderationKind.name(row.kind),
     reason: reasonNameOf(row.kind, row.reasonCode),
-    reasonText: row.reasonText,
+    reasonText: scope.notes || !INTERNAL_TEXT_KINDS.has(row.kind) ? row.reasonText : '',
     note: scope.notes ? row.note : null,
     startsAt: wireTime(row.startsAtMs),
     endsAt: row.endsAtMs === null ? null : wireTime(row.endsAtMs),
@@ -273,7 +277,13 @@ export function textItemOf(app: FastifyInstance, cfg: ConfigSnapshot, row: Admin
   };
 }
 
-export function reportSummaryOf(app: FastifyInstance, row: AdminReportRow): AdminReportSummary {
+/** A resolution as a caller of `scope` reads it: "shadowban" is "other action" to one who may not see shadowbans. */
+export function resolutionVisible(resolution: ReportResolution, scope: UserReadScope = FULL_USER_SCOPE): ReportResolution {
+  return resolution === 'shadowban' && !scope.shadow ? 'other_action' : resolution;
+}
+
+export function reportSummaryOf(app: FastifyInstance, row: AdminReportRow, scope: UserReadScope = FULL_USER_SCOPE): AdminReportSummary {
+  const resolution = row.resolution === null ? undefined : reportResolution.nameOrUndefined(row.resolution);
   return {
     id: row.id,
     priority: row.priority,
@@ -285,7 +295,7 @@ export function reportSummaryOf(app: FastifyInstance, row: AdminReportRow): Admi
     reporter: row.reporter ? userRefOf(app, row.reporter) : null,
     assignee: adminRefOf(row.assignee),
     evidence: row.collecting ? 'collecting' : 'complete',
-    ...(row.resolution !== null && reportResolution.nameOrUndefined(row.resolution) ? { resolution: reportResolution.name(row.resolution) } : {}),
+    ...(resolution ? { resolution: resolutionVisible(resolution, scope) } : {}),
     ...(row.resolvedAtMs !== null ? { resolvedAt: wireTime(row.resolvedAtMs) } : {}),
     filed: row.filed,
   };
@@ -357,7 +367,7 @@ export function holdOf(app: FastifyInstance, row: AdminHoldRow): AdminHold {
   };
 }
 
-export function appealOf(app: FastifyInstance, row: AdminAppealRow): AdminAppeal {
+export function appealOf(app: FastifyInstance, row: AdminAppealRow, scope: UserReadScope = FULL_USER_SCOPE): AdminAppeal {
   return {
     id: row.id,
     status: appealStatus.name(row.status),
@@ -366,9 +376,9 @@ export function appealOf(app: FastifyInstance, row: AdminAppealRow): AdminAppeal
     decisionText: row.decisionText,
     decidedAt: msOrNull(row.decidedAtMs),
     decidedBy: adminRefOf(row.decidedBy),
-    action: actionOf(row.action),
+    action: actionOf(row.action, scope),
     user: userRefOf(app, row.user),
-    history: row.history.map((a) => actionOf(a)),
+    history: row.history.filter((a) => actionVisible(a, scope)).map((a) => actionOf(a, scope)),
     locale: row.locale,
   };
 }

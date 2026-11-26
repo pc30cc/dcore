@@ -3,7 +3,9 @@ import type { Redis } from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   DataSealer,
+  DenyList,
   FailClosedLimits,
+  REALTIME_EXPIRED_CLOSE_DELAY_SECONDS,
   KeyedHasher,
   LimitUnavailableError,
   OtpStore,
@@ -42,6 +44,38 @@ describe.skipIf(!hasRedis)('sign-in state in Valkey (Lua, prefixed keys)', () =>
   afterAll(async () => {
     await dropPrefix(redis, prefix);
     await redis.quit();
+  });
+
+  describe('the access-token deny list', () => {
+    const options = { accessTokenTtlSeconds: 900, clockSkewSeconds: 30, realtimeTokenTtlSeconds: 3_600 };
+
+    it('keeps its keys as long as a connection token minted before the revocation can subscribe', async () => {
+      const deny = new DenyList({ redis, keys, ...options });
+      // Access TTL, clock tolerance, margin, then the connection token's TTL and Centrifugo's close delay.
+      expect(REALTIME_EXPIRED_CLOSE_DELAY_SECONDS).toBe(25);
+      expect(deny.ttlSeconds).toBe(900 + 30 + 30 + 3_600 + 25);
+      await deny.revokeSession('1287390234923400001');
+      await deny.revokeUser('1287390234923400002', new Date(1_800_000_000_000));
+      for (const key of [keys.denySession('1287390234923400001'), keys.denyUser('1287390234923400002')]) {
+        const left = await redis.pttl(key);
+        expect(left, key).toBeGreaterThan((deny.ttlSeconds - 5) * 1_000);
+        expect(left, key).toBeLessThanOrEqual(deny.ttlSeconds * 1_000);
+      }
+      expect(new DenyList({ redis, keys, ...options, realtimeTokenTtlSeconds: 300 }).ttlSeconds).toBe(900 + 30 + 30 + 300 + 25);
+    });
+
+    it('refuses a revoked session, and every token of a user issued up to the cutoff (never moved back)', async () => {
+      const deny = new DenyList({ redis, keys, ...options });
+      const user = '1287390234923400003';
+      const cutoff = new Date(1_800_000_000_000);
+      await deny.revokeUser(user, cutoff);
+      await deny.revokeUser(user, new Date(cutoff.getTime() - 60_000));
+      expect(await deny.check('1287390234923400009', user, cutoff)).toBe('user_revoked');
+      expect(await deny.check('1287390234923400009', user, new Date(cutoff.getTime() + 1_000))).toBe('allowed');
+      await deny.revokeSession('1287390234923400009');
+      expect(await deny.check('1287390234923400009', user, new Date(cutoff.getTime() + 1_000))).toBe('session_revoked');
+      expect(await deny.check('1287390234923400010', null, cutoff)).toBe('allowed');
+    });
   });
 
   describe('fail-closed limits', () => {

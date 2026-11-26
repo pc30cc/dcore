@@ -44,6 +44,7 @@ const env = z
     REDIS_KEY_PREFIX: z.string().default('app:'),
     AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(900),
     AUTH_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
+    REALTIME_TOKEN_TTL_SECONDS: z.coerce.number().int().min(300).max(86_400).default(3_600),
   })
   .safeParse(process.env);
 if (!env.success) fail(`environment: ${env.error.issues.map((issue) => `${issue.path.join('.')} ${issue.message}`).join('; ')}`, 64);
@@ -83,6 +84,7 @@ try {
         keys: createKeys(env.data.REDIS_KEY_PREFIX),
         accessTokenTtlSeconds: env.data.AUTH_ACCESS_TOKEN_TTL_SECONDS,
         clockSkewSeconds: env.data.AUTH_CLOCK_SKEW_SECONDS,
+        realtimeTokenTtlSeconds: env.data.REALTIME_TOKEN_TTL_SECONDS,
       });
       for (const sid of result.revokedSessions) await deny.revokeSession(sid);
     } catch (error) {

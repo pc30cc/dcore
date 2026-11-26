@@ -221,6 +221,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
     keys,
     accessTokenTtlSeconds: config.auth.accessTokenTtlSeconds,
     clockSkewSeconds: config.auth.clockSkewSeconds,
+    realtimeTokenTtlSeconds: config.realtime.tokenTtlSeconds,
   });
   const ids =
     deps.ids ??

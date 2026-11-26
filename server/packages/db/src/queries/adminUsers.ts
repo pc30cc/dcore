@@ -676,7 +676,7 @@ export const adminApplyModeration = defineQuery(
 const revokeSchema = revokeOutcomeSchema;
 export type AdminRevokeOutcome = z.infer<typeof revokeSchema>;
 
-/** Lifts a record (moderation_revoke of 0016) and reads the page's view and the record after it, in one statement. */
+/** Lifts a record (moderation_revoke of 0030) and reads the page's view and the record after it, in one statement. */
 export const adminRevokeModeration = defineQuery(
   { name: 'adminUsers.revokeModeration', statements: 1 },
   async (db, actionId: string, liftId: string, options: { adminId: number | null; reasonText?: string | undefined }): Promise<AdminModerationWrite<AdminRevokeOutcome>> => {

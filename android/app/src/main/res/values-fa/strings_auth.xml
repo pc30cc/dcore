@@ -41,6 +41,8 @@
     <string name="restricted_appeal_send">اعتراض رو بفرست</string>
     <string name="restricted_appeal_open">اعتراضت رسید. جوابش همین‌جا میاد.</string>
     <string name="restricted_appeal_upheld">اعتراضت بررسی شد و تصمیم عوض نشد.</string>
+    <string name="restricted_lifted_title">محدودیت حسابت برداشته شد</string>
+    <string name="restricted_lifted">دیگه لازم نیست اعتراض کنی. حسابت تا چند لحظه‌ی دیگه باز می‌شه.</string>
     <string name="restore_title">حسابت در حال حذفه</string>
     <string name="restore_body">هنوز می‌تونی برش گردونی.</string>
     <string name="restore_body_date">تا %1$s می‌تونی برش گردونی.</string>

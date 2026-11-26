@@ -20,6 +20,8 @@ import { TEST_DATABASE_URL, TEST_REDIS_URL, testApp, testConfig } from './suppor
 
 export const MIGRATIONS = fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url));
 export const REALTIME_SECRET = 'realtime-test-secret-0123456789abcdef';
+/** The subscribe-check key that comes with REALTIME_SECRET (no listener is started in the harness). */
+export const REALTIME_PROXY_KEY = 'realtime-test-proxy-key-0123456789abcdef';
 
 export interface TestDatabase {
   url: string;
@@ -82,6 +84,7 @@ export async function startHarness(db: TestDatabase, env: Record<string, string 
     DATABASE_URL: db.url,
     REDIS_URL: TEST_REDIS_URL ?? '',
     CENTRIFUGO_TOKEN_HMAC_SECRET: REALTIME_SECRET,
+    CENTRIFUGO_PROXY_KEY: REALTIME_PROXY_KEY,
     ...env,
   };
   const config = testConfig(Object.fromEntries(Object.entries(merged).filter((entry): entry is [string, string] => entry[1] !== undefined)));

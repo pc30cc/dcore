@@ -58,7 +58,7 @@ import { adminWrite } from '../admin/audit.js';
 import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
 import { withIdLease } from '../admin/effects.js';
 import { takeAdminLimit } from '../admin/limits.js';
-import { actionOf, adminRefOf, filingOf, holdOf, photoUrls, promptQuestion, reportSummaryOf } from '../admin/refs.js';
+import { actionOf, actionVisible, adminRefOf, filingOf, holdOf, photoUrls, promptQuestion, reportSummaryOf, resolutionVisible, userReadScope } from '../admin/refs.js';
 import { HttpProblem } from '../lib/problem.js';
 import type { ConfigSnapshot } from '../services/cfg.js';
 import { adminIdOf } from './adminAuth.js';
@@ -184,6 +184,9 @@ async function closeReport(app: FastifyInstance, request: FastifyRequest, report
   if (!group.includes(body.resolution)) {
     throw fieldInvalid('/resolution', 'wrong_resolution', kind === 'resolve' ? 'This resolution closes a report without an action.' : 'This resolution closes a report with an action.');
   }
+  const scope = userReadScope(app, request);
+  // Refused before any read: whether the person is shadowbanned decides nothing for a caller who may not know it.
+  if (resolutionVisible(body.resolution, scope) !== body.resolution) throw fieldInvalid('/resolution', 'wrong_resolution', 'This resolution is not open to this role.');
   const status = kind === 'resolve' ? 3 : body.resolution === 'duplicate' ? 5 : 4;
   const adminId = adminIdOf(request);
   const note = body.note ? body.note : null;
@@ -212,7 +215,7 @@ async function closeReport(app: FastifyInstance, request: FastifyRequest, report
     }
     return closed.reports;
   });
-  return { items: reports.map((row) => reportSummaryOf(app, row)) };
+  return { items: reports.map((row) => reportSummaryOf(app, row, scope)) };
 }
 
 export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -232,10 +235,11 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
       let key: AdminReportCursor | null = null;
       if (cursor !== undefined) key = view === 'resolved' ? readCursorKey(closedCursor, cursor) : readCursorKey(openCursor, cursor);
       const rows = await adminReportList(app.pg, { view, adminId: adminIdOf(request), cursor: key, limit: limit + 1 });
+      const scope = userReadScope(app, request);
       return pageOf(
         rows,
         limit,
-        (row) => reportSummaryOf(app, row.report),
+        (row) => reportSummaryOf(app, row.report, scope),
         (row) => (view === 'resolved' ? { at: row.resolvedKey ?? '', id: row.report.id } : { p: row.priority, id: row.report.id }),
       );
     },
@@ -254,7 +258,8 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!row) throw noSuchReport();
       const ids = evidencePhotoIds(row.items);
       const photos = ids.length > 0 ? await adminEvidencePhotos(app.pg, ids) : [];
-      const summary = reportSummaryOf(app, row.report);
+      const scope = userReadScope(app, request);
+      const summary = reportSummaryOf(app, row.report, scope);
       const contact = cfg.app['safety.child_safety_contact'];
       return {
         ...summary,
@@ -264,8 +269,8 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
         filings: filingsOf(app, cfg, row.items, new Map(photos.map((p) => [p.id, p]))),
         holds: row.holds.map((h) => holdOf(app, h)),
         filing: row.filing ? filingOf(row.filing) : null,
-        actions: row.actions.map((a) => actionOf(a)),
-        otherOpen: row.otherOpen.map((r) => reportSummaryOf(app, r)),
+        actions: row.actions.filter((a) => actionVisible(a, scope)).map((a) => actionOf(a, scope)),
+        otherOpen: row.otherOpen.map((r) => reportSummaryOf(app, r, scope)),
         history: row.history.map((a) => ({ id: a.id, at: wireTime(a.atMs), admin: adminRefOf(a.admin), action: a.action })),
         ...(summary.reason === 'child_safety' && (contact.name || contact.email) ? { childSafetyContact: { name: contact.name, email: contact.email } } : {}),
       };
@@ -347,7 +352,7 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
             return outcome.report;
         }
       });
-      return reportSummaryOf(app, report);
+      return reportSummaryOf(app, report, userReadScope(app, request));
     },
   );
 

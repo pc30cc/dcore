@@ -24,18 +24,35 @@ function initialLocale(): Locale {
   return brand.defaultLocale;
 }
 
+/**
+ * `lang` (which picks the font stack in index.css) and `dir` on <html>.
+ * Written before the render that shows a language, never only in an effect:
+ * layout effects (a tab strip measuring its tabs) run before passive ones
+ * and would measure the old language's fonts and direction.
+ */
+function applyDocumentLocale(locale: Locale): void {
+  const root = document.documentElement;
+  if (root.lang !== locale) root.lang = locale;
+  const dir = textDirection(locale);
+  if (root.dir !== dir) root.dir = dir;
+}
+
 /** Holds the panel's language; sets `lang` and `dir` on <html>, so the whole layout mirrors for Persian. */
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const first = initialLocale();
+    applyDocumentLocale(first);
+    return first;
+  });
   const dir = textDirection(locale);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
-    document.documentElement.dir = dir;
+    applyDocumentLocale(locale);
     document.title = translate(locale, 'app.title', {}, brand.appName);
-  }, [locale, dir]);
+  }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
+    applyDocumentLocale(next);
     setLocaleState(next);
     writePreference(STORAGE_KEY, next);
   }, []);

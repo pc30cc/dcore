@@ -324,6 +324,41 @@ class SampleApiTest {
     }
 
     @Test
+    fun aLiftedActionMovesToTheHistoryAndTakesNoAppeal() = runTest {
+        val api = SampleApi(clock = clock)
+        api.setAccountStatus(AccountStatus.Suspended, "Spam reports.")
+        val action = api.moderation().active.single()
+        val appeal = api.appeal(action.id, "I did not send spam.")
+        clock.advance(5 * 60_000L)
+        api.liftModeration(action.id)
+
+        val read = api.moderation()
+        assertTrue("nothing in force", read.active.isEmpty())
+        val lifted = read.history.single { it.id == action.id }
+        assertEquals(clock.now(), lifted.revokedAt)
+        assertEquals("its open appeal was overturned", appeal.id, lifted.appeal?.id)
+        assertEquals(app.core.model.AppealStatus.Overturned, lifted.appeal?.status)
+        assertTrue(read.history.filter { it.id != action.id }.all { it.revokedAt == null })
+        expectProblem(422, ProblemCodes.NOT_APPEALABLE) { api.appeal(action.id, "Again") }
+
+        val me = api.me().value
+        assertEquals(AccountStatus.Active, me.status)
+        assertTrue("never a lifted one in force", me.moderation.isEmpty())
+        assertTrue(api.deck().cards.isNotEmpty())
+        roundTrips(read, app.core.model.ModerationHistory.serializer())
+    }
+
+    @Test
+    fun anEndedSuspensionTakesNoAppeal() = runTest {
+        val api = SampleApi(clock = clock)
+        api.setAccountStatus(AccountStatus.Suspended, "Spam reports.")
+        val action = api.moderation().active.single()
+        clock.advance(8 * 24 * 3_600_000L)
+        assertTrue(api.moderation().active.isEmpty())
+        expectProblem(422, ProblemCodes.NOT_APPEALABLE) { api.appeal(action.id, "Late") }
+    }
+
+    @Test
     fun snoozingPausesTheDeckButNotTheConversations() = runTest {
         val api = SampleApi(clock = clock)
         api.updateSettings(SettingsPatch(snoozed = true))

@@ -109,8 +109,21 @@ class CentrifugoProtocolTest {
     @Test
     fun terminalCodes() {
         assertTrue(CentrifugoProtocol.isTerminal(3500))
-        assertTrue(CentrifugoProtocol.isTerminal(4501))
+        assertTrue(CentrifugoProtocol.isTerminal(3504))
+        assertTrue(CentrifugoProtocol.isTerminal(CentrifugoProtocol.DISCONNECT_REVOKED))
+        assertTrue(CentrifugoProtocol.isTerminal(4999))
         assertFalse(CentrifugoProtocol.isTerminal(3005))
+        assertFalse(CentrifugoProtocol.isTerminal(CentrifugoProtocol.DISCONNECT_STATE_INVALIDATED))
         assertFalse(CentrifugoProtocol.isTerminal(3000))
+        assertFalse(CentrifugoProtocol.isTerminal(4499))
+    }
+
+    @Test
+    fun theCodesThatDropTheTokenInHand() {
+        assertEquals(4501, CentrifugoProtocol.DISCONNECT_REVOKED)
+        assertEquals(3014, CentrifugoProtocol.DISCONNECT_STATE_INVALIDATED)
+        for (code in listOf(3500, 3005, 3014, 4501)) assertTrue("$code", CentrifugoProtocol.needsNewToken(code))
+        // Closed for another reason (shutdown, bad request, forced, too many connections): the token is still good.
+        for (code in listOf(3000, 3001, 3004, 3501, 3503, 3504, 4000, 4500, 4502)) assertFalse("$code", CentrifugoProtocol.needsNewToken(code))
     }
 }

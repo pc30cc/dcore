@@ -41,6 +41,8 @@
     <string name="restricted_appeal_send">İtirazı gönder</string>
     <string name="restricted_appeal_open">İtirazın alındı. Yanıtı burada görürsün.</string>
     <string name="restricted_appeal_upheld">İtirazın incelendi. Karar değişmedi.</string>
+    <string name="restricted_lifted_title">Kısıtlama kaldırıldı</string>
+    <string name="restricted_lifted">İtiraz etmene gerek yok. Hesabın birazdan yeniden açılır.</string>
     <string name="restore_title">Hesabın siliniyor</string>
     <string name="restore_body">Hâlâ geri getirebilirsin.</string>
     <string name="restore_body_date">%1$s tarihine kadar geri getirebilirsin.</string>

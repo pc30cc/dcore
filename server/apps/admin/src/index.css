@@ -88,8 +88,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  /* The brand's fonts when installed, then the platform's. Font files are not bundled yet. */
-  --font-sans: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /*
+   * A reference, not the stack: inline theme values are copied into every rule
+   * that uses them, so a literal here could not follow the lang rules below,
+   * which set --font-ui (the brand's fonts when installed, then the platform's).
+   */
+  --font-sans: var(--font-ui);
 }
 
 /*
@@ -115,8 +119,20 @@
   html.dark {
     color-scheme: dark;
   }
-  html[lang="fa"] {
-    --font-sans: var(--font-persian), Tahoma, ui-sans-serif, system-ui, sans-serif;
+  /*
+   * The UI font stack per language. Default and override stay in this layer:
+   * an unlayered declaration would beat the override. Elements with a lang of
+   * their own (per-locale fields, options) switch with it.
+   */
+  :root,
+  [lang] {
+    --font-ui: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  [lang|="fa"] {
+    --font-ui: var(--font-persian), Tahoma, ui-sans-serif, system-ui, sans-serif;
+  }
+  [lang]:not(html) {
+    font-family: var(--font-ui);
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
