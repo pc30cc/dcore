@@ -45,7 +45,6 @@ import app.core.ui.theme.AppTheme
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
 import app.core.ui.theme.Space
-import androidx.compose.runtime.getValue
 
 /**
  * A screen with nothing to show yet: the title (`--type-h2`), at most one
@@ -90,35 +89,29 @@ private fun EmptyStateLayout(title: String, body: String?, modifier: Modifier, a
 @Composable
 fun Modifier.skeleton(shape: Shape = RoundedCornerShape(AppTheme.template.radii.xs)): Modifier {
     val t = AppTheme.template
-    val reduced = LocalReducedMotion.current
-    val sweep = if (reduced) {
-        0.5f
-    } else {
-        val transition = rememberInfiniteTransition(label = "skeleton")
-        val value by transition.animateFloat(
-            initialValue = 1.3f,
-            targetValue = -0.3f,
-            animationSpec = infiniteRepeatable(tween(Motion.SKELETON_MS, easing = LinearEasing), RepeatMode.Restart),
-            label = "sweep",
+    val base = clip(shape).background(t.colors.skeleton, shape)
+    if (LocalReducedMotion.current) return base
+    // A State, not a delegate: read only while drawing, so each frame redraws
+    // this element and recomposes nothing (the caller's semantics included).
+    val sweep = rememberInfiniteTransition(label = "skeleton").animateFloat(
+        initialValue = 1.3f,
+        targetValue = -0.3f,
+        animationSpec = infiniteRepeatable(tween(Motion.SKELETON_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "sweep",
+    )
+    val hi = t.colors.skeletonHi
+    return base.drawWithContent {
+        val w = size.width
+        val x = w * sweep.value
+        drawRect(
+            Brush.linearGradient(
+                listOf(Color.Transparent, hi, Color.Transparent),
+                start = Offset(x - w * 0.3f, 0f),
+                end = Offset(x + w * 0.3f, 0f),
+            ),
         )
-        value
+        drawContent()
     }
-    return clip(shape)
-        .background(t.colors.skeleton, shape)
-        .drawWithContent {
-            if (!reduced) {
-                val w = size.width
-                val x = w * sweep
-                drawRect(
-                    Brush.linearGradient(
-                        listOf(Color.Transparent, t.colors.skeletonHi, Color.Transparent),
-                        start = Offset(x - w * 0.3f, 0f),
-                        end = Offset(x + w * 0.3f, 0f),
-                    ),
-                )
-            }
-            drawContent()
-        }
 }
 
 /**

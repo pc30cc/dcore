@@ -66,9 +66,12 @@ interface CallRoom {
      * Joins the room at [CallToken.wsUrl] with the token's TURN servers and
      * ICE policy. Cancelling the caller cancels the join and is never reported
      * as a [Result.Failed]: a call hung up while it connected ended because it
-     * was hung up, not because it failed.
+     * was hung up, not because it failed. The microphone is published only
+     * when [wantsMicrophone] (its permission is held: nothing records before
+     * that), the camera only when [wantsVideo]; [setMicrophone] and
+     * [setCamera] turn them on later.
      */
-    suspend fun connect(credentials: CallToken, wantsVideo: Boolean): Result
+    suspend fun connect(credentials: CallToken, wantsVideo: Boolean, wantsMicrophone: Boolean): Result
 
     /**
      * Whether the change actually happened. A microphone another app has

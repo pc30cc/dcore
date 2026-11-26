@@ -43,25 +43,25 @@ class CallRulesTest {
     }
 
     @Test
-    fun aCallAsksForTheMicrophoneTheCameraWhenItWillBeUsedAndBluetoothFromAndroid12() {
-        assertEquals(listOf(CallPermissions.MICROPHONE), CallPermissions.needed(CallKind.Audio, withVideo = true, sdk = 30))
-        assertEquals(listOf(CallPermissions.MICROPHONE, CallPermissions.BLUETOOTH), CallPermissions.needed(CallKind.Audio, withVideo = true, sdk = 31))
-        assertEquals(
-            listOf(CallPermissions.MICROPHONE, CallPermissions.CAMERA, CallPermissions.BLUETOOTH),
-            CallPermissions.needed(CallKind.Video, withVideo = true, sdk = 34),
-        )
-        assertEquals("voice only asks for no camera", listOf(CallPermissions.MICROPHONE, CallPermissions.BLUETOOTH), CallPermissions.needed(CallKind.Video, withVideo = false, sdk = 34))
+    fun aCallAsksForTheMicrophoneAndTheCameraOnlyWhenItWillBeUsedAndNeverBluetooth() {
+        assertEquals(listOf(CallPermissions.MICROPHONE), CallPermissions.needed(CallKind.Audio, withVideo = true))
+        assertEquals(listOf(CallPermissions.MICROPHONE, CallPermissions.CAMERA), CallPermissions.needed(CallKind.Video, withVideo = true))
+        assertEquals("voice only asks for no camera", listOf(CallPermissions.MICROPHONE), CallPermissions.needed(CallKind.Video, withVideo = false))
+        for (kind in CallKind.entries) {
+            for (video in listOf(true, false)) {
+                assertFalse("$kind video=$video", "android.permission.BLUETOOTH_CONNECT" in CallPermissions.needed(kind, video))
+            }
+        }
     }
 
     @Test
     fun whatIsAlreadyGrantedIsNotAskedAndTheDialogsAnswersWin() {
         val granted = setOf(CallPermissions.MICROPHONE)
-        val needed = CallPermissions.needed(CallKind.Video, withVideo = true, sdk = 34)
-        assertEquals(listOf(CallPermissions.CAMERA, CallPermissions.BLUETOOTH), CallPermissions.missing(needed) { it in granted })
-        val got = CallPermissions.outcome(mapOf(CallPermissions.CAMERA to false, CallPermissions.BLUETOOTH to true)) { it in granted }
+        val needed = CallPermissions.needed(CallKind.Video, withVideo = true)
+        assertEquals(listOf(CallPermissions.CAMERA), CallPermissions.missing(needed) { it in granted })
+        val got = CallPermissions.outcome(mapOf(CallPermissions.CAMERA to false)) { it in granted }
         assertTrue(got.microphone)
         assertFalse(got.camera)
-        assertTrue(got.bluetooth)
     }
 
     @Test

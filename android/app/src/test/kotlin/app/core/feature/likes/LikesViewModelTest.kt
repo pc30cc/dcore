@@ -1,12 +1,19 @@
 package app.core.feature.likes
 
 import app.core.common.FakeClock
+import app.core.feature.match.MatchPhoto
+import app.core.model.Conversation
+import app.core.model.ConversationPeer
 import app.core.model.DeckPage
 import app.core.model.Entitlements
 import app.core.model.LikeItem
 import app.core.model.LikeKind
 import app.core.model.LikesPage
 import app.core.model.Me
+import app.core.model.OwnPhoto
+import app.core.model.OwnProfile
+import app.core.model.Photo
+import app.core.model.PhotoStatus
 import app.core.model.ProfileCard
 import app.core.model.Swipe
 import app.core.model.SwipeOutcome
@@ -32,6 +39,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
 
 /** The Likes tab's model: liking back from a tile. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -50,6 +58,8 @@ class LikesViewModelTest {
     private val reports = mutableListOf<app.core.model.ReportRequest>()
     private val blocks = mutableListOf<String>()
     private var safetyError: ApiError? = null
+    private var likesBackMatch = false
+    private var myPhotos = emptyList<OwnPhoto>()
 
     private fun TestScope.model(): LikesViewModel {
         val deck = DeckRepository(
@@ -59,7 +69,15 @@ class LikesViewModelTest {
                 sent += batch
                 answer.await()
                 swipeError?.let { throw it }
-                SwipesResult(batch.map { SwipeResult(it.target, SwipeOutcome.Liked) })
+                SwipesResult(
+                    batch.map {
+                        if (likesBackMatch) {
+                            SwipeResult(it.target, SwipeOutcome.Matched, Conversation("c-${it.target}", ConversationPeer(it.target, it.target), createdAt = Instant.EPOCH))
+                        } else {
+                            SwipeResult(it.target, SwipeOutcome.Liked)
+                        }
+                    },
+                )
             },
             account = { "me00000000000" },
             store = MemoryDeckSnapshotStore(),
@@ -68,7 +86,7 @@ class LikesViewModelTest {
         val services = object : LikesServices {
             override suspend fun likes(cursor: String?, limit: Int) =
                 LikesPage(total = 1, items = listOf(LikeItem(liker = pariya, kind = LikeKind.Like)))
-            override suspend fun me() = Me(id = "me00000000000")
+            override suspend fun me() = Me(id = "me00000000000", profile = OwnProfile(id = "me00000000000", photos = myPhotos))
             override suspend fun report(request: app.core.model.ReportRequest) {
                 safetyError?.let { throw it }
                 reports += request
@@ -116,6 +134,23 @@ class LikesViewModelTest {
         assertEquals(1, vm.state.value.items.size)
         assertTrue(vm.state.value.liking.isEmpty())
         assertEquals(LikesNotice.LikeOffline, vm.state.value.message?.notice)
+    }
+
+    @Test
+    fun aMatchFromATileShowsThisAccountsPhotoStillInReview() = runTest(dispatcher) {
+        likesBackMatch = true
+        myPhotos = listOf(
+            OwnPhoto("8003", 0, PhotoStatus.Rejected, url = "https://media.test/p/8003/1/640.webp"),
+            OwnPhoto("8004", 1, PhotoStatus.Review, url = "https://media.test/p/8004/1/640.webp"),
+        )
+        val vm = model()
+        settle()
+        answer.complete(Unit)
+        vm.likeBack(vm.state.value.items.single())
+        settle()
+        val match = vm.state.value.match!!
+        assertEquals(pariya.id, match.card.id)
+        assertEquals(MatchPhoto.Remote(Photo("8004", url = "https://media.test/p/8004/1/640.webp"), approved = false), match.myPhoto)
     }
 
     @Test

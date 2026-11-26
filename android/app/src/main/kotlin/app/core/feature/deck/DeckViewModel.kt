@@ -3,6 +3,9 @@ package app.core.feature.deck
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.core.feature.card.LikeTarget
+import app.core.feature.match.MatchPhoto
+import app.core.feature.match.isFinal
+import app.core.feature.match.ownMatchPhoto
 import app.core.media.PhotoPreloader
 import app.core.model.BoostStarted
 import app.core.model.ProblemCodes
@@ -13,9 +16,6 @@ import app.core.model.DiscoveryPreferences
 import app.core.model.Entitlements
 import app.core.model.Id
 import app.core.model.Me
-import app.core.model.OwnPhoto
-import app.core.model.Photo
-import app.core.model.PhotoStatus
 import app.core.model.PreferencesPatch
 import app.core.model.ProfileCard
 import app.core.model.PublicUid
@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.Instant
 
 /** The server calls the deck screen makes besides the deck itself. */
@@ -56,6 +57,9 @@ interface DeckServices {
 
     /** Blocks someone from their profile (`POST /v1/blocks`). */
     suspend fun block(target: PublicUid)
+
+    /** The copy of an own photo this phone uploaded, while the server has no URL for it (null: none kept). */
+    fun ownPhotoFile(id: Id): File? = null
 }
 
 /** A bottom sheet over the deck. */
@@ -70,7 +74,7 @@ enum class ItemLikeError { Refused, Offline, Failed }
 data class ItemLikeState(val sending: Boolean = false, val error: ItemLikeError? = null)
 
 /** The full-screen match moment: who, the new conversation, and this account's own photo. */
-data class MatchUi(val card: ProfileCard, val conversationId: Id?, val myPhoto: Photo?)
+data class MatchUi(val card: ProfileCard, val conversationId: Id?, val myPhoto: MatchPhoto?)
 
 /** A one-line message under the deck. */
 enum class DeckNotice {
@@ -115,7 +119,7 @@ data class DeckUiState(
 private data class Local(
     val preferences: DiscoveryPreferences? = null,
     val country: String? = null,
-    val myPhoto: Photo? = null,
+    val myPhoto: MatchPhoto? = null,
     val details: ProfileCard? = null,
     val sheet: DeckSheet? = null,
     val itemLike: ItemLikeState = ItemLikeState(),
@@ -362,9 +366,10 @@ class DeckViewModel(
         when (outcome) {
             LikeOutcome.Sent -> Unit
             is LikeOutcome.Matched -> {
-                // At once, with this account's photo as soon as it is known.
+                // At once, with this account's photo as soon as it is known. Read again while the
+                // known one is not an approved server copy: one in review, or still processing, may be by now.
                 local.update { it.copy(match = MatchUi(outcome.card, outcome.conversation?.id, it.myPhoto)) }
-                if (local.value.myPhoto == null) {
+                if (!local.value.myPhoto.isFinal) {
                     loadMeNow()
                     local.update { l -> l.copy(match = l.match?.takeIf { it.card.id == outcome.card.id }?.copy(myPhoto = l.myPhoto) ?: l.match) }
                 }
@@ -391,7 +396,7 @@ class DeckViewModel(
             local.update {
                 it.copy(
                     preferences = me.preferences ?: it.preferences,
-                    myPhoto = me.profile?.photos?.let(::firstShownPhoto) ?: it.myPhoto,
+                    myPhoto = me.profile?.photos?.let { photos -> ownMatchPhoto(photos, services::ownPhotoFile) } ?: it.myPhoto,
                     country = me.location?.country ?: it.country,
                 )
             }
@@ -400,14 +405,6 @@ class DeckViewModel(
         } catch (e: ApiError) {
             // The screen works without it: generic labels, no own photo in the match moment.
         }
-    }
-
-    companion object {
-        /** The account's own first approved photo, as a [Photo] the image loader can draw. */
-        fun firstShownPhoto(photos: List<OwnPhoto>): Photo? = photos
-            .sortedBy { it.position }
-            .firstOrNull { it.status == PhotoStatus.Approved && !it.url.isNullOrBlank() }
-            ?.let { Photo(it.id, it.w, it.h, it.blurhash, it.url!!) }
     }
 }
 

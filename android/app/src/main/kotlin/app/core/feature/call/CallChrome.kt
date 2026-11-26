@@ -2,6 +2,7 @@ package app.core.feature.call
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -354,10 +356,15 @@ internal fun IncomingCallButtons(
 private val CALL_RING_ROW_INSET = 16.dp
 private val CALL_RING_ROW_MAX = 440.dp
 
-/** A short line on the call's surface: a warning or a state the person should know (a photo pill). */
+/**
+ * A short line on the call's surface: a warning or a state the person should
+ * know (a photo pill). With [onClick] it is a button (the way to the settings
+ * under a notice).
+ */
 @Composable
-internal fun CallNotice(text: String, modifier: Modifier = Modifier, tag: String = CallTags.NOTICE) {
+internal fun CallNotice(text: String, modifier: Modifier = Modifier, tag: String = CallTags.NOTICE, onClick: (() -> Unit)? = null) {
     val t = AppTheme.template
+    val shape = RoundedCornerShape(t.radii.chip)
     Text(
         text,
         style = t.type.labelSm,
@@ -365,8 +372,9 @@ internal fun CallNotice(text: String, modifier: Modifier = Modifier, tag: String
         textAlign = TextAlign.Center,
         modifier = modifier
             .testTag(tag)
-            .background(t.colors.photoChipFill, RoundedCornerShape(t.radii.chip))
-            .border(1.dp, t.colors.photoChipLine, RoundedCornerShape(t.radii.chip))
+            .background(t.colors.photoChipFill, shape)
+            .border(1.dp, t.colors.photoChipLine, shape)
+            .then(if (onClick != null) Modifier.clip(shape).clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = Space.lg, vertical = Space.sm),
     )
 }
@@ -379,6 +387,7 @@ object CallTags {
     const val STATUS = "call.status"
     const val DETAIL = "call.detail"
     const val NOTICE = "call.notice"
+    const val NOTICE_SETTINGS = "call.notice.settings"
     const val ANSWER = "call.answer"
     const val ANSWER_VOICE = "call.answer.voice"
     const val DECLINE = "call.decline"

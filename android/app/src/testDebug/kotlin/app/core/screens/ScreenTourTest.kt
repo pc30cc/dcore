@@ -730,7 +730,7 @@ class ScreenTourTest {
         waitFor(hasText(str(R.string.match_title)), timeoutMs = 20_000)
         compose.waitForIdle()
         capture("match", compose.onNode(isDialog()))
-        compose.onNodeWithText(str(R.string.match_later)).performScrollTo().performClick()
+        compose.onNodeWithText(str(R.string.match_later)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
 
         // A profile with an answer and details (the sample's Nazanin), passing the cards before it.
@@ -811,7 +811,7 @@ class ScreenTourTest {
         waitFor(hasText(str(R.string.match_title)), timeoutMs = 20_000)
         compose.waitForIdle()
         capture("m07-match", compose.onNode(isDialog()))
-        compose.onNodeWithText(str(R.string.match_later)).performScrollTo().performClick()
+        compose.onNodeWithText(str(R.string.match_later)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty() }
 
         // A profile with an answer and facts (the sample's Nazanin), passing the cards before it.
@@ -911,9 +911,9 @@ class ScreenTourTest {
 
         // The first message goes from the match screen's own composer, then its thread opens.
         val text = if (language == "fa") "سلام! عکس‌های کوهت عالی بود" else "Hi! Your mountain photos are great"
-        compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performScrollTo().performTextInput(text)
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextInput(text)
         capture("match-typed", compose.onNode(isDialog()))
-        compose.onNodeWithContentDescription(str(R.string.match_send)).performScrollTo().performClick()
+        compose.onNodeWithContentDescription(str(R.string.match_send)).performClick()
         waitFor(hasSetTextAction() and !hasAnyAncestor(isDialog()), timeoutMs = 20_000)
         // The bubble reaches the server: "sent" (or further) replaces "sending".
         val sent = listOf(R.string.chat_status_sent, R.string.chat_status_delivered, R.string.chat_status_read).map(::str)
@@ -1539,8 +1539,7 @@ class ScreenTourTest {
         if (calls) {
             // What a call asks for, already allowed; the ring may post and go full screen.
             shadowOf(app).grantPermissions(
-                Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA,
-                Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS,
+                Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.POST_NOTIFICATIONS,
             )
             compose.runOnUiThread { hooks = CallActivityHooks(compose.activity, graph.calls) { graph.realtime }.also { it.onCreate(null) } }
         }

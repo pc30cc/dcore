@@ -18,6 +18,7 @@ import app.core.feature.card.ScreenTestData
 import app.core.media.LocalRemoteImages
 import app.core.model.Catalog
 import app.core.model.Id
+import app.core.model.ProfileCard
 import app.core.model.ProfilePrompt
 import app.core.model.PromptDef
 import app.core.ui.theme.AppTheme
@@ -26,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -37,18 +39,25 @@ import org.robolectric.annotation.GraphicsMode
 class MatchMomentTest {
 
     @get:Rule val compose = createComposeRule()
+    @get:Rule val files = TemporaryFolder()
 
     private val sent = mutableListOf<Pair<Id, String>>()
     private var opened = 0
 
-    private fun show(conversationId: Id?, openers: List<String>, template: app.core.ui.theme.AppTemplate = Templates.White) {
+    private fun show(
+        conversationId: Id?,
+        openers: List<String>,
+        template: app.core.ui.theme.AppTemplate = Templates.White,
+        myPhoto: MatchPhoto? = null,
+        their: ProfileCard = ScreenTestData.negar,
+    ) {
         compose.setContent {
             AppTheme(template = template) {
                 CompositionLocalProvider(
                     LocalRemoteImages provides false,
                     LocalMatchMessages provides MatchMessages { id, text -> sent += id to text },
                 ) {
-                    MatchMoment(ScreenTestData.negar, myPhoto = null, onSendMessage = { opened++ }, onDismiss = {}, conversationId = conversationId, openers = openers)
+                    MatchMoment(their, myPhoto = myPhoto, onSendMessage = { opened++ }, onDismiss = {}, conversationId = conversationId, openers = openers)
                 }
             }
         }
@@ -102,6 +111,57 @@ class MatchMomentTest {
         val cards = compose.onNodeWithTag(MATCH_PORTRAITS_TAG).getBoundsInRoot()
         val title = compose.onNodeWithText("It’s a match!").getBoundsInRoot()
         assertTrue("title top ${title.top} under the cards' bottom ${cards.bottom}", title.top >= cards.bottom)
+    }
+
+    private fun centreX(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).getBoundsInRoot().let { (it.left + it.right) / 2 }
+    private fun rootCentreX() = compose.onRoot().getBoundsInRoot().let { (it.left + it.right) / 2 }
+
+    @Test
+    fun withoutMyPhotoTheSplitShowsTheSilhouetteOnTheLeft() {
+        show("777", emptyList(), Templates.Neon, myPhoto = null)
+        compose.onNodeWithTag(MATCH_MINE_EMPTY_TAG, useUnmergedTree = true).assertExists()
+        assertTrue("mine is on the left", centreX(MATCH_MINE_EMPTY_TAG) < rootCentreX())
+        compose.onNodeWithTag(MATCH_THEIRS_EMPTY_TAG, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun withoutMyPhotoTheFramedCardShowsTheSilhouetteOnTheLeft() {
+        show("777", emptyList(), Templates.White, myPhoto = null)
+        compose.onNodeWithTag(MATCH_MINE_EMPTY_TAG, useUnmergedTree = true).assertExists()
+        assertTrue("mine is on the left", centreX(MATCH_MINE_EMPTY_TAG) < rootCentreX())
+    }
+
+    @Test
+    @Config(qualifiers = "+fa")
+    fun inPersianMineStaysOnTheLeft() {
+        show("777", emptyList(), Templates.Neon, myPhoto = null)
+        assertTrue(centreX(MATCH_MINE_EMPTY_TAG) < rootCentreX())
+    }
+
+    @Test
+    fun aPhotoWithItsBlurhashShowsNoSilhouette() {
+        show("777", emptyList(), Templates.Neon, myPhoto = MatchPhoto.Remote(ScreenTestData.photo(8001)))
+        compose.onNodeWithTag(MATCH_MINE_EMPTY_TAG, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun aPhotoWithoutABlurhashHasTheSilhouetteUnderIt() {
+        show("777", emptyList(), Templates.White, myPhoto = MatchPhoto.Remote(ScreenTestData.photo(8001).copy(blurhash = "")))
+        compose.onNodeWithTag(MATCH_MINE_EMPTY_TAG, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun anUploadThatCannotBeReadShowsTheSilhouette() {
+        val broken = files.newFile("8002.jpg").apply { writeText("not a picture") }
+        show("777", emptyList(), Templates.Neon, myPhoto = MatchPhoto.PhoneCopy("8002", broken))
+        compose.onNodeWithTag(MATCH_MINE_EMPTY_TAG, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun theirMissingPhotoIsTheSilhouetteOnTheRight() {
+        show("777", emptyList(), Templates.Neon, myPhoto = MatchPhoto.Remote(ScreenTestData.photo(8001)), their = ScreenTestData.negar.copy(photos = emptyList()))
+        compose.onNodeWithTag(MATCH_THEIRS_EMPTY_TAG, useUnmergedTree = true).assertExists()
+        assertTrue("theirs is on the right", centreX(MATCH_THEIRS_EMPTY_TAG) > rootCentreX())
     }
 
     @Test

@@ -39,7 +39,10 @@ import java.time.Instant
  *    answer, `POST /token` and the room.
  *  - **Incoming** ([ring], then [answer]): `POST accept` (the first phone to
  *    answer wins) returns the token, and the room. Declining is
- *    `POST decline`, which ends the call for the caller.
+ *    `POST decline`, which ends the call for the caller. An answer never
+ *    waits for a permission: without the microphone the room is joined with
+ *    nothing published, muted, and [microphonePermission] turns it on once
+ *    it is allowed (the camera likewise, [cameraPermission]).
  *
  * The server is the authority on where the call is, and it says so over the
  * realtime socket with the whole call ([CallNudge.Update]), so nothing is
@@ -105,6 +108,16 @@ class MatchCallSession(
     /** Another app holds the audio (a cellular call): the microphone is not sent until it comes back. */
     private val _onHold = MutableStateFlow(false)
     val onHold: StateFlow<Boolean> = _onHold.asStateFlow()
+
+    /** Whether the microphone may record: a call answered before it was allowed asks while it connects. */
+    private val _microphone = MutableStateFlow(MicrophoneAccess.GRANTED)
+    val microphone: StateFlow<MicrophoneAccess> = _microphone.asStateFlow()
+
+    /** Muted only because the microphone was not allowed: allowing it unmutes. */
+    private var mutedForPermission = false
+
+    /** A video answer whose camera waits for its permission. */
+    private var cameraAwaitingPermission = false
 
     var direction: Direction = Direction.OUTGOING
         private set
@@ -244,12 +257,21 @@ class MatchCallSession(
      * Answers the call ringing this phone. The first phone to answer wins; a
      * later one hears that another phone did, or that the call is over, and
      * says exactly that. [withVideo] false answers a video call with the
-     * camera off; its button can still turn it on.
+     * camera off; its button can still turn it on. [microphone] and [camera]
+     * say whether their permissions are held: the answer goes ahead either
+     * way, muted (or with the camera off) until [microphonePermission] (or
+     * [cameraPermission]) says they are allowed.
      */
-    fun answer(withVideo: Boolean = true) {
+    fun answer(withVideo: Boolean = true, microphone: Boolean = true, camera: Boolean = true) {
         if (direction != Direction.INCOMING || _phase.value != CallPhase.Ringing) return
         val id = callId ?: return
-        if (kind == CallKind.Video && !withVideo) _cameraOn.value = false
+        if (kind == CallKind.Video && (!withVideo || !camera)) _cameraOn.value = false
+        cameraAwaitingPermission = kind == CallKind.Video && withVideo && !camera
+        if (!microphone) {
+            _microphone.value = MicrophoneAccess.ASKING
+            _muted.value = true
+            mutedForPermission = true
+        }
         _phase.value = CallPhase.Connecting
         answeredAt = clock.now()
         foreground.show(ongoing())
@@ -453,26 +475,68 @@ class MatchCallSession(
         // Where the sound starts, said before the room exists.
         room.setSpeaker(_speakerOn.value)
         val wantsVideo = kind == CallKind.Video && _cameraOn.value
-        when (val result = room.connect(token, wantsVideo = wantsVideo)) {
+        // Nothing is published that the phone may not record yet.
+        val wantsMicrophone = _microphone.value == MicrophoneAccess.GRANTED
+        when (val result = room.connect(token, wantsVideo = wantsVideo, wantsMicrophone = wantsMicrophone)) {
             is CallRoom.Result.Failed -> finish(CallEnd.FAILED, detail = result.reason, tell = true)
             is CallRoom.Result.Joined -> {
                 // A camera that will not start is a reason to carry on as voice,
                 // not to drop a call the other person answered.
-                if (!result.microphone) {
+                if (wantsMicrophone && !result.microphone) {
                     _muted.value = true
                     _degraded.value = CallDegradation.NO_MICROPHONE
-                } else if (_muted.value || _onHold.value) {
-                    // Muted before the room existed: applied now, never shown muted and sending.
-                    room.setMicrophone(enabled = false)
                 }
+                if (_microphone.value == MicrophoneAccess.REFUSED) _degraded.value = CallDegradation.MICROPHONE_REFUSED
                 if (wantsVideo && !result.camera) {
                     _cameraOn.value = false
                     if (_degraded.value == null) _degraded.value = CallDegradation.NO_CAMERA
                 }
+                settle(microphoneOn = wantsMicrophone && result.microphone, cameraOn = wantsVideo && result.camera)
+                // Nothing suspends from the last check in [settle] to here, so a
+                // press from now on takes the joined path.
                 joined = true
                 diag.info(AREA, "joined ${Diag.id(id)}")
                 // Whoever joins second finds the other already there, which no event says.
                 if (room.hasRemoteParticipant || serverActive) goLive()
+            }
+        }
+    }
+
+    /**
+     * Brings the room just joined to what the controls say: muted or held
+     * before the room existed (off now, never shown muted and sending), a
+     * microphone or camera allowed while it was being joined (on now). Each
+     * change suspends, and a press or an audio-focus change meanwhile only
+     * moves the controls while [joined] is false, so the controls are read
+     * again after every change until the room matches them.
+     */
+    private suspend fun settle(microphoneOn: Boolean, cameraOn: Boolean) {
+        var microphone = microphoneOn
+        var camera = cameraOn
+        while (true) {
+            val wantsMicrophone = _microphone.value == MicrophoneAccess.GRANTED && !_muted.value && !_onHold.value
+            val wantsCamera = kind == CallKind.Video && _cameraOn.value
+            when {
+                wantsMicrophone != microphone -> {
+                    val ok = room.setMicrophone(enabled = wantsMicrophone)
+                    microphone = wantsMicrophone && ok
+                    if (wantsMicrophone && !ok) {
+                        // A microphone that would not start: shown muted, never live and silent.
+                        _muted.value = true
+                        _degraded.value = CallDegradation.NO_MICROPHONE
+                    } else if (ok && wantsMicrophone && _degraded.value == CallDegradation.NO_MICROPHONE) {
+                        _degraded.value = null
+                    }
+                }
+                wantsCamera != camera -> {
+                    val ok = room.setCamera(enabled = wantsCamera)
+                    camera = wantsCamera && ok
+                    if (wantsCamera && !ok) {
+                        _cameraOn.value = false
+                        if (_degraded.value == null) _degraded.value = CallDegradation.NO_CAMERA
+                    }
+                }
+                else -> return
             }
         }
     }
@@ -540,6 +604,9 @@ class MatchCallSession(
 
     fun toggleMute() {
         if (_phase.value.isOver) return
+        // Unmuting needs the microphone allowed: the screen's button asks for it first ([microphonePermission]);
+        // the picture-in-picture window's cannot, so it changes nothing rather than show a live, silent microphone.
+        if (_muted.value && _microphone.value != MicrophoneAccess.GRANTED) return
         val next = !_muted.value
         _muted.value = next
         val press = ++micPress
@@ -551,11 +618,22 @@ class MatchCallSession(
                 // A microphone that would not start: shown muted, never live and silent.
                 _muted.value = true
             } else {
-                if (_degraded.value == CallDegradation.NO_MICROPHONE) _degraded.value = null
+                if (_degraded.value == CallDegradation.NO_MICROPHONE || _degraded.value == CallDegradation.MICROPHONE_REFUSED) _degraded.value = null
                 // The service gains the microphone type it may not have had.
                 (_phase.value as? CallPhase.Live)?.let { foreground.show(ongoing(it.since)) }
             }
         }
+    }
+
+    /**
+     * The mute button (the screen's or the picture-in-picture window's), with
+     * [microphoneHeld] saying whether the permission is held now. A call muted
+     * for want of it, and allowed since outside the call (the phone's
+     * settings), takes the press as that permission ([microphonePermission]),
+     * which unmutes; anything else is [toggleMute].
+     */
+    fun pressMute(microphoneHeld: Boolean) {
+        if (microphoneHeld && _microphone.value != MicrophoneAccess.GRANTED) microphonePermission(true) else toggleMute()
     }
 
     fun toggleCamera() {
@@ -573,6 +651,60 @@ class MatchCallSession(
             } else if (_degraded.value == CallDegradation.NO_CAMERA) {
                 _degraded.value = null
             }
+        }
+    }
+
+    /**
+     * The microphone's permission, asked after the answer: allowed, the call
+     * unmutes (unless the person muted it) and the service gains the
+     * microphone type; refused, it stays muted and the screen says why. A
+     * refusal never takes back a microphone already allowed.
+     */
+    fun microphonePermission(granted: Boolean) {
+        if (_phase.value.isOver) return
+        if (!granted) {
+            if (_microphone.value != MicrophoneAccess.GRANTED) {
+                _microphone.value = MicrophoneAccess.REFUSED
+                _degraded.value = CallDegradation.MICROPHONE_REFUSED
+            }
+            return
+        }
+        if (_microphone.value == MicrophoneAccess.GRANTED) return
+        _microphone.value = MicrophoneAccess.GRANTED
+        if (_degraded.value == CallDegradation.MICROPHONE_REFUSED) _degraded.value = null
+        if (mutedForPermission) {
+            mutedForPermission = false
+            _muted.value = false
+        }
+        foreground.show(ongoing((_phase.value as? CallPhase.Live)?.since))
+        if (!joined) return // The join publishes it.
+        val press = ++micPress
+        scope.launch {
+            val ok = room.setMicrophone(enabled = !_muted.value && !_onHold.value)
+            if (press != micPress || _muted.value || _onHold.value) return@launch
+            if (!ok) {
+                // A microphone that would not start: shown muted, never live and silent.
+                _muted.value = true
+                _degraded.value = CallDegradation.NO_MICROPHONE
+            }
+        }
+    }
+
+    /** The camera's permission, asked after a video answer: allowed, the camera turns on. */
+    fun cameraPermission(granted: Boolean) {
+        if (_phase.value.isOver || !cameraAwaitingPermission) return
+        cameraAwaitingPermission = false
+        if (!granted) return
+        _cameraOn.value = true
+        foreground.show(ongoing((_phase.value as? CallPhase.Live)?.since))
+        if (!joined) return // The join turns it on.
+        val press = ++cameraPress
+        scope.launch {
+            val ok = room.setCamera(enabled = true)
+            if (press != cameraPress || _phase.value.isOver || !_cameraOn.value || ok) return@launch
+            _cameraOn.value = false
+            if (_degraded.value == null) _degraded.value = CallDegradation.NO_CAMERA
+            foreground.show(ongoing((_phase.value as? CallPhase.Live)?.since))
         }
     }
 

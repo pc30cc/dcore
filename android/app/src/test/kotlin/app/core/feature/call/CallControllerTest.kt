@@ -21,7 +21,10 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The one call on the phone: asked for, placed after the permissions, rung, minimised, and closed by itself. */
+/**
+ * The one call on the phone: asked for, placed after the permissions, rung,
+ * answered before any permission dialog, minimised, and closed by itself.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CallControllerTest {
 
@@ -29,12 +32,15 @@ class CallControllerTest {
         val api = ScriptedCallApi()
         val signals = CallSignals().apply { setRealtimeConnected(true) }
         val ringsEnded = mutableListOf<Pair<Id, CallEnd>>()
+        /** The runtime permissions this phone holds. */
+        val granted = mutableSetOf<String>()
+        val rooms = mutableListOf<FakeCallRoom>()
         val dispatcher = StandardTestDispatcher(scope.testScheduler)
         val controller = CallController(
             newSession = { kind ->
                 MatchCallSession(
                     api = api,
-                    room = FakeCallRoom(),
+                    room = FakeCallRoom().also { rooms += it },
                     signals = signals,
                     ringback = SilentRingback,
                     foreground = NoCallForeground,
@@ -45,11 +51,13 @@ class CallControllerTest {
             scope = scope.backgroundScope,
             onRingEnded = { id, end -> ringsEnded += id to end },
             cachedFace = cachedFace,
+            hasPermission = { it in granted },
         )
     }
 
     private val peer = CallPeer("500", "Negar")
-    private fun link(answer: Boolean = false, callId: String = "9001") = IncomingCallLink(callId, "500", CallKind.Audio, "Negar", null, answer, at(45_000))
+    private fun link(answer: Boolean = false, callId: String = "9001", kind: CallKind = CallKind.Audio) =
+        IncomingCallLink(callId, "500", kind, "Negar", null, answer, at(45_000))
 
     @Test
     fun theCallButtonWaitsForThePermissionsThenPlaces() = runTest {
@@ -153,8 +161,6 @@ class CallControllerTest {
         app.controller.minimise()
         assertFalse(app.controller.minimised.value)
         app.controller.requestAnswer(withVideo = true)
-        assertEquals(CallRequest.Answer(true), app.controller.pending.value)
-        app.controller.answer(withVideo = true)
         runCurrent()
         app.controller.minimise()
         assertTrue(app.controller.minimised.value)
@@ -187,5 +193,134 @@ class CallControllerTest {
         app.controller.retry()
         assertNull(app.controller.session.value)
         assertEquals(CallRequest.Place(peer, CallKind.Audio), app.controller.pending.value)
+    }
+
+    // MARK: - Answering before the permissions
+
+    @Test
+    fun answerSendsTheAcceptAtOnceThenAsksForTheMicrophone() = runTest {
+        val app = App(this)
+        app.controller.openRing(link())
+        runCurrent()
+        val grant = app.controller.requestAnswer(withVideo = false)
+        runCurrent()
+        assertEquals("the accept goes before any dialog", listOf("accept"), app.api.log)
+        assertEquals(CallRequest.Grant("9001", listOf(CallPermissions.MICROPHONE)), grant)
+        assertEquals(grant, app.controller.pending.value)
+        val session = app.controller.session.value!!
+        assertTrue("joined muted until the microphone is allowed", session.muted.value)
+        assertEquals(MicrophoneAccess.ASKING, session.microphone.value)
+        assertEquals("nothing is published that may not record", false, app.rooms.last().wantedMicrophone)
+        app.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun aDialogLeftOpenPastTheRingsEndDoesNotMissAnAnsweredCall() = runTest {
+        val app = App(this)
+        app.controller.openRing(link())
+        runCurrent()
+        advanceTimeBy(40_000)
+        runCurrent()
+        val grant = app.controller.requestAnswer(withVideo = false)!!
+        runCurrent()
+        app.signals.onRealtimeCall(testCall(role = CallRole.Callee, state = CallState.Active))
+        runCurrent()
+        // Past the ring's own end and the server's expiry, with the dialog still up.
+        advanceTimeBy(30_000)
+        runCurrent()
+        val session = app.controller.session.value!!
+        assertTrue("${session.phase.value}", session.phase.value is CallPhase.Live)
+        assertTrue(app.ringsEnded.none { it.second == CallEnd.MISSED })
+
+        app.controller.permissionsAnswered(grant, mapOf(CallPermissions.MICROPHONE to true))
+        runCurrent()
+        assertNull(app.controller.pending.value)
+        assertFalse("allowed: the call unmutes", session.muted.value)
+        assertEquals(MicrophoneAccess.GRANTED, session.microphone.value)
+        assertEquals(true, app.rooms.last().microphone)
+        app.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun everythingAllowedAsksNothing() = runTest {
+        val app = App(this)
+        app.granted += CallPermissions.MICROPHONE
+        app.controller.openRing(link())
+        runCurrent()
+        assertNull(app.controller.requestAnswer(withVideo = false))
+        runCurrent()
+        assertNull(app.controller.pending.value)
+        assertEquals(listOf("accept"), app.api.log)
+        assertFalse(app.controller.session.value!!.muted.value)
+        assertEquals(true, app.rooms.last().wantedMicrophone)
+        app.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun voiceOnlyOnAVideoCallNeverAsksForTheCamera() = runTest {
+        val nothing = App(this)
+        nothing.controller.openRing(link(kind = CallKind.Video))
+        runCurrent()
+        assertEquals(CallRequest.Grant("9001", listOf(CallPermissions.MICROPHONE)), nothing.controller.requestAnswer(withVideo = false))
+        runCurrent()
+        nothing.controller.dismiss()
+        runCurrent()
+
+        val microphone = App(this)
+        microphone.granted += CallPermissions.MICROPHONE
+        microphone.controller.openRing(link(kind = CallKind.Video))
+        runCurrent()
+        assertNull(microphone.controller.requestAnswer(withVideo = false))
+        runCurrent()
+        assertEquals(false, microphone.rooms.last().wantedVideo)
+        microphone.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun aVideoAnswerAsksForTheCameraWhileItConnects() = runTest {
+        val app = App(this)
+        app.granted += CallPermissions.MICROPHONE
+        app.controller.openRing(link(kind = CallKind.Video))
+        runCurrent()
+        val grant = app.controller.requestAnswer(withVideo = true)!!
+        runCurrent()
+        assertEquals(CallRequest.Grant("9001", listOf(CallPermissions.CAMERA)), grant)
+        assertEquals(listOf("accept"), app.api.log)
+        val session = app.controller.session.value!!
+        assertFalse("the camera waits for its permission", session.cameraOn.value)
+        assertEquals(false, app.rooms.last().wantedVideo)
+
+        app.controller.permissionsAnswered(grant, mapOf(CallPermissions.CAMERA to true))
+        runCurrent()
+        assertTrue(session.cameraOn.value)
+        assertTrue(app.rooms.last().log.contains("camera:true"))
+        app.controller.dismiss()
+        runCurrent()
+    }
+
+    @Test
+    fun aRefusedMicrophoneKeepsTheCallUpAndSaysSo() = runTest {
+        val app = App(this)
+        app.controller.openRing(link())
+        runCurrent()
+        val grant = app.controller.requestAnswer(withVideo = false)!!
+        runCurrent()
+        app.controller.permissionsAnswered(grant, mapOf(CallPermissions.MICROPHONE to false))
+        runCurrent()
+        val session = app.controller.session.value!!
+        assertFalse(session.phase.value.isOver)
+        assertEquals(CallDegradation.MICROPHONE_REFUSED, session.degraded.value)
+        assertEquals(MicrophoneAccess.REFUSED, session.microphone.value)
+        // The picture-in-picture window's mute cannot ask: it changes nothing rather than show a silent live microphone.
+        session.toggleMute()
+        runCurrent()
+        assertTrue(session.muted.value)
+        assertFalse(app.rooms.last().log.contains("mic:true"))
+        app.controller.dismiss()
+        runCurrent()
     }
 }

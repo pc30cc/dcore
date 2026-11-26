@@ -6,6 +6,7 @@ import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -171,7 +172,9 @@ fun BlurHashImage(hash: String?, modifier: Modifier = Modifier) {
  * cache or arrives (crossfaded, unless the system asks for less motion).
  *
  * [blurredOnly] draws the placeholder and never fetches the image: the free
- * plan's view of who liked them.
+ * plan's view of who liked them. [placeholder] stands in for a missing or
+ * undecodable BlurHash (under the image while it loads or when it fails);
+ * without one that is a flat surface colour.
  */
 @Composable
 fun PhotoImage(
@@ -181,12 +184,15 @@ fun PhotoImage(
     blurredOnly: Boolean = false,
     scrim: Color = Color.Transparent,
     alignment: Alignment = Alignment.Center,
+    placeholder: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val remote = LocalRemoteImages.current && !LocalInspectionMode.current && !blurredOnly
     val reduced = LocalReducedMotion.current
     val context = LocalContext.current
     Box(modifier) {
-        BlurHashImage(photo?.blurhash, Modifier.fillMaxSize())
+        val hash = photo?.blurhash
+        val decoded = remember(hash) { hash?.let(::blurHashBitmap) }
+        if (decoded == null && placeholder != null) placeholder() else BlurHashImage(hash, Modifier.fillMaxSize())
         if (remote && photo != null && photo.url.isNotBlank()) {
             val request = remember(photo.url, reduced) { ImageLoading.request(context, photo.url, crossfade = !reduced) }
             AsyncImage(

@@ -21,6 +21,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.core.LocalAppGraph
 import app.core.model.CallKind
@@ -80,7 +81,9 @@ class CallActivityHooks(
         }
         if (link.answer) {
             calls.silenceRing(link.callId)
-            calls.controller.requestAnswer(withVideo = link.kind == CallKind.Video)
+            // The accept is sent here, before any dialog: what the call still lacks is asked while it connects,
+            // and that dialog is not the person leaving the app (no window for it).
+            if (calls.controller.requestAnswer(withVideo = link.kind == CallKind.Video) != null) pictureInPicture.holdForPermission()
         }
         return true
     }
@@ -155,6 +158,13 @@ fun CallHost(hooks: CallActivityHooks?) {
     LaunchedEffect(minimised) { if (minimised) hooks?.showOverLockScreen(false) }
     if (current == null) return
 
+    // Back from the phone's settings with the microphone allowed: it turns on in the call that was waiting for it.
+    val context = LocalContext.current
+    LifecycleResumeEffect(current) {
+        if (current.microphone.value != MicrophoneAccess.GRANTED && context.holds(CallPermissions.MICROPHONE)) current.microphonePermission(true)
+        onPauseOrDispose {}
+    }
+
     val state = rememberCallScreenState(current)
     val room = current.room as? LiveKitRoom
     val none = remember { MutableStateFlow<io.livekit.android.room.track.VideoTrack?>(null) }
@@ -169,7 +179,8 @@ fun CallHost(hooks: CallActivityHooks?) {
     // The screen turning re-measures where the window grows from.
     val screen = LocalWindowInfo.current.containerSize
     LaunchedEffect(pip, windowed, aspect, state.muted, state.phase is CallPhase.Live, screen) {
-        pip?.onMute = current::toggleMute
+        // The window cannot ask for a permission, but one allowed in the settings meanwhile is taken.
+        pip?.onMute = { current.pressMute(microphoneHeld = context.holds(CallPermissions.MICROPHONE)) }
         pip?.onHangUp = current::hangUp
         pip?.onRestored = controller::expand
         pip?.update(if (windowed) CallPictureInPicture.Spec(aspect ?: VOICE_PIP_ASPECT, state.muted, state.phase is CallPhase.Live) else null)
@@ -239,7 +250,14 @@ private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hoo
     val controller = calls.controller
     val links = LocalAppGraph.current.push.links
     val hold = { hooks?.pictureInPicture?.holdForPermission() ?: Unit }
-    val toggleMic = rememberPermissionToggle(CallPermissions.MICROPHONE, asksWhen = { session.muted.value }, beforeAsk = hold, toggle = session::toggleMute)
+    val toggleMic = rememberPermissionToggle(
+        CallPermissions.MICROPHONE,
+        asksWhen = { session.muted.value },
+        beforeAsk = hold,
+        // Answered before the microphone was allowed: allowing it is what turns it on.
+        toggle = { session.pressMute(microphoneHeld = context.holds(CallPermissions.MICROPHONE)) },
+        onRefused = { session.microphonePermission(false) },
+    )
     val toggleCamera = rememberPermissionToggle(CallPermissions.CAMERA, asksWhen = { !session.cameraOn.value }, beforeAsk = hold, toggle = session::toggleCamera)
     return remember(session, toggleMic, toggleCamera, links, hooks) {
         object : HostCallActions {
@@ -251,9 +269,10 @@ private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hoo
             override fun answerVoiceOnly() = answerWith(false)
 
             private fun answerWith(video: Boolean) {
-                // Pressed: the ring stops at once, before any permission dialog.
+                // Pressed: the ring stops and the accept is sent at once, before any permission dialog. The hold is
+                // taken now, before the answered video call's window would turn auto-enter on under that dialog.
                 session.callId?.let(calls::silenceRing)
-                controller.requestAnswer(withVideo = video)
+                if (controller.requestAnswer(withVideo = video) != null) hold()
             }
 
             override fun decline() {
@@ -271,7 +290,12 @@ private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hoo
             override fun minimise() = controller.minimise()
             override fun done() = controller.dismiss()
             override fun retry() = controller.retry()
-            override fun openSettings() = openAppSettings(context)
+            override fun openSettings() {
+                // Not the person leaving the call: no window for it (Android 12+ would enter one as the settings
+                // open), so Back from the settings comes to the call screen, whose resume takes what was allowed.
+                if (!session.phase.value.isOver) hold()
+                openAppSettings(context)
+            }
 
             override fun message() {
                 fun ringing() = session.direction == MatchCallSession.Direction.INCOMING && session.phase.value == CallPhase.Ringing
@@ -293,22 +317,26 @@ private fun rememberCallActions(session: MatchCallSession, calls: CallGraph, hoo
 }
 
 /**
- * Asks for what the pending call needs (microphone, camera for video,
- * Bluetooth on Android 12+), then places or answers it with what was granted.
- * Placing without the microphone rings nobody; answering without it goes
- * ahead muted, since the other person is already waiting.
+ * Asks for what the pending request needs (the microphone, the camera for
+ * video; never Bluetooth). Placing asks before anybody is rung, and without
+ * the microphone rings nobody. Answering has sent the accept already
+ * ([CallController.requestAnswer]) and asks while the call connects: the
+ * other person is waiting, so a refused microphone leaves the call muted,
+ * with the screen saying so.
  */
 @Composable
 private fun CallPermissionFlow(calls: CallGraph, hooks: CallActivityHooks?) {
     val context = LocalContext.current
     val controller = calls.controller
     val pending by controller.pending.collectAsStateWithLifecycle()
-    fun granted(permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    fun granted(permission: String) = context.holds(permission)
     fun proceed(request: CallRequest, results: Map<String, Boolean>) {
-        val got = CallPermissions.outcome(results, ::granted)
         when (request) {
-            is CallRequest.Place -> controller.place(request.peer, request.kind, microphone = got.microphone, camera = got.camera)
-            is CallRequest.Answer -> controller.answer(withVideo = request.withVideo && got.camera)
+            is CallRequest.Place -> {
+                val got = CallPermissions.outcome(results, ::granted)
+                controller.place(request.peer, request.kind, microphone = got.microphone, camera = got.camera)
+            }
+            is CallRequest.Grant -> controller.permissionsAnswered(request, results)
         }
     }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
@@ -318,7 +346,7 @@ private fun CallPermissionFlow(calls: CallGraph, hooks: CallActivityHooks?) {
         val request = pending ?: return@LaunchedEffect
         val needed = when (request) {
             is CallRequest.Place -> CallPermissions.needed(request.kind, withVideo = true)
-            is CallRequest.Answer -> CallPermissions.needed(controller.liveSession?.kind ?: CallKind.Audio, withVideo = request.withVideo)
+            is CallRequest.Grant -> request.permissions
         }
         val missing = CallPermissions.missing(needed, ::granted)
         if (missing.isEmpty()) {
@@ -332,18 +360,26 @@ private fun CallPermissionFlow(calls: CallGraph, hooks: CallActivityHooks?) {
 
 /**
  * A call control that needs [permission] in one direction ([asksWhen]):
- * asked for first when missing, then the toggle. The other direction asks nothing.
+ * asked for first when missing, then the toggle ([onRefused] when it is
+ * refused). The other direction asks nothing.
  */
 @Composable
-private fun rememberPermissionToggle(permission: String, asksWhen: () -> Boolean, beforeAsk: () -> Unit, toggle: () -> Unit): () -> Unit {
+private fun rememberPermissionToggle(
+    permission: String,
+    asksWhen: () -> Boolean,
+    beforeAsk: () -> Unit,
+    toggle: () -> Unit,
+    onRefused: () -> Unit = {},
+): () -> Unit {
     val context = LocalContext.current
     val currentToggle by rememberUpdatedState(toggle)
     val currentAsks by rememberUpdatedState(asksWhen)
     val currentBefore by rememberUpdatedState(beforeAsk)
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) currentToggle() }
+    val currentRefused by rememberUpdatedState(onRefused)
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) currentToggle() else currentRefused() }
     return remember(context, permission) {
         {
-            val granted = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            val granted = context.holds(permission)
             if (currentAsks() && !granted) {
                 // The dialog is not the person leaving the app: no window for it.
                 currentBefore()
@@ -354,6 +390,10 @@ private fun rememberPermissionToggle(permission: String, asksWhen: () -> Boolean
         }
     }
 }
+
+/** Whether this app holds the runtime [permission]. */
+private fun Context.holds(permission: String): Boolean =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 /** The app's page in the phone's settings, where a refused permission can be allowed. */
 internal fun openAppSettings(context: Context) {

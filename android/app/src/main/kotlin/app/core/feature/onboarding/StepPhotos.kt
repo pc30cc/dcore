@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -510,9 +511,14 @@ private fun OwnPhotoImage(file: File?, photo: app.core.model.OwnPhoto) {
     }
 }
 
-/** A local JPEG, decoded small off the main thread. */
+/** A local JPEG, decoded small off the main thread; [placeholder] is drawn until it is (or when it cannot be). */
 @Composable
-internal fun LocalPreview(file: File?, modifier: Modifier) {
+internal fun LocalPreview(
+    file: File?,
+    modifier: Modifier,
+    alignment: Alignment = Alignment.Center,
+    placeholder: @Composable BoxScope.() -> Unit = {},
+) {
     val image by produceState<ImageBitmap?>(null, file) {
         value = file?.let { f ->
             withContext(Dispatchers.IO) {
@@ -527,9 +533,9 @@ internal fun LocalPreview(file: File?, modifier: Modifier) {
     }
     val current = image
     if (current != null) {
-        Image(current, contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
+        Image(current, contentDescription = null, contentScale = ContentScale.Crop, alignment = alignment, modifier = modifier)
     } else {
-        Box(modifier.background(AppTheme.template.colors.photoPlaceholder))
+        Box(modifier.background(AppTheme.template.colors.photoPlaceholder)) { placeholder() }
     }
 }
 

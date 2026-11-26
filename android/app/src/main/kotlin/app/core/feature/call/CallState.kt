@@ -201,6 +201,9 @@ enum class CallDegradation {
     /** The microphone would not start (permission, or another app holds it). */
     NO_MICROPHONE,
 
+    /** Answered, and the microphone's permission was refused: the call goes on muted until it is allowed. */
+    MICROPHONE_REFUSED,
+
     /** The camera would not start: the call carries on as audio. */
     NO_CAMERA,
     ;
@@ -208,9 +211,20 @@ enum class CallDegradation {
     @get:StringRes
     val title: Int get() = when (this) {
         NO_MICROPHONE -> R.string.call_degraded_microphone
+        MICROPHONE_REFUSED -> R.string.call_degraded_microphone_refused
         NO_CAMERA -> R.string.call_degraded_camera
     }
+
+    /** The phone's settings are where this is fixed: the screen offers them under the notice. */
+    val opensSettings: Boolean get() = this == MICROPHONE_REFUSED
 }
+
+/**
+ * Whether this phone may record the call's sound. A call answered before the
+ * microphone was allowed is [ASKING] while the dialog is up and [REFUSED]
+ * once it was said no to; both join the room muted, with nothing published.
+ */
+enum class MicrophoneAccess { GRANTED, ASKING, REFUSED }
 
 /** Who is on the other end, as the call screen names them: the match's first name and photo. */
 data class CallPeer(

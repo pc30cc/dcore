@@ -79,6 +79,7 @@ import app.core.feature.chat.ReportSheet
 import app.core.i18n.Numerals
 import app.core.i18n.brandString
 import app.core.media.BlurHashImage
+import app.core.media.LocalPhotoCache
 import app.core.media.PhotoImage
 import app.core.model.Catalog
 import app.core.model.Id
@@ -113,6 +114,7 @@ import app.core.ui.theme.AppTheme
 import app.core.ui.theme.Space
 import app.core.ui.theme.TabBarStyle
 import app.core.ui.theme.photoFilter
+import java.io.File
 
 interface LikesActions {
     fun refresh()
@@ -141,8 +143,9 @@ interface LikesActions {
     fun block(card: ProfileCard) {}
 }
 
-class ServerLikesServices(private val api: ServerApi) : LikesServices {
+class ServerLikesServices(private val api: ServerApi, private val photos: LocalPhotoCache? = null) : LikesServices {
     override suspend fun likes(cursor: String?, limit: Int): LikesPage = api.likes(cursor, limit)
+    override fun ownPhotoFile(id: Id): File? = photos?.file(id)
     override suspend fun me(): Me = api.me().value
     override suspend fun report(request: ReportRequest) {
         api.report(request)
@@ -155,7 +158,7 @@ class ServerLikesServices(private val api: ServerApi) : LikesServices {
 fun LikesRoute(onOpenChat: (Id?) -> Unit, onBrowse: () -> Unit, modifier: Modifier = Modifier, onTotal: (LikesTotal) -> Unit = {}) {
     val graph = LocalAppGraph.current
     val context = LocalContext.current
-    val vm: LikesViewModel = viewModel { LikesViewModel(ServerLikesServices(graph.api), graph.deck, graph.entitlements, graph.clock) }
+    val vm: LikesViewModel = viewModel { LikesViewModel(ServerLikesServices(graph.api, graph.photoCache), graph.deck, graph.entitlements, graph.clock) }
     val state by vm.state.collectAsStateWithLifecycle()
     val config by graph.config.config.collectAsStateWithLifecycle()
     val total by rememberUpdatedState(onTotal)

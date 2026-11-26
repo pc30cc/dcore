@@ -37,7 +37,7 @@ class SimulatedCallRoom(
     private var peer = false
     private var arriving: Job? = null
 
-    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean): CallRoom.Result {
+    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean, wantsMicrophone: Boolean): CallRoom.Result {
         delay(joinDelayMs)
         joined = true
         arriving = scope.launch {
@@ -45,7 +45,7 @@ class SimulatedCallRoom(
             peer = true
             _events.tryEmit(CallRoom.Event.PeerPresence(present = true))
         }
-        return CallRoom.Result.Joined(microphone = true, camera = wantsVideo)
+        return CallRoom.Result.Joined(microphone = wantsMicrophone, camera = wantsVideo)
     }
 
     override suspend fun setMicrophone(enabled: Boolean): Boolean = joined

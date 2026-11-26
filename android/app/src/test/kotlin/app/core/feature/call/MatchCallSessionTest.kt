@@ -366,6 +366,225 @@ class MatchCallSessionTest {
     }
 
     @Test
+    fun anAnswerWithoutTheMicrophoneJoinsWithItOffAndTurnsItOnWhenAllowed() = runTest {
+        val r = Rig(this)
+        r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))
+        runCurrent()
+        r.room.peerHere = true
+        r.session.answer(microphone = false)
+        runCurrent()
+        assertEquals("the accept did not wait for the permission", listOf("accept"), r.api.log)
+        assertTrue(r.phase is CallPhase.Live)
+        assertEquals("nothing published that may not record", false, r.room.wantedMicrophone)
+        assertTrue(r.session.muted.value)
+        assertEquals(MicrophoneAccess.ASKING, r.session.microphone.value)
+        val shown = r.foreground.shown.size
+
+        r.session.microphonePermission(true)
+        runCurrent()
+        assertTrue(r.room.log.contains("mic:true"))
+        assertFalse(r.session.muted.value)
+        assertEquals(MicrophoneAccess.GRANTED, r.session.microphone.value)
+        assertEquals("the service is shown again, now with the microphone type", shown + 1, r.foreground.shown.size)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aMicrophoneAllowedWhileTheRoomJoinsIsTurnedOnOnceIn() = runTest {
+        val r = Rig(this)
+        val gate = CompletableDeferred<Unit>()
+        r.room.joinGate = gate
+        r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))
+        runCurrent()
+        r.session.answer(microphone = false)
+        runCurrent()
+        assertEquals(listOf("connect"), r.room.log)
+        r.session.microphonePermission(true)
+        runCurrent()
+        assertFalse("not in the room yet", r.room.log.contains("mic:true"))
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(false, r.room.wantedMicrophone)
+        assertEquals(listOf("connect", "mic:true"), r.room.log)
+        assertFalse(r.session.muted.value)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aMutePressedWhileALateCameraStartsStillMutes() = runTest {
+        val r = Rig(this)
+        val join = CompletableDeferred<Unit>()
+        r.room.joinGate = join
+        r.room.peerHere = true
+        r.session.ring("9001", peer, CallKind.Video, expiresAt = at(45_000))
+        runCurrent()
+        r.session.answer(withVideo = true, camera = false)
+        runCurrent()
+        // Allowed while the room connects: the join turns the camera on, and that takes a while.
+        r.session.cameraPermission(true)
+        val camera = CompletableDeferred<Unit>()
+        r.room.cameraGate = camera
+        join.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("connect", "camera:true"), r.room.log)
+        assertEquals(CallPhase.Connecting, r.phase)
+        r.session.toggleMute()
+        runCurrent()
+        camera.complete(Unit)
+        runCurrent()
+        assertTrue(r.phase is CallPhase.Live)
+        assertTrue(r.session.muted.value)
+        assertEquals("shown muted, and not sending", false, r.room.microphone)
+        assertEquals(true, r.room.camera)
+        // From here on a press takes the joined path.
+        r.session.toggleMute()
+        runCurrent()
+        assertEquals(true, r.room.microphone)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aMuteOrAHoldWhileALateMicrophoneStartsTurnsItOffAgain() = runTest {
+        for (hold in listOf(false, true)) {
+            val r = Rig(this)
+            val join = CompletableDeferred<Unit>()
+            r.room.joinGate = join
+            r.room.peerHere = true
+            r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))
+            runCurrent()
+            r.session.answer(microphone = false)
+            runCurrent()
+            r.session.microphonePermission(true)
+            val microphone = CompletableDeferred<Unit>()
+            r.room.microphoneGate = microphone
+            join.complete(Unit)
+            runCurrent()
+            assertEquals(listOf("connect", "mic:true"), r.room.log)
+            if (hold) r.room.emitted.emit(CallRoom.Event.AudioFocus(held = false)) else r.session.toggleMute()
+            runCurrent()
+            microphone.complete(Unit)
+            runCurrent()
+            assertTrue(r.phase is CallPhase.Live)
+            assertEquals(listOf("connect", "mic:true", "mic:false"), r.room.log)
+            assertEquals("hold=$hold: not sending", false, r.room.microphone)
+            assertEquals(!hold, r.session.muted.value)
+            assertEquals(hold, r.session.onHold.value)
+            if (hold) {
+                // The focus comes back: the microphone with it.
+                r.room.emitted.emit(CallRoom.Event.AudioFocus(held = true))
+                runCurrent()
+                assertEquals(true, r.room.microphone)
+            }
+            r.session.close()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun anUnmutePressedWhileAMutedJoinTurnsTheMicrophoneOffIsApplied() = runTest {
+        val r = Rig(this)
+        val join = CompletableDeferred<Unit>()
+        r.room.joinGate = join
+        r.room.peerHere = true
+        r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))
+        runCurrent()
+        r.session.answer()
+        runCurrent()
+        r.session.toggleMute()
+        val microphone = CompletableDeferred<Unit>()
+        r.room.microphoneGate = microphone
+        join.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("connect", "mic:false"), r.room.log)
+        r.session.toggleMute()
+        runCurrent()
+        microphone.complete(Unit)
+        runCurrent()
+        assertFalse(r.session.muted.value)
+        assertEquals("shown unmuted, and sending", true, r.room.microphone)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aCameraAllowedAfterTheAnswerTurnsOn() = runTest {
+        val r = Rig(this)
+        r.session.ring("9001", peer, CallKind.Video, expiresAt = at(45_000))
+        runCurrent()
+        r.session.answer(withVideo = true, camera = false)
+        runCurrent()
+        assertEquals(false, r.room.wantedVideo)
+        assertFalse(r.session.cameraOn.value)
+        r.session.cameraPermission(true)
+        runCurrent()
+        assertTrue(r.session.cameraOn.value)
+        assertTrue(r.room.log.contains("camera:true"))
+        assertTrue("the service holds the camera now", r.foreground.shown.last().video)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aRefusedMicrophoneNeverPublishes() = runTest {
+        val r = Rig(this)
+        r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))
+        runCurrent()
+        r.room.peerHere = true
+        r.session.answer(microphone = false)
+        runCurrent()
+        r.session.microphonePermission(false)
+        runCurrent()
+        assertEquals(MicrophoneAccess.REFUSED, r.session.microphone.value)
+        assertEquals(CallDegradation.MICROPHONE_REFUSED, r.session.degraded.value)
+        r.session.toggleMute()
+        runCurrent()
+        assertTrue("unmuting needs the microphone allowed", r.session.muted.value)
+        assertFalse(r.room.log.contains("mic:true"))
+        assertTrue("the call goes on", r.phase is CallPhase.Live)
+        // Allowed later (back from the settings): on, and the notice goes.
+        r.session.microphonePermission(true)
+        runCurrent()
+        assertTrue(r.room.log.contains("mic:true"))
+        assertNull(r.session.degraded.value)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
+    fun aMutePressAfterTheMicrophoneWasAllowedInTheSettingsUnmutes() = runTest {
+        val r = Rig(this)
+        r.session.ring("9001", peer, CallKind.Video, expiresAt = at(45_000))
+        runCurrent()
+        r.room.peerHere = true
+        r.session.answer(microphone = false)
+        runCurrent()
+        r.session.microphonePermission(false)
+        runCurrent()
+        // The window's Unmute, still refused: nothing changes.
+        r.session.pressMute(microphoneHeld = false)
+        runCurrent()
+        assertTrue(r.session.muted.value)
+        assertFalse(r.room.log.contains("mic:true"))
+        // Allowed in the settings while the call stayed in the window, which never resumes: the press takes it.
+        r.session.pressMute(microphoneHeld = true)
+        runCurrent()
+        assertFalse(r.session.muted.value)
+        assertEquals(MicrophoneAccess.GRANTED, r.session.microphone.value)
+        assertEquals(true, r.room.microphone)
+        assertNull(r.session.degraded.value)
+        // Held from here on: a press is a plain mute.
+        r.session.pressMute(microphoneHeld = true)
+        runCurrent()
+        assertTrue(r.session.muted.value)
+        assertEquals(false, r.room.microphone)
+        r.session.close()
+        runCurrent()
+    }
+
+    @Test
     fun aRingAnsweredOnAnotherPhoneEndsHereWithoutARequest() = runTest {
         val r = Rig(this)
         r.session.ring("9001", peer, CallKind.Audio, expiresAt = at(45_000))

@@ -15,6 +15,7 @@
     <string name="call_notice_on_hold">تا وقتی یه تماس دیگه صدا رو داره، این تماس منتظر می‌مونه</string>
     <string name="call_notice_relay">شاید شبکه‌ت جلوی تماس رو بگیره. اگه وصل نشد، یه شبکه‌ی دیگه رو امتحان کن.</string>
     <string name="call_degraded_microphone">میکروفونت کار نمی‌کنه، برای همین صدات قطعه.</string>
+    <string name="call_degraded_microphone_refused">اجازه‌ی میکروفون رو بده تا صداتو بشنوه.</string>
     <string name="call_degraded_camera">دوربین روشن نشد. تماس صوتی ادامه پیدا می‌کنه.</string>
 
     <!-- The call screen: how it ended -->

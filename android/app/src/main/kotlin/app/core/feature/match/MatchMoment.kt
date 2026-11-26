@@ -21,7 +21,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
@@ -43,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +68,8 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -86,13 +94,14 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import app.core.R
 import app.core.i18n.brandString
+import app.core.feature.onboarding.LocalPreview
 import app.core.media.PhotoImage
 import app.core.model.Id
-import app.core.model.Photo
 import app.core.model.ProfileCard
 import app.core.ui.components.AppIconButton
 import app.core.ui.components.ChipRow
 import app.core.ui.components.IconButtonKind
+import app.core.ui.components.PersonSilhouette
 import app.core.ui.components.TextAction
 import app.core.ui.components.TextActionKind
 import app.core.ui.components.fieldFrame
@@ -129,7 +138,7 @@ val LocalMatchMessages = staticCompositionLocalOf<MatchMessages?> { null }
 @Composable
 fun MatchMomentDialog(
     their: ProfileCard,
-    myPhoto: Photo?,
+    myPhoto: MatchPhoto?,
     onSendMessage: () -> Unit,
     onDismiss: () -> Unit,
     conversationId: Id? = null,
@@ -151,7 +160,17 @@ fun MatchMomentDialog(
  * close) or two rounded portrait cards on the page (framed: hers on the
  * right turned +3°, mine on the left turned -3°, a plain close). Then the
  * title, the [openers] (tapping one puts it in the composer), the composer
- * with its send and «بعداً». No medal, confetti or body line.
+ * with its send and «بعداً». No medal, confetti or body line. A missing
+ * photo ([myPhoto] null, or nothing it can draw) shows the person silhouette
+ * on the page's photo placeholder, never an empty box.
+ *
+ * The composer and «بعداً» are pinned at the bottom; the photos, the title
+ * and the openers above them scroll from their end. At rest (the keyboard
+ * down) the board is drawn small enough to fit above them, so the photos are
+ * whole. With the keyboard up the composer sits just above it (covering
+ * «بعداً») and the page above it gives way from its top, the photos first,
+ * keeping its own layout; a longer message grows the composer upwards, never
+ * past the close.
  *
  * Send hands the text to [LocalMatchMessages] for [conversationId] and then
  * calls [onSendMessage] (the thread opens). Without a [conversationId] (the
@@ -162,7 +181,7 @@ fun MatchMomentDialog(
 @Composable
 fun MatchMoment(
     their: ProfileCard,
-    myPhoto: Photo?,
+    myPhoto: MatchPhoto?,
     onSendMessage: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -193,6 +212,19 @@ fun MatchMoment(
     }
     val announcement = brandString(R.string.match_announcement, their.name)
     val statusTop = maxOf(WindowInsets.statusBars.asPaddingValues().calculateTopPadding(), MatchLayout.statusBar)
+    val density = LocalDensity.current
+    // What the board leaves room for: the title and the openers (their own height, whatever the board's scale), and
+    // the pinned block under them (the composer and «بعداً» above the navigation bar) with the keyboard down. While
+    // the keyboard is up the composer counts at its height from the last time it was down, so typing never rescales
+    // the photos.
+    val ime = WindowInsets.ime
+    val keyboardState = remember(ime, density) { derivedStateOf { ime.getBottom(density) == 0 } }
+    val keyboardDown = keyboardState.value
+    var copyHeight by remember { mutableStateOf(0.dp) }
+    val composerNow = remember { mutableStateOf<Dp?>(null) }
+    var composerAtRest by remember { mutableStateOf<Dp?>(null) }
+    // The keyboard just went down: the composer as last measured (its size need not change on this frame).
+    SideEffect { if (keyboardDown) composerNow.value?.let { composerAtRest = it } }
 
     BoxWithConstraints(
         modifier
@@ -200,50 +232,91 @@ fun MatchMoment(
             .background(t.colors.bg)
             .semantics { paneTitle = announcement },
     ) {
-        // The design's board is 892 dp tall: a shorter window draws the photos and the copy proportionally higher.
-        val k = min(1f, maxHeight / MatchLayout.board)
-        if (framed) {
-            PortraitCards(their.photos.firstOrNull(), myPhoto, k, arrive.value)
-        } else {
-            SplitPortraits(their.photos.firstOrNull(), myPhoto, k, arrive.value)
-        }
-        val window = maxHeight
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .heightIn(min = window)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .imePadding(),
-        ) {
-            Spacer(Modifier.height((if (framed) MatchLayout.titleTopFramed else MatchLayout.titleTopBleed) * k))
-            Column(
+        // The design's board is 892 dp tall: a shorter window draws the photos and the copy proportionally higher,
+        // and smaller still where the board would not fit above the pinned block at rest (a short phone, large text,
+        // openers on two rows), down to a floor under which it scrolls from its end.
+        val windowK = min(1f, maxHeight / MatchLayout.board)
+        val pinned = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+            if (canSend) MatchLayout.overLater + (composerAtRest ?: MatchLayout.composer) else MatchLayout.laterBottom + MatchLayout.laterTarget
+        val titleTop = if (framed) MatchLayout.titleTopFramed else MatchLayout.titleTopBleed
+        val k = ((maxHeight - pinned - copyHeight - MatchLayout.minGap) / titleTop).coerceIn(min(MatchLayout.K_MIN, windowK), windowK)
+        // The composer grows upwards to here at most (it scrolls inside beyond that): never under the close.
+        val pinnedMax = (maxHeight - statusTop - MatchLayout.closeTop - MatchLayout.closeTarget).coerceAtLeast(0.dp)
+        val hers = their.photos.firstOrNull()?.let { MatchPhoto.Remote(it) }
+        val sides = WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)
+        val navigation = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
+        Column(Modifier.fillMaxSize()) {
+            // A fixed height (the weight) whose content is at least that tall: with room to spare the title stays
+            // at its place on the board; with less (the keyboard, large text) it scrolls from its end.
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState(), reverseScrolling = true),
+            ) {
+                if (framed) {
+                    PortraitCards(hers, myPhoto, k, arrive.value)
+                } else {
+                    SplitPortraits(hers, myPhoto, k, arrive.value)
+                }
+                Column(Modifier.fillMaxWidth().windowInsetsPadding(sides)) {
+                    Spacer(Modifier.height(titleTop * k))
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { copyHeight = with(density) { it.height.toDp() } }
+                            .padding(horizontal = Space.gutter)
+                            .graphicsLayer { alpha = copy.value.coerceIn(0f, 1f) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Title()
+                        if (canSend && openers.isNotEmpty()) {
+                            Spacer(Modifier.height(if (framed) MatchLayout.openersGapFramed else MatchLayout.openersGapBleed))
+                            ChipRow(Modifier.fillMaxWidth(), centered = true) {
+                                openers.forEach { opener -> OpenerChip(opener) { text = opener } }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(MatchLayout.minGap))
+                }
+            }
+            // «بعداً» above the navigation bar; the composer 18 dp over it, or 8 dp above the keyboard when that is
+            // higher (the keyboard then covers «بعداً»; Back and the close still dismiss).
+            Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Space.gutter)
-                    .graphicsLayer { alpha = copy.value.coerceIn(0f, 1f) },
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .heightIn(max = pinnedMax)
+                    .windowInsetsPadding(sides),
             ) {
-                Title()
-                if (canSend && openers.isNotEmpty()) {
-                    Spacer(Modifier.height(if (framed) MatchLayout.openersGapFramed else MatchLayout.openersGapBleed))
-                    ChipRow(Modifier.fillMaxWidth(), centered = true) {
-                        openers.forEach { opener -> OpenerChip(opener) { text = opener } }
+                TextAction(
+                    brandString(R.string.match_later),
+                    onDismiss,
+                    kind = TextActionKind.Neutral,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(navigation)
+                        .padding(bottom = MatchLayout.laterBottom),
+                )
+                if (canSend) {
+                    Box(
+                        Modifier.windowInsetsPadding(
+                            navigation.add(WindowInsets(bottom = MatchLayout.overLater))
+                                .union(WindowInsets.ime.only(WindowInsetsSides.Bottom).add(WindowInsets(bottom = MatchLayout.aboveKeyboard))),
+                        ),
+                    ) {
+                        Composer(
+                            text,
+                            { text = it },
+                            send,
+                            Modifier.padding(horizontal = Space.gutter).onSizeChanged { size ->
+                                val height = with(density) { size.height.toDp() }
+                                composerNow.value = height
+                                if (keyboardState.value) composerAtRest = height
+                            },
+                        )
                     }
                 }
             }
-            Spacer(Modifier.weight(1f).heightIn(min = MatchLayout.minGap))
-            if (canSend) {
-                Composer(text, { text = it }, send, Modifier.padding(horizontal = Space.gutter))
-                Spacer(Modifier.height(MatchLayout.composerToLater))
-            }
-            TextAction(
-                brandString(R.string.match_later),
-                onDismiss,
-                kind = TextActionKind.Neutral,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
-            Spacer(Modifier.height(MatchLayout.laterBottom))
         }
         // At the start, as the full profile's close: the right in Persian, the left in English.
         Box(
@@ -431,17 +504,18 @@ private fun Composer(text: String, onText: (String) -> Unit, onSend: () -> Unit,
 /**
  * Bleed: the two photos side by side across the top (hers on the right,
  * mine on the left, in every language), 520 dp tall, the seam between them,
- * the top scrim and the fade into the page at their foot.
+ * the top scrim and the fade into the page at their foot. A missing photo is
+ * the silhouette on `--photo-placeholder`.
  */
 @Composable
-private fun SplitPortraits(hers: Photo?, mine: Photo?, k: Float, arrive: Float) {
+private fun SplitPortraits(hers: MatchPhoto?, mine: MatchPhoto?, k: Float, arrive: Float) {
     val t = AppTheme.template
-    Box(Modifier.fillMaxWidth().height(MatchLayout.split * k)) {
+    Box(Modifier.fillMaxWidth().height(MatchLayout.split * k).testTag(MATCH_PORTRAITS_TAG)) {
         // Physical sides: mine on the left, hers on the right, in Persian too.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxSize()) {
-                Half(mine, Modifier.weight(1f).graphicsLayer { translationX = -(1f - arrive) * size.width * 0.25f; alpha = arrive.coerceIn(0f, 1f) })
-                Half(hers, Modifier.weight(1f).graphicsLayer { translationX = (1f - arrive) * size.width * 0.25f; alpha = arrive.coerceIn(0f, 1f) })
+                Half(mine, k, MATCH_MINE_EMPTY_TAG, Modifier.weight(1f).graphicsLayer { translationX = -(1f - arrive) * size.width * 0.25f; alpha = arrive.coerceIn(0f, 1f) })
+                Half(hers, k, MATCH_THEIRS_EMPTY_TAG, Modifier.weight(1f).graphicsLayer { translationX = (1f - arrive) * size.width * 0.25f; alpha = arrive.coerceIn(0f, 1f) })
             }
         }
         Box(Modifier.fillMaxWidth().height(MatchLayout.scrimTop).background(t.paints.matchScrimTop))
@@ -458,8 +532,8 @@ private fun SplitPortraits(hers: Photo?, mine: Photo?, k: Float, arrive: Float) 
 }
 
 @Composable
-private fun Half(photo: Photo?, modifier: Modifier) {
-    PhotoImage(photo, contentDescription = null, modifier = modifier.fillMaxHeight(), alignment = MatchLayout.faceAlignment)
+private fun Half(photo: MatchPhoto?, k: Float, emptyTag: String, modifier: Modifier) {
+    MatchPicture(photo, MatchLayout.faceAlignment, MatchLayout.silhouetteSplit * k, emptyTag, modifier.fillMaxHeight())
 }
 
 /**
@@ -469,7 +543,7 @@ private fun Half(photo: Photo?, modifier: Modifier) {
  * 14 dp lower.
  */
 @Composable
-private fun PortraitCards(hers: Photo?, mine: Photo?, k: Float, arrive: Float) {
+private fun PortraitCards(hers: MatchPhoto?, mine: MatchPhoto?, k: Float, arrive: Float) {
     val t = AppTheme.template
     // Physical sides (from the left edge): mine on the left, hers on the right, in Persian too.
     // The cards scale with the window as the title's place does, so a short phone never draws the title over them.
@@ -481,6 +555,7 @@ private fun PortraitCards(hers: Photo?, mine: Photo?, k: Float, arrive: Float) {
         Portrait(
             mine,
             k,
+            MATCH_MINE_EMPTY_TAG,
             Modifier
                 .absoluteOffset(x = centre - MatchLayout.cardReach * k, y = MatchLayout.cardMineLower * k)
                 .graphicsLayer { translationX = -(1f - arrive) * size.width * 0.3f; alpha = arrive.coerceIn(0f, 1f) }
@@ -489,6 +564,7 @@ private fun PortraitCards(hers: Photo?, mine: Photo?, k: Float, arrive: Float) {
         Portrait(
             hers,
             k,
+            MATCH_THEIRS_EMPTY_TAG,
             Modifier
                 .absoluteOffset(x = centre + (MatchLayout.cardReach - MatchLayout.cardWidth) * k)
                 .graphicsLayer { translationX = (1f - arrive) * size.width * 0.3f; alpha = arrive.coerceIn(0f, 1f) }
@@ -498,7 +574,7 @@ private fun PortraitCards(hers: Photo?, mine: Photo?, k: Float, arrive: Float) {
 }
 
 @Composable
-private fun Portrait(photo: Photo?, k: Float, modifier: Modifier) {
+private fun Portrait(photo: MatchPhoto?, k: Float, emptyTag: String, modifier: Modifier) {
     val t = AppTheme.template
     val shape = RoundedCornerShape(t.radii.card)
     val ring = listOf(ShadowLayer(0.dp, 0.dp, 0.dp, MatchLayout.cardRing, t.colors.bg)) + t.shadows.floatShadow
@@ -509,12 +585,36 @@ private fun Portrait(photo: Photo?, k: Float, modifier: Modifier) {
             .clip(shape)
             .background(t.colors.photoPlaceholder, shape),
     ) {
-        PhotoImage(photo, contentDescription = null, modifier = Modifier.fillMaxSize(), alignment = MatchLayout.cardAlignment)
+        MatchPicture(photo, MatchLayout.cardAlignment, MatchLayout.silhouetteCard * k, emptyTag, Modifier.fillMaxSize())
     }
 }
 
-/** The framed portraits' area, for tests that check what lies under it. */
+/**
+ * One face: the server's copy over its blurhash, or the phone's own upload.
+ * Where there is nothing to draw (no photo, no blurhash, a file that will
+ * not decode) the person silhouette (`--text-3`) on `--photo-placeholder`,
+ * above the fade and the title: never a letter, never an empty box.
+ */
+@Composable
+private fun MatchPicture(photo: MatchPhoto?, alignment: Alignment, glyph: Dp, emptyTag: String, modifier: Modifier) {
+    val empty: @Composable BoxScope.() -> Unit = {
+        PersonSilhouette(glyph, Modifier.align(MatchLayout.silhouetteAlign).testTag(emptyTag))
+    }
+    Box(modifier.background(AppTheme.template.colors.photoPlaceholder)) {
+        when (photo) {
+            is MatchPhoto.PhoneCopy -> LocalPreview(photo.file, Modifier.fillMaxSize(), alignment, empty)
+            is MatchPhoto.Remote -> PhotoImage(photo.photo, contentDescription = null, modifier = Modifier.fillMaxSize(), alignment = alignment, placeholder = empty)
+            null -> empty()
+        }
+    }
+}
+
+/** The portraits' area (the split photos, or the framed cards), for tests that check where it is and what lies under it. */
 internal const val MATCH_PORTRAITS_TAG = "match-portraits"
+
+/** The silhouettes that stand in for a missing photo, this account's and the other person's. */
+internal const val MATCH_MINE_EMPTY_TAG = "match-mine-empty"
+internal const val MATCH_THEIRS_EMPTY_TAG = "match-theirs-empty"
 
 /** The match screen's layout, from the design's 412 × 892 board. */
 private object MatchLayout {
@@ -535,6 +635,10 @@ private object MatchLayout {
     val cardMineLower = 14.dp
     val cardRing = 4.dp
     const val cardTurn = 3f
+    /** The silhouette's box (its glyph is half of it), a little above the middle: clear of the fade and the title. */
+    val silhouetteSplit = 160.dp
+    val silhouetteCard = 128.dp
+    val silhouetteAlign = BiasAlignment(0f, -0.2f)
     val titleTopBleed = 446.dp
     val titleTopFramed = 478.dp
     val openersGapBleed = 30.dp
@@ -554,7 +658,17 @@ private object MatchLayout {
     val sendIcon = 22.dp
     val composerToLater = 18.dp
     val laterBottom = 34.dp
+    /** The smallest scale the board is drawn at to fit a short window; below it the page scrolls from its end. */
+    const val K_MIN = 0.3f
+    /** «بعداً»'s height: [TextAction]'s 48 dp target (its one-line label stays inside it at large text). */
+    val laterTarget = 48.dp
+    /** The composer's foot above the navigation bar: 18 dp over «بعداً», which is 34 dp above the bar. */
+    val overLater = composerToLater + laterTarget + laterBottom
+    /** The composer's foot above the keyboard, as the chat's composer. */
+    val aboveKeyboard = 8.dp
     val closeTop = 12.dp
+    /** The close's 48 dp target ([AppIconButton]). */
+    val closeTarget = 48.dp
     val closeSideBleed = 12.dp
     val closeSideFramed = 8.dp
 }

@@ -3,17 +3,19 @@ package app.core.feature.likes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.core.common.Clock
+import app.core.common.runCatchingUnlessCancelled
 import app.core.feature.card.LikeTarget
-import app.core.feature.deck.DeckViewModel
 import app.core.feature.deck.ItemLikeError
 import app.core.feature.deck.ItemLikeState
 import app.core.feature.deck.MatchUi
+import app.core.feature.match.MatchPhoto
+import app.core.feature.match.isFinal
+import app.core.feature.match.ownMatchPhoto
 import app.core.model.Id
 import app.core.model.LikeItem
 import app.core.model.LikeKind
 import app.core.model.LikesPage
 import app.core.model.Me
-import app.core.model.Photo
 import app.core.model.ProfileCard
 import app.core.model.PublicUid
 import app.core.model.ReportContext
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.io.File
 
 /** The server calls behind the likes list. */
 interface LikesServices {
@@ -43,6 +46,9 @@ interface LikesServices {
 
     /** Blocks someone from their profile (`POST /v1/blocks`). */
     suspend fun block(target: PublicUid)
+
+    /** The copy of an own photo this phone uploaded, while the server has no URL for it (null: none kept). */
+    fun ownPhotoFile(id: Id): File? = null
 }
 
 enum class LikesStatus { Loading, Ready, Offline, Failed }
@@ -102,7 +108,7 @@ class LikesViewModel(
     private var loadedAt = 0L
     private var loading: Job? = null
     private var messageIds = 0L
-    private var myPhoto: Photo? = null
+    private var myPhoto: MatchPhoto? = null
 
     /** The tab is in front: load, or reload when the list is older than a few minutes. */
     fun start() {
@@ -295,9 +301,14 @@ class LikesViewModel(
             LikeOutcome.Sent -> _state.update { it.without(card) }
             is LikeOutcome.Matched -> {
                 _state.update { it.without(card).copy(match = MatchUi(card, outcome.conversation?.id, myPhoto)) }
-                if (myPhoto == null) {
-                    myPhoto = runCatching { services.me().profile?.photos?.let(DeckViewModel::firstShownPhoto) }.getOrNull()
-                    myPhoto?.let { photo -> _state.update { s -> s.copy(match = s.match?.copy(myPhoto = photo)) } }
+                // Read again while the known one is not an approved server copy (in review, still processing).
+                if (!myPhoto.isFinal) {
+                    runCatchingUnlessCancelled { services.me() }.getOrNull()?.profile?.photos
+                        ?.let { photos -> ownMatchPhoto(photos, services::ownPhotoFile) }
+                        ?.let { photo ->
+                            myPhoto = photo
+                            _state.update { s -> s.copy(match = s.match?.takeIf { it.card.id == card.id }?.copy(myPhoto = photo) ?: s.match) }
+                        }
                 }
             }
             is LikeOutcome.OutOfQuota -> _state.update { it.copy(quota = outcome.action to outcome.resetsAt) }

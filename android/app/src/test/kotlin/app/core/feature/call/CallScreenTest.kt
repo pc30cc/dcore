@@ -221,6 +221,20 @@ class CallScreenTest {
     }
 
     @Test
+    fun aRefusedMicrophoneSaysSoAndOffersTheSettings() {
+        show(state(CallPhase.Live(since = at(0))).copy(muted = true, degraded = CallDegradation.MICROPHONE_REFUSED))
+        compose.onNodeWithText("Allow the microphone so they can hear you.").assertIsDisplayed()
+        compose.onNodeWithTag(CallTags.NOTICE_SETTINGS).assertIsDisplayed().performClick()
+        assertEquals(listOf("settings"), actions.calls)
+    }
+
+    @Test
+    fun aNoticeThatSettingsCannotFixOffersNoWayThere() {
+        show(state(CallPhase.Live(since = at(0))).copy(muted = true, degraded = CallDegradation.NO_MICROPHONE))
+        compose.onAllNodesWithTag(CallTags.NOTICE_SETTINGS).assertCountEquals(0)
+    }
+
+    @Test
     fun aHeadsetTurnsTheSpeakerSwitchIntoARouteChoice() {
         show(state(CallPhase.Live(since = at(0))).copy(routes = AudioRoutes(listOf(AudioRoute.Earpiece, AudioRoute.Speaker, AudioRoute.Bluetooth("Car kit")), AudioRoute.Bluetooth("Car kit"))))
         compose.onAllNodesWithTag(CallTags.SPEAKER).assertCountEquals(0)

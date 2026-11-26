@@ -55,9 +55,11 @@ import livekit.org.webrtc.PeerConnection
  *
  * The audio goes through the SDK's own [AudioSwitchHandler], which owns the
  * audio focus and the audio mode: changing the route behind its back is what
- * makes an audio engine tear itself down mid-call. Bluetooth headsets are
- * offered only when `BLUETOOTH_CONNECT` was granted (Android 12 and later);
- * the call screen asks for it with the microphone.
+ * makes an audio engine tear itself down mid-call. Bluetooth headsets come
+ * from its list of the audio manager's communication devices (Android 12
+ * and later; audio device callbacks before) and need no runtime permission:
+ * in LiveKit 2.29.2 only the router for Android 5 and 6 checks Bluetooth
+ * permissions. Check this again whenever the SDK is upgraded.
  */
 class LiveKitRoom(private val context: Context) : CallRoom {
 
@@ -132,7 +134,7 @@ class LiveKitRoom(private val context: Context) : CallRoom {
         room?.initVideoRenderer(view)
     }
 
-    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean): CallRoom.Result {
+    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean, wantsMicrophone: Boolean): CallRoom.Result {
         val room = LiveKit.create(
             appContext = context.applicationContext,
             options = RoomOptions(
@@ -165,7 +167,9 @@ class LiveKitRoom(private val context: Context) : CallRoom {
         currentCoroutineContext().ensureActive()
 
         // Each on its own: a refused camera must not take the microphone with it.
-        val micOk = runCatchingUnlessCancelled { room.localParticipant.setMicrophoneEnabled(true) }.getOrDefault(false)
+        // The microphone only once its permission is held: publishing it without would start the recorder unallowed.
+        val micOk = wantsMicrophone &&
+            runCatchingUnlessCancelled { room.localParticipant.setMicrophoneEnabled(true) }.getOrDefault(false)
         val cameraOk = wantsVideo &&
             runCatchingUnlessCancelled { room.localParticipant.setCameraEnabled(true) }.getOrDefault(false)
 

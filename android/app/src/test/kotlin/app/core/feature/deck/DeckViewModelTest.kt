@@ -2,6 +2,7 @@ package app.core.feature.deck
 
 import app.core.common.FakeClock
 import app.core.feature.card.LikeTarget
+import app.core.feature.match.MatchPhoto
 import app.core.feature.paywall.PaywallEntry
 import app.core.feature.paywall.PaywallLauncher
 import app.core.feature.paywall.PaywallRequest
@@ -57,6 +58,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 import java.time.Instant
 
 /** The deck screen's model on top of the deck: sheets, rewind gating, the match moment, widening. */
@@ -71,14 +73,19 @@ class DeckViewModelTest {
 
     private class Services(var preferences: DiscoveryPreferences) : DeckServices {
         val patches = mutableListOf<PreferencesPatch>()
-        override suspend fun me() = Me(
-            id = "me00000000000",
-            preferences = preferences,
-            profile = OwnProfile(
+        var photos = listOf(OwnPhoto("8001", 0, PhotoStatus.Approved, url = "https://media.test/p/8001/1/640.webp"))
+        var meError: ApiError? = null
+        /** The uploads this phone still holds, by photo id. */
+        val copies = mutableMapOf<String, File>()
+        override suspend fun me(): Me {
+            meError?.let { throw it }
+            return Me(
                 id = "me00000000000",
-                photos = listOf(OwnPhoto("8001", 0, PhotoStatus.Approved, url = "https://media.test/p/8001/1/640.webp")),
-            ),
-        )
+                preferences = preferences,
+                profile = OwnProfile(id = "me00000000000", photos = photos),
+            )
+        }
+        override fun ownPhotoFile(id: String): File? = copies[id]
         override suspend fun updatePreferences(patch: PreferencesPatch): DiscoveryPreferences {
             patches += patch
             preferences = preferences.copy(maxDistanceKm = patch.maxDistanceKm ?: preferences.maxDistanceKm)
@@ -177,6 +184,59 @@ class DeckViewModelTest {
         vm.dismissMatch()
         runCurrent()
         assertNull(vm.state.value.match)
+    }
+
+    @Test
+    fun aMatchWhilePhotosAreProcessingShowsThePhonesCopy() = runTest(dispatcher) {
+        likesBack = setOf("p1")
+        val services = Services(DiscoveryPreferences(maxDistanceKm = 50))
+        services.photos = listOf(OwnPhoto("8002", 0, PhotoStatus.Processing, blurhash = ""))
+        val upload = File("8002.jpg")
+        services.copies["8002"] = upload
+        val vm = model(entitled = false, services = services)
+        settle()
+        vm.swiped(vm.state.value.deck.cards.first(), SwipeAction.Like)
+        settle()
+        assertEquals(MatchPhoto.PhoneCopy("8002", upload), vm.state.value.match?.myPhoto)
+    }
+
+    @Test
+    fun aLaterMatchReadsTheAccountAgainUntilApproved() = runTest(dispatcher) {
+        likesBack = setOf("p1", "p2")
+        val services = Services(DiscoveryPreferences(maxDistanceKm = 50))
+        services.photos = listOf(OwnPhoto("8002", 0, PhotoStatus.Processing))
+        services.copies["8002"] = File("8002.jpg")
+        val vm = model(entitled = false, services = services)
+        settle()
+        vm.swiped(vm.state.value.deck.cards.first(), SwipeAction.Like)
+        settle()
+        assertTrue(vm.state.value.match?.myPhoto is MatchPhoto.PhoneCopy)
+        // Approved meanwhile: the next match reads the account again and shows the server's copy.
+        services.photos = listOf(OwnPhoto("8002", 0, PhotoStatus.Approved, url = "https://media.test/p/8002/1/640.webp"))
+        vm.dismissMatch()
+        runCurrent()
+        vm.swiped(vm.state.value.deck.cards.first(), SwipeAction.Like)
+        settle()
+        val match = vm.state.value.match!!
+        assertEquals("p2", match.card.id)
+        val photo = match.myPhoto as MatchPhoto.Remote
+        assertTrue(photo.approved)
+        assertEquals("8002", photo.id)
+        assertEquals("https://media.test/p/8002/1/640.webp", photo.photo.url)
+    }
+
+    @Test
+    fun aMatchWithTheAccountUnreadableStillOpens() = runTest(dispatcher) {
+        likesBack = setOf("p1")
+        val services = Services(DiscoveryPreferences(maxDistanceKm = 50))
+        services.meError = ApiError.Network(java.io.IOException("offline"))
+        val vm = model(entitled = false, services = services)
+        settle()
+        vm.swiped(vm.state.value.deck.cards.first(), SwipeAction.Like)
+        settle()
+        val match = vm.state.value.match
+        assertNotNull(match)
+        assertNull("the silhouette stands in", match!!.myPhoto)
     }
 
     @Test

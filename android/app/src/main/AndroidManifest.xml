@@ -14,16 +14,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      Calls between matched people (feature/call). The microphone, the camera
-      and BLUETOOTH_CONNECT are asked for when a call is placed or answered,
-      never at launch; Bluetooth is how a headset is offered for the call's
-      sound on Android 12+. MODIFY_AUDIO_SETTINGS lets the call move between
-      earpiece, speaker and headset.
+      Calls between matched people (feature/call). The microphone and the
+      camera are asked for at the moment of a call, never at launch: before
+      one is placed, and while an answered one connects. MODIFY_AUDIO_SETTINGS
+      lets the call move between earpiece, speaker and headset; the media
+      SDK's router finds Bluetooth headsets among the audio manager's
+      communication devices, which needs no Bluetooth runtime permission.
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- A ring takes the whole screen, as a phone call does; from Android 14
          the person can turn that off, and the ring is a heads-up notification. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />

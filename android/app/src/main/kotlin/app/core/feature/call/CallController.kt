@@ -1,7 +1,6 @@
 package app.core.feature.call
 
 import android.Manifest
-import android.os.Build
 import app.core.common.runCatchingUnlessCancelled
 import app.core.model.ConversationPeer
 import app.core.model.CallKind
@@ -16,12 +15,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** A call the person asked for that waits on the permission dialog ([CallHost] runs it). */
+/** What waits on the permission dialog ([CallHost] runs it). */
 sealed interface CallRequest {
+    /** A call the person asked for: nobody is rung until the dialog is answered. */
     data class Place(val peer: CallPeer, val kind: CallKind) : CallRequest
 
-    /** Answer the call ringing on screen; [withVideo] false answers a video call with the camera off. */
-    data class Answer(val withVideo: Boolean) : CallRequest
+    /** The call [callId] was answered already: [permissions] are asked while it connects. */
+    data class Grant(val callId: Id, val permissions: List<String>) : CallRequest
 }
 
 /**
@@ -42,6 +42,8 @@ class CallController(
     private val lingerMs: Long = END_LINGER_MS,
     /** The match's photo as the chat's cache has it for a conversation, or null (signed out, not stored). */
     private val cachedFace: suspend (conversationId: Id) -> ConversationPeer? = { null },
+    /** Whether this phone already holds a runtime permission. */
+    private val hasPermission: (String) -> Boolean = { true },
 ) {
     private val _session = MutableStateFlow<MatchCallSession?>(null)
 
@@ -72,11 +74,29 @@ class CallController(
         return true
     }
 
-    /** Answer (or "voice only") on the ring screen: asks for the permissions first. */
-    fun requestAnswer(withVideo: Boolean) {
-        val live = liveSession ?: return
-        if (live.direction != MatchCallSession.Direction.INCOMING || live.phase.value != CallPhase.Ringing) return
-        _pending.value = CallRequest.Answer(withVideo)
+    /**
+     * Answer (or "voice only", [withVideo] false) on the ring screen or the
+     * ring's notification. The accept is sent at once, before any dialog: a
+     * dialog left open must never let the ring run out under a call the
+     * person answered. What the call still lacks (the microphone, the camera
+     * for a video answer) comes back as a [CallRequest.Grant], asked while it
+     * connects; until the microphone is allowed the call is joined muted.
+     * Null when nothing is left to ask, or nothing was answered.
+     */
+    fun requestAnswer(withVideo: Boolean): CallRequest.Grant? {
+        val live = liveSession ?: return null
+        if (live.direction != MatchCallSession.Direction.INCOMING || live.phase.value != CallPhase.Ringing) return null
+        val callId = live.callId ?: return null
+        val video = live.kind == CallKind.Video && withVideo
+        live.answer(
+            withVideo = video,
+            microphone = hasPermission(CallPermissions.MICROPHONE),
+            camera = !video || hasPermission(CallPermissions.CAMERA),
+        )
+        val missing = CallPermissions.missing(CallPermissions.needed(live.kind, withVideo), hasPermission)
+        val grant = missing.takeIf { it.isNotEmpty() }?.let { CallRequest.Grant(callId, it) }
+        _pending.value = grant
+        return grant
     }
 
     fun clearPending() {
@@ -99,10 +119,17 @@ class CallController(
         session.place(peer, kind, cameraAllowed = camera)
     }
 
-    /** Answers once the permission dialog is answered; without the microphone the call goes ahead muted. */
-    fun answer(withVideo: Boolean) {
-        _pending.value = null
-        liveSession?.answer(withVideo)
+    /**
+     * The dialog for [request] was answered ([results]; empty when it could
+     * not open): what was allowed is turned on in that call, and a refused
+     * microphone leaves it muted with the screen saying why.
+     */
+    fun permissionsAnswered(request: CallRequest.Grant, results: Map<String, Boolean>) {
+        if (_pending.value == request) _pending.value = null
+        val live = liveSession?.takeIf { it.callId == request.callId } ?: return
+        val got = CallPermissions.outcome(results, hasPermission)
+        if (CallPermissions.MICROPHONE in request.permissions) live.microphonePermission(got.microphone)
+        if (CallPermissions.CAMERA in request.permissions) live.cameraPermission(got.camera)
     }
 
     /**
@@ -206,18 +233,19 @@ class CallController(
 /**
  * The runtime permissions a call asks for, at the moment of the call and
  * never at launch: the microphone always, the camera for a video call that
- * will use it, and (Android 12+) `BLUETOOTH_CONNECT`, without which the audio
- * router cannot offer a Bluetooth headset. Pure, so the flow is tested on a JVM.
+ * will use it. Never Bluetooth: the media SDK's audio router (LiveKit 2.29.2
+ * and its audio switch) lists Bluetooth headsets from the audio manager's
+ * communication devices on Android 12+ (audio device callbacks before), which
+ * need no runtime permission; check again when the SDK is upgraded. Pure, so
+ * the flow is tested on a JVM.
  */
 object CallPermissions {
     const val MICROPHONE = Manifest.permission.RECORD_AUDIO
     const val CAMERA = Manifest.permission.CAMERA
-    const val BLUETOOTH = "android.permission.BLUETOOTH_CONNECT"
 
-    fun needed(kind: CallKind, withVideo: Boolean, sdk: Int = Build.VERSION.SDK_INT): List<String> = buildList {
+    fun needed(kind: CallKind, withVideo: Boolean): List<String> = buildList {
         add(MICROPHONE)
         if (kind == CallKind.Video && withVideo) add(CAMERA)
-        if (sdk >= Build.VERSION_CODES.S) add(BLUETOOTH)
     }
 
     /** What still has to be asked: [needed] less what is granted. */
@@ -230,8 +258,8 @@ object CallPermissions {
      */
     fun outcome(results: Map<String, Boolean>, granted: (String) -> Boolean): Granted {
         fun has(permission: String) = results[permission] ?: granted(permission)
-        return Granted(microphone = has(MICROPHONE), camera = has(CAMERA), bluetooth = has(BLUETOOTH))
+        return Granted(microphone = has(MICROPHONE), camera = has(CAMERA))
     }
 
-    data class Granted(val microphone: Boolean, val camera: Boolean, val bluetooth: Boolean)
+    data class Granted(val microphone: Boolean, val camera: Boolean)
 }

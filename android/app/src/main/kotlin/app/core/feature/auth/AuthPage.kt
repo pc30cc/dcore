@@ -60,15 +60,18 @@ fun Modifier.authSideInsets(): Modifier = windowInsetsPadding(WindowInsets.safeD
 @Composable
 fun Modifier.authBottomInsets(): Modifier = windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))
 
-/** See [authTopInsets]: a docked action's distance from the bottom edge, the navigation bar or the keyboard. */
+/**
+ * See [authTopInsets]: a docked action's distance from the bottom edge, the navigation bar or the keyboard.
+ * [aboveKeyboard] false leaves the keyboard out: the action stays at the bottom, under it.
+ */
 @Composable
-fun Modifier.authDock(min: Dp): Modifier = windowInsetsPadding(
+fun Modifier.authDock(min: Dp, aboveKeyboard: Boolean = true): Modifier = windowInsetsPadding(
     WindowInsets.navigationBars.add(WindowInsets(bottom = AuthInsets.aboveNavigation))
-        .union(WindowInsets.ime.add(WindowInsets(bottom = AuthInsets.aboveKeyboard)))
+        .let { if (aboveKeyboard) it.union(WindowInsets.ime.add(WindowInsets(bottom = AuthInsets.aboveKeyboard))) else it }
         .union(WindowInsets(bottom = min)),
 )
 
-private object AuthInsets {
+internal object AuthInsets {
     val statusBar = 32.dp
     val aboveNavigation = 8.dp
     val aboveKeyboard = 18.dp

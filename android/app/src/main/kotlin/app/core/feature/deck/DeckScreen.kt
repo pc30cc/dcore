@@ -62,6 +62,7 @@ import app.core.feature.match.MatchMomentDialog
 import app.core.feature.match.matchOpeners
 import app.core.i18n.brandString
 import app.core.media.CoilPhotoPreloader
+import app.core.media.LocalPhotoCache
 import app.core.model.BoostKind
 import app.core.model.BoostStarted
 import app.core.model.Catalog
@@ -100,6 +101,7 @@ import app.core.ui.theme.AppTheme
 import app.core.ui.theme.DeckStyle
 import app.core.ui.theme.Space
 import java.time.Instant
+import java.io.File
 
 /** Everything the deck screen can ask for. */
 interface DeckActions {
@@ -138,8 +140,9 @@ interface DeckActions {
 }
 
 /** The real server behind the deck screen's extra calls. */
-class ServerDeckServices(private val api: ServerApi) : DeckServices {
+class ServerDeckServices(private val api: ServerApi, private val photos: LocalPhotoCache? = null) : DeckServices {
     override suspend fun me(): Me = api.me().value
+    override fun ownPhotoFile(id: Id): File? = photos?.file(id)
     override suspend fun updatePreferences(patch: PreferencesPatch): DiscoveryPreferences = api.updatePreferences(patch)
     override suspend fun updateSettings(patch: SettingsPatch): Settings = api.updateSettings(patch)
     override suspend fun boost(): BoostStarted = api.boost(BoostKind.Boost)
@@ -166,7 +169,7 @@ fun DeckRoute(
     val graph = LocalAppGraph.current
     val context = LocalContext.current
     val vm: DeckViewModel = viewModel {
-        DeckViewModel(graph.deck, graph.entitlements, ServerDeckServices(graph.api), CoilPhotoPreloader(context.applicationContext), graph.paywall)
+        DeckViewModel(graph.deck, graph.entitlements, ServerDeckServices(graph.api, graph.photoCache), CoilPhotoPreloader(context.applicationContext), graph.paywall)
     }
     val state by vm.state.collectAsStateWithLifecycle()
     val config by graph.config.config.collectAsStateWithLifecycle()
@@ -306,10 +309,11 @@ fun DeckScreen(
     Box(modifier.fillMaxSize().background(t.colors.bg)) {
         if (bleed) {
             if (deckUp) {
-                Box(Modifier.fillMaxSize().glassSource(glass)) {
-                    if (cards.isEmpty()) {
-                        CardSkeleton(Modifier.fillMaxSize())
-                    } else {
+                if (cards.isEmpty()) {
+                    // Not a glass source: each frame of the sweep would re-render every blur drawn over it.
+                    CardSkeleton(Modifier.fillMaxSize())
+                } else {
+                    Box(Modifier.fillMaxSize().glassSource(glass)) {
                         CardStack(
                             cards = cards,
                             returning = state.deck.returning,

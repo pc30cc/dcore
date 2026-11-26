@@ -210,7 +210,7 @@ fun CallScreen(
                         } else {
                             FaceHeader(state, now, showFace = roomy)
                         }
-                        CallNotices(state)
+                        CallNotices(state, onOpenSettings = actions::openSettings)
                     }
                 }
                 Column(
@@ -399,7 +399,7 @@ private fun CallStatus(state: CallScreenState, now: () -> Instant, style: TextSt
 }
 
 @Composable
-private fun CallNotices(state: CallScreenState) {
+private fun CallNotices(state: CallScreenState, onOpenSettings: () -> Unit) {
     val phase = state.phase
     if (phase.isOver) return
     Column(
@@ -410,7 +410,13 @@ private fun CallNotices(state: CallScreenState) {
         if (state.onHold) CallNotice(brandString(R.string.call_notice_on_hold))
         if (phase is CallPhase.Live && state.weakNetwork && !phase.reconnecting) CallNotice(brandString(R.string.call_notice_weak))
         if (state.relayWarning) CallNotice(brandString(R.string.call_notice_relay))
-        state.degraded?.let { CallNotice(brandString(it.title)) }
+        state.degraded?.let { degraded ->
+            CallNotice(brandString(degraded.title))
+            // What only the phone's settings can fix (a refused permission): the way there, under the notice.
+            if (degraded.opensSettings) {
+                CallNotice(brandString(R.string.action_open_settings), tag = CallTags.NOTICE_SETTINGS, onClick = onOpenSettings)
+            }
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 package app.core.feature.call
 
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import app.core.common.Clock
 import app.core.common.Diag
 import app.core.common.runCatchingUnlessCancelled
@@ -93,6 +95,7 @@ class CallGraph(
             CallNotifications.stopRing(app, callId, missed = end == CallEnd.MISSED || end == CallEnd.CANCELLED)
         },
         cachedFace = cachedFace,
+        hasPermission = { permission -> ContextCompat.checkSelfPermission(app, permission) == PackageManager.PERMISSION_GRANTED },
     )
 
     /** The match's call switch. */

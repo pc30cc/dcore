@@ -21,6 +21,7 @@
     <string name="call_notice_on_hold">On hold while another call uses the audio</string>
     <string name="call_notice_relay">Your network may block calls. If it doesn\'t connect, try another network.</string>
     <string name="call_degraded_microphone">Your microphone isn\'t working, so you\'re muted.</string>
+    <string name="call_degraded_microphone_refused">Allow the microphone so they can hear you.</string>
     <string name="call_degraded_camera">Your camera couldn\'t start. The call goes on as voice.</string>
 
     <!-- The call screen: how it ended -->

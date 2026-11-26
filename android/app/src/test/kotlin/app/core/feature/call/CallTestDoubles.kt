@@ -98,29 +98,48 @@ class FakeCallRoom(
     val log = mutableListOf<String>()
     var joined: CallToken? = null
     var wantedVideo: Boolean? = null
+    var wantedMicrophone: Boolean? = null
     var peerHere = false
     var microphone: Boolean? = null
     var speaker: Boolean? = null
     var released = false
     /** A join that waits for the test (null joins at once). */
     var joinGate: CompletableDeferred<Unit>? = null
+    /** The next microphone change waits for the test, once (null changes at once). */
+    var microphoneGate: CompletableDeferred<Unit>? = null
+    /** The next camera change waits for the test, once (null changes at once). */
+    var cameraGate: CompletableDeferred<Unit>? = null
+    var camera: Boolean? = null
 
-    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean): CallRoom.Result {
+    override suspend fun connect(credentials: CallToken, wantsVideo: Boolean, wantsMicrophone: Boolean): CallRoom.Result {
         log += "connect"
         joinGate?.await()
         joined = credentials
         wantedVideo = wantsVideo
-        return joinResult
+        wantedMicrophone = wantsMicrophone
+        microphone = wantsMicrophone
+        camera = wantsVideo
+        val result = joinResult
+        return if (result is CallRoom.Result.Joined) result.copy(microphone = result.microphone && wantsMicrophone) else result
     }
 
     override suspend fun setMicrophone(enabled: Boolean): Boolean {
         log += "mic:$enabled"
+        microphoneGate?.let { gate ->
+            microphoneGate = null
+            gate.await()
+        }
         microphone = enabled
         return true
     }
 
     override suspend fun setCamera(enabled: Boolean): Boolean {
         log += "camera:$enabled"
+        cameraGate?.let { gate ->
+            cameraGate = null
+            gate.await()
+        }
+        camera = enabled
         return true
     }
 
