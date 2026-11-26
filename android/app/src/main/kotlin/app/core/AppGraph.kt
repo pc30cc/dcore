@@ -146,7 +146,7 @@ class AppGraph(private val app: Application) {
      * in-memory sample backend ([Backend] decides; release builds cannot).
      */
     val api: ServerApi by lazy {
-        Backend.create(app, clock, settingsTap = templates) {
+        Backend.create(app, clock, settingsTap = templates, language = ::language) {
             HttpServerApi(
                 client = http,
                 session = session,

@@ -35,9 +35,16 @@ object Backend {
             System.getenv(SAMPLE_ENV) == "1" ||
             (context != null && File(context.filesDir, SAMPLE_MARKER).exists())
 
-    /** [real] is built only when it is the one used; the sample tells [settingsTap] its settings as the server does. */
-    fun create(context: Context, clock: Clock, settingsTap: SettingsTap, real: () -> ServerApi): ServerApi =
-        if (isSample(context)) SampleApi(store = BuildConfig.STORE, clock = clock, settingsTap = settingsTap) else real()
+    /**
+     * [real] is built only when it is the one used; the sample tells [settingsTap] its settings as the server does,
+     * and answers in [language] (the app's, as the real client's `Accept-Language`), not the phone's system locale.
+     */
+    fun create(context: Context, clock: Clock, settingsTap: SettingsTap, language: () -> String, real: () -> ServerApi): ServerApi =
+        if (isSample(context)) {
+            SampleApi(store = BuildConfig.STORE, clock = clock, settingsTap = settingsTap, language = language)
+        } else {
+            real()
+        }
 
     /** The sample store with the sample backend (no store app needed), else the flavor's [real] one. */
     fun billing(context: Context, real: () -> StoreBilling): StoreBilling =
