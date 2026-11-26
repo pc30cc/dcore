@@ -1,6 +1,10 @@
 package app.core.feature.onboarding
 
+import android.Manifest
 import android.content.res.Configuration
+import android.location.Location
+import android.location.LocationManager
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -63,6 +67,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.Locale
 
@@ -71,7 +76,8 @@ import java.util.Locale
  * backend: the name step's rules and the move on; the birth date on the
  * Solar Hijri wheels, right to left, chosen only once a wheel moves, kept as
  * the wheel shows it after a drag and after the screen is made again in
- * another language; the location step with an area kept; the height in
+ * another language; the location step with an area kept, and its button
+ * given back when the step leaves while the phone looks; the height in
  * centimetres, and nothing while it is not set.
  */
 @RunWith(AndroidJUnit4::class)
@@ -285,6 +291,52 @@ class OnboardingStepsScreenTest {
         compose.onNodeWithText("Continue").assertIsEnabled().performClick()
         compose.waitUntil(5_000) { api.requestLog.count { it == "me.profile" } == written + 1 && !model.state.value.busy }
         assertEquals(located, api.requestLog.count { it == "me.location" })
+    }
+
+    @Test
+    fun leavingTheLocationStepWhileThePhoneLooksGivesItsButtonBack() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION)
+        val location = shadowOf(app.getSystemService(LocationManager::class.java))
+        location.setProviderEnabled(LocationManager.GPS_PROVIDER, true)
+        val model = model()
+        compose.waitUntil(5_000) { model.state.value.step != null }
+        var shown by mutableStateOf(true)
+        compose.setContent {
+            AppTheme(template = Templates.of(Templates.NEON)) {
+                val state by model.state.collectAsStateWithLifecycle()
+                if (shown) LocationStep(state, model, chrome)
+            }
+        }
+        compose.onNodeWithText("Use my location").performClick()
+        compose.waitForIdle()
+        assertEquals(LocationPhase.Locating, model.state.value.location)
+        assertEquals(1, location.getLocationRequests(LocationManager.GPS_PROVIDER).size)
+        compose.onNodeWithText("Use my location").assertIsNotEnabled()
+        // Back to the step before while the phone looks: the step leaves the screen, its request is withdrawn.
+        shown = false
+        compose.waitForIdle()
+        assertTrue(location.getLocationRequests(LocationManager.GPS_PROVIDER).isEmpty())
+        assertEquals(LocationPhase.Idle, model.state.value.location)
+        // On to it again: the button works, and the fix it finds is kept.
+        shown = true
+        compose.waitForIdle()
+        compose.onNodeWithText("Use my location").assertIsEnabled().performClick()
+        compose.waitForIdle()
+        location.simulateLocation(
+            LocationManager.GPS_PROVIDER,
+            Location(LocationManager.GPS_PROVIDER).apply {
+                latitude = 35.712
+                longitude = 51.398
+                accuracy = 2_000f
+                time = System.currentTimeMillis()
+                elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+            },
+        )
+        // The answer comes on the main thread's executor.
+        compose.waitForIdle()
+        compose.waitUntil(5_000) { model.state.value.location is LocationPhase.Set }
+        assertTrue(api.requestLog.contains("me.location"))
     }
 
     @Test @Config(qualifiers = "w360dp-h640dp", fontScale = 1.5f)

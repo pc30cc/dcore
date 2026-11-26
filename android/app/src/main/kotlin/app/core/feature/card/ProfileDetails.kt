@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -65,6 +67,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -73,6 +77,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -93,6 +98,7 @@ import app.core.ui.components.DeckAction
 import app.core.ui.components.DeckActionButton
 import app.core.ui.components.Fact
 import app.core.ui.components.FactRow
+import app.core.ui.components.GlassBackdrop
 import app.core.ui.components.IconButtonKind
 import app.core.ui.components.PhotoScrimBottom
 import app.core.ui.components.PhotoScrimTop
@@ -171,9 +177,11 @@ fun ProfileDetailsDialog(
  * ink. Scrolling on: about, the voice answers, the fact grid (three columns,
  * no icons), each answer as a pull quote with its own like and one more
  * photo after it (neon full width fading out of the page; white inset and
- * rounded, never fading), then report and block as text buttons. Once the
- * first screen has gone, an app bar shows the close, the face, «{name}،
- * {age}» with the badge and «بیشتر» («پیام بده», report and block).
+ * rounded, never fading), then report and block as text buttons. The close
+ * and «بیشتر» of the first screen stay pinned at the top while it scrolls
+ * away ([HeroChrome]); once it has gone, an app bar takes their place with
+ * the close, the face, «{name}، {age}» with the badge and «بیشتر» («پیام
+ * بده», report and block), so a close is on screen at every scroll position.
  *
  * Pass and like float at the bottom corners (not for a match: [source]
  * [DetailsSource.Match]); a super like goes from the like-a-photo sheet.
@@ -227,6 +235,15 @@ fun ProfileDetails(
     val barHeight = statusTop + DetailsLayout.appBar
     val density = LocalDensity.current
     val hasMore = writeTo != null || onReport != null || onBlock != null
+    val onMoreClick: (() -> Unit)? = if (hasMore) { { more = true } } else null
+    val bleed = t.switches.deck == DeckStyle.Bleed
+    // Outside the lazy hero item: the item is disposed once it scrolls away, while the pinned glass may still draw.
+    val backdrop = rememberGlassBackdrop()
+    // The photo scrolls under the pinned glass: it keeps the blur it has while the list moves and takes it
+    // again once the list rests, so no scroll frame records a blur.
+    LaunchedEffect(list, backdrop) {
+        snapshotFlow { list.isScrollInProgress }.collect { backdrop.held = it }
+    }
     val likePhoto: (Int) -> Unit = { index ->
         card.photos.getOrNull(index)?.let { likeItem(LikeTarget(card, LikedItem(ItemKind.Photo, it.id), photoIndex = index)) }
     }
@@ -242,10 +259,13 @@ fun ProfileDetails(
             .semantics { paneTitle = pane },
     ) {
         val viewport = maxHeight
-        val heroGone by remember(viewport, barHeight) {
+        // The app bar takes over before the pinned chrome would sit past the first screen's bottom edge.
+        val chromeBottom = statusTop + (if (bleed) DetailsLayout.chromeBelowStatus else DetailsLayout.headerBelowStatus) + DetailsLayout.chromeButton
+        val handover = maxOf(barHeight, chromeBottom)
+        val heroGone by remember(viewport, handover) {
             derivedStateOf {
                 list.firstVisibleItemIndex > 0 ||
-                    list.firstVisibleItemScrollOffset > with(density) { (viewport - barHeight).toPx() }
+                    list.firstVisibleItemScrollOffset > with(density) { (viewport - handover).toPx() }
             }
         }
         LazyColumn(
@@ -253,7 +273,7 @@ fun ProfileDetails(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = if (match) navigation + DetailsLayout.endPadding else navigation + DetailsLayout.actionsRoom),
         ) {
-            item(key = "hero") {
+            item(key = "hero", contentType = "hero") {
                 Hero(
                     card = card,
                     height = viewport,
@@ -263,12 +283,11 @@ fun ProfileDetails(
                     photoIndex = photoIndex,
                     onPhotoIndex = { photoIndex = it },
                     onLikePhoto = if (match) null else likePhoto,
-                    onClose = onDismiss,
-                    onMore = if (hasMore) { { more = true } } else null,
+                    backdrop = backdrop,
                     withActions = !match,
                 )
             }
-            itemsIndexed(sections, key = { _, it -> it.key }) { index, section ->
+            itemsIndexed(sections, key = { _, it -> it.key }, contentType = { _, it -> it.contentType }) { index, section ->
                 // The first section starts under the app bar that replaces the first screen's chrome.
                 Column(Modifier.padding(top = if (index == 0) barHeight else 0.dp)) {
                 when (section) {
@@ -330,15 +349,15 @@ fun ProfileDetails(
                 }
             }
             if (onReport != null || onBlock != null) {
-                item(key = "safety") { Safety(card, onReport, onBlock) }
+                item(key = "safety", contentType = "safety") { Safety(card, onReport, onBlock) }
             }
         }
 
         if (!match) {
             // Pass and like float over the page with nothing under them: photos run under them crisp, as
             // the design draws them; the list's end padding keeps the last section clear of them.
-            val bottom by animateDpAsState(if (heroGone) DetailsLayout.actionsBottomDetails else DetailsLayout.actionsBottomHero, label = "actions")
-            val side by animateDpAsState(
+            val bottom = animateDpAsState(if (heroGone) DetailsLayout.actionsBottomDetails else DetailsLayout.actionsBottomHero, label = "actions")
+            val side = animateDpAsState(
                 if (heroGone && t.switches.hero == HeroStyle.Framed) DetailsLayout.actionsSideFramed else Space.gutter,
                 label = "side",
             )
@@ -348,12 +367,28 @@ fun ProfileDetails(
                 onLike = onLike,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = side, end = side, bottom = bottom + navigation),
+                    // The animated insets are read while measuring, so their frames re-measure the row, never recompose the page.
+                    .layout { measurable, constraints ->
+                        val s = side.value.roundToPx()
+                        val b = (bottom.value + navigation).roundToPx()
+                        val placeable = measurable.measure(constraints.offset(horizontal = -2 * s, vertical = -b))
+                        layout(placeable.width + 2 * s, placeable.height + b) { placeable.place(s, 0) }
+                    },
             )
         }
 
-        AnimatedVisibility(heroGone, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
-            DetailsBar(card, number, statusTop, onDismiss, if (hasMore) { { more = true } } else null)
+        // The close and «بیشتر» over the first screen, then the app bar: one or the other is always up
+        // (both, and both working, during the short crossfade). Read first by TalkBack, as when they sat in the hero.
+        val chromeOrder = Modifier.align(Alignment.TopCenter).semantics {
+            isTraversalGroup = true
+            traversalIndex = -1f
+        }
+        AnimatedVisibility(!heroGone, chromeOrder, enter = fadeIn(), exit = fadeOut()) {
+            // Leaving, the glass draws its fallback: it never samples a first screen scrolled away or disposed.
+            HeroChrome(statusTop, bleed, backdrop.takeIf { !heroGone }, onDismiss, onMoreClick)
+        }
+        AnimatedVisibility(heroGone, chromeOrder, enter = fadeIn(), exit = fadeOut()) {
+            DetailsBar(card, number, statusTop, onDismiss, onMoreClick)
         }
 
         SnackbarHost(
@@ -375,11 +410,12 @@ fun ProfileDetails(
 
 /**
  * The first screen: the photos and the person's line. Bleed: the photo edge
- * to edge, the top (190 dp) and bottom (56 %) scrims, the story bars 8 dp
- * under the status bar, the glass close and «بیشتر», the name 124 dp above
- * the bottom. Card: a plain header, the photo inset from 92 dp to 196 dp
+ * to edge (what [backdrop]'s glass blurs), the top (190 dp) and bottom (56 %)
+ * scrims, the story bars 8 dp under the status bar, the name 124 dp above
+ * the bottom. Card: room for the header, the photo inset from 92 dp to 196 dp
  * above the bottom with `--r-photo` corners and its 84 dp scrim at 70 %, the
- * name in ink 12 dp under it.
+ * name in ink 12 dp under it. The close and «بیشتر» are not part of it: they
+ * are pinned over it ([HeroChrome]).
  */
 @Composable
 private fun Hero(
@@ -391,13 +427,11 @@ private fun Hero(
     photoIndex: Int,
     onPhotoIndex: (Int) -> Unit,
     onLikePhoto: ((Int) -> Unit)?,
-    onClose: () -> Unit,
-    onMore: (() -> Unit)?,
+    backdrop: GlassBackdrop,
     withActions: Boolean,
 ) {
     val t = AppTheme.template
     val bleed = t.switches.deck == DeckStyle.Bleed
-    val backdrop = rememberGlassBackdrop()
     // The first screen's only words: TalkBack reads them as the page's heading.
     val spoken = cardDescription(card, number)
     val below = when {
@@ -413,15 +447,6 @@ private fun Hero(
             PhotoScrimTop()
             PhotoScrimBottom(Modifier.align(Alignment.BottomCenter).fillMaxHeight(DetailsLayout.BOTTOM_SCRIM))
             Stories(card, photoIndex, Modifier.padding(top = statusTop + DetailsLayout.storyBelowStatus))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = statusTop + DetailsLayout.chromeBelowStatus, start = DetailsLayout.chromeSide, end = DetailsLayout.chromeSide),
-            ) {
-                AppIconButton(AppIcons.ChevronDown, brandString(R.string.profile_view_close), onClose, kind = IconButtonKind.Glass, backdrop = backdrop)
-                Spacer(Modifier.weight(1f))
-                if (onMore != null) AppIconButton(AppIcons.More, brandString(R.string.profile_view_more), onMore, kind = IconButtonKind.Glass, backdrop = backdrop)
-            }
             CardInfo(
                 card,
                 number,
@@ -432,15 +457,8 @@ private fun Hero(
         }
     } else {
         Column(Modifier.fillMaxWidth().height(height)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = statusTop + DetailsLayout.headerBelowStatus, start = DetailsLayout.headerSide, end = DetailsLayout.headerSide),
-            ) {
-                AppIconButton(AppIcons.ChevronDown, brandString(R.string.profile_view_close), onClose)
-                Spacer(Modifier.weight(1f))
-                if (onMore != null) AppIconButton(AppIcons.More, brandString(R.string.profile_view_more), onMore)
-            }
+            // The header's room: its close and «بیشتر» are pinned over it.
+            Spacer(Modifier.height(statusTop + DetailsLayout.headerBelowStatus + DetailsLayout.chromeButton))
             Box(
                 Modifier
                     .weight(1f)
@@ -687,6 +705,44 @@ private fun Safety(card: ProfileCard, onReport: (() -> Unit)?, onBlock: (() -> U
 }
 
 /**
+ * The first screen's close (chevron down) and «بیشتر», pinned at the top
+ * while it scrolls away, until the app bar replaces them. Bleed: glass over
+ * the photo ([backdrop], held while the list scrolls; null draws the glass's
+ * fallback), 20 dp under the status bar, 12 dp from the sides. Card: plain buttons on a strip of the
+ * page's colour, 8 dp under the status bar, so ink icons never sit on the
+ * photo passing under them. Nothing else in the row takes touches: the list
+ * under it still scrolls there.
+ */
+@Composable
+private fun HeroChrome(statusTop: Dp, bleed: Boolean, backdrop: GlassBackdrop?, onClose: () -> Unit, onMore: (() -> Unit)?) {
+    val t = AppTheme.template
+    val close = brandString(R.string.profile_view_close)
+    val moreLabel = brandString(R.string.profile_view_more)
+    if (bleed) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = statusTop + DetailsLayout.chromeBelowStatus, start = DetailsLayout.chromeSide, end = DetailsLayout.chromeSide),
+        ) {
+            AppIconButton(AppIcons.ChevronDown, close, onClose, kind = IconButtonKind.Glass, backdrop = backdrop)
+            Spacer(Modifier.weight(1f))
+            if (onMore != null) AppIconButton(AppIcons.More, moreLabel, onMore, kind = IconButtonKind.Glass, backdrop = backdrop)
+        }
+    } else {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(t.colors.bg)
+                .padding(top = statusTop + DetailsLayout.headerBelowStatus, start = DetailsLayout.headerSide, end = DetailsLayout.headerSide),
+        ) {
+            AppIconButton(AppIcons.ChevronDown, close, onClose)
+            Spacer(Modifier.weight(1f))
+            if (onMore != null) AppIconButton(AppIcons.More, moreLabel, onMore)
+        }
+    }
+}
+
+/**
  * The app bar once the first screen has gone (88 dp with the status bar,
  * `--surface-bar`, a hairline under it): the close, the 36 dp face,
  * «{name}، {age}» in `--type-h3` with the badge, «بیشتر».
@@ -776,6 +832,8 @@ private object DetailsLayout {
     val storyInset = 12.dp
     val chromeBelowStatus = 20.dp
     val chromeSide = 12.dp
+    /** An [AppIconButton]'s touch target: the pinned close's height. */
+    val chromeButton = 48.dp
     val headerBelowStatus = 8.dp
     val headerSide = 8.dp
     val photoBelowHeader = 4.dp

@@ -87,7 +87,7 @@ internal sealed interface EditSheet : java.io.Serializable {
 /**
  * The profile editor (m17), over the tabs: the app bar with «پیش‌نمایش» at
  * its end, then three sections, each a plain label with a count at its end:
- * «عکس‌ها» (the three-column grid: remove, «اصلی», «در حال بررسی»; hold and
+ * «عکس‌ها» (the three-column grid: remove, «اصلی», «در بررسی»; hold and
  * drag to reorder; the empty slots add), «سؤال‌ها» (each answer as a row
  * under its question, «یه سؤال دیگه» while there is room) and «درباره‌ی من»
  * (the catalogue's fields and the job, each with its value, then the about

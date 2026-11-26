@@ -51,9 +51,9 @@
     <string name="onboarding_photos_failed">Bir fotoğraf yüklenemedi. Tekrar dene.</string>
     <string name="photo_main">Ana</string>
     <string name="photo_position">Fotoğraf %1$d/%2$d</string>
-    <string name="photo_status_review">İnceleniyor</string>
+    <string name="photo_status_review">Bekliyor</string>
     <string name="photo_status_approved">Onaylandı</string>
-    <string name="photo_status_rejected">Onaylanmadı</string>
+    <string name="photo_status_rejected">Onaysız</string>
     <string name="photo_rejected">Fotoğraf onaylanmadı. Kendinin net bir fotoğrafını ekle.</string>
     <string name="photo_make_main">Ana fotoğraf yap</string>
     <string name="photo_move_earlier">Öne taşı</string>

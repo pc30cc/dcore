@@ -53,7 +53,7 @@
     <string name="photo_position">Photo %1$d of %2$d</string>
     <string name="photo_status_review">In review</string>
     <string name="photo_status_approved">Approved</string>
-    <string name="photo_status_rejected">Not approved</string>
+    <string name="photo_status_rejected">Declined</string>
     <string name="photo_rejected">Photo not approved. Add a clear photo of yourself.</string>
     <string name="photo_make_main">Make main photo</string>
     <string name="photo_move_earlier">Move earlier</string>

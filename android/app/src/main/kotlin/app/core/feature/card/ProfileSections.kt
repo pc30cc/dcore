@@ -11,23 +11,30 @@ import app.core.model.ProfilePrompt
 sealed interface ProfileSection {
     val key: String
 
+    /** The kind of block, for the list's reuse: blocks of one kind are drawn by the same composables. */
+    val contentType: String
+
     data class PhotoBlock(val photo: Photo, val index: Int, val count: Int) : ProfileSection {
         override val key: String get() = "photo:${photo.id}"
+        override val contentType: String get() = "photo"
     }
 
     data class About(val text: String) : ProfileSection {
         override val key: String get() = "about"
+        override val contentType: String get() = "about"
     }
 
     /** A text answer (a pull quote) or a voice answer (the voice card). */
     data class PromptBlock(val prompt: ProfilePrompt, val question: String?) : ProfileSection {
         override val key: String get() = "prompt:${prompt.promptId}"
+        override val contentType: String get() = if (voice) "voice" else "quote"
         val voice: Boolean get() = prompt.answer.isNullOrBlank() && prompt.audioUrl != null
     }
 
     /** The fact grid: the catalogue's public fields and what they look for. */
     data class Fields(val lines: List<FieldLine>, val intention: Intention?) : ProfileSection {
         override val key: String get() = "fields"
+        override val contentType: String get() = "facts"
     }
 }
 

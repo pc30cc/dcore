@@ -292,7 +292,7 @@ internal object SampleData {
     @Volatile var welcomeImages: List<String> = emptyList()
 
     /**
-     * Photo positions the sample's review keeps waiting («در حال بررسی»)
+     * Photo positions the sample's review keeps waiting («در بررسی»)
      * instead of approving (none by default; the screen tours set them to
      * show the state, and clear them to let the photos through).
      */

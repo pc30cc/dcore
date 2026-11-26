@@ -535,7 +535,7 @@ object ComponentGallery {
                 MatchTile(photo = tilePhoto(1))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PhotoTile(Modifier.width(96.dp), mainTag = x.mainTag, onRemove = {}, photo = tilePhoto(2))
+                PhotoTile(Modifier.width(96.dp), mainTag = x.mainTag, status = x.inReview, onRemove = {}, photo = tilePhoto(2))
                 PhotoTile(Modifier.width(96.dp), status = x.inReview, photo = tilePhoto(3))
                 AddPhotoTile({}, x.addPhoto, Modifier.width(96.dp))
             }
@@ -671,7 +671,7 @@ object ComponentGallery {
         val myMessage = p("پس جمعه ساعت ۷؟", "Friday at 7, then?")
         val myMeta = p("۱۸:۲۵، دیده شد", "18:25, seen")
         val mainTag = p("اصلی", "Main")
-        val inReview = p("در حال بررسی", "In review")
+        val inReview = p("در بررسی", "In review")
         val addPhoto = p("عکس اصلی", "Main photo")
         val decline = p("رد", "Decline")
         val audioOnly = p("فقط صدا", "Audio only")

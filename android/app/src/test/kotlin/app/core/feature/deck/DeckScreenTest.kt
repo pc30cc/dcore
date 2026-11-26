@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
@@ -201,9 +202,27 @@ class DeckScreenTest {
     @Test
     fun rewindAndBoostAreInTheRow() {
         show(ready(ScreenTestData.negar))
-        compose.onNodeWithContentDescription("Rewind").performClick()
+        compose.onNodeWithContentDescription("Undo last pass").performClick()
         compose.onNodeWithContentDescription("Boost").performClick()
         assertEquals(listOf("rewind", "boost"), actions.calls)
+    }
+
+    @Test
+    @Config(qualifiers = "+fa")
+    fun persianRewindIsNotNamedBack() {
+        show(ready(ScreenTestData.negar))
+        compose.onNodeWithContentDescription("برگردوندن آخرین رد").performClick()
+        assertEquals(listOf("rewind"), actions.calls)
+        // Exact match: no button on the deck is read as the back button's word.
+        compose.onAllNodesWithContentDescription("برگشت").assertCountEquals(0)
+    }
+
+    @Test
+    @Config(qualifiers = "+tr")
+    fun turkishRewindHasItsOwnName() {
+        show(ready(ScreenTestData.negar))
+        compose.onNodeWithContentDescription("Son geçişi geri al").performClick()
+        assertEquals(listOf("rewind"), actions.calls)
     }
 
     @Test

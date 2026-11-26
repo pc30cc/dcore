@@ -15,15 +15,22 @@ import app.core.model.DeviceInfo
 import app.core.model.Gender
 import app.core.model.Intention
 import app.core.model.LegalVersions
+import app.core.model.Me
 import app.core.model.OnboardingCodes
 import app.core.model.OtpStartRequest
 import app.core.model.PhotoStatus
+import app.core.net.ApiError
+import app.core.net.Fetched
 import app.core.net.SampleApi
+import app.core.net.ServerApi
 import app.core.net.SampleData
 import app.core.storage.MemorySecretStore
 import app.core.store.ExternalSignIn
 import app.core.store.SmsCodeReceiver
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,6 +48,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -90,12 +98,46 @@ class OnboardingViewModelTest {
         return Setup(api, gate, legal)
     }
 
-    private fun TestScope.model(s: Setup, askable: Boolean = false): OnboardingViewModel {
+    /**
+     * [sample] whose GET /v1/me is counted and, while held, answered only at
+     * release (read first, as an answer still in transit) or lost at [fail];
+     * while [failing], every read is lost at once.
+     */
+    private class HeldMe(private val sample: SampleApi) : ServerApi by sample {
+        var sent = 0
+            private set
+        var failing = false
+        private var gate: CompletableDeferred<Unit>? = null
+
+        fun hold() {
+            gate = CompletableDeferred()
+        }
+
+        fun release() {
+            gate?.complete(Unit)
+            gate = null
+        }
+
+        fun fail() {
+            gate?.completeExceptionally(ApiError.Network(IOException("lost")))
+            gate = null
+        }
+
+        override suspend fun me(): Fetched<Me> {
+            sent++
+            if (failing) throw ApiError.Network(IOException("offline"))
+            val answer = sample.me()
+            gate?.await()
+            return answer
+        }
+    }
+
+    private fun TestScope.model(s: Setup, askable: Boolean = false, api: ServerApi = s.api): OnboardingViewModel {
         val model = OnboardingViewModel(
-            api = s.api, gate = s.gate, legal = s.legal, clock = clock, diag = Diag.Silent,
+            api = api, gate = s.gate, legal = s.legal, clock = clock, diag = Diag.Silent,
             saved = SavedStateHandle(),
             config = { config },
-            uploader = PhotoUploader(s.api, s.api, clock, Diag.Silent),
+            uploader = PhotoUploader(api, s.api, clock, Diag.Silent),
             photoCache = LocalPhotoCache(folder.newFolder()),
             notificationsAskable = { askable },
             zone = { ZoneOffset.UTC },
@@ -434,5 +476,198 @@ class OnboardingViewModelTest {
         assertEquals(Root.Onboarding, s.gate.root.value)
         assertEquals(OnboardingStep.Photos, model.state.value.step)
         assertEquals(StepError.Incomplete, model.state.value.error)
+    }
+
+    // MARK: - One account read at a time
+
+    @Test
+    fun `the resume on the first frame takes the opening read's answer`() = vmTest {
+        val s = newAccount()
+        val held = HeldMe(s.api)
+        held.hold()
+        val model = model(s, api = held)
+        // The screen's first ON_RESUME comes while the opening load is out.
+        model.refresh(quiet = true)
+        runCurrent()
+        assertEquals(1, held.sent)
+        held.release()
+        runCurrent()
+        assertEquals(1, held.sent)
+        assertEquals(OnboardingStep.Name, model.state.value.step)
+        // A later resume still reads.
+        model.refresh(quiet = true)
+        runCurrent()
+        assertEquals(2, held.sent)
+    }
+
+    @Test
+    fun `two resumes close together send one read`() = vmTest {
+        val s = newAccount()
+        val held = HeldMe(s.api)
+        val model = model(s, api = held)
+        val before = held.sent
+        held.hold()
+        model.refresh(quiet = true)
+        runCurrent()
+        model.refresh(quiet = true)
+        runCurrent()
+        assertEquals(before + 1, held.sent)
+        held.release()
+        runCurrent()
+        assertEquals(before + 1, held.sent)
+        model.refresh(quiet = true)
+        model.refresh(quiet = true)
+        runCurrent()
+        assertEquals(before + 2, held.sent)
+    }
+
+    @Test
+    fun `the photo poll takes the answer of a read already out`() = vmTest {
+        SampleData.photosHeldInReview = setOf(0, 1)
+        try {
+            val s = newAccount()
+            val held = HeldMe(s.api)
+            val model = model(s, api = held)
+            basics(model)
+            model.toggleInterest(Gender.Man)
+            model.submitInterests()
+            runCurrent()
+            model.intentionChanged(Intention.Serious)
+            model.submitIntention()
+            runCurrent()
+            repeat(2) { model.photos.add(bytes()) }
+            advance(2_000)
+            assertTrue(model.photos.state.value.processing)
+            val before = held.sent
+            held.hold()
+            model.refresh(quiet = true)
+            runCurrent()
+            repeat(4) { advance(5_000) }
+            assertEquals("the poll's turns wait for the read already out", before + 1, held.sent)
+            held.release()
+            runCurrent()
+            assertEquals(before + 1, held.sent)
+            advance(15_000)
+            assertTrue("the poll still asks on its own", held.sent > before + 1)
+        } finally {
+            SampleData.photosHeldInReview = emptySet()
+        }
+    }
+
+    @Test
+    fun `an upload that finishes while a read is out is read once more`() = vmTest {
+        val s = newAccount()
+        val held = HeldMe(s.api)
+        val model = model(s, api = held)
+        basics(model)
+        model.toggleInterest(Gender.Man)
+        model.submitInterests()
+        runCurrent()
+        model.intentionChanged(Intention.Serious)
+        model.submitIntention()
+        runCurrent()
+        assertEquals(OnboardingStep.Photos, model.state.value.step)
+        val before = held.sent
+        held.hold()
+        model.refresh(quiet = true)
+        runCurrent()
+        assertTrue(model.photos.add(bytes()))
+        advance(1_000)
+        assertFalse(model.photos.state.value.uploading)
+        held.release()
+        runCurrent()
+        // The read out was sent before the upload: one more follows it, and the new photo stays.
+        assertEquals(before + 2, held.sent)
+        assertEquals(1, model.photos.state.value.uploaded.size)
+    }
+
+    @Test
+    fun `a locate cut short by leaving the step gives the button back`() = vmTest {
+        val s = newAccount()
+        val model = model(s)
+        reachLocation(model)
+        assertEquals(OnboardingStep.Location, model.state.value.step)
+        val looking = launch { model.locate { awaitCancellation() } }
+        runCurrent()
+        assertEquals(LocationPhase.Locating, model.state.value.location)
+        // Back while the phone looks (busy is not set for it): the step leaves the screen, and its scope with it.
+        assertTrue(model.back())
+        looking.cancel()
+        runCurrent()
+        assertEquals(LocationPhase.Idle, model.state.value.location)
+        // On again: the step's button works, and a fix it finds is kept.
+        model.submitFields(skip = true)
+        runCurrent()
+        assertEquals(OnboardingStep.Location, model.state.value.step)
+        launch { model.locate { CoarseFix(35.71, 51.4, 2_000, fromGps = false) } }
+        runCurrent()
+        assertTrue(model.state.value.location is LocationPhase.Set)
+        assertEquals(OnboardingCodes.NOTIFICATIONS, stored(s.api).onboardingStep)
+    }
+
+    @Test
+    fun `a locate that finds nothing leaves the city list as the way`() = vmTest {
+        val s = newAccount()
+        val model = model(s)
+        reachLocation(model)
+        launch { model.locate { null } }
+        runCurrent()
+        assertEquals(LocationPhase.Unavailable, model.state.value.location)
+    }
+
+    /** From a new account to the photos step, with nothing uploaded yet. */
+    private fun TestScope.reachPhotos(model: OnboardingViewModel) {
+        basics(model)
+        model.toggleInterest(Gender.Man)
+        model.submitInterests()
+        runCurrent()
+        model.intentionChanged(Intention.Serious)
+        model.submitIntention()
+        runCurrent()
+        assertEquals(OnboardingStep.Photos, model.state.value.step)
+    }
+
+    @Test
+    fun `an upload that finishes while a read is out still gets its read when that one fails`() = vmTest {
+        val s = newAccount()
+        val held = HeldMe(s.api)
+        val model = model(s, api = held)
+        reachPhotos(model)
+        val before = held.sent
+        // Back from the photo picker: the resume's read goes out on a link that then drops it.
+        held.hold()
+        model.refresh(quiet = true)
+        runCurrent()
+        assertTrue(model.photos.add(bytes()))
+        advance(1_000)
+        assertFalse(model.photos.state.value.uploading)
+        held.fail()
+        runCurrent()
+        assertEquals("the upload's own read follows the one lost", before + 2, held.sent)
+        // That read brought the account: the photo is the server's, and the server's pipeline is followed to its answer.
+        assertEquals(1, model.photos.state.value.uploaded.size)
+        repeat(4) { advance(3_000) }
+        assertTrue(model.photos.state.value.uploaded.single().status == PhotoStatus.Approved)
+    }
+
+    @Test
+    fun `a photo uploaded while every read fails is still watched until the server answers`() = vmTest {
+        val s = newAccount()
+        val held = HeldMe(s.api)
+        val model = model(s, api = held)
+        reachPhotos(model)
+        held.failing = true
+        val before = held.sent
+        assertTrue(model.photos.add(bytes()))
+        advance(1_000)
+        assertFalse(model.photos.state.value.uploading)
+        assertEquals("the upload's read was sent and lost", before + 1, held.sent)
+        assertTrue(model.photos.state.value.processing)
+        // The link comes back: the photo poll, started by the upload itself, asks again.
+        held.failing = false
+        repeat(5) { advance(3_000) }
+        assertTrue(held.sent > before + 1)
+        assertEquals(PhotoStatus.Approved, model.photos.state.value.uploaded.single().status)
+        assertFalse(model.photos.state.value.processing)
     }
 }

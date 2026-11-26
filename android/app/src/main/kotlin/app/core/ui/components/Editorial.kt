@@ -1,6 +1,14 @@
 package app.core.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.inset
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.runtime.mutableStateOf
+import kotlin.math.floor
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.remember
@@ -17,7 +25,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,14 +69,17 @@ data class Fact(val label: String, val value: String)
 fun FactRow(facts: List<Fact>, modifier: Modifier = Modifier) {
     val t = AppTheme.template
     val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    // The widest word: every label word as one line of one text, every value word of another (two
+    // layouts, not one a word); a text's width is its widest line.
+    val widest = remember(facts, t, density) {
+        fun words(of: (Fact) -> String) = facts.flatMap { of(it).split(WORD_BREAK) }.filter { it.isNotEmpty() }.joinToString("\n")
+        fun measured(text: String, style: TextStyle) = if (text.isEmpty()) 0 else measurer.measure(text, style, softWrap = false).size.width
+        maxOf(measured(words { it.label }, t.type.caption), measured(words { it.value }, t.type.bodyStrong))
+    }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val density = LocalDensity.current
         val width = constraints.maxWidth
-        val columns = remember(facts, width, density, t) {
-            val words = facts.flatMap { fact ->
-                fact.label.split(WORD_BREAK).map { it to t.type.caption } + fact.value.split(WORD_BREAK).map { it to t.type.bodyStrong }
-            }.filter { it.first.isNotEmpty() }
-            val widest = words.maxOfOrNull { (word, style) -> measurer.measure(word, style, maxLines = 1, softWrap = false).size.width } ?: 0
+        val columns = remember(facts.size, widest, width, density) {
             val fitting = with(density) {
                 FACT_COLUMNS.filter { n ->
                     val cell = (width - (n - 1) * 1.dp.toPx()) / n - (FACT_PAD_START + FACT_PAD_END).toPx()
@@ -132,9 +142,24 @@ fun PromptQuote(
     onLike: (() -> Unit)? = null,
 ) {
     val t = AppTheme.template
-    Row(modifier.fillMaxWidth().height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.padding(vertical = 4.dp).width(3.dp).fillMaxHeight().clip(CircleShape).background(t.paints.quoteBar))
-        Column(Modifier.weight(1f).padding(start = 15.dp, end = 12.dp, top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val bar = t.paints.quoteBar
+    Row(
+        modifier
+            .fillMaxWidth()
+            // The bar is drawn, not laid out: the answer is measured once, not again for an intrinsic height.
+            .drawBehind {
+                val w = QUOTE_BAR.toPx()
+                val inset = QUOTE_BAR_INSET.toPx()
+                if (size.height > 2 * inset) {
+                    val start = if (layoutDirection == LayoutDirection.Rtl) size.width - w else 0f
+                    inset(left = start, top = inset, right = size.width - start - w, bottom = inset) {
+                        drawRoundRect(bar, cornerRadius = CornerRadius(w / 2f))
+                    }
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(start = QUOTE_BAR + 15.dp, end = 12.dp, top = 2.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(question, style = t.type.section, color = t.colors.text2)
             // The whole width, so a Persian answer in an English page starts at the right, as it reads.
             Text(answer, style = t.type.quote.copy(textDirection = TextDirection.Content), color = t.colors.text, modifier = Modifier.fillMaxWidth())
@@ -142,6 +167,9 @@ fun PromptQuote(
         if (onLike != null) LikeAnswerButton(onLike)
     }
 }
+
+private val QUOTE_BAR = 3.dp
+private val QUOTE_BAR_INSET = 4.dp
 
 /** «لایک همین جواب»: a 48 dp ring (1.5 dp `--line-strong`) with the heart in `--like`; also on a voice answer's card. */
 @Composable
@@ -209,7 +237,9 @@ fun PhotoScrimBottom(modifier: Modifier = Modifier) {
  * `--type-name-photo` and `--on-photo` (28 dp badge, 12 dp dot ringed in
  * `--photo-chip-fill`); otherwise under a card photo in `--type-h1` and
  * `--text` (24 dp badge, 10 dp dot). A long name shrinks (down to 28 sp on
- * a photo), then ends in an ellipsis; the age always shows.
+ * a photo, 22 sp under one), name and age together in one size
+ * ([nameLineSize], chosen from the width alone), then ends in an ellipsis;
+ * the age always shows.
  */
 @Composable
 fun NameLine(
@@ -223,18 +253,44 @@ fun NameLine(
     val t = AppTheme.template
     val style = (if (onPhoto) t.type.namePhoto else t.type.h1).copy(color = if (onPhoto) t.colors.onPhoto else t.colors.text)
     val ageStyle = if (onPhoto) t.type.namePhotoAge else t.type.h1.copy(fontWeight = FontWeight.Normal)
-    var size by androidx.compose.runtime.remember(name) { androidx.compose.runtime.mutableStateOf(style.fontSize) }
+    var size by remember(name, age, onPhoto) { mutableStateOf(style.fontSize) }
     val comma = if (screenLanguage() == app.core.i18n.AppLanguage.FA) "، " else ", "
+    // The name as a bidi isolate: a Persian name in an English line (or the reverse) keeps the comma after it.
+    val nameText = "\u2068$name\u2069" + if (age != null) comma else ""
     val onlineLabel = stringResource(R.string.ui_online)
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    val measurer = rememberTextMeasurer()
+    val minSp = if (onPhoto) NAME_MIN_ON_PHOTO else NAME_MIN
+    // The badge and the dot, with the gaps before them: what the name and the age share the rest with.
+    val extras = (if (verified) (if (onPhoto) 28.dp + 10.dp else 24.dp + 8.dp) else 0.dp) +
+        (if (online) (if (onPhoto) 12.dp else 10.dp) + 10.dp else 0.dp)
+    // One size for the width the line is given, read while measuring: it depends on the width and the
+    // texts only, never on the size drawn before, so a change of either settles in one recomposition.
+    val fit = remember(nameText, age, style, ageStyle, extras, minSp, measurer) { NameFit() }
+    Row(
+        modifier.layout { measurable, constraints ->
+            if (constraints.hasBoundedWidth) {
+                val chosen = fit.size(constraints.maxWidth - extras.roundToPx()) { room ->
+                    nameLineSize(
+                        min = minSp,
+                        max = style.fontSize.value,
+                        step = NAME_STEP,
+                        room = room,
+                        nameWidth = { s -> measurer.measure(nameText, style.copy(fontSize = s.sp), maxLines = 1, softWrap = false).size.width },
+                        ageWidth = { s -> age?.let { measurer.measure(it, ageStyle.copy(fontSize = s.sp), maxLines = 1, softWrap = false).size.width } ?: 0 },
+                    )
+                }.sp
+                if (chosen != size) size = chosen
+            }
+            val placeable = measurable.measure(constraints)
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         androidx.compose.foundation.text.BasicText(
-            // The name as a bidi isolate: a Persian name in an English line (or the reverse) keeps the comma after it.
-            text = "\u2068$name\u2069" + if (age != null) comma else "",
-            style = style,
+            text = nameText,
+            style = style.copy(fontSize = size),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = if (onPhoto) 28.sp else 22.sp, maxFontSize = style.fontSize),
-            onTextLayout = { size = it.layoutInput.style.fontSize },
             modifier = Modifier.weight(1f, fill = false),
         )
         if (age != null) {
@@ -255,3 +311,42 @@ fun NameLine(
     }
 }
 
+/** The last [nameLineSize] of a [NameLine], by the room it was given. */
+private class NameFit {
+    private var room = -1
+    private var chosen = 0f
+
+    fun size(room: Int, compute: (Int) -> Float): Float {
+        if (room != this.room) {
+            chosen = compute(room)
+            this.room = room
+        }
+        return chosen
+    }
+}
+
+private const val NAME_MIN_ON_PHOTO = 28f
+private const val NAME_MIN = 22f
+private const val NAME_STEP = 0.25f
+
+/**
+ * The font size (sp) of a name line: the largest of [min], [min] + [step],
+ * ... up to [max] at which the name and the age together fit [room] (px),
+ * else [min] (the name then ends in an ellipsis). [nameWidth] and
+ * [ageWidth] give the width at a size and grow with it, so the steps are
+ * searched by halves.
+ */
+internal fun nameLineSize(min: Float, max: Float, step: Float, room: Int, nameWidth: (Float) -> Int, ageWidth: (Float) -> Int): Float {
+    if (max <= min) return max
+    fun fits(size: Float) = nameWidth(size) + ageWidth(size) <= room
+    if (fits(max)) return max
+    if (!fits(min)) return min
+    var low = 0
+    var high = floor((max - min) / step).toInt()
+    // low fits; find the largest step that does.
+    while (low < high) {
+        val mid = (low + high + 1) / 2
+        if (fits(min + mid * step)) low = mid else high = mid - 1
+    }
+    return min + low * step
+}

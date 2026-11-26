@@ -85,7 +85,7 @@ import java.io.File
  * and uploaded while the person carries on choosing. Three columns of 3:4
  * tiles 10 dp apart: the first slot of an empty grid is the main one
  * (camera, «عکس اصلی»); a photo has its remove button, the first one the
- * «اصلی» tag, one the server is still deciding on «در حال بررسی». Long-press
+ * «اصلی» tag, one the server is still deciding on «در بررسی». Long-press
  * and drag to reorder (TalkBack: the tile's actions); the first is the main
  * photo. Six slots show until they are filled, then the rest up to the maximum.
  */

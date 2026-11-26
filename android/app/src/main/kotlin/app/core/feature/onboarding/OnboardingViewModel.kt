@@ -37,6 +37,8 @@ import app.core.model.ProfilePatch
 import app.core.model.PromptEdit
 import app.core.net.ApiError
 import app.core.net.ServerApi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -145,7 +147,7 @@ class OnboardingViewModel(
         scope = viewModelScope,
         diag = diag,
         onProfile = ::profileChanged,
-        onChanged = { refresh(quiet = true) },
+        onChanged = { changedHere() },
     )
 
     private var me: Me? = null
@@ -153,6 +155,13 @@ class OnboardingViewModel(
     private var privacyAccepted = false
     private var poll: Job? = null
     private var citySearch: Job? = null
+
+    // Declared before `init`: initialisers run in order, and a later `= null` would drop the job load() starts.
+    /** The account read on its way: the opening load, a resume, an upload's follow-up, a poll turn. */
+    private var reading: Job? = null
+
+    /** An upload or a delete finished while [reading] was out: its answer may predate that, so it reads once more. */
+    private var readAgain = false
 
     init {
         load()
@@ -164,28 +173,64 @@ class OnboardingViewModel(
 
     fun load() {
         _state.update { it.copy(loading = me == null, loadError = null) }
-        viewModelScope.launch {
-            val versions = config()?.legal?.versions ?: LegalVersions()
-            privacyAccepted = runCatchingUnlessCancelled { legal.acceptedCurrent(versions) }.getOrNull() != null
-            runCatchingUnlessCancelled { api.me().value }
-                .onSuccess { fresh ->
-                    adopt(fresh, initial = true)
-                }
-                .onFailure { e ->
-                    _state.update { it.copy(loading = false, loadError = if (e is ApiError.Network) StepError.Offline else StepError.Failed) }
-                }
-        }
+        // Whatever made this load necessary came after a read already out: that one is dropped.
+        reading?.cancel()
+        readAccount(initial = true, quiet = false)
     }
 
-    /** Reads the account again (photos processing, a change on another phone). */
+    /** Reads the account again (back in front, a change on another phone); a read already out answers for it. */
     fun refresh(quiet: Boolean = false) {
         // Finished: the done screen stays until the person moves on.
         if (_state.value.done != null) return
-        viewModelScope.launch {
-            runCatchingUnlessCancelled { api.me() }.onSuccess { fetched ->
-                if (fetched.changed || me == null) adopt(fetched.value, initial = false)
-            }.onFailure { if (!quiet) diag.info(AREA, "refresh failed: ${it.javaClass.simpleName}") }
+        if (reading?.isActive == true) return
+        readAccount(initial = false, quiet = quiet)
+    }
+
+    /**
+     * After an upload or a delete: a read already out was sent before it, so
+     * one more follows that one. A photo now waiting for the server is watched
+     * from here too, whether or not those reads get through.
+     */
+    private fun changedHere() {
+        if (_state.value.done != null) return
+        if (reading?.isActive == true) readAgain = true else readAccount(initial = false, quiet = true)
+        watchProcessing()
+    }
+
+    /**
+     * The one GET /v1/me of this screen at a time. [initial] adopts the answer
+     * as the start of the plan and shows the retry on failure; otherwise only a
+     * changed answer is adopted. A write noted in [readAgain] meanwhile is read
+     * once more before the job ends, also when the read out failed: each
+     * write gets a read sent after it, and only a write starts another turn.
+     */
+    private fun readAccount(initial: Boolean, quiet: Boolean): Job {
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            if (initial) {
+                val versions = config()?.legal?.versions ?: LegalVersions()
+                privacyAccepted = runCatchingUnlessCancelled { legal.acceptedCurrent(versions) }.getOrNull() != null
+            }
+            // The opening read's role passes to the next turn until one gets through.
+            var first = initial
+            do {
+                readAgain = false
+                val read = runCatchingUnlessCancelled { api.me() }
+                val adoptAsFirst = first
+                read.onSuccess { fetched -> if (adoptAsFirst || fetched.changed || me == null) adopt(fetched.value, initial = adoptAsFirst) }
+                    .onFailure { e ->
+                        if (adoptAsFirst) {
+                            _state.update { it.copy(loading = false, loadError = if (e is ApiError.Network) StepError.Offline else StepError.Failed) }
+                        } else if (!quiet) {
+                            diag.info(AREA, "refresh failed: ${e.javaClass.simpleName}")
+                        }
+                    }
+                if (read.isSuccess) first = false
+            } while (readAgain && _state.value.done == null)
         }
+        // Named before it runs: on Main.immediate the body would otherwise run up to its first suspension first.
+        reading = job
+        job.start()
+        return job
     }
 
     private fun facts(): OnboardingFacts {
@@ -426,7 +471,8 @@ class OnboardingViewModel(
             val until = clock.nowMillis() + POLL_FOR_MS
             while (photos.state.value.processing && clock.nowMillis() < until) {
                 delay(wait)
-                runCatchingUnlessCancelled { api.me() }.onSuccess { if (it.changed) adopt(it.value, initial = false) }
+                // A read already out (a resume) answers for this turn.
+                (reading?.takeIf { it.isActive } ?: readAccount(initial = false, quiet = true)).join()
                 wait = (wait * 3 / 2).coerceAtMost(POLL_MAX_MS)
             }
         }
@@ -493,6 +539,23 @@ class OnboardingViewModel(
     fun locating() = _state.update { it.copy(location = LocationPhase.Locating, error = null) }
 
     fun locationUnavailable() = _state.update { it.copy(location = LocationPhase.Unavailable) }
+
+    /**
+     * The phone's position from [find], asked by the step on screen and run
+     * in its scope. Cancelled with it before an answer (back, or the activity
+     * recreated), the step gives its button back: this model outlives the
+     * screen, and nothing else would take [LocationPhase.Locating] away.
+     */
+    suspend fun locate(find: suspend () -> CoarseFix?) {
+        locating()
+        val fix = try {
+            find()
+        } catch (e: CancellationException) {
+            _state.update { if (it.location == LocationPhase.Locating) it.copy(location = LocationPhase.Idle) else it }
+            throw e
+        }
+        if (fix == null) locationUnavailable() else located(fix.lat, fix.lng, fix.accuracyM, fix.fromGps)
+    }
 
     /** A position from the phone (coarse): the server keeps only its cell and answers with the city. */
     fun located(lat: Double, lng: Double, accuracyM: Int?, fromGps: Boolean) =

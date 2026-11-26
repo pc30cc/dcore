@@ -3,7 +3,7 @@
 <resources>
     <string name="ui_back">Back</string>
     <string name="ui_clear">Clear</string>
-    <string name="ui_rewind">Rewind</string>
+    <string name="ui_rewind">Undo last pass</string>
     <string name="ui_pass">Pass</string>
     <string name="ui_super_like">Super like</string>
     <string name="ui_like">Like</string>

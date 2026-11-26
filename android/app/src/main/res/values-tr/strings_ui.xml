@@ -2,7 +2,7 @@
 <resources>
     <string name="ui_back">Geri</string>
     <string name="ui_clear">Temizle</string>
-    <string name="ui_rewind">Geri al</string>
+    <string name="ui_rewind">Son geçişi geri al</string>
     <string name="ui_pass">Geç</string>
     <string name="ui_super_like">Süper beğeni</string>
     <string name="ui_like">Beğen</string>

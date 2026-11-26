@@ -51,7 +51,7 @@
     <string name="onboarding_photos_failed">یه عکس بالا نرفت. دوباره امتحان کن.</string>
     <string name="photo_main">اصلی</string>
     <string name="photo_position">عکس %1$d از %2$d</string>
-    <string name="photo_status_review">در حال بررسی</string>
+    <string name="photo_status_review">در بررسی</string>
     <string name="photo_status_approved">تأیید شد</string>
     <string name="photo_status_rejected">تأیید نشد</string>
     <string name="photo_rejected">این عکس تأیید نشد. یه عکس واضح از خودت بذار.</string>

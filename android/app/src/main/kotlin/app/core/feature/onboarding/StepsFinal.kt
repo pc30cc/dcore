@@ -46,6 +46,7 @@ import app.core.ui.components.TextAction
 import app.core.ui.components.TextActionKind
 import app.core.ui.components.templateCard
 import app.core.ui.theme.AppTheme
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 // MARK: - Location
@@ -65,10 +66,9 @@ fun LocationStep(state: OnboardingUiState, model: OnboardingViewModel, chrome: S
     var picking by rememberSaveable { mutableStateOf(false) }
 
     val locate: () -> Unit = {
-        model.locating()
-        scope.launch {
-            val fix = CoarseLocation.current(context.applicationContext)
-            if (fix == null) model.locationUnavailable() else model.located(fix.lat, fix.lng, fix.accuracyM, fix.fromGps)
+        // Undispatched: the button shows the wait on this very tap. The step's scope ends the request with the step.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            model.locate { CoarseLocation.current(context.applicationContext) }
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

@@ -2,6 +2,7 @@ package app.core.screens
 
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.LocaleManager
 import android.app.NotificationManager
 import android.content.ClipData
@@ -283,7 +284,7 @@ class ScreenTourTest {
         next()
 
         // Photos: three pictures from the system picker, each framed and uploaded; the sample keeps the
-        // third in review («در حال بررسی») and approves the others.
+        // third in review («در بررسی») and approves the others.
         waitFor(hasText(str(R.string.onboarding_photos_title)), timeoutMs = 20_000)
         capture("o06-photos-empty")
         val pictures = TourPhotos.files("people/arash-1.jpg", "people/arash-2.jpg", "people/arash-3.jpg")
@@ -1507,6 +1508,8 @@ class ScreenTourTest {
 
     private fun start(signedIn: Boolean, chat: Boolean = false, calls: Boolean = false, stage: (SampleApi) -> Unit = {}) {
         System.setProperty(Backend.SAMPLE_PROPERTY, "true")
+        // A phone that blurs glass: Robolectric reports no RAM, which the theme reads as a phone too small for it.
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setMemoryInfo(ActivityManager.MemoryInfo().apply { totalMem = 8L shl 30 })
         // The app's own language setting (Cafe Bazaar's build would otherwise stay Persian).
         app.getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(language)
         if (BuildConfig.STORE == "play" && language == "en") {

@@ -88,6 +88,28 @@ class ProfileSectionsTest {
     }
 
     @Test
+    fun eachKindOfBlockHasItsOwnContentType() {
+        val card = ScreenTestData.negar.copy(prompts = listOf(ProfilePrompt(3, null, audioMs = 14_200, audioUrl = "https://media.test/a/1.m4a"), ProfilePrompt(1, "A trip north")))
+        val types = profileSections(card, ScreenTestData.catalog).associate { shape(listOf(it)).single() to it.contentType }
+        assertEquals("about", types["about"])
+        assertEquals("voice", types["voice3"])
+        assertEquals("facts", types["fields"])
+        assertEquals("quote", types["prompt1"])
+        assertEquals("photo", types["photo2"])
+        assertEquals(5, types.values.toSet().size)
+    }
+
+    @Test
+    fun aVoiceAndAWrittenAnswerAreDifferentKindsAndPhotosShareOne() {
+        val voice = ProfileSection.PromptBlock(ProfilePrompt(3, null, audioMs = 14_200, audioUrl = "https://media.test/a/1.m4a"), "Q")
+        val written = ProfileSection.PromptBlock(ProfilePrompt(1, "A trip north"), "Q")
+        assertTrue(voice.contentType != written.contentType)
+        val photos = profileSections(ScreenTestData.negar, ScreenTestData.catalog).filterIsInstance<ProfileSection.PhotoBlock>()
+        assertTrue(photos.size >= 2)
+        assertEquals(setOf("photo"), photos.map { it.contentType }.toSet())
+    }
+
+    @Test
     fun keysAreUnique() {
         val keys = profileSections(ScreenTestData.negar, ScreenTestData.catalog).map { it.key }
         assertEquals(keys.size, keys.toSet().size)

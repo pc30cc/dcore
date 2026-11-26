@@ -170,12 +170,14 @@ private fun DrawScope.ring(radius: Float, gap: Float, gapColor: Color, ringColor
  * A photo slot (3:4, `--r-tile`) holding a photo: the remove button (32 dp
  * on `--photo-chip-fill`, its 48 dp target inside the tile) at the top end
  * corner, the [mainTag] pill at the bottom start, the [status] pill
- * («در حال بررسی») at the bottom centre. The corners follow the reading
- * direction (in Persian the remove sits top left, «اصلی» bottom right, as
- * drawn). The pills keep to one line inside the tile, 8 dp from its edges,
- * and grow with the text size only up to [PILL_FONT_SCALE_MAX] (a tile is
- * about 117 dp wide). [error] draws a 2 dp `--error` edge (a photo refused
- * or not uploaded).
+ * («در بررسی») at the bottom centre. On a tile with both, the status pill
+ * sits 4 dp above the main tag at the bottom start, so neither covers the
+ * other. The corners follow the reading direction (in Persian the remove
+ * sits top left, «اصلی» bottom right, as drawn). The pills keep to one line
+ * inside the tile, 8 dp from its edges, and grow with the text size only up
+ * to [PILL_FONT_SCALE_MAX]: a tile is 100 dp wide on a 360 dp screen (117 dp
+ * on 411 dp), so 84 dp for a pill. [error] draws a 2 dp `--error` edge (a
+ * photo refused or not uploaded).
  */
 @Composable
 fun PhotoTile(
@@ -213,8 +215,18 @@ fun PhotoTile(
             }
         }
         CappedFontScale(PILL_FONT_SCALE_MAX) {
-            if (mainTag != null) Pill(mainTag, Modifier.align(Alignment.BottomStart).padding(8.dp))
-            if (status != null) PhotoPill(status, Modifier.align(Alignment.BottomCenter).padding(start = 8.dp, end = 8.dp, bottom = 8.dp))
+            if (mainTag != null) {
+                // One column at the bottom start: the status pill above the main tag, never over it.
+                Column(
+                    Modifier.align(Alignment.BottomStart).padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (status != null) PhotoPill(status)
+                    Pill(mainTag)
+                }
+            } else if (status != null) {
+                PhotoPill(status, Modifier.align(Alignment.BottomCenter).padding(start = 8.dp, end = 8.dp, bottom = 8.dp))
+            }
         }
     }
 }

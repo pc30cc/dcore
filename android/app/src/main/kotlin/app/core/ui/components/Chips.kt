@@ -160,7 +160,7 @@ fun Pill(text: String, modifier: Modifier = Modifier, kind: PillKind = PillKind.
     }
 }
 
-/** A status pill on a photo («در حال بررسی»): `--photo-chip-fill`, a 1 dp `--photo-chip-line`, white text; sized as [Pill]. */
+/** A status pill on a photo («در بررسی»): `--photo-chip-fill`, a 1 dp `--photo-chip-line`, white text; sized as [Pill]. */
 @Composable
 fun PhotoPill(text: String, modifier: Modifier = Modifier, backdrop: GlassBackdrop? = null) {
     val t = AppTheme.template
