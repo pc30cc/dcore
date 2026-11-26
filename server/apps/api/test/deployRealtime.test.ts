@@ -101,9 +101,11 @@ describe('the realtime server configuration (criterion 4)', () => {
 
   it('has one personal namespace: user-limited, history 100 for 900 s with forced recovery, presence for the server only, no join/leave', () => {
     const namespaces = config!.channel.namespaces;
-    expect(namespaces.map((n) => n['name'])).toEqual(['u']);
+    expect(namespaces.map((n) => n['name'])).toEqual(['user']);
+    // Centrifugo refuses to start on a namespace name outside ^[-a-zA-Z0-9_.]{2,}$ (v6.10 checks it).
+    for (const n of namespaces) expect(String(n['name'])).toMatch(/^[-a-zA-Z0-9_.]{2,}$/);
     expect(namespaces[0]).toMatchObject({
-      name: 'u',
+      name: 'user',
       allow_user_limited_channels: true,
       history_size: 100,
       history_ttl: '900s',
@@ -114,7 +116,7 @@ describe('the realtime server configuration (criterion 4)', () => {
     });
     // The channel the API hands out is a user-limited channel of that namespace.
     const channel = userChannel('abcdefghijklm');
-    expect(channel).toBe('u:#abcdefghijklm');
+    expect(channel).toBe('user:#abcdefghijklm');
     expect(channel.split(':')[0]).toBe(namespaces[0]!['name']);
     // History metadata outlives the history itself (recovery positions stay valid).
     expect(hours(config!.channel.history_meta_ttl)).toBeGreaterThan(900 / 3_600);

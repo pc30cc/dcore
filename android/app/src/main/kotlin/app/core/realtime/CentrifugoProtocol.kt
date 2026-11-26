@@ -21,7 +21,7 @@ import kotlinx.serialization.json.put
  * ping and is answered with one. Several frames may share one WebSocket
  * message, separated by newlines.
  *
- * The app reads exactly one channel, the account's own `u:#<publicUid>`. It
+ * The app reads exactly one channel, the account's own `user:#<publicUid>`. It
  * is reached one of two ways, and the reply decides which:
  *
  *  - the server subscribes the connection itself (the channel is in the

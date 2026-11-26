@@ -46,7 +46,7 @@ describe.skipIf(!hasInfrastructure)('store after review: re-verifying stale toke
     call(h, '/v1/store/restore', { method: 'POST', token: u.token, client: 'play/120', body: { purchases: [{ productId: 'sub.plus', purchaseToken: token, kind: 'subscription' }] } });
   const buy = (u: SeededUser, token: string, productId = 'sub.plus', kind: 'subscription' | 'consumable' = 'subscription') =>
     call(h, '/v1/store/play/purchases', { method: 'POST', token: u.token, client: 'play/120', body: { productId, purchaseToken: token, kind } });
-  const events = (u: SeededUser) => realtime.on(`u:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
+  const events = (u: SeededUser) => realtime.on(`user:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
 
   it('asks the store again about a subscription on hold the person restores, once per 15 minutes', async () => {
     const u = await seedUser(h, { store: 1, name: 'Sam' });

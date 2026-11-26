@@ -246,7 +246,7 @@ class SampleApi(
 
     /** The account's realtime channel, and the in-memory Centrifugo a debug app on this backend connects to. */
     val channel = SampleChannel(clock)
-    private val realtime by lazy { SampleRealtime(channel, this) { session?.let { "u:#${it.id}" } } }
+    private val realtime by lazy { SampleRealtime(channel, this) { session?.let { "user:#${it.id}" } } }
 
     private var entitlements = freeEntitlements()
     private var entitlementsVersion = 1L
@@ -1928,7 +1928,7 @@ class SampleApi(
 
     override suspend fun realtimeToken(): RealtimeToken = route("realtime.token") {
         val me = full()
-        RealtimeToken("wss://rt.example.com/connection/websocket", "sample.rt.${nextId()}", now().plusSeconds(3600), "u:#${me.id}")
+        RealtimeToken("wss://rt.example.com/connection/websocket", "sample.rt.${nextId()}", now().plusSeconds(3600), "user:#${me.id}")
     }
 
     /** The in-memory Centrifugo (see [SampleRealtime]); the address is not dialled. */

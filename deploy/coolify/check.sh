@@ -17,6 +17,9 @@
 #      every placeholder filled.
 #   5. The variables of .env.example's "Required" block are exactly the ones
 #      the file requires (${VAR:?...}), so a deploy without one stops.
+#   6. No Dockerfile copies files with a mode that has no execute bit into a
+#      directory COPY would create (a path ending in "/"): BuildKit gives
+#      that new directory the same mode, so a non-root process cannot enter it.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -57,6 +60,32 @@ if cmp -s "$work/required-listed" "$work/required-used"; then
 else
   echo "check: required in .env.example but not in the file: $(echo $(comm -23 "$work/required-listed" "$work/required-used"))" >&2
   echo "check: required by the file but not in .env.example's Required block: $(echo $(comm -13 "$work/required-listed" "$work/required-used"))" >&2
+  status=1
+fi
+
+# COPY --chmod without an execute bit into a directory COPY creates: the
+# directory gets that mode too. Directories made beforehand (install -d -m 0755)
+# are listed as known; anything else ending in "/" with such a mode fails.
+bad_copies=""
+for dockerfile in "$root"/deploy/docker/*.Dockerfile; do
+  made=$(grep -oE 'install -d -m 0?755 [^ &;]+' "$dockerfile" | awk '{print $NF}' | sed 's:/*$::')
+  # "<mode> <destination>" for every COPY with --chmod.
+  grep -E '^COPY .*--chmod=[0-7]+ ' "$dockerfile" \
+    | sed -E 's/.*--chmod=([0-7]+) .* ([^ ]+)$/\1 \2/' > "$work/copies" || true
+  while read -r mode dest; do
+    [ -n "$mode" ] || continue
+    case "$dest" in */) ;; *) continue ;; esac
+    owner=$(printf '%s' "$mode" | tail -c 3 | cut -c1)
+    [ $((owner % 2)) -eq 1 ] && continue
+    dir=$(echo "$dest" | sed 's:/*$::')
+    echo "$made" | grep -qx "$dir" && continue
+    bad_copies="$bad_copies $(basename "$dockerfile"):$dest"
+  done < "$work/copies"
+done
+if [ -z "$bad_copies" ]; then
+  echo "check: no restrictive COPY --chmod into a directory the copy creates"
+else
+  echo "check: COPY --chmod without an execute bit into a new directory (it gets that mode):$bad_copies" >&2
   status=1
 fi
 

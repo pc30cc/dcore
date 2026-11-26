@@ -199,7 +199,7 @@ class FakeCentrifugo(val channel: String = CHANNEL) : RealtimeTransport {
     }
 
     companion object {
-        const val CHANNEL = "u:#abcdefghijklm"
+        const val CHANNEL = "user:#abcdefghijklm"
         private val json = Json { ignoreUnknownKeys = true }
 
         /** A `message` envelope for [id] in conversation [conversation]. */

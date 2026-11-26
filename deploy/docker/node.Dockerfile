@@ -51,6 +51,12 @@ ENTRYPOINT ["/sbin/tini", "--"]
 
 # Shared by the API and the worker: public addresses to settings, brand.
 FROM runtime AS node-service
+# The directory first, traversable: a COPY --chmod into a directory COPY
+# creates gives that directory the files' mode (0644), which the process user
+# cannot enter.
+USER root
+RUN install -d -m 0755 /usr/local/lib/deploy
+USER node
 COPY --chmod=0755 deploy/scripts/brand.sh /usr/local/bin/brand.sh
 COPY --chmod=0644 deploy/scripts/public-urls.sh deploy/scripts/brand-hosts.mjs /usr/local/lib/deploy/
 COPY --chmod=0755 deploy/node/entrypoint.sh /usr/local/bin/service-entrypoint

@@ -18,7 +18,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 
-// What arrives on the account's personal realtime channel (`u:#<publicUid>`).
+// What arrives on the account's personal realtime channel (`user:#<publicUid>`).
 //
 // Every publication is one envelope:
 //

@@ -15,7 +15,7 @@ data class RealtimeToken(
     val wsUrl: String,
     val token: String,
     val expiresAt: Instant,
-    /** `u:#<publicUid>`. */
+    /** `user:#<publicUid>`. */
     val channel: String,
 )
 

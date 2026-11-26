@@ -218,7 +218,7 @@ describe.skipIf(!hasDatabase || !hasRedis)('the photo jobs (PostgreSQL, Valkey)'
     // The account view is rebuilt on the next read, and the person hears of it.
     expect(await redis.get(keys.meVersion(userId))).not.toBe(version);
     const event = realtime.published.find((p) => p.envelope.t === 'profile' && JSON.stringify(p.envelope.d).includes(photoId));
-    expect(event?.channels).toEqual([`u:#${services.publicIds.user.encode(userId)}`]);
+    expect(event?.channels).toEqual([`user:#${services.publicIds.user.encode(userId)}`]);
     expect(event?.envelope.d).toEqual({ photo: { id: photoId, status: 'review' } });
   });
 

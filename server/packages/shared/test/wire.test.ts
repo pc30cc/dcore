@@ -101,7 +101,7 @@ describe('realtime envelopes', () => {
   });
 
   it('names the personal channel by public id only', () => {
-    expect(userChannel('bq3vx7k2mze4a')).toBe('u:#bq3vx7k2mze4a');
+    expect(userChannel('bq3vx7k2mze4a')).toBe('user:#bq3vx7k2mze4a');
     expect(() => userChannel('1287390234923417613')).toThrow(TypeError);
   });
 });

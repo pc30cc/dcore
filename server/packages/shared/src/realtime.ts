@@ -16,7 +16,7 @@ import {
 import { accountStatusSchema } from './api/common.js';
 
 /**
- * Realtime events on a user's personal channel (`u:#<publicUid>`).
+ * Realtime events on a user's personal channel (`user:#<publicUid>`).
  *
  *     { "t": "message", "v": 1, "id": "1287390234923417600", "at": "2026-11-06T09:14:03.120Z", "d": { … } }
  *

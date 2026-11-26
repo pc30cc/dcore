@@ -185,7 +185,7 @@ describe.skipIf(!hasInfrastructure)('location, devices and the realtime token', 
       expect(res.statusCode).toBe(200);
       expect(statements(res)).toBe(0);
       const body = realtimeTokenSchema.strict().parse(res.json());
-      expect(body.channel).toBe(`u:#${user.publicUid}`);
+      expect(body.channel).toBe(`user:#${user.publicUid}`);
       expect(body.wsUrl).toBe('wss://rt.example.com/connection/websocket');
       const { payload, protectedHeader } = await jwtVerify(body.token, new TextEncoder().encode(REALTIME_SECRET), { algorithms: ['HS256'] });
       expect(protectedHeader.alg).toBe('HS256');

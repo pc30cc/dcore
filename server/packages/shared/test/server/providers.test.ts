@@ -47,20 +47,20 @@ describe('Centrifugo publisher (against a local server)', () => {
   const envelope = realtimeEnvelope('conversation_end', '1287390234923417613', 0, { conversationId: '1287390234923400001' });
 
   it('publishes with the API key and the envelope id as idempotency key', async () => {
-    await publisher.publish('u:#bq3vx7k2mze4a', envelope);
+    await publisher.publish('user:#bq3vx7k2mze4a', envelope);
     expect(received.at(-1)).toEqual({
       path: '/api/publish',
       key: 'test-key',
-      body: { channel: 'u:#bq3vx7k2mze4a', data: envelope, idempotency_key: envelope.id },
+      body: { channel: 'user:#bq3vx7k2mze4a', data: envelope, idempotency_key: envelope.id },
     });
   });
 
   it('broadcasts to both members, skips history for typing, disconnects a user', async () => {
-    await publisher.broadcast(['u:#bq3vx7k2mze4a', 'u:#cn5wy6l3naf5b'], envelope);
+    await publisher.broadcast(['user:#bq3vx7k2mze4a', 'user:#cn5wy6l3naf5b'], envelope);
     expect(received.at(-1)?.path).toBe('/api/broadcast');
-    expect(received.at(-1)?.body['channels']).toEqual(['u:#bq3vx7k2mze4a', 'u:#cn5wy6l3naf5b']);
+    expect(received.at(-1)?.body['channels']).toEqual(['user:#bq3vx7k2mze4a', 'user:#cn5wy6l3naf5b']);
     const typing = realtimeEnvelope('typing', '1287390234923417611', 0, { conversationId: '1', by: 'cn5wy6l3naf5b' });
-    await publisher.publish('u:#bq3vx7k2mze4a', typing);
+    await publisher.publish('user:#bq3vx7k2mze4a', typing);
     expect(received.at(-1)?.body['skip_history']).toBe(true);
     await publisher.disconnect('bq3vx7k2mze4a');
     expect(received.at(-1)).toMatchObject({ path: '/api/disconnect', body: { user: 'bq3vx7k2mze4a' } });
@@ -68,13 +68,13 @@ describe('Centrifugo publisher (against a local server)', () => {
 
   it('turns refusals and outages into provider errors', async () => {
     reply = () => ({ status: 200, json: { error: { code: 102, message: 'unknown channel' } } });
-    await expect(publisher.publish('u:#x', envelope)).rejects.toMatchObject({ retryable: false });
+    await expect(publisher.publish('user:#x', envelope)).rejects.toMatchObject({ retryable: false });
     reply = () => ({ status: 503, json: {} });
-    await expect(publisher.publish('u:#x', envelope)).rejects.toMatchObject({ status: 503, retryable: true });
+    await expect(publisher.publish('user:#x', envelope)).rejects.toMatchObject({ status: 503, retryable: true });
     reply = () => ({ status: 200, json: { result: { responses: [{}, { error: { code: 100 } }] } } });
     await expect(publisher.broadcast(['a', 'b'], envelope)).rejects.toBeInstanceOf(ProviderError);
     const down = new CentrifugoPublisher({ apiUrl: 'http://127.0.0.1:1', apiKey: 'k', timeoutMs: 500 });
-    await expect(down.publish('u:#x', envelope)).rejects.toMatchObject({ retryable: true });
+    await expect(down.publish('user:#x', envelope)).rejects.toMatchObject({ retryable: true });
     reply = () => ({ status: 200, json: { result: {} } });
   });
 

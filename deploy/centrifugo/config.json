@@ -37,7 +37,7 @@
     },
     "namespaces": [
       {
-        "name": "u",
+        "name": "user",
         "allow_user_limited_channels": true,
         "presence": true,
         "join_leave": false,

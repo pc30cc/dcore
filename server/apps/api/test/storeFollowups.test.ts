@@ -58,7 +58,7 @@ describe.skipIf(!hasInfrastructure)('store follow-ups: hidden catalogues, the pl
   const restorePlay = (u: SeededUser, purchases: { productId: string; purchaseToken: string; kind: 'subscription' | 'consumable' }[]) =>
     call(h, '/v1/store/restore', { method: 'POST', token: u.token, client: 'play/120', body: { purchases } });
   const hiddenLines = () => h.logs.filter((line) => line.includes('products not listed'));
-  const events = (u: SeededUser) => realtime.on(`u:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
+  const events = (u: SeededUser) => realtime.on(`user:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
   /** Rows a purchase path writes. */
   const written = async () =>
     Number(

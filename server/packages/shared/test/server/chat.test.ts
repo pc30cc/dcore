@@ -130,7 +130,7 @@ describe('presence', () => {
     ]);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('http://centrifugo.test/api/batch');
-    expect(calls[0]!.body).toEqual({ commands: [{ presence_stats: { channel: `u:#${a}` } }, { presence_stats: { channel: `u:#${b}` } }], parallel: true });
+    expect(calls[0]!.body).toEqual({ commands: [{ presence_stats: { channel: `user:#${a}` } }, { presence_stats: { channel: `user:#${b}` } }], parallel: true });
   });
 });
 

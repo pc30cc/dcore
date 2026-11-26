@@ -6,7 +6,7 @@ import { requireScope, sessionOf } from '../services/session.js';
 
 /**
  * `POST /v1/realtime/token`: a Centrifugo connection token for the person's
- * one channel, `u:#<publicUid>`. HS256 with the secret Centrifugo verifies
+ * one channel, `user:#<publicUid>`. HS256 with the secret Centrifugo verifies
  * it with; `sub` is the public id, it expires after
  * REALTIME_TOKEN_TTL_SECONDS and carries no `info`. No statement, no Valkey.
  */

@@ -27,8 +27,8 @@ class CentrifugoProtocolTest {
 
     @Test
     fun connectAsksToRecoverAServerSideChannelFromItsPosition() {
-        val frame = obj(CentrifugoProtocol.connect(3, "tok", "n", "v", mapOf("u:#me" to StreamPosition(41, "e9"))))
-        val sub = frame["connect"]!!.jsonObject["subs"]!!.jsonObject["u:#me"]!!.jsonObject
+        val frame = obj(CentrifugoProtocol.connect(3, "tok", "n", "v", mapOf("user:#me" to StreamPosition(41, "e9"))))
+        val sub = frame["connect"]!!.jsonObject["subs"]!!.jsonObject["user:#me"]!!.jsonObject
         assertEquals("true", sub["recover"]!!.jsonPrimitive.content)
         assertEquals("41", sub["offset"]!!.jsonPrimitive.content)
         assertEquals("e9", sub["epoch"]!!.jsonPrimitive.content)
@@ -36,11 +36,11 @@ class CentrifugoProtocolTest {
 
     @Test
     fun subscribeHasNoTokenAndRecoversOnlyFromAKnownPosition() {
-        val plain = obj(CentrifugoProtocol.subscribe(2, "u:#me", null))["subscribe"]!!.jsonObject
-        assertEquals("u:#me", plain["channel"]!!.jsonPrimitive.content)
+        val plain = obj(CentrifugoProtocol.subscribe(2, "user:#me", null))["subscribe"]!!.jsonObject
+        assertEquals("user:#me", plain["channel"]!!.jsonPrimitive.content)
         assertNull(plain["token"])
         assertNull(plain["recover"])
-        val resumed = obj(CentrifugoProtocol.subscribe(2, "u:#me", StreamPosition(7, "e1")))["subscribe"]!!.jsonObject
+        val resumed = obj(CentrifugoProtocol.subscribe(2, "user:#me", StreamPosition(7, "e1")))["subscribe"]!!.jsonObject
         assertEquals("true", resumed["recover"]!!.jsonPrimitive.content)
         assertEquals("7", resumed["offset"]!!.jsonPrimitive.content)
     }
@@ -59,22 +59,22 @@ class CentrifugoProtocolTest {
 
     @Test
     fun severalFramesInOneMessage() {
-        val frames = CentrifugoProtocol.parse("{}\n{\"push\":{\"channel\":\"u:#me\",\"pub\":{\"data\":{\"a\":1},\"offset\":5}}}\n\n")
+        val frames = CentrifugoProtocol.parse("{}\n{\"push\":{\"channel\":\"user:#me\",\"pub\":{\"data\":{\"a\":1},\"offset\":5}}}\n\n")
         assertEquals(2, frames.size)
         val pub = frames[1] as Inbound.Publication
-        assertEquals("u:#me", pub.channel)
+        assertEquals("user:#me", pub.channel)
         assertEquals(5L, pub.offset)
     }
 
     @Test
     fun connectReplyWithServerSideSubscriptions() {
         val reply = CentrifugoProtocol.parse(
-            """{"id":1,"connect":{"client":"c","version":"6","expires":true,"ttl":3599,"subs":{"u:#me":{"recoverable":true,"epoch":"e2","offset":12,"recovered":true,"was_recovering":true,"publications":[{"data":{"x":1},"offset":12}]}}}}""",
+            """{"id":1,"connect":{"client":"c","version":"6","expires":true,"ttl":3599,"subs":{"user:#me":{"recoverable":true,"epoch":"e2","offset":12,"recovered":true,"was_recovering":true,"publications":[{"data":{"x":1},"offset":12}]}}}}""",
         ).single() as Inbound.Reply
         val connect = reply.connect!!
         assertTrue(connect.expiry.expires)
         assertEquals(3599L, connect.expiry.ttlSeconds)
-        val sub = connect.subs.getValue("u:#me")
+        val sub = connect.subs.getValue("user:#me")
         assertTrue(sub.recovered)
         assertEquals("e2", sub.epoch)
         assertEquals(12L, sub.offset)
@@ -96,8 +96,8 @@ class CentrifugoProtocolTest {
     @Test
     fun disconnectsUnsubscribesAndServerSubscribes() {
         assertEquals(Inbound.Disconnect(3501, "bad"), CentrifugoProtocol.parse("""{"push":{"disconnect":{"code":3501,"reason":"bad"}}}""").single())
-        assertEquals(Inbound.Unsubscribed("u:#me", 2000), CentrifugoProtocol.parse("""{"push":{"channel":"u:#me","unsubscribe":{"code":2000}}}""").single())
-        val added = CentrifugoProtocol.parse("""{"push":{"channel":"u:#me","subscribe":{"epoch":"e","offset":1}}}""").single()
+        assertEquals(Inbound.Unsubscribed("user:#me", 2000), CentrifugoProtocol.parse("""{"push":{"channel":"user:#me","unsubscribe":{"code":2000}}}""").single())
+        val added = CentrifugoProtocol.parse("""{"push":{"channel":"user:#me","subscribe":{"epoch":"e","offset":1}}}""").single()
         assertTrue(added is Inbound.ServerSubscribed)
     }
 

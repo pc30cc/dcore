@@ -139,7 +139,7 @@ describe.skipIf(!hasInfrastructure)('store: products, purchases, restore, entitl
     expect(body.entitlements.manageUrl).toContain('play.google.com/store/account/subscriptions');
     expect(body.entitlements.features.see_likes).toBe(true);
     // The person hears it on their channel.
-    const events = realtime.on(`u:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
+    const events = realtime.on(`user:#${u.publicUid}`).filter((e) => e.t === 'entitlement');
     expect((events.at(-1)?.d as Entitlements).plan).toBe('plus');
     // Acknowledge from the server, and a look at the end of the period.
     const ids = jobs.jobs.filter((j) => j.queue === 'iap').map((j) => j.id);
