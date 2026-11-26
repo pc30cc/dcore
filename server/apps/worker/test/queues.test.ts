@@ -83,6 +83,7 @@ describe('the queues the worker runs', () => {
       'maint/lk-rebuild',
       'maint/partitions',
       'maint/sessions-cleanup',
+      'safety/evidence-sweep',
       'safety/moderation-sweep',
       'safety/requests-sweep',
       'system/heartbeat',

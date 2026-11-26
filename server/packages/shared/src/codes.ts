@@ -397,6 +397,38 @@ export const reportStatus = codes('reports', 'status', {
   duplicate: [5, 'duplicate'],
 });
 
+/**
+ * reports.resolution (0027): how a report was closed. 1-6 close it with an
+ * action (status actioned), 11-14 without one (status dismissed; a
+ * duplicate is status duplicate).
+ */
+export const reportResolution = codes('reports', 'resolution', {
+  warning: [1, 'warning'],
+  suspension: [2, 'suspension'],
+  ban: [3, 'ban'],
+  shadowban: [4, 'shadowban'],
+  content_removed: [5, 'content removed'],
+  other_action: [6, 'other action'],
+  no_violation: [11, 'no violation'],
+  not_enough_evidence: [12, 'not enough evidence'],
+  duplicate: [13, 'duplicate'],
+  other: [14, 'other'],
+});
+export type ReportResolution = (typeof reportResolution.names)[number];
+/** Resolutions that close a report with an action (`POST /reports/{id}/resolve`). */
+export const ACTION_RESOLUTIONS = ['warning', 'suspension', 'ban', 'shadowban', 'content_removed', 'other_action'] as const satisfies readonly ReportResolution[];
+/** Resolutions that close a report without one (`POST /reports/{id}/dismiss`). */
+export const CLOSE_RESOLUTIONS = ['no_violation', 'not_enough_evidence', 'duplicate', 'other'] as const satisfies readonly ReportResolution[];
+
+/** report_filings.authority: who a report was filed with. */
+export const filingAuthority = codes('report_filings', 'authority', {
+  ncmec: [1, 'NCMEC CyberTipline'],
+  national_hotline: [2, 'a national child-safety hotline'],
+  police: [3, 'police'],
+  other: [9, 'other'],
+});
+export type FilingAuthority = (typeof filingAuthority.names)[number];
+
 export const callKind = codes('calls', 'kind', { audio: [1, 'audio'], video: [2, 'video'] });
 export type CallKind = (typeof callKind.names)[number];
 
@@ -458,6 +490,51 @@ export type ModerationKind = (typeof moderationKind.names)[number];
 export const visibleModerationKinds = ['warning', 'suspension', 'ban'] as const satisfies readonly ModerationKind[];
 export type VisibleModerationKind = (typeof visibleModerationKinds)[number];
 
+/**
+ * moderation_actions.reason_code (0026): why a warning, suspension, ban or
+ * shadowban was given. The text the person reads is written per action
+ * (`reason_text`); the panel pre-fills it from the code's label.
+ */
+export const moderationReason = codes('moderation_actions', 'reason_code', {
+  fake: [1, 'fake profile'],
+  harassment: [2, 'harassment'],
+  inappropriate: [3, 'inappropriate content'],
+  scam: [4, 'scam or fraud'],
+  under_18: [5, 'under 18'],
+  threat: [6, 'threats or violence'],
+  spam: [7, 'spam'],
+  child_safety: [8, 'child safety'],
+  hate: [9, 'hate speech'],
+  ban_evasion: [10, 'ban evasion'],
+  other: [99, 'other'],
+});
+export type ModerationReason = (typeof moderationReason.names)[number];
+
+/** profiles.text_reject_reason and profile_prompts.reject_reason (0026): why a text was rejected. */
+export const textRejectReason = codes('profiles', 'text_reject_reason', {
+  contact_details: [1, 'contact details or links'],
+  offensive: [2, 'offensive or hateful language'],
+  sexual: [3, 'sexual content'],
+  commercial: [4, 'advertising or selling'],
+  impersonation: [5, 'pretending to be someone else'],
+  other: [6, 'other'],
+});
+export type TextRejectReason = (typeof textRejectReason.names)[number];
+
+/** photos.reject_reason (0026): why a photo was rejected; the worker sets `low_quality` and `unreadable`. */
+export const photoRejectReason = codes('photos', 'reject_reason', {
+  no_face: [1, 'no face visible'],
+  nudity: [2, 'nudity or sexual content'],
+  violence: [3, 'violence'],
+  text_or_contact: [4, 'text or contact details'],
+  someone_else: [5, 'someone else'],
+  low_quality: [6, 'blurry or too small'],
+  minor: [7, 'a minor in the photo'],
+  unreadable: [8, 'unreadable file'],
+  other: [9, 'other'],
+});
+export type PhotoRejectReason = (typeof photoRejectReason.names)[number];
+
 export const appealStatus = codes('appeals', 'status', {
   open: [1, 'open'],
   upheld: [2, 'upheld'],
@@ -470,12 +547,40 @@ export const deviceBanKind = codes('device_bans', 'kind', {
   phone: [2, 'phone number'],
   google: [3, 'Google account'],
 });
+export type DeviceBanKind = (typeof deviceBanKind.names)[number];
+
+/** banned_terms.match_kind: how a term is looked for in folded text. */
+export const bannedTermMatch = codes('banned_terms', 'match_kind', {
+  substring: [1, 'substring'],
+  word: [2, 'whole word'],
+  regex: [3, 'regular expression'],
+});
+export type BannedTermMatch = (typeof bannedTermMatch.names)[number];
+
+/** banned_terms.severity: what a text holding the term gets. */
+export const bannedTermSeverity = codes('banned_terms', 'severity', {
+  ask: [1, 'ask "are you sure?"'],
+  flag: [2, 'allow and flag for review'],
+  refuse: [3, 'refuse'],
+});
+export type BannedTermSeverity = (typeof bannedTermSeverity.names)[number];
+
+/** banned_terms.scope: where a term applies (bit values; the column holds their sum). */
+export const bannedTermScope = codes('banned_terms', 'scope', {
+  name: [1, 'name'],
+  about: [2, 'about'],
+  prompts: [4, 'prompts'],
+  messages: [8, 'messages'],
+  job: [16, 'job title'],
+});
+export type BannedTermScope = (typeof bannedTermScope.names)[number];
 
 export const legalHoldKind = codes('legal_holds', 'kind', {
   child_safety: [1, 'child safety'],
   threat: [2, 'threat or violence'],
   authority: [3, 'request from an authority'],
 });
+export type LegalHoldKind = (typeof legalHoldKind.names)[number];
 
 export const supportTicketStatus = codes('support_tickets', 'status', {
   open: [1, 'open'],
@@ -502,6 +607,8 @@ export const auditTarget = codes('audit_log', 'target_type', {
   product: [14, 'product'],
   plan: [15, 'plan'],
   legal_hold: [16, 'legal hold'],
+  banned_term: [17, 'banned term'],
+  device_ban: [18, 'device ban'],
 });
 export type AuditTarget = (typeof auditTarget.names)[number];
 
@@ -672,13 +779,21 @@ export const codeTables: readonly CodeTable<string>[] = [
   reportContext,
   reportReason,
   reportStatus,
+  reportResolution,
+  filingAuthority,
   callKind,
   callOutcome,
   callEndedBy,
   callEndReason,
   moderationKind,
+  moderationReason,
+  textRejectReason,
+  photoRejectReason,
   appealStatus,
   deviceBanKind,
+  bannedTermMatch,
+  bannedTermSeverity,
+  bannedTermScope,
   legalHoldKind,
   supportTicketStatus,
   auditTarget,

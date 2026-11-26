@@ -125,6 +125,9 @@ export const writeProfile = defineQuery({ name: 'me.writeProfile', statements: 1
    WHERE n.name IS NOT NULL
   ON CONFLICT (user_id) DO UPDATE SET
      display_name = coalesce(${w.displayName ?? null}::text, p.display_name),
+     -- A name the person chose themselves is no longer an admin's rename.
+     name_reject_reason = CASE WHEN ${w.displayName ?? null}::text IS NOT NULL AND ${w.displayName ?? null}::text <> p.display_name
+                               THEN NULL ELSE p.name_reject_reason END,
      about = CASE WHEN ${w.about.set} THEN ${about}::text ELSE p.about END,
      job_title = CASE WHEN ${w.jobTitle.set} THEN ${job}::text ELSE p.job_title END,
      intention = CASE WHEN ${w.intention.set} THEN ${intent}::smallint ELSE p.intention END,

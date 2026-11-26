@@ -65,7 +65,14 @@ export const realtimePayloads = {
   profile: z.object({
     photo: z.object({ id: idSchema, status: photoStatusSchema, rejectReason: z.string().optional() }).optional(),
     textState: textStateSchema.optional(),
-    prompts: z.array(z.object({ position: z.number().int().min(0).max(2), status: textStateSchema })).optional(),
+    /** While `textState` is rejected: why, in the person's language. */
+    textRejectReason: z.string().optional(),
+    /** The team replaced the display name (`name`): why, in the person's language. */
+    name: z.string().optional(),
+    nameRejectReason: z.string().optional(),
+    prompts: z
+      .array(z.object({ position: z.number().int().min(0).max(2), status: textStateSchema, rejectReason: z.string().optional() }))
+      .optional(),
     verification: verificationStateSchema.optional(),
   }),
   /**

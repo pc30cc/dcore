@@ -285,20 +285,20 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       const current = view.profile;
       const terms = cfg.bannedTerms;
 
-      if (body.displayName !== undefined && terms.severity(body.displayName, 'name') >= 2) {
+      if (body.displayName !== undefined && terms.severity(body.displayName, 'name', ctx.locale) >= 2) {
         throw new HttpProblem('text_refused', { detail: 'This name cannot be used.' });
       }
       const about = body.about === undefined ? noChange<string | null>() : { set: true as const, value: body.about?.trim() || null };
       const job = body.jobTitle === undefined ? noChange<string | null>() : { set: true as const, value: body.jobTitle?.trim() || null };
-      if (about.set && about.value !== null && terms.severity(about.value, 'about') >= 3) throw new HttpProblem('text_refused', { detail: 'This text cannot be used.' });
-      if (job.set && job.value !== null && terms.severity(job.value, 'job') >= 3) throw new HttpProblem('text_refused', { detail: 'This job title cannot be used.' });
+      if (about.set && about.value !== null && terms.severity(about.value, 'about', ctx.locale) >= 3) throw new HttpProblem('text_refused', { detail: 'This text cannot be used.' });
+      if (job.set && job.value !== null && terms.severity(job.value, 'job', ctx.locale) >= 3) throw new HttpProblem('text_refused', { detail: 'This job title cannot be used.' });
       const aboutChanged = about.set && about.value !== (current?.about ?? null);
       const jobChanged = job.set && job.value !== (current?.job ?? null);
       let textStateCode: number | undefined;
       if (aboutChanged || jobChanged) {
         const finalAbout = about.set ? about.value : (current?.about ?? null);
         const finalJob = job.set ? job.value : (current?.job ?? null);
-        const flagged = Math.max(finalAbout ? terms.severity(finalAbout, 'about') : 0, finalJob ? terms.severity(finalJob, 'job') : 0) >= 2;
+        const flagged = Math.max(finalAbout ? terms.severity(finalAbout, 'about', ctx.locale) : 0, finalJob ? terms.severity(finalJob, 'job', ctx.locale) : 0) >= 2;
         // Flagged texts wait for a human; the others pass the automatic check.
         textStateCode = textState.code(flagged ? 'checking' : 'approved');
       }
@@ -354,7 +354,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           prompts.add(edit.promptId);
           const answer = edit.answer.trim();
           if (!answer) throw fieldInvalid('An answer is needed.', `/prompts/${index}/answer`);
-          const severity = terms.severity(answer, 'prompts');
+          const severity = terms.severity(answer, 'prompts', ctx.locale);
           if (severity >= 3) throw new HttpProblem('text_refused', { detail: 'This answer cannot be used.' });
           if (existing?.promptId === edit.promptId && existing.answer === answer) return;
           set.push({ position: edit.position, promptId: edit.promptId, answer, status: textState.code(severity >= 2 ? 'checking' : 'approved') });

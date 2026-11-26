@@ -65,7 +65,7 @@ export async function deleteAndFinish(
  * bumped), so the peers' next requests no longer show them. The fan-out
  * repeats this (idempotent) and does the rest; a failure here is left to it.
  */
-async function hideAtOnce(
+export async function hideAtOnce(
   app: FastifyInstance,
   request: FastifyRequest,
   userId: string,
@@ -108,6 +108,26 @@ export async function finishDeletion(app: FastifyInstance, request: FastifyReque
   }
   // Logged and carried on when it fails: the view expires by itself (24 h) and the cutoff above already ends the sessions.
   await app.account.changed(userId);
+}
+
+/**
+ * The steps after an admin's deletion (`POST /v1/admin/users/{id}/delete`),
+ * run after the panel's transaction committed: as an app deletion. Valkey
+ * refusing them is the answer's `sideEffects: 'failed'`, not an error: the
+ * account is deleted, its sessions are revoked in the database, and the
+ * periodic sweep queues the jobs.
+ */
+export async function adminDeleteAndFinish(app: FastifyInstance, request: FastifyRequest, outcome: DeletionOutcome): Promise<'done' | 'failed'> {
+  if (outcome.kind === 'none') return 'done';
+  const result: DeletionResult = { userId: outcome.userId, deletedAtMs: outcome.deletedAtMs, purgeAtMs: outcome.purgeAtMs, fresh: outcome.kind === 'deleted' };
+  if (outcome.kind === 'deleted') await hideAtOnce(app, request, outcome.userId, outcome.deletedAtMs, outcome.ended);
+  try {
+    await finishDeletion(app, request, result, outcome.kind === 'deleted' ? outcome.sessionIds : []);
+    return 'done';
+  } catch (error) {
+    if (error instanceof HttpProblem && error.code === 'service_unavailable') return 'failed';
+    throw error;
+  }
 }
 
 /**

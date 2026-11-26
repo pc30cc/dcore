@@ -91,11 +91,19 @@ describe.skipIf(!hasDatabase)('sign-in queries', () => {
     expect(await accountRestriction(pool, '999999999999999999')).toBeNull();
   });
 
-  it('closes an under-age account in 4 statements, renews expired bans and never shortens a permanent one', async () => {
+  it('closes an under-age account in 4 statements, renews its own expired bans, never shortens a permanent one, and leaves an admin\'s row alone', async () => {
     const a = await account();
-    // The device key was banned before and that ban ran out; the number is banned for good.
+    // The server's own ban of the device key ran out; its ban of the number is for good.
     await client.query(`INSERT INTO device_bans (id, kind, store, value_hash, reason, expires_at) VALUES (id_next(), 1, 2, $1, 'old', now() - interval '1 day')`, [a.deviceHash]);
-    await client.query(`INSERT INTO device_bans (id, kind, value_hash, reason) VALUES (id_next(), 2, $1, 'admin')`, [a.phoneHash]);
+    await client.query(`INSERT INTO device_bans (id, kind, value_hash, reason) VALUES (id_next(), 2, $1, 'earlier')`, [a.phoneHash]);
+    // An admin's ban of the device key for 30 days: another cause, its own row.
+    const { rows: admins } = await client.query<{ id: number }>(
+      `INSERT INTO admin_users (email, display_name, password_hash) VALUES ('u18@example.com', 'Sara', '$argon2id$x') RETURNING id`,
+    );
+    await client.query(
+      `INSERT INTO device_bans (id, created_by, kind, store, value_hash, reason, expires_at) VALUES (id_next(), $2, 1, 2, $1, 'typed', now() + interval '30 days')`,
+      [a.deviceHash, admins[0]!.id],
+    );
     const ids = (await client.query<{ id: string }>('SELECT id_next()::text AS id FROM generate_series(1, 3)')).rows.map((r) => r.id);
     const { result, tally } = await statementCounter.measure(() =>
       withTransaction(pool, (tx) => closeUnderAge(tx, { userId: a.userId, deviceId: a.deviceId, banIds: ids, reason: 'under_age' })),
@@ -106,15 +114,16 @@ describe.skipIf(!hasDatabase)('sign-in queries', () => {
     expect(result.phoneHashes.map((h) => h.toString('hex'))).toEqual([a.phoneHash.toString('hex')]);
     expect(result.deviceHashes.map((h) => h.toString('hex'))).toEqual([a.deviceHash.toString('hex')]);
     const bans = (
-      await client.query<{ kind: number; reason: string; permanent: boolean; year: boolean }>(
-        `SELECT kind, reason, expires_at IS NULL AS permanent, coalesce(expires_at > now() + interval '364 days', false) AS year
-           FROM device_bans WHERE value_hash = ANY($1::bytea[]) ORDER BY kind`,
+      await client.query<{ kind: number; reason: string; permanent: boolean; year: boolean; by_admin: boolean }>(
+        `SELECT kind, reason, expires_at IS NULL AS permanent, coalesce(expires_at > now() + interval '364 days', false) AS year, created_by IS NOT NULL AS by_admin
+           FROM device_bans WHERE value_hash = ANY($1::bytea[]) ORDER BY kind, created_by NULLS FIRST`,
         [[a.deviceHash, a.phoneHash]],
       )
     ).rows;
     expect(bans).toEqual([
-      { kind: 1, reason: 'under_age', permanent: false, year: true },
-      { kind: 2, reason: 'admin', permanent: true, year: false },
+      { kind: 1, reason: 'under_age', permanent: false, year: true, by_admin: false },
+      { kind: 1, reason: 'typed', permanent: false, year: false, by_admin: true },
+      { kind: 2, reason: 'earlier', permanent: true, year: false, by_admin: false },
     ]);
     const user = (await client.query('SELECT status, deleted_via FROM users WHERE id = $1', [a.userId])).rows[0] as { status: number; deleted_via: number };
     expect(user).toEqual({ status: 8, deleted_via: 4 });

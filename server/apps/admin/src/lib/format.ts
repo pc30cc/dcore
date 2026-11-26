@@ -4,7 +4,10 @@ import type { Locale } from '@app/shared';
 export function formatDateTime(iso: string, locale: Locale): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 export function formatDate(iso: string, locale: Locale): string {
@@ -13,9 +16,47 @@ export function formatDate(iso: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
 }
 
+/**
+ * A day typed in a date field (`YYYY-MM-DD`, the browser's Gregorian
+ * picker) in the panel's calendar, when that calendar is another one
+ * (Solar Hijri in Persian); undefined when the picker already shows it.
+ */
+export function dayInPanelCalendar(day: string, locale: Locale): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return undefined;
+  if (new Intl.DateTimeFormat(locale).resolvedOptions().calendar === 'gregory') return undefined;
+  // Noon, so no time zone moves it to the day before.
+  return formatDate(`${day}T12:00:00`, locale);
+}
+
 /** A whole number in the panel's language (Persian digits in Persian). */
 export function formatNumber(value: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+}
+
+/** A number without grouping in the panel's digits: a version code, a counter. */
+export function formatPlain(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale, {
+    useGrouping: false,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function displayName(type: 'region' | 'language', code: string, locale: Locale): string {
+  try {
+    return new Intl.DisplayNames(locale, { type, fallback: 'code' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** A country's name in the panel's language (`DE` → "Germany"); the code when the runtime does not know it. */
+export function regionName(code: string, locale: Locale): string {
+  return displayName('region', code.toUpperCase(), locale);
+}
+
+/** A language tag's name in the panel's language (`tr-DE` → "Turkish (Germany)"); the tag when it is not one. */
+export function languageName(tag: string, locale: Locale): string {
+  return displayName('language', tag, locale);
 }
 
 /** A per-locale text in `locale`, else Persian, else English, else the fallback. */

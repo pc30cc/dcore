@@ -28,7 +28,7 @@ import {
 } from '@app/shared';
 import type { ConfigSnapshot } from './cfg.js';
 import type { CityIndex } from './cities.js';
-import { label, photoRejectLabels } from './labels.js';
+import { label, photoRejectLabels, textRejectLabels } from './labels.js';
 
 /**
  * From the cached own-account view (codes, epoch-ms times) to the wire
@@ -75,6 +75,13 @@ export function rejectText(cfg: ConfigSnapshot, code: number | undefined, locale
   const strings = cfg.strings.get(locale) ?? {};
   const key = code ?? 0;
   return strings[`photo.reject.${key}`] ?? label(photoRejectLabels[key] ?? photoRejectLabels[0], locale, 'Not approved');
+}
+
+/** The text a person reads for a rejected profile text or prompt answer (`text.reject.<code>`). */
+export function textRejectText(cfg: ConfigSnapshot, code: number | undefined, locale: Locale): string {
+  const strings = cfg.strings.get(locale) ?? {};
+  const key = code !== undefined && Object.hasOwn(textRejectLabels, code) ? code : 6;
+  return strings[`text.reject.${key}`] ?? label(textRejectLabels[key], locale, 'Not approved');
 }
 
 export function settingsOf(view: AccountView): Settings {
@@ -168,12 +175,15 @@ export function ownProfileOf(view: AccountView, ctx: MeContext): OwnProfile {
       };
     }),
     textState: textState.name(p?.textState ?? textState.code('checking')),
+    ...(p?.textState === textState.code('rejected') ? { textRejectReason: textRejectText(ctx.cfg, p.textRejectReason, ctx.locale) } : {}),
+    ...(p?.nameRejectReason !== undefined ? { nameRejectReason: textRejectText(ctx.cfg, p.nameRejectReason, ctx.locale) } : {}),
     prompts: view.prompts.map((pp) => ({
       promptId: pp.promptId,
       position: pp.position,
       ...(pp.answer !== undefined ? { answer: pp.answer } : {}),
       ...(pp.audioMs !== undefined ? { audioMs: pp.audioMs } : {}),
       status: textState.name(pp.status),
+      ...(pp.status === textState.code('rejected') ? { rejectReason: textRejectText(ctx.cfg, pp.rejectReason, ctx.locale) } : {}),
     })),
     fields: view.fields.map((f) => ({
       fieldId: f.fieldId,

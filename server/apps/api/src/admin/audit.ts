@@ -1,5 +1,5 @@
 import { insertAuditRows, withTransaction, type AuditRow, type PoolClient, type TransactionOptions } from '@app/db';
-import { auditTarget, type AuditTarget } from '@app/shared';
+import { auditTarget, type AuditAction, type AuditTarget } from '@app/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nextId } from '../auth/sessions.js';
 
@@ -18,8 +18,8 @@ import { nextId } from '../auth/sessions.js';
  */
 
 export interface AuditEntry {
-  /** `area.verb` (`admin.disable`, `plan.update`). */
-  action: string;
+  /** `area.verb` (`admin.disable`, `plan.update`): one of `auditActions`. */
+  action: AuditAction;
   target: AuditTarget;
   /** The row the action is about (decimal id), if any. */
   targetId?: string | number | null | undefined;

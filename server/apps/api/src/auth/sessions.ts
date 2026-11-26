@@ -153,8 +153,9 @@ const BAN_CODES: Readonly<Record<number, ErrorCode>> = { 1: 'device_banned', 2: 
  * Signs in to the subject's account, or makes one: 1 read (identity,
  * account state, bans), then one transaction (3 statements for an existing
  * account, 4 for a new one). A ban of the subject or of this build's device
- * key refuses it. Suspended and banned accounts get a `restricted` session,
- * deleted ones a `restore` session.
+ * key refuses it, except for a suspended or banned account, which gets its
+ * `restricted` session whatever those bans say; deleted ones get a `restore`
+ * session.
  */
 export async function signIn(app: FastifyInstance, request: FastifyRequest, subject: SignInSubject, body: DeviceBody): Promise<AuthResult> {
   const client = request.client;
@@ -184,7 +185,12 @@ export async function signIn(app: FastifyInstance, request: FastifyRequest, subj
   });
 
   let found = await lookup();
-  const ban = found.bans[0];
+  // A suspended or banned account still gets its restricted session (the
+  // reason and the appeal) through the bans of its own subject and device:
+  // those bans keep the person from making another account, not from reading
+  // why. Every other sign-in, a new account above all, is refused by them.
+  const restricted = found.identity !== null && scopeOf(found.identity.state.status) === 'restricted';
+  const ban = restricted ? undefined : found.bans[0];
   if (ban !== undefined) throw new HttpProblem(BAN_CODES[ban] ?? 'device_banned');
 
   const sessionId = nextId(app);

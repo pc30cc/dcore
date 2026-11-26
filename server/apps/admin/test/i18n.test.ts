@@ -18,6 +18,13 @@ describe('admin strings', () => {
 
   it('fills the brand name and values', () => {
     expect(translate('en', 'app.title', {}, 'Acme')).toBe('Acme Admin');
-    expect(translate('fa', 'section.pending.body', { section: 3 })).toContain('بخش 3');
+    expect(translate('fa', 'section.pending.body', { section: 3 })).toContain('بخش ۳');
+    expect(translate('en', 'section.pending.body', { section: 3 })).toContain('3');
+  });
+
+  it('writes a number placeholder in the language’s digits, without grouping', () => {
+    expect(translate('fa', 'form.counter', { count: 53, max: 1000 })).toBe('۵۳/۱۰۰۰');
+    expect(translate('en', 'form.counter', { count: 53, max: 1000 })).toBe('53/1000');
+    expect(translate('fa', 'texts.part.prompt', { n: 2 })).toBe('پرسش ۲');
   });
 });

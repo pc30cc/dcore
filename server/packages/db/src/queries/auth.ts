@@ -435,9 +435,9 @@ export interface UnderAgeResult {
  * An under-age sign-up, inside the caller's transaction (4 statements):
  * the account becomes a tombstone at once (status 8, `deleted_via` 4; no
  * birth date or gender was ever stored); its phone and Google identities
- * and this build's device key are refused for a year (`device_bans`,
- * renewed by upsert, so an earlier expired ban never blocks it and a
- * permanent one is never shortened); then its sessions, devices and
+ * and this build's device key are refused for a year (the server's own
+ * `device_bans` row of each, renewed by upsert, so an earlier expired ban
+ * never blocks it and a permanent one is never shortened); then its sessions, devices and
  * identities are deleted, so nothing personal stays. Only an account still
  * in onboarding (status 1) whose basics are not set yet (no birth date) is
  * closed this way: once an adult birth date is stored, a later under-age
@@ -451,7 +451,8 @@ export const closeUnderAge = defineQuery({ name: 'auth.closeUnderAge', statement
         RETURNING id::text`,
   );
   if (closed === null) return { closed: false, phoneHashes: [], deviceHashes: [], sessionIds: [] };
-  const renew = sql`ON CONFLICT (kind, value_hash) DO UPDATE
+  // The server's own row of each value (device_bans_auto_key); an admin's or a record's row of it stays as it is.
+  const renew = sql`ON CONFLICT (kind, value_hash) WHERE created_by IS NULL AND action_id IS NULL DO UPDATE
         SET expires_at = CASE WHEN device_bans.expires_at IS NULL THEN NULL
                               ELSE greatest(device_bans.expires_at, EXCLUDED.expires_at) END,
             reason = CASE WHEN device_bans.expires_at IS NULL OR device_bans.expires_at > now() THEN device_bans.reason ELSE EXCLUDED.reason END,

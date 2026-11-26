@@ -31,7 +31,7 @@ export async function startAdminHarness(db: TestDatabase, env: Record<string, st
   const h = await startHarness(db, env, {
     ...deps,
     adminAuth: { argon2: CHEAP_ARGON2, loginLimit: TEST_LOGIN_LIMIT, now: () => clock.now, ...deps.adminAuth },
-    authServices: { refreshGraceMs: 300 },
+    authServices: { refreshGraceMs: 300, ...deps.authServices },
   });
   for (let i = 0; i < 300 && h.app.adminAuth.roles.current() === null; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   if (h.app.adminAuth.roles.current() === null) throw new Error('the admin roles did not load');
@@ -171,4 +171,42 @@ export async function refuseAudit(db: TestDatabase, ...actions: string[]): Promi
 export async function auditCount(db: TestDatabase, action: string, targetId: number): Promise<number> {
   const result = await row<{ n: number }>(db, `SELECT count(*)::integer AS n FROM audit_log WHERE action = $1 AND target_type = 7 AND target_id = $2`, [action, targetId]);
   return result.n;
+}
+
+export interface AuditRowView {
+  id: string;
+  admin_id: number | null;
+  session_id: string | null;
+  ip: string | null;
+  target_type: number;
+  target_id: string | null;
+  action: string;
+  detail: Record<string, unknown> | null;
+}
+
+/** Audit rows by action (and target), oldest first; any target type. */
+export async function auditRows(db: TestDatabase, filter: { action: string; targetType?: number; targetId?: string | number }): Promise<AuditRowView[]> {
+  const result = await db.sql.query(
+    `SELECT id::text, admin_id, session_id::text, host(ip) AS ip, target_type, target_id::text, action, detail
+       FROM audit_log
+      WHERE action = $1 AND ($2::smallint IS NULL OR target_type = $2) AND ($3::bigint IS NULL OR target_id = $3)
+      ORDER BY id`,
+    [filter.action, filter.targetType ?? null, filter.targetId === undefined ? null : String(filter.targetId)],
+  );
+  return result.rows as AuditRowView[];
+}
+
+/** The newest audit row of `action` (and target), or null. */
+export async function lastAudit(db: TestDatabase, filter: { action: string; targetType?: number; targetId?: string | number }): Promise<AuditRowView | null> {
+  return (await auditRows(db, filter)).at(-1) ?? null;
+}
+
+export interface AdminSession extends SignedIn {
+  account: SeededAdmin;
+}
+
+/** A signed-in admin holding one seeded role. */
+export async function adminAs(h: AdminHarness, role: string): Promise<AdminSession> {
+  const account = await seedAdmin(h, { roles: [role] });
+  return { account, ...(await signIn(h, account)) };
 }

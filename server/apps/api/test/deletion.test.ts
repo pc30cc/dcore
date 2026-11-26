@@ -57,7 +57,8 @@ describe.skipIf(!hasInfrastructure)('account deletion', () => {
   afterAll(async () => {
     // No response named a person by their raw id; no log line carries a phone number.
     for (const id of rawIds) for (const body of h?.bodies ?? []) expect(body.includes(id), `raw id ${id} in a response`).toBe(false);
-    expect((h?.logs ?? []).join('\n')).not.toMatch(/\+98912\d{7}|0912\d{7}/);
+    // A number standing alone (a float such as a response time can contain the digits).
+    expect((h?.logs ?? []).join('\n')).not.toMatch(/(?<![\d.])(?:\+98912|0912)\d{7}(?!\d)/);
     await h?.close();
     await db?.drop();
   });

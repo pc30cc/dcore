@@ -18,6 +18,7 @@ export function ConfirmDialog({
   onConfirm,
   destructive = false,
   busy = false,
+  confirmDisabled = false,
   children,
 }: {
   open: boolean;
@@ -28,6 +29,8 @@ export function ConfirmDialog({
   onConfirm: () => void;
   destructive?: boolean;
   busy?: boolean;
+  /** The action cannot be taken yet (a choice is missing). */
+  confirmDisabled?: boolean;
   children?: ReactNode;
 }) {
   const { t, dir } = useI18n();
@@ -55,7 +58,7 @@ export function ConfirmDialog({
             </AlertDialogPrimitive.Cancel>
             <AlertDialogPrimitive.Action
               className={buttonVariants({ variant: destructive ? 'destructive' : 'default' })}
-              disabled={busy}
+              disabled={busy || confirmDisabled}
               onClick={(event) => {
                 // The caller closes the dialog when the action is done (it may fail and stay open).
                 event.preventDefault();

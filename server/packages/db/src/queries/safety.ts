@@ -256,10 +256,29 @@ export const applyModeration = defineQuery({ name: 'safety.applyModeration', sta
   return applySchema.parse(row.out);
 });
 
-const revokeSchema = z.union([
+/** A device, phone or Google ban a lift removed with its action (device_bans; never the hash). */
+export const removedDeviceBanSchema = z.object({
+  id,
+  kind: z.number().int().min(1).max(3),
+  store: z.number().int().nullable(),
+  reason: z.string(),
+  expiresAtMs: epochMs.nullable(),
+});
+export type RemovedDeviceBan = z.infer<typeof removedDeviceBanSchema>;
+const removedBans = z.array(removedDeviceBanSchema).default([]);
+
+/** What moderation_revoke() answers (0028: with the bans made for the action, removed with it). */
+export const revokeOutcomeSchema = z.union([
   z.object({ outcome: z.literal('missing') }),
-  moderationEffectSchema.extend({ outcome: z.literal('revoked'), already: z.boolean(), actionId: id, kind: z.number().int().min(1).max(4) }),
+  moderationEffectSchema.extend({
+    outcome: z.literal('revoked'),
+    already: z.boolean(),
+    actionId: id,
+    kind: z.number().int().min(1).max(4),
+    deviceBans: removedBans,
+  }),
 ]);
+const revokeSchema = revokeOutcomeSchema;
 export type ModerationRevokeOutcome = z.infer<typeof revokeSchema>;
 
 /** Lifts an action before its end; `liftId` is the id of its lift record (kind 5). */
@@ -283,12 +302,24 @@ export const settleModeration = defineQuery({ name: 'safety.settleModeration', s
   return settleSchema.parse(row.out);
 });
 
-const decisionSchema = z.union([
-  z.object({ outcome: z.enum(['missing', 'decided']) }),
-  moderationEffectSchema.extend({ outcome: z.literal('overturned'), appealId: id, actionId: id }),
+/**
+ * What appeal_decide() answers. An overturn on an account the purge already
+ * emptied (status 8: moderation_settle() moves nothing) carries no account
+ * state: it reads as `overturned_purged` (the appeal decided, the action
+ * lifted, nothing for the app side to do).
+ */
+export const appealDecisionSchema = z.union([
+  // `lifted`: an uphold of an action that was lifted meanwhile (0028), refused.
+  z.object({ outcome: z.enum(['missing', 'decided', 'lifted']) }),
+  moderationEffectSchema.extend({ outcome: z.literal('overturned'), appealId: id, actionId: id, deviceBans: removedBans }),
   z.object({ outcome: z.literal('upheld'), appealId: id, actionId: id, userId: id, action: actionViewSchema.nullable().optional() }),
+  // Only when the settle part is absent altogether: a malformed one is still an error.
+  z
+    .looseObject({ outcome: z.literal('overturned'), appealId: id, actionId: id, userId: id, deviceBans: removedBans })
+    .refine((o) => !('before' in o) && !('after' in o) && !('peers' in o))
+    .transform((o) => ({ outcome: 'overturned_purged' as const, appealId: o.appealId, actionId: o.actionId, userId: o.userId, deviceBans: o.deviceBans })),
 ]);
-export type AppealDecision = z.infer<typeof decisionSchema>;
+export type AppealDecision = z.infer<typeof appealDecisionSchema>;
 
 /** Decides an open appeal; an overturn lifts the action in the same transaction. */
 export const decideAppeal = defineQuery(
@@ -299,7 +330,7 @@ export const decideAppeal = defineQuery(
       sql`SELECT appeal_decide(${appealId}::bigint, ${options.adminId ?? null}::integer, ${overturn}::boolean,
                                ${options.text ?? null}::text, ${liftId}::bigint) AS out`,
     );
-    return decisionSchema.parse(row.out);
+    return appealDecisionSchema.parse(row.out);
   },
 );
 

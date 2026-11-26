@@ -40,7 +40,7 @@ export const queueJobs = {
   deck: ['refill'],
   photo: ['process', 'delete'],
   account: ['deletion-fanout', 'purge', 'deletion-sweep', 'unmatch-purge', 'export'],
-  safety: ['moderation-end', 'moderation-sweep', 'block-deck', 'report-evidence', 'report-file', 'requests-sweep'],
+  safety: ['moderation-end', 'moderation-sweep', 'block-deck', 'report-evidence', 'report-file', 'requests-sweep', 'evidence-sweep'],
   push: ['send'],
   calls: ['ring', 'room', 'finalize', 'ring-push', 'ring-stop'],
   chat: ['like-notes', 'unsend-clear', 'read-flush'],

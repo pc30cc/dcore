@@ -203,4 +203,12 @@ describe('sign-in helpers', () => {
   it('groups the secret by four for typing', () => {
     expect(groupSecret('ABCDEFGHIJ')).toBe('ABCD EFGH IJ');
   });
+
+  it('says a spent refresh limit is a limit, not an outage, with when to try again', async () => {
+    const api = fakeApi({ 'POST /v1/admin/auth/refresh': () => problem(429, 'rate_limited', { retryAfterSeconds: 600 }) });
+    renderPanel('/revenue/plans', api);
+    expect(await screen.findByText('Too many sign-ins')).toBeTruthy();
+    expect(screen.getByText('Too many requests. Try again in 10 minutes.')).toBeTruthy();
+    expect(screen.queryByText(/cannot be reached/)).toBeNull();
+  });
 });

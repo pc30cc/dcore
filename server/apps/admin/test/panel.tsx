@@ -1,4 +1,4 @@
-import type { AdminMe, AdminPlan } from '@app/shared';
+import type { AdminMe, AdminPlan, Permission } from '@app/shared';
 import { DirectionProvider } from '@radix-ui/react-direction';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
@@ -26,6 +26,8 @@ export const API = 'https://api.test';
 export interface Call {
   method: string;
   path: string;
+  /** The query string, as a record. */
+  query: Record<string, string>;
   body: unknown;
   credentials: RequestCredentials | undefined;
   authorization: string | null;
@@ -46,6 +48,7 @@ export function fakeApi(handlers: Record<string, Handler>) {
     const call: Call = {
       method: init?.method ?? 'GET',
       path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
       body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
       credentials: init?.credentials,
       authorization: headers.get('authorization'),
@@ -116,6 +119,11 @@ export const owner: AdminMe = {
   permissions: ['billing.read', 'billing.catalog', 'admins.read', 'admins.manage'],
   sessionId: '77',
 };
+
+/** A signed-in admin of a non-owner role holding exactly these permissions. */
+export function adminWith(permissions: readonly Permission[], roles: string[] = ['admin']): AdminMe {
+  return { ...owner, id: '9', email: 'staff@example.com', displayName: 'Staff Admin', roles, permissions: [...permissions] };
+}
 
 const flags = {
   see_likes: false,

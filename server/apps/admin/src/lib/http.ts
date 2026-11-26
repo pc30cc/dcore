@@ -86,10 +86,10 @@ export function setFetchForTests(fn: typeof fetch | null): void {
   defaultFetch = fn;
 }
 
-export async function send<T>(path: string, options: SendOptions = {}): Promise<T> {
+async function request(path: string, options: SendOptions, accept: string): Promise<Response> {
   const config = runtimeConfig();
   if (!config.ok) throw new ApiError(0, 'not_configured', config.reason);
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept };
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   const fetchFn = options.fetchFn ?? defaultFetch ?? fetch;
@@ -107,7 +107,16 @@ export async function send<T>(path: string, options: SendOptions = {}): Promise<
     if (isAbort(error)) throw error;
     throw new ApiError(0, 'unreachable', 'The API could not be reached.');
   }
-  const text = await response.text();
-  if (!response.ok) throw problemError(response.status, text, response.headers.get('retry-after'));
+  if (!response.ok) throw problemError(response.status, await response.text(), response.headers.get('retry-after'));
+  return response;
+}
+
+export async function send<T>(path: string, options: SendOptions = {}): Promise<T> {
+  const text = await (await request(path, options, 'application/json')).text();
   return (text === '' ? undefined : JSON.parse(text)) as T;
+}
+
+/** As {@link send}, the answer read as a file (an export); a refusal is still a problem document. */
+export async function sendBlob(path: string, options: SendOptions = {}): Promise<Blob> {
+  return (await request(path, options, 'text/csv, application/problem+json')).blob();
 }

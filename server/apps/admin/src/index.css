@@ -92,6 +92,19 @@
   --font-sans: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/*
+ * Text a person wrote, in any script, inside the panel's own layout: each
+ * paragraph is ordered by its own script, but stays aligned with the label
+ * and borders around it (the panel's direction), unlike dir="auto" on the
+ * block, which flips its alignment too.
+ */
+@utility bidi-plain {
+  unicode-bidi: plaintext;
+  /* Chromium knows only the prefixed value; the standard one follows for the others. */
+  text-align: -webkit-match-parent;
+  text-align: match-parent;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

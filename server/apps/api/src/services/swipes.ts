@@ -108,7 +108,7 @@ export class SwipeService {
     const { app, cfg, me } = this;
     // Every comment is checked before anything happens: a refused one refuses the request.
     for (const swipe of swipes) {
-      if (swipe.comment && cfg.bannedTerms.severity(swipe.comment, 'messages') >= 3) {
+      if (swipe.comment && cfg.bannedTerms.severity(swipe.comment, 'messages', this.request.locale) >= 3) {
         throw new HttpProblem('text_refused', { detail: 'This comment cannot be sent.' });
       }
     }

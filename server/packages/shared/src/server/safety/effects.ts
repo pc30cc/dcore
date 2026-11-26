@@ -212,7 +212,26 @@ export interface ModerationEffectsResult {
   eventIds: Record<string, string>;
 }
 
-/** Applies a moderation write's Valkey and realtime side (see the module comment). */
+/** Every step of an effect that failed (each logged); the effect still ran the rest. */
+export class ModerationEffectsError extends Error {
+  readonly failures: readonly { step: string; error: unknown }[];
+
+  constructor(failures: readonly { step: string; error: unknown }[]) {
+    super(`moderation effects: ${failures.map((f) => f.step).join(', ')} failed`, { cause: failures[0]?.error });
+    this.name = 'ModerationEffectsError';
+    this.failures = failures;
+  }
+}
+
+/**
+ * Applies a moderation write's Valkey and realtime side (see the module
+ * comment). The access tokens of an account entering a restriction stop
+ * first; every other step runs whether or not an earlier one failed (a
+ * failed deck or list step never leaves a banned person's tokens working),
+ * and a failure of any step is thrown once all have run
+ * ({@link ModerationEffectsError}), so the caller reports it and a job
+ * retries the whole (idempotent) side with the same event ids.
+ */
 export async function applyModerationEffects(
   deps: ModerationEffectsDeps,
   effect: ModerationEffectInput,
@@ -222,50 +241,61 @@ export async function applyModerationEffects(
   const at = options.at ?? Date.now();
   const change = visibilityChange(effect.before, effect.after);
   const eventIds = plannedEventIds(effect, options.eventIds ?? {}, deps.nextId);
-
-  const hidden = change.leftDiscovery || change.leftRelationships;
-  if (hidden) await markHiddenFromDecks(deps.redis, keys, [effect.userId], at);
-  await endConversations(deps, effect.ended);
-  if (change.leftRelationships || change.joinedRelationships) {
-    await recheckConversationLists(deps, effect.peers);
-    // Chat reads each side's visibility with the conversation's state: read again on the next message.
-    await dropConversationVisibility(deps.redis, keys, effect.userId);
-  }
+  const failures: { step: string; error: unknown }[] = [];
+  const step = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
+    try {
+      await fn();
+      return true;
+    } catch (error) {
+      failures.push({ step: name, error });
+      deps.log?.warn({ err: error, step: name, userId: effect.userId }, 'moderation: an effect step failed');
+      return false;
+    }
+  };
 
   const entersRestriction = !RESTRICTED.has(effect.before.status) && RESTRICTED.has(effect.after.status);
   let revoked = false;
   if (entersRestriction && deps.denyList) {
+    const denyList = deps.denyList;
     // Tokens issued before now stop; the refresh gives a restricted session.
-    await deps.denyList.revokeUser(effect.userId, new Date(at));
-    revoked = true;
+    revoked = await step('revoke tokens', () => denyList.revokeUser(effect.userId, new Date(at)));
   }
   const tells = tellsSubject(effect);
-  if (tells) await bumpVersion(deps.redis, keys.meVersion(effect.userId));
+  if (tells) await step('own view version', () => bumpVersion(deps.redis, keys.meVersion(effect.userId)));
+
+  const hidden = change.leftDiscovery || change.leftRelationships;
+  if (hidden) await step('hide from decks', () => markHiddenFromDecks(deps.redis, keys, [effect.userId], at));
+  await step('end conversations', () => endConversations(deps, effect.ended));
+  if (change.leftRelationships || change.joinedRelationships) {
+    await step('re-check lists', () => recheckConversationLists(deps, effect.peers));
+    // Chat reads each side's visibility with the conversation's state: read again on the next message.
+    await step('conversation visibility', () => dropConversationVisibility(deps.redis, keys, effect.userId));
+  }
 
   let published = 0;
   let disconnected = false;
   if (deps.realtime) {
+    const realtime = deps.realtime;
     for (const { matchId, lo, hi } of effect.ended) {
       const channels = [lo, hi].map((uid) => userChannel(deps.publicIds.user.encode(uid)));
-      await deps.realtime.broadcast(channels, realtimeEnvelope('conversation_end', eventIds[matchId]!, at, { conversationId: matchId }));
-      published += 1;
+      if (await step('conversation end event', () => realtime.broadcast(channels, realtimeEnvelope('conversation_end', eventIds[matchId]!, at, { conversationId: matchId })))) {
+        published += 1;
+      }
     }
     const status = accountStatus.nameOrUndefined(effect.after.status);
     const own = userChannel(deps.publicIds.user.encode(effect.userId));
     if (tells && status !== undefined && status !== 'purged') {
       const moderation = effect.action ? moderationActionWire(effect.action) : null;
-      await deps.realtime.publish(
-        own,
-        realtimeEnvelope('account', eventIds[ACCOUNT_EVENT]!, at, { status, ...(moderation ? { moderation } : {}) }),
+      const sent = await step('account event', () =>
+        realtime.publish(own, realtimeEnvelope('account', eventIds[ACCOUNT_EVENT]!, at, { status, ...(moderation ? { moderation } : {}) })),
       );
-      published += 1;
+      if (sent) published += 1;
     }
-    if (entersRestriction) {
-      await deps.realtime.disconnect(deps.publicIds.user.encode(effect.userId));
-      disconnected = true;
-    }
+    // After the account event, so the app hears why its socket closes.
+    if (entersRestriction) disconnected = await step('disconnect', () => realtime.disconnect(deps.publicIds.user.encode(effect.userId)));
   } else if (effect.ended.length > 0 || tells) {
     deps.log?.warn({ ended: effect.ended.length }, 'moderation: no Centrifugo configured; events were not sent');
   }
+  if (failures.length > 0) throw new ModerationEffectsError(failures);
   return { change, hidden, revoked, published, disconnected, eventIds };
 }

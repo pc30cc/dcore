@@ -72,16 +72,16 @@ export const COUNTRY_RADIUS_KM = 400;
 const SEARCH_LIMIT = 20;
 
 /**
- * Folds a name or a query for matching: case, Latin diacritics, the Turkish
- * dotless i, Arabic letter forms used in Persian, zero-width joiners and
- * Arabic diacritics.
+ * Folds letters for matching: case, Latin diacritics, the Turkish dotless i,
+ * Arabic letter forms used in Persian and Arabic diacritics. Punctuation,
+ * spaces and joiners are left as they are ({@link foldName} folds those too).
  */
-export function foldName(value: string): string {
+export function foldLetters(value: string): string {
   return value
     .replaceAll('ı', 'i')
     .replaceAll('İ', 'i')
     .normalize('NFKD')
-    .replace(/[̀-ًͯ-ٰٟـ]/g, '')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670\u0640]/g, '')
     .replaceAll('ي', 'ی')
     .replaceAll('ى', 'ی')
     .replaceAll('ك', 'ک')
@@ -89,8 +89,17 @@ export function foldName(value: string): string {
     .replaceAll('أ', 'ا')
     .replaceAll('إ', 'ا')
     .replaceAll('آ', 'ا')
+    .toLowerCase();
+}
+
+/**
+ * Folds a name or a query for matching: {@link foldLetters}, then zero-width
+ * joiners, direction marks and every run of other characters than letters
+ * and digits become one space.
+ */
+export function foldName(value: string): string {
+  return foldLetters(value)
     .replace(/\u200c|\u200d|\u200e|\u200f/g, ' ')
-    .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }

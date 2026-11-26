@@ -20,11 +20,11 @@
 #
 # Environment: PG_DATABASE (default app), PG_OWNER_PASSWORD, PG_API_PASSWORD,
 # PG_WORKER_PASSWORD, optional PG_ANALYST_PASSWORD, PG_EXTENSIONS (default
-# "postgis pg_stat_statements"). Connects through the local socket.
+# "postgis pg_trgm pg_stat_statements"). Connects through the local socket.
 set -Eeuo pipefail
 
 db="${PG_DATABASE:-app}"
-extensions="${PG_EXTENSIONS:-postgis pg_stat_statements}"
+extensions="${PG_EXTENSIONS:-postgis pg_trgm pg_stat_statements}"
 
 need() {
   local name="$1"

@@ -39,6 +39,8 @@ export const permissionCatalog = {
   'moderation.decide': {},
   'moderation.terms': {},
   'moderation.device_bans': {},
+  /** Removing the bans the server writes by itself (an under-age sign-up's year): the owner only. */
+  'moderation.device_bans_auto': { restricted: true },
 
   'reports.read': {},
   'reports.assign': {},

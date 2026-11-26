@@ -28,9 +28,10 @@ export const ME_VIEW_TTL_SECONDS = 24 * 3_600;
  * (`me:<uid>:<mev>:s<shape>`). Raise it whenever `account_view()` gains or
  * loses a key this build reads: during a rolling deploy the old and the new
  * build share `mev`, and a view one of them parsed (dropping what it does
- * not know) must never be served by the other. 2: `profile.uiTemplate`.
+ * not know) must never be served by the other. 2: `profile.uiTemplate`;
+ * 3: `profile.textRejectReason` and `prompts[].rejectReason`.
  */
-export const ME_VIEW_SHAPE = 2;
+export const ME_VIEW_SHAPE = 3;
 
 const cachedSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('account'), view: accountViewSchema }),

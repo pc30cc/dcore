@@ -101,7 +101,7 @@ export class RequestService {
     if (body.body.length > cfg.app['chat.max_body_chars'] && [...body.body].length > cfg.app['chat.max_body_chars']) {
       throw new HttpProblem('field_invalid', { detail: `At most ${cfg.app['chat.max_body_chars']} characters.` });
     }
-    if (cfg.bannedTerms.severity(body.body, 'messages') >= 3) throw new HttpProblem('message_refused');
+    if (cfg.bannedTerms.severity(body.body, 'messages', this.request.locale) >= 3) throw new HttpProblem('message_refused');
 
     const now = Date.now();
     const day = utcDay(now);

@@ -259,7 +259,7 @@ export class ChatService {
    * number or money talk only flags it.
    */
   private async screen(userId: string, clientId: string, text: string, confirm: string | undefined, cfg: ConfigSnapshot): Promise<number> {
-    const severity = cfg.bannedTerms.severity(text, 'messages');
+    const severity = cfg.bannedTerms.severity(text, 'messages', this.request.locale);
     if (severity >= 3) throw new HttpProblem('message_refused');
     let flags = riskyPattern(text) || severity === 2 ? FLAG.risky : 0;
     if (severity === 1) {

@@ -17,11 +17,12 @@ SQL
 
 # Extensions need a superuser; created ahead so migrations' CREATE EXTENSION
 # IF NOT EXISTS run as the owner role. This image has PostGIS (and pgcrypto,
-# citext from contrib), not pgvector.
+# citext, pg_trgm from contrib), not pgvector.
 for db in app_dev app_test; do
   psql -v ON_ERROR_STOP=1 --username postgres --dbname "$db" <<'SQL'
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 SQL
 done

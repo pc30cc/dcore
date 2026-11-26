@@ -1,16 +1,23 @@
 import type { Permission } from '@app/shared';
 import {
+  Ban,
   Contrast,
   FileText,
+  Flag,
   Globe,
+  Image as ImageIcon,
   Layers,
   LayoutDashboard,
   LifeBuoy,
+  Lock,
   Palette,
+  Scale,
+  ScrollText,
   Server,
-  ShieldCheck,
   ShoppingBag,
+  Smartphone,
   TrendingUp,
+  Type,
   UserCog,
   Users,
   type LucideIcon,
@@ -35,17 +42,28 @@ export interface SectionGroup {
   items: readonly Section[];
 }
 
+/** The moderation pages, in the order `/moderation` picks the first one an admin may open. */
+export const moderationSections: readonly Section[] = [
+  { path: 'moderation/photos', label: 'nav.photos', icon: ImageIcon, permission: 'moderation.read' },
+  { path: 'moderation/texts', label: 'nav.texts', icon: Type, permission: 'moderation.read' },
+  { path: 'moderation/reports', label: 'nav.reports', icon: Flag, permission: 'reports.read' },
+  { path: 'moderation/appeals', label: 'nav.appeals', icon: Scale, permission: 'appeals.read' },
+  { path: 'moderation/holds', label: 'nav.holds', icon: Lock, permission: 'reports.hold' },
+  { path: 'moderation/terms', label: 'nav.terms', icon: Ban, permission: 'moderation.read' },
+  { path: 'moderation/device-bans', label: 'nav.deviceBans', icon: Smartphone, permission: 'moderation.read' },
+];
+
 /** The panel's navigation, in order. */
 export const sectionGroups: readonly SectionGroup[] = [
   { label: 'nav.group.overview', items: [{ path: '', label: 'nav.dashboard', icon: LayoutDashboard, spec: 1 }] },
   {
     label: 'nav.group.operations',
     items: [
-      { path: 'users', label: 'nav.users', icon: Users, spec: 2 },
-      { path: 'moderation', label: 'nav.moderation', icon: ShieldCheck, spec: 3 },
+      { path: 'users', label: 'nav.users', icon: Users, permission: 'users.read' },
       { path: 'support', label: 'nav.support', icon: LifeBuoy, spec: 8 },
     ],
   },
+  { label: 'nav.group.moderation', items: moderationSections },
   {
     label: 'nav.group.revenue',
     items: [
@@ -67,6 +85,7 @@ export const sectionGroups: readonly SectionGroup[] = [
     items: [
       { path: 'system/admins', label: 'nav.admins', icon: UserCog, permission: 'admins.read' },
       { path: 'hosts', label: 'nav.hosts', icon: Globe, owner: true },
+      { path: 'system/audit', label: 'nav.audit', icon: ScrollText, permission: 'audit.read' },
       { path: 'system', label: 'nav.system', icon: Server, spec: 9 },
     ],
   },

@@ -179,6 +179,8 @@ export type OwnPhoto = z.infer<typeof ownPhotoSchema>;
 export const ownPromptSchema = profilePromptSchema.extend({
   position: z.number().int().min(0).max(2),
   status: textStateSchema,
+  /** While `status` is rejected: why, as the person reads it. */
+  rejectReason: z.string().optional(),
 });
 
 /**
@@ -218,6 +220,10 @@ export const ownProfileSchema = z.object({
   activeRecently: onlyTrue,
   photos: z.array(ownPhotoSchema),
   textState: textStateSchema,
+  /** While `textState` is rejected: why, as the person reads it. */
+  textRejectReason: z.string().optional(),
+  /** The name was replaced by the team: why, as the person reads it (until they choose another name). */
+  nameRejectReason: z.string().optional(),
   prompts: z.array(ownPromptSchema),
   /** Private fields included. */
   fields: z.array(profileFieldValueSchema),

@@ -28,6 +28,8 @@ const prompt = z.object({
   answer: z.string().optional(),
   audioMs: z.number().int().optional(),
   status: z.number().int().min(1).max(3),
+  /** profile_prompts.reject_reason while status = 3 (0026); absent in a view cached before it. */
+  rejectReason: z.number().int().optional(),
 });
 
 const field = z.object({
@@ -66,6 +68,10 @@ export const accountViewSchema = z.object({
       job: z.string().optional(),
       intention: z.number().int().optional(),
       textState: z.number().int(),
+      /** profiles.text_reject_reason while text_state = 3 (0026). */
+      textRejectReason: z.number().int().optional(),
+      /** profiles.name_reject_reason: an admin replaced the name for this reason (0026). */
+      nameRejectReason: z.number().int().optional(),
       completeness: z.number().int(),
       modeMatch: z.boolean(),
       modeSocial: z.boolean(),

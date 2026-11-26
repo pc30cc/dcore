@@ -16,6 +16,9 @@ import { jobId } from './queues.js';
  *   later): a block whose pair had a deck refill running drops the two from
  *   each other's queue once more, since that refill read its candidates
  *   before the block and may write one of them back.
+ * - `evidence-sweep` (daily, under a lease): the evidence of closed reports
+ *   whose retention is over is emptied, except while a legal hold names
+ *   the report.
  */
 
 export const SAFETY_QUEUE = 'safety' as const;
@@ -24,6 +27,7 @@ export const safetyJobNames = {
   moderationEnd: 'moderation-end',
   moderationSweep: 'moderation-sweep',
   blockDeck: 'block-deck',
+  evidenceSweep: 'evidence-sweep',
 } as const;
 
 const id = z.string().regex(/^[1-9][0-9]{0,18}$/);

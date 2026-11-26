@@ -26,6 +26,7 @@ import {
   pageQuerySchema,
   type AdminRevokeReason,
   type Permission,
+  type AuditAction,
 } from '@app/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -101,7 +102,7 @@ function snapshot(row: AdminAccountRow) {
   return { displayName: row.displayName, roles: row.roles, disabled: row.disabledAtMs !== null, totpEnabled: row.totpEnabled };
 }
 
-async function after(tx: PoolClient, trail: AuditTrail, action: string, before: AdminAccountRow, extra: Record<string, unknown> = {}): Promise<AdminAccountRow> {
+async function after(tx: PoolClient, trail: AuditTrail, action: AuditAction, before: AdminAccountRow, extra: Record<string, unknown> = {}): Promise<AdminAccountRow> {
   const row = await adminAccount(tx, Number(before.id));
   if (!row) throw new Error('admin: the account vanished inside its own transaction');
   trail.record({ action, target: 'admin', targetId: before.id, detail: { before: snapshot(before), after: snapshot(row), ...extra } });

@@ -1,5 +1,5 @@
 import { refreshSession } from './auth';
-import { ApiError, send, type HttpMethod } from './http';
+import { ApiError, send, sendBlob, type HttpMethod } from './http';
 import { accessToken, sessionState } from './session';
 
 /**
@@ -33,15 +33,8 @@ async function currentToken(): Promise<string> {
   return renewed;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const call = (token: string) =>
-    send<T>(path, {
-      token,
-      ...(options.method ? { method: options.method } : {}),
-      ...(options.body === undefined ? {} : { body: options.body }),
-      ...(options.signal ? { signal: options.signal } : {}),
-      ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
-    });
+/** Runs `call` with the admin's access token; a 401 is retried once after a refresh. */
+async function withAccessToken<T>(call: (token: string) => Promise<T>): Promise<T> {
   const token = await currentToken();
   try {
     return await call(token);
@@ -52,4 +45,23 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (!renewed) throw sessionOver();
     return call(renewed);
   }
+}
+
+function sendOptions(token: string, options: RequestOptions) {
+  return {
+    token,
+    ...(options.method ? { method: options.method } : {}),
+    ...(options.body === undefined ? {} : { body: options.body }),
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.fetchFn ? { fetchFn: options.fetchFn } : {}),
+  };
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return withAccessToken((token) => send<T>(path, sendOptions(token, options)));
+}
+
+/** A file the API answers (an export), as {@link apiRequest} sends it. */
+export async function apiFile(path: string, options: RequestOptions = {}): Promise<Blob> {
+  return withAccessToken((token) => sendBlob(path, sendOptions(token, options)));
 }

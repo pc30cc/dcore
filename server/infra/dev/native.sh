@@ -29,7 +29,7 @@ APP_DATABASES="${APP_DATABASES:-app_dev app_test}"
 # Extensions created ahead of the migrations, as superuser, so a migration that
 # says CREATE EXTENSION IF NOT EXISTS runs as the (non-superuser) owner role.
 # An extension whose package is not installed is skipped with a warning.
-PG_EXTENSIONS="${PG_EXTENSIONS:-postgis vector pgcrypto citext pg_stat_statements}"
+PG_EXTENSIONS="${PG_EXTENSIONS:-postgis vector pgcrypto citext pg_trgm pg_stat_statements}"
 REDIS_PORT="${REDIS_PORT:-63790}"
 PGBOUNCER_PORT="${PGBOUNCER_PORT:-64320}"
 STATE_DIR="${STATE_DIR:-/var/tmp/app-dev}"

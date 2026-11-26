@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useI18n } from '@/i18n/useI18n';
 import { startSession } from '@/lib/auth';
-import { asApiError } from '@/lib/http';
+import { asApiError, type ApiError } from '@/lib/http';
+import { problemText } from '@/lib/problemText';
 import { can, isOwner } from '@/lib/session';
 import { useSession } from '@/lib/useSession';
 
@@ -21,12 +22,12 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const session = useSession();
   const location = useLocation();
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (session.status !== 'unknown') return;
-    startSession().catch((error: unknown) => setFailure(asApiError(error).code));
+    startSession().catch((error: unknown) => setFailure(asApiError(error)));
   }, [session.status, attempt]);
 
   const from = `${location.pathname}${location.search}`;
@@ -35,16 +36,20 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   if (session.status === 'signedIn') return children;
 
   if (failure) {
+    // A spent refresh limit is not an outage: it says so, and when to try again.
+    const limited = failure.code === 'rate_limited';
+    const text =
+      failure.code === 'not_configured' ? t('common.error.notConfigured') : limited ? problemText(failure, t) : t('common.error.unreachable');
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>{t('session.unreachable.title')}</CardTitle>
+            <CardTitle>{limited ? t('session.limited.title') : t('session.unreachable.title')}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{failure === 'not_configured' ? t('common.error.notConfigured') : t('common.error.unreachable')}</AlertDescription>
+              <AlertDescription>{text}</AlertDescription>
             </Alert>
             <Button
               onClick={() => {
