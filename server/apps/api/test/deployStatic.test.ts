@@ -50,24 +50,40 @@ interface Answer {
   etag: string;
 }
 
-function fetchRaw(port: number, path: string, method = 'GET', headers: Record<string, string> = {}): Promise<Answer> {
+function fetchOnce(port: number, path: string, method: string, headers: Record<string, string>): Promise<Answer> {
   return new Promise((resolve, reject) => {
+    let answered = false;
     const req = request({ host: '127.0.0.1', port, path, method, headers: { accept: 'text/html', ...headers } }, (res) => {
+      answered = true;
+      const raw = res.rawHeaders;
+      const names: string[] = [];
+      const cacheControl: string[] = [];
+      for (let i = 0; i < raw.length; i += 2) {
+        names.push(raw[i]!.toLowerCase());
+        if (raw[i]!.toLowerCase() === 'cache-control') cacheControl.push(raw[i + 1]!);
+      }
+      const answer = { status: res.statusCode ?? 0, type: String(res.headers['content-type'] ?? ''), cacheControl, headers: names, etag: String(res.headers.etag ?? '') };
+      // The headers are the answer: nginx closes after refusing a declared body it never read, which can cut the rest.
+      res.on('error', () => resolve(answer));
+      res.on('end', () => resolve(answer));
       res.resume();
-      res.on('end', () => {
-        const raw = res.rawHeaders;
-        const names: string[] = [];
-        const cacheControl: string[] = [];
-        for (let i = 0; i < raw.length; i += 2) {
-          names.push(raw[i]!.toLowerCase());
-          if (raw[i]!.toLowerCase() === 'cache-control') cacheControl.push(raw[i + 1]!);
-        }
-        resolve({ status: res.statusCode ?? 0, type: String(res.headers['content-type'] ?? ''), cacheControl, headers: names, etag: String(res.headers.etag ?? '') });
-      });
     });
-    req.on('error', reject);
+    req.on('error', (error) => {
+      if (!answered) reject(error);
+    });
     req.end();
   });
+}
+
+/** One request; a connection reset before any answer (nginx closing on a declared body) is tried again, twice at most. */
+async function fetchRaw(port: number, path: string, method = 'GET', headers: Record<string, string> = {}): Promise<Answer> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fetchOnce(port, path, method, headers);
+    } catch (error) {
+      if (attempt >= 2 || (error as NodeJS.ErrnoException).code !== 'ECONNRESET') throw error;
+    }
+  }
 }
 
 async function listening(port: number): Promise<boolean> {
