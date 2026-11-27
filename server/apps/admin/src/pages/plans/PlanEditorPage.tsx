@@ -126,18 +126,18 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
       if (!plan) {
         const created = await apiRequest<AdminPlan>('/v1/admin/plans', { method: 'POST', body: planCreateBody(form) });
         storePlan(created);
-        showToast(t('plan.created', { name: localized(created.names, locale, created.key) }));
+        showToast((t, locale) => t('plan.created', { name: localized(created.names, locale, created.key) }));
         await navigate(`/revenue/plans/${created.key}`, { replace: true });
         return;
       }
       const body = planPatchBody(form, plan);
       if (!body) {
-        showToast(t('plan.nothingChanged'), 'info');
+        showToast((t) => t('plan.nothingChanged'), 'info');
         return;
       }
       const saved = await apiRequest<AdminPlan>(`/v1/admin/plans/${plan.key}`, { method: 'PATCH', body });
       storePlan(saved);
-      showToast(t('plan.saved'));
+      showToast((t) => t('plan.saved'));
     } catch (error) {
       failed(error);
     } finally {
@@ -153,7 +153,7 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
       storePlan(saved);
       // Archiving turns the plan's store products off.
       await queryClient.invalidateQueries({ queryKey: ['products'] });
-      showToast(t(action === 'archive' ? 'plan.archived' : 'plan.unarchived'));
+      showToast((t) => t(action === 'archive' ? 'plan.archived' : 'plan.unarchived'));
       setConfirm(null);
     } catch (error) {
       setConfirm(null);

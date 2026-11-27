@@ -1,6 +1,7 @@
 import { adminAccessTokenSchema, adminLoginResultSchema, adminMeSchema, adminTotpEnrollmentSchema, problemSchemaFor } from '@app/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ADMIN_REFRESH_COOKIE } from '../src/admin/session.js';
 import { base32Decode, totpAt } from '../src/admin/totp.js';
 import { migratedDatabase, row, rows, type TestDatabase } from './accountSupport.js';
 import {
@@ -15,6 +16,7 @@ import {
   stableProblem,
   startAdminHarness,
   type AdminHarness,
+  type SignedIn,
 } from './adminSupport.js';
 import { statements } from './authSupport.js';
 import { ADMIN_ORIGIN, hasInfrastructure } from './support.js';
@@ -409,6 +411,44 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
     expect((await admin(h, '/v1/admin/me', undefined, { token: six.accessToken })).statusCode).toBe(401);
     expect((await admin(h, '/v1/admin/me', undefined, { token: five.accessToken })).statusCode).toBe(200);
     expect((await admin(h, `/v1/admin/me/sessions/${six.sessionId}`, undefined, { token: five.accessToken, method: 'DELETE' })).statusCode).toBe(404);
+  });
+
+  it('signs out on a request with no body at all, or an empty JSON one, and refuses JSON that does not parse', async () => {
+    const ip = freshIp();
+    const account = await seedAdmin(h);
+    const ended = async (s: SignedIn) => {
+      expect((await admin(h, '/v1/admin/me', undefined, { token: s.accessToken })).statusCode).toBe(401);
+      expect((await admin(h, '/v1/admin/auth/refresh', {}, { cookie: s.cookie, ip })).statusCode).toBe(401);
+    };
+    const asJson = (s: SignedIn, payload: string) =>
+      h.app.inject({
+        method: 'POST',
+        url: '/v1/admin/auth/logout',
+        headers: { origin: ADMIN_ORIGIN, authorization: `Bearer ${s.accessToken}`, cookie: `${ADMIN_REFRESH_COOKIE}=${s.cookie}`, 'content-type': 'application/json' },
+        remoteAddress: ip,
+        payload,
+      });
+
+    // No body and no Content-Type.
+    const one = await signIn(h, account, ip);
+    const bare = await admin(h, '/v1/admin/auth/logout', undefined, { method: 'POST', cookie: one.cookie, token: one.accessToken, ip });
+    expect(bare.statusCode).toBe(204);
+    expect(setCookie(bare)?.attributes).toContain('Max-Age=0');
+    await ended(one);
+    expect(await auditCount(db, 'admin.logout', account.id)).toBe(1);
+
+    // Zero bytes sent as JSON.
+    const two = await signIn(h, account, ip);
+    expect((await asJson(two, '')).statusCode).toBe(204);
+    await ended(two);
+    expect(await auditCount(db, 'admin.logout', account.id)).toBe(2);
+
+    const three = await signIn(h, account, ip);
+    const malformed = await asJson(three, '{');
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json()).toMatchObject({ code: 'bad_request' });
+    expect((await admin(h, '/v1/admin/me', undefined, { token: three.accessToken })).statusCode).toBe(200);
+    expect(await auditCount(db, 'admin.logout', account.id)).toBe(2);
   });
 
   it("refuses every origin but the panel's on /v1/admin/*, and the cookie routes without one", async () => {

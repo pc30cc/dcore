@@ -175,7 +175,7 @@ function PenaltyFields({
       });
     } catch (error) {
       const failure = asApiError(error);
-      if (failure.errors[0]?.code !== 'nothing_to_ban') showToast(t('action.alsoBan.failed'), 'error', 6_000);
+      if (failure.errors[0]?.code !== 'nothing_to_ban') showToast((t) => t('action.alsoBan.failed'), 'error', 6_000);
     }
   }
 
@@ -196,8 +196,8 @@ function PenaltyFields({
       const failure = asApiError(error);
       const code = failure.errors[0]?.code;
       if (code === 'ends_in_past' || code === 'ends_too_far') setProblems({ [endField(form)]: 'action.error.untilPast' });
-      else if (code === 'unknown_report' || code === 'not_this_user') showToast(t('action.error.report'), 'error', 6_000);
-      else showToast(problemText(failure, t), 'error', 6_000);
+      else if (code === 'unknown_report' || code === 'not_this_user') showToast((t) => t('action.error.report'), 'error', 6_000);
+      else showToast((t) => problemText(failure, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -340,7 +340,7 @@ function LiftForm({ user, onClose, onDone }: { user: AdminUserDetail; onClose: (
         }),
       );
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

@@ -34,7 +34,7 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
     try {
       const list = await apiRequest<PlanList>('/v1/admin/plan-ranks', { method: 'PUT', body: { order } });
       queryClient.setQueryData(queryKeys.plans, list);
-      showToast(t('plans.reorder.saved'));
+      showToast((t) => t('plans.reorder.saved'));
       onOpenChange(false);
     } catch (error) {
       setProblem(problemText(asApiError(error), t));

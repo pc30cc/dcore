@@ -52,7 +52,7 @@ export function UsersPage() {
       const found = await apiRequest<AdminUserSearchResult>('/v1/admin/users/search', { method: 'POST', body: { q } });
       setResults(found.items);
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
     } finally {
       setSearching(false);
     }

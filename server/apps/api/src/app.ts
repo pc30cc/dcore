@@ -30,6 +30,7 @@ import { accountServicesPlugin, type AccountServicesOptions } from './plugins/ac
 import { adminAuthPlugin, type AdminAuthOptions } from './plugins/adminAuth.js';
 import { callsPlugin, type CallsOptions } from './plugins/calls.js';
 import { authPlugin } from './plugins/auth.js';
+import { bodyPlugin } from './plugins/body.js';
 import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
 import { clientIpPlugin } from './plugins/clientIp.js';
 import { denyListPlugin } from './plugins/denyList.js';
@@ -285,6 +286,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   });
 
   await app.register(errorsPlugin);
+  await app.register(bodyPlugin);
   // First of the hooks, so that every later hook and handler runs inside the request's tally.
   await app.register(pgBudgetPlugin, { mode: config.pgBudget, counter: statementCounter });
   await app.register(securityPlugin, { adminOrigins: config.corsAdminOrigins });

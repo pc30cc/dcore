@@ -64,10 +64,10 @@ export function TermsPage() {
     try {
       await apiRequest(`/v1/admin/banned-terms/${term.id}`, { method: 'DELETE' });
       changed();
-      showToast(t('terms.removed'));
+      showToast((t) => t('terms.removed'));
       setRemoving(null);
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -147,7 +147,7 @@ export function TermsPage() {
           onClose={() => setEditing(null)}
           onDone={(result) => {
             changed();
-            savedToast(t, result.sideEffects);
+            savedToast(result.sideEffects);
             setEditing(null);
           }}
         />
@@ -189,9 +189,9 @@ function TermTable({ rows, writer, onEdit, onRemove }: { rows: readonly AdminBan
     try {
       const result = await apiRequest<TermResult>(`/v1/admin/banned-terms/${term.id}`, { method: 'PATCH', body: { active } });
       changed();
-      savedToast(t, result.sideEffects);
+      savedToast(result.sideEffects);
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
     } finally {
       setSwitching(null);
     }
@@ -315,7 +315,7 @@ function TermDialog({ term, onClose, onDone }: { term: AdminBannedTerm | null; o
       const code = problem.errors[0]?.code ?? '';
       if (problem.code === 'conflict') setProblems({ term: t('terms.error.exists') });
       else if (termProblems[code]) setProblems({ term: t(termProblems[code]) });
-      else showToast(problemText(problem, t), 'error', 6_000);
+      else showToast((t) => problemText(problem, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

@@ -186,6 +186,36 @@ describe.skipIf(!hasInfrastructure)('sessions, Google sign-in and the under-18 r
       const d = (await signInWithPhone(h, number)).json<Pair>();
       expect((await me(d.accessToken)).statusCode).toBe(400);
     });
+
+    it('ends this session on a request with no body at all, or an empty JSON one, and refuses JSON that does not parse', async () => {
+      h = await authApp(db);
+      const number = phone('ir');
+      const signIns: Pair[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        await redis.del(h.app.keys.otpResendWait(h.app.otp.phoneKeyHash(number)));
+        signIns.push((await signInWithPhone(h, number)).json<Pair>());
+      }
+      const [a, b, c] = signIns as [Pair, Pair, Pair];
+      const logout = (token: string, extra: { payload?: string; headers?: Record<string, string> } = {}) =>
+        h.app.inject({ method: 'POST', url: '/v1/auth/logout', ...extra, headers: { authorization: `Bearer ${token}`, 'x-client': PLAY, ...extra.headers } });
+
+      // No body and no Content-Type.
+      const bare = await logout(a.accessToken);
+      expect(bare.statusCode).toBe(204);
+      expect(statements(bare)).toBe(1);
+      expect((await me(a.accessToken)).statusCode).toBe(401);
+      expect((await refresh(a.refreshToken)).json()).toMatchObject({ code: 'refresh_invalid' });
+
+      // Zero bytes sent as JSON.
+      expect((await logout(b.accessToken, { payload: '', headers: { 'content-type': 'application/json' } })).statusCode).toBe(204);
+      expect((await me(b.accessToken)).statusCode).toBe(401);
+      expect((await refresh(b.refreshToken)).json()).toMatchObject({ code: 'refresh_invalid' });
+
+      const malformed = await logout(c.accessToken, { payload: '{', headers: { 'content-type': 'application/json' } });
+      expect(malformed.statusCode).toBe(400);
+      expect(malformed.json()).toMatchObject({ code: 'bad_request' });
+      expect((await refresh(c.refreshToken)).statusCode).toBe(200);
+    });
   });
 
   describe('Google', () => {

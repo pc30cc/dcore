@@ -133,7 +133,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       config: { pgBudget: 1 },
       preHandler: app.requireUser,
-      schema: { tags: ['auth'], summary: 'Sign out here, or everywhere', body: logoutRequestSchema.optional() },
+      schema: { tags: ['auth'], summary: 'Sign out here, or everywhere', body: logoutRequestSchema.nullish() },
     },
     async (request, reply) => {
       await logout(app, request, request.body?.all === true);

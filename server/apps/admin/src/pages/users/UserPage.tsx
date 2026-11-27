@@ -136,7 +136,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
       after(await apiRequest<{ user?: AdminUserDetail; sideEffects: SideEffects }>(path, { method: 'POST', body }));
       setOpen(null);
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -228,7 +228,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
           onClose={() => setOpen(null)}
           onDone={(result) => {
             storeUser(result.user, ['moderation', 'audit']);
-            savedToast(t, result.sideEffects);
+            savedToast(result.sideEffects);
             setOpen(null);
           }}
         />
@@ -239,7 +239,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
           onClose={() => setOpen(null)}
           onDone={(result) => {
             storeUser(result.user, ['moderation', 'audit']);
-            savedToast(t, result.sideEffects);
+            savedToast(result.sideEffects);
             setOpen(null);
           }}
         />
@@ -256,7 +256,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
           if (open?.kind === 'delete') {
             void simple(`/v1/admin/users/${user.id}/delete`, noteBody(), (result) => {
               if (result.user) storeUser(result.user, ['moderation', 'audit', 'sessions']);
-              savedToast(t, result.sideEffects);
+              savedToast(result.sideEffects);
             });
           } else {
             void simple(`/v1/admin/users/${user.id}/revoke-sessions`, noteBody(), (result) => {
@@ -264,7 +264,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
                 void queryClient.invalidateQueries({
                   queryKey: ['user', user.id, stale],
                 });
-              savedToast(t, result.sideEffects);
+              savedToast(result.sideEffects);
             });
           }
         }}
@@ -282,7 +282,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
           open?.kind === 'test' &&
           void simple(`/v1/admin/users/${user.id}/test-account`, { test: open.on }, (result) => {
             if (result.user) storeUser(result.user, ['audit']);
-            savedToast(t, result.sideEffects);
+            savedToast(result.sideEffects);
           })
         }
       />
@@ -376,12 +376,12 @@ function RenameDialog({ user, onClose, onDone }: { user: AdminUserDetail; onClos
       const problem = asApiError(failure);
       if (problem.errors[0]?.code === 'name_refused') setError({ name: t('action.error.nameRefused') });
       else if (problem.code === 'conflict') {
-        showToast(t('action.error.stale'), 'error', 6_000);
+        showToast((t) => t('action.error.stale'), 'error', 6_000);
         void queryClient.invalidateQueries({
           queryKey: queryKeys.user(user.id),
         });
         onClose();
-      } else showToast(problemText(problem, t), 'error', 6_000);
+      } else showToast((t) => problemText(problem, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

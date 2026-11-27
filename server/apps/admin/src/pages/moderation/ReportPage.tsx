@@ -104,10 +104,10 @@ function ReportView({ report }: { report: AdminReportDetail }) {
     try {
       const summary = await apiRequest<AdminReportSummary>(`/v1/admin/reports/${report.id}/assign`, { method: 'POST', body: { to, from: report.assignee?.id ?? null } });
       storeReport(report, summary);
-      showToast(t('common.saved'));
+      showToast((t) => t('common.saved'));
     } catch (error) {
       const failure = asApiError(error);
-      showToast(problemText(failure, t), 'error', 6_000);
+      showToast((t) => problemText(failure, t), 'error', 6_000);
       if (failure.code === 'conflict') void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
     } finally {
       setBusy(false);
@@ -299,7 +299,7 @@ function ReportView({ report }: { report: AdminReportDetail }) {
             const own = items.find((item) => item.id === report.id);
             if (own) storeReport(report, own);
             for (const item of items) if (item.id !== report.id) void queryClient.invalidateQueries({ queryKey: queryKeys.report(item.id) });
-            showToast(items.length > 1 ? t('report.closedMany', { count: items.length }) : t('report.closed'));
+            showToast((t) => items.length > 1 ? t('report.closedMany', { count: items.length }) : t('report.closed'));
             setOpen(null);
             // Back to the list view the report was opened from, for the next one.
             void navigate(`/moderation/reports${from}`);
@@ -314,7 +314,7 @@ function ReportView({ report }: { report: AdminReportDetail }) {
             queryClient.setQueryData(queryKeys.report(report.id), { ...report, filing: result.filing, holds: result.holds, filed: true });
             void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
             void queryClient.invalidateQueries({ queryKey: ['holds'] });
-            showToast(t('report.filedToast'));
+            showToast((t) => t('report.filedToast'));
             setOpen(null);
           }}
         />
@@ -331,7 +331,7 @@ function ReportView({ report }: { report: AdminReportDetail }) {
           onDone={() => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
             void queryClient.invalidateQueries({ queryKey: ['holds'] });
-            showToast(t('common.saved'));
+            showToast((t) => t('common.saved'));
             setOpen(null);
           }}
         />
@@ -358,7 +358,6 @@ function PenaltyFromReport({
   onClose: () => void;
   onCloseReport: (initial: ReportResolution) => void;
 }) {
-  const { t } = useI18n();
   const { me } = useSession();
   const user = useUser(report.reported.id);
   if (!user.data) return null;
@@ -373,7 +372,7 @@ function PenaltyFromReport({
       onDone={(result) => {
         storeUser(result.user, ['moderation', 'audit']);
         void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
-        savedToast(t, result.sideEffects);
+        savedToast(result.sideEffects);
         // The report the penalty was taken on is closed next, with the matching resolution.
         if (openReport(report) && can(me, 'reports.resolve')) onCloseReport(resolutionOfPenalty[penalty]);
         else onClose();
@@ -525,7 +524,7 @@ function ChatCard({ report }: { report: AdminReportDetail }) {
       // The view is audited: the history shows it on the next read.
       void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

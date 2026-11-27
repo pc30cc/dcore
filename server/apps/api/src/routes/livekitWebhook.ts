@@ -58,6 +58,8 @@ export const livekitWebhookRoutes: FastifyPluginAsyncZod = async (app) => {
   // The exact bytes LiveKit signed: no JSON parsing before the check.
   const raw = (_request: FastifyRequest, body: Buffer, done: (error: Error | null, body?: Buffer) => void) => done(null, body);
   app.addContentTypeParser('application/webhook+json', { parseAs: 'buffer', bodyLimit: 1_048_576 }, raw);
+  // This scope inherits the API's JSON parser (plugins/body.ts); it is replaced here, not added to.
+  app.removeContentTypeParser('application/json');
   app.addContentTypeParser('application/json', { parseAs: 'buffer', bodyLimit: 1_048_576 }, raw);
 
   app.post(

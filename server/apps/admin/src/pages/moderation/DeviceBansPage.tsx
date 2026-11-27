@@ -116,7 +116,7 @@ export function DeviceBansPage() {
       const problem = asApiError(failure);
       if (problem.errors[0]?.code === "phone_invalid")
         setPhoneError(t("deviceBans.error.phone"));
-      else showToast(problemText(problem, t), "error", 6_000);
+      else showToast((t) => problemText(problem, t), "error", 6_000);
     } finally {
       setSearching(false);
     }
@@ -140,10 +140,10 @@ export function DeviceBansPage() {
       setFound(
         (current) => current?.filter((item) => item.id !== ban.id) ?? null,
       );
-      showToast(t("deviceBans.removed"));
+      showToast((t) => t("deviceBans.removed"));
       setRemoving(null);
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), "error", 6_000);
+      showToast((t) => problemText(asApiError(failure), t), "error", 6_000);
     } finally {
       setBusy(false);
     }
@@ -288,7 +288,7 @@ export function DeviceBansPage() {
             changed();
             // The lookup shown would not have the new ban: back to the whole list.
             clearLookup();
-            showToast(t("common.saved"));
+            showToast((t) => t("common.saved"));
             setCreating(false);
           }}
         />
@@ -557,7 +557,7 @@ function NewBanDialog({
         setProblems({ phone: t("deviceBans.error.phone") });
       else if (code === "ends_in_past" || code === "ends_too_far")
         setProblems({ expiry: t("action.error.untilPast") });
-      else showToast(problemText(problem, t), "error", 6_000);
+      else showToast((t) => problemText(problem, t), "error", 6_000);
     } finally {
       setBusy(false);
     }

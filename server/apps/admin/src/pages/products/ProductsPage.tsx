@@ -82,10 +82,10 @@ function StoreProducts({ store }: { store: AppStore }) {
     try {
       const saved = await apiRequest<AdminProduct>(`/v1/admin/store-products/${product.id}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
       storeProduct(saved);
-      showToast(t(active ? 'product.activated' : 'product.deactivated', { id: saved.productId }));
+      showToast((t) => t(active ? 'product.activated' : 'product.deactivated', { id: saved.productId }));
     } catch (error) {
       const failure = asApiError(error);
-      showToast(failure.code === 'conflict' ? t('product.error.archivedPlan') : problemText(failure, t), 'error', 6_000);
+      showToast((t) => failure.code === 'conflict' ? t('product.error.archivedPlan') : problemText(failure, t), 'error', 6_000);
     } finally {
       setBusy(false);
       setToggle(null);

@@ -170,7 +170,7 @@ export const userTabs = ['profile', 'moderation', 'reports', 'purchases', 'walle
 export type UserTab = (typeof userTabs)[number];
 
 /** The toast after a write: its word, or, when the app side failed, that some updates will reach the app late. */
-export function savedToast(t: (key: MessageKey) => string, sideEffects: SideEffects, done: MessageKey = 'common.saved'): void {
-  if (sideEffects === 'failed') showToast(t('common.sideEffectsLate'), 'info', 6_000);
-  else showToast(t(done));
+export function savedToast(sideEffects: SideEffects, done: MessageKey = 'common.saved'): void {
+  if (sideEffects === 'failed') showToast((t) => t('common.sideEffectsLate'), 'info', 6_000);
+  else showToast((t) => t(done));
 }

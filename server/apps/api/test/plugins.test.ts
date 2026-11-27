@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { ApiApp } from '../src/app.js';
 import { ClientPolicyHolder, OPEN_POLICY, clientPolicyFromConfig, parseClientHeader, pickLocale } from '../src/plugins/client.js';
 import { rateLimitKey } from '../src/plugins/rateLimit.js';
@@ -234,5 +235,53 @@ describe('configuration of ids and secrets', () => {
     expect(app.publicIds.user.decodeId(uid)).toBe('112314686237569028');
     expect(app.keys.denyUser('5')).toMatch(/^t[0-9a-f]{8}:deny:uid:5$/);
     expect(app.secrets.sealer.openText(app.secrets.sealer.seal('x', 'p'), 'p')).toBe('x');
+  });
+});
+
+describe('request bodies', () => {
+  const options = (body: z.ZodType) => ({ config: { pgBudget: 0 }, schema: { body } });
+  const echo = async (request: { body: unknown }) => ({ body: request.body ?? 'absent' });
+
+  async function withBodies(): Promise<ApiApp> {
+    app = await testApp();
+    app.post('/v1/test/body/nullish', options(z.object({ all: z.boolean().optional() }).nullish()), echo);
+    app.post('/v1/test/body/required', options(z.object({ all: z.boolean() })), echo);
+    app.post('/v1/test/body/optional', options(z.object({ all: z.boolean().optional() }).optional()), echo);
+    await app.ready();
+    return app;
+  }
+
+  const send = (instance: ApiApp, url: string, payload?: string, type?: string) =>
+    instance.inject({ method: 'POST', url, headers: { 'x-client': 'play/1', ...(type ? { 'content-type': type } : {}) }, ...(payload === undefined ? {} : { payload }) });
+
+  it('takes no body, or zero bytes of JSON, where the body is nullish, and still refuses JSON that does not parse', async () => {
+    const instance = await withBodies();
+    const url = '/v1/test/body/nullish';
+    for (const [payload, type] of [[undefined, undefined], ['', 'application/json'], ['', 'application/json; charset=utf-8'], ['null', 'application/json']] as const) {
+      const response = await send(instance, url, payload, type);
+      expect(response.statusCode, `${String(type)} ${String(payload)}`).toBe(200);
+      expect(response.json()).toEqual({ body: 'absent' });
+    }
+    expect((await send(instance, url, '{"all":true}', 'application/json')).json()).toEqual({ body: { all: true } });
+    for (const payload of ['{', '{"__proto__":{"all":true}}']) {
+      const refused = await send(instance, url, payload, 'application/json');
+      expect(refused.statusCode, payload).toBe(400);
+      expect(refused.json(), payload).toMatchObject({ code: 'bad_request' });
+    }
+  });
+
+  it('refuses a missing required body by its schema, with or without the JSON header', async () => {
+    const instance = await withBodies();
+    for (const [payload, type] of [[undefined, undefined], ['', 'application/json']] as const) {
+      const response = await send(instance, '/v1/test/body/required', payload, type);
+      expect(response.statusCode, String(type)).toBe(400);
+      expect(response.json(), String(type)).toMatchObject({ code: 'validation_failed', errors: [{ in: 'body', pointer: '' }] });
+    }
+  });
+
+  it('lists a route whose body is a bare optional (Fastify validates no body as null, which it refuses)', async () => {
+    const instance = await withBodies();
+    expect(instance.routesWithUndefinedOnlyBody()).toEqual(['POST /v1/test/body/optional']);
+    expect((await send(instance, '/v1/test/body/optional')).statusCode).toBe(400);
   });
 });

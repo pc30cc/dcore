@@ -92,7 +92,7 @@ export function HoldsPage() {
           onClose={() => setCreating(false)}
           onDone={() => {
             changed();
-            showToast(t('common.saved'));
+            showToast((t) => t('common.saved'));
             setCreating(false);
           }}
         />
@@ -103,7 +103,7 @@ export function HoldsPage() {
           onClose={() => setReleasing(null)}
           onDone={() => {
             changed();
-            showToast(t('holds.releasedToast'));
+            showToast((t) => t('holds.releasedToast'));
             setReleasing(null);
           }}
         />
@@ -309,7 +309,7 @@ function ReleaseDialog({ hold, onClose, onDone }: { hold: AdminHold; onClose: ()
       await apiRequest(`/v1/admin/holds/${hold.id}/release`, { method: 'POST', body: { reason: reason.trim() } });
       onDone();
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -394,7 +394,7 @@ export function NewHoldDialog({ initial = {}, onClose, onDone }: { initial?: New
       if (field) setErrors({ [field]: t(`holds.error.${field}` as MessageKey) });
       else if (issue?.code === 'no_target') setErrors({ user: t('holds.error.noTarget') });
       else if (problem.code === 'validation_failed' && pointed) setErrors({ [pointed]: t('holds.error.format') });
-      else showToast(problemText(problem, t), 'error', 6_000);
+      else showToast((t) => problemText(problem, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

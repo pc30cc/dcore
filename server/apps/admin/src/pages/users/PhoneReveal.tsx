@@ -22,7 +22,7 @@ export function PhoneReveal({ user }: { user: AdminUserDetail }) {
         queryKey: ['user', user.id, 'audit'],
       });
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -40,7 +40,7 @@ export function PhoneReveal({ user }: { user: AdminUserDetail }) {
       <span dir="ltr" className="font-mono">
         {phone}
       </span>
-      <Button variant="ghost" size="icon" className="size-7" aria-label={t('user.phone.copy')} onClick={() => void navigator.clipboard?.writeText(phone).then(() => showToast(t('common.copied')))}>
+      <Button variant="ghost" size="icon" className="size-7" aria-label={t('user.phone.copy')} onClick={() => void navigator.clipboard?.writeText(phone).then(() => showToast((t) => t('common.copied')))}>
         <Copy aria-hidden="true" />
       </Button>
     </span>

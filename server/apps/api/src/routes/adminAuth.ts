@@ -117,7 +117,7 @@ export const adminAuthRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       preHandler: requirePanelOrigin,
       config: { pgBudget: 2 },
-      schema: { tags, summary: 'Sign out this session, or every session', body: adminLogoutRequestSchema.optional() },
+      schema: { tags, summary: 'Sign out this session, or every session', body: adminLogoutRequestSchema.nullish() },
     },
     async (request, reply) => {
       await adminLogout(app, request, reply, request.body?.all === true);

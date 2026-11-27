@@ -80,11 +80,11 @@ export function TextQueuePage() {
     void queryClient.invalidateQueries({ queryKey: ['user', item.user.id] });
     // The card leaving and the live region are the answer (no toast over the next card's buttons); a late app side is still said.
     setDone(t(doneKey));
-    if (sideEffects === 'failed') showToast(t('common.sideEffectsLate'), 'info', 6_000);
+    if (sideEffects === 'failed') showToast((t) => t('common.sideEffectsLate'), 'info', 6_000);
   }
 
   function stale() {
-    showToast(t('texts.stale'), 'error', 6_000);
+    showToast((t) => t('texts.stale'), 'error', 6_000);
     void queryClient.invalidateQueries({ queryKey: queryKeys.textQueue });
   }
 
@@ -97,7 +97,7 @@ export function TextQueuePage() {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'conflict') stale();
-      else showToast(conflictText(failure, t) ?? problemText(failure, t), 'error', 6_000);
+      else showToast((t) => conflictText(failure, t) ?? problemText(failure, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

@@ -33,9 +33,9 @@ export function SecurityPage() {
     try {
       await apiRequest<undefined>(`/v1/admin/me/sessions/${session.id}`, { method: 'DELETE' });
       queryClient.setQueryData<{ items: AdminSession[] }>(queryKeys.sessions, (data) => (data ? { items: data.items.filter((item) => item.id !== session.id) } : data));
-      showToast(t('security.sessions.revoked'));
+      showToast((t) => t('security.sessions.revoked'));
     } catch (error) {
-      showToast(problemText(asApiError(error), t), 'error');
+      showToast((t) => problemText(asApiError(error), t), 'error');
     } finally {
       setBusy(null);
     }
@@ -138,7 +138,7 @@ function PasswordCard({ email }: { email: string }) {
       setRepeat('');
       setAttempted(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
-      showToast(t('security.password.saved'));
+      showToast((t) => t('security.password.saved'));
     } catch (error) {
       const failure = asApiError(error);
       if (failure.errors.some((issue) => issue.pointer === '/currentPassword')) setWrongCurrent(true);

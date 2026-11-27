@@ -41,7 +41,7 @@ export function ProfileTab({ user }: { user: AdminUserDetail }) {
 
   function decided(result: TextDecision, done: MessageKey) {
     for (const key of [queryKeys.user(user.id), ['user', user.id, 'moderation'], ['user', user.id, 'audit']]) void queryClient.invalidateQueries({ queryKey: key });
-    savedToast(t, result.sideEffects, done);
+    savedToast(result.sideEffects, done);
   }
 
   async function approve() {
@@ -52,11 +52,11 @@ export function ProfileTab({ user }: { user: AdminUserDetail }) {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'conflict') {
-        showToast(t('texts.stale'), 'error', 6_000);
+        showToast((t) => t('texts.stale'), 'error', 6_000);
         void queryClient.invalidateQueries({
           queryKey: queryKeys.user(user.id),
         });
-      } else showToast(problemText(failure, t), 'error', 6_000);
+      } else showToast((t) => problemText(failure, t), 'error', 6_000);
     } finally {
       setBusy(false);
     }

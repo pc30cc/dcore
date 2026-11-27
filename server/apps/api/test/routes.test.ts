@@ -239,6 +239,10 @@ describe('the route registry', () => {
     expect(app.routesWithoutBudget()).toEqual([]);
   });
 
+  it('takes a left-out body wherever the body is optional (nullish, never a bare optional: Fastify validates no body as null)', () => {
+    expect(app.routesWithUndefinedOnlyBody()).toEqual([]);
+  });
+
   it('declares the schema of every JSON answer, and no body where there is none', () => {
     for (const [method, path, status, body] of ROUTES) {
       const responses = doc.paths[path]?.[method.toLowerCase()]?.responses ?? {};

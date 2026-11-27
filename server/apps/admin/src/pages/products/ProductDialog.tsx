@@ -105,7 +105,7 @@ export function ProductDialog({
         saved = await apiRequest<AdminProduct>('/v1/admin/store-products', { method: 'POST', body: productCreateBody(form, store) });
       }
       storeProduct(saved);
-      showToast(product ? t('product.saved') : t('product.created', { id: saved.productId }));
+      showToast((t) => product ? t('product.saved') : t('product.created', { id: saved.productId }));
       onOpenChange(false);
     } catch (error) {
       const failure = asApiError(error);

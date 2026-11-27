@@ -227,7 +227,8 @@ describe('the product dialog', () => {
     const confirm = await screen.findByRole('alertdialog');
     expect(api.of('POST /v1/admin/store-products/41/deactivate')).toHaveLength(0);
     await user.click(within(confirm).getByRole('button', { name: 'Turn off' }));
-    await screen.findByText('Product sub.plus is off.');
+    // The notice isolates the product ID it names (U+2068 ... U+2069).
+    await screen.findByText('Product \u2068sub.plus\u2069 is off.');
     expect(api.of('POST /v1/admin/store-products/41/deactivate')).toHaveLength(1);
   });
 });

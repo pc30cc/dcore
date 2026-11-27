@@ -75,10 +75,10 @@ export function AdminsPage() {
         replace(saved);
         setOpen(null);
       }
-      showToast(t(confirmText[action].done, { name: admin.displayName }));
+      showToast((t) => t(confirmText[action].done, { name: admin.displayName }));
     } catch (error) {
       const failure = asApiError(error);
-      showToast(failure.code === 'conflict' ? t('admins.error.lastOwner') : problemText(failure, t), 'error', 6_000);
+      showToast((t) => failure.code === 'conflict' ? t('admins.error.lastOwner') : problemText(failure, t), 'error', 6_000);
       setOpen(null);
     } finally {
       setBusy(false);
@@ -211,7 +211,7 @@ export function AdminsPage() {
           onClose={() => setOpen(null)}
           onCreated={(admin, password) => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.admins });
-            showToast(t('admins.created', { name: admin.displayName }));
+            showToast((t) => t('admins.created', { name: admin.displayName }));
             setOpen(password ? { kind: 'password', admin, password } : null);
           }}
         />
@@ -223,7 +223,7 @@ export function AdminsPage() {
           onClose={() => setOpen(null)}
           onSaved={(admin) => {
             replace(admin);
-            showToast(t('admins.saved', { name: admin.displayName }));
+            showToast((t) => t('admins.saved', { name: admin.displayName }));
             setOpen(null);
           }}
         />

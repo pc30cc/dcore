@@ -116,17 +116,17 @@ export function PhotoQueuePage() {
       setRejecting(null);
       // The photo leaving the list and the live region are the answer: a toast would cover the pane's buttons.
       setDone(t(rejectWith ? 'photos.rejected' : 'photos.approved'));
-      if (result.sideEffects === 'failed') showToast(t('common.sideEffectsLate'), 'info', 6_000);
+      if (result.sideEffects === 'failed') showToast((t) => t('common.sideEffectsLate'), 'info', 6_000);
     } catch (error) {
       const failure = asApiError(error);
       const conflict = conflictText(failure, t);
       if (conflict || failure.code === 'not_found') {
         // Decided elsewhere, still processing or gone: it is not this queue's any more.
-        showToast(conflict ?? t('queue.alreadyDecided'), 'error', 6_000);
+        showToast((t) => conflictText(failure, t) ?? t('queue.alreadyDecided'), 'error', 6_000);
         leave(photo);
         setRejecting(null);
       } else {
-        showToast(problemText(failure, t), 'error', 6_000);
+        showToast((t) => problemText(failure, t), 'error', 6_000);
       }
     } finally {
       setBusy(false);

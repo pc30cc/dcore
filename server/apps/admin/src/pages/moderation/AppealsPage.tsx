@@ -83,7 +83,7 @@ export function AppealsPage() {
             dropFromPages<AdminAppeal>(queryKeys.appeals('open'), (a) => a.id !== result.appeal.id);
             void queryClient.invalidateQueries({ queryKey: queryKeys.appeals('decided') });
             void queryClient.invalidateQueries({ queryKey: ['user', result.appeal.user.id] });
-            savedToast(t, result.sideEffects, deciding.decision === 'overturn' ? 'appeals.overturned' : 'appeals.upheld');
+            savedToast(result.sideEffects, deciding.decision === 'overturn' ? 'appeals.overturned' : 'appeals.upheld');
             setDeciding(null);
           }}
         />
@@ -184,7 +184,7 @@ function DecisionDialog({ appeal, decision, onClose, onDone }: { appeal: AdminAp
     } catch (failure) {
       const problem = asApiError(failure);
       const conflict = conflictText(problem, t);
-      showToast(conflict ?? problemText(problem, t), 'error', 6_000);
+      showToast((t) => conflictText(problem, t) ?? problemText(problem, t), 'error', 6_000);
       if (conflict) {
         dropFromPages<AdminAppeal>(queryKeys.appeals('open'), (a) => a.id !== appeal.id);
         onClose();

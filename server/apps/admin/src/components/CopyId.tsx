@@ -9,7 +9,7 @@ export function CopyId({ value, truncate = false }: { value: string; truncate?: 
     <button
       type="button"
       dir="ltr"
-      onClick={() => void navigator.clipboard?.writeText(value).then(() => showToast(t('common.copied')))}
+      onClick={() => void navigator.clipboard?.writeText(value).then(() => showToast((t) => t('common.copied')))}
       className="inline-flex max-w-full min-w-0 items-center gap-1 rounded font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       aria-label={`${t('user.copyId')} ${value}`}
       title={truncate ? value : undefined}

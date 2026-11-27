@@ -55,10 +55,10 @@ export function PhotosTab({ user }: { user: AdminUserDetail }) {
       setRejecting(null);
       for (const tab of ['photos', 'moderation', 'audit']) void queryClient.invalidateQueries({ queryKey: ['user', user.id, tab] });
       void queryClient.invalidateQueries({ queryKey: ['photoQueue'] });
-      savedToast(t, result.sideEffects, rejectWith ? 'photos.rejected' : 'photos.approved');
+      savedToast(result.sideEffects, rejectWith ? 'photos.rejected' : 'photos.approved');
     } catch (error) {
       const failure = asApiError(error);
-      showToast(problemText(failure, t), 'error', 6_000);
+      showToast((t) => problemText(failure, t), 'error', 6_000);
       // Decided elsewhere: show the photo as it is now.
       if (failure.code === 'conflict') void queryClient.invalidateQueries({ queryKey: ['user', user.id, 'photos'] });
     } finally {

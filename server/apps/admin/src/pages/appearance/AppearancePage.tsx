@@ -78,14 +78,14 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
     try {
       const saved = await apiRequest<AdminAppearance>('/v1/admin/appearance', { method: 'PUT', body: appearanceBody(form, view.version) });
       setConfirming(false);
-      showToast(t('appearance.saved'));
+      showToast((t) => t('appearance.saved'));
       queryClient.setQueryData(queryKeys.appearance, saved);
     } catch (error) {
       setConfirming(false);
       const failure = asApiError(error);
       if (failure.code === 'conflict') {
         // Another admin saved meanwhile: the page starts again from their value (the toast outlives the form).
-        showToast(t('appearance.conflict'), 'error', 6_000);
+        showToast((t) => t('appearance.conflict'), 'error', 6_000);
         void queryClient.invalidateQueries({ queryKey: queryKeys.appearance });
         return;
       }

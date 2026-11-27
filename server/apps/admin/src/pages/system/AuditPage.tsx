@@ -44,7 +44,7 @@ export function AuditPage() {
       saveBlob(blob, exportName(filters));
     } catch (failure) {
       const problem = asApiError(failure);
-      showToast(problem.errors[0]?.code === 'too_many_rows' ? t('audit.export.tooMany') : problemText(problem, t), 'error', 6_000);
+      showToast((t) => problem.errors[0]?.code === 'too_many_rows' ? t('audit.export.tooMany') : problemText(problem, t), 'error', 6_000);
     } finally {
       setExporting(false);
     }

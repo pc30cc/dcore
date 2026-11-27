@@ -86,15 +86,15 @@ export function TextDecisionDialog({ parts, onClose, onDone, onStale }: { parts:
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'conflict') {
-        showToast(t('texts.stale'), 'error', 6_000);
+        showToast((t) => t('texts.stale'), 'error', 6_000);
         onStale();
       } else {
-        showToast(problemText(failure, t), 'error', 6_000);
+        showToast((t) => problemText(failure, t), 'error', 6_000);
       }
     } finally {
       setBusy(false);
     }
-  }, [busy, reason, nothing, parts, profile, prompts, onDone, onStale, t]);
+  }, [busy, reason, nothing, parts, profile, prompts, onDone, onStale]);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

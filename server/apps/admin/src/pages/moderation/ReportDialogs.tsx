@@ -78,7 +78,7 @@ export function CloseDialog({
       const result = await apiRequest<{ items: AdminReportSummary[] }>(`/v1/admin/reports/${report.id}/${mode}`, { method: 'POST', body });
       onDone(result.items);
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -145,7 +145,7 @@ export function HoldAndFileDialog({ report, onClose, onDone }: { report: AdminRe
       const body = { authority: authority as FilingAuthority, ...(externalRef.trim() ? { externalRef: externalRef.trim() } : {}) };
       onDone(await apiRequest<AdminHoldAndFile>(`/v1/admin/reports/${report.id}/hold-and-file`, { method: 'POST', body }));
     } catch (failure) {
-      showToast(problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
     } finally {
       setBusy(false);
     }
