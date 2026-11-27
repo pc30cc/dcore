@@ -166,7 +166,7 @@ export const actionTone: Partial<Record<AdminAction['kind'], 'default' | 'second
 };
 
 /** A `/users/{id}` tab, in the URL as `?tab=`. */
-export const userTabs = ['profile', 'moderation', 'reports', 'purchases', 'wallet', 'devices', 'sessions', 'consents', 'audit'] as const;
+export const userTabs = ['profile', 'moderation', 'reports', 'chats', 'purchases', 'wallet', 'devices', 'sessions', 'consents', 'audit'] as const;
 export type UserTab = (typeof userTabs)[number];
 
 /** The toast after a write: its word, or, when the app side failed, that some updates will reach the app late. */

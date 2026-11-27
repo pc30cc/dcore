@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { many, maybeOne, one, sql, type SqlFragment } from '../query.js';
 import { defineQuery } from './define.js';
-import { adminEpochMs, adminIdText, adminRefRow, adminRefSql, msOf } from './adminShared.js';
+import { adminEpochMs, adminIdText, adminRefRow, adminRefSql, adminUserKept, msOf } from './adminShared.js';
 import { moderationEffectSchema, revokeOutcomeSchema, type ModerationInput } from './safety.js';
 
 /**
@@ -123,7 +123,7 @@ export type AdminTextRow = z.infer<typeof adminTextRowSchema>;
 const viewOrNull = adminUserDetailRowSchema.nullable();
 
 /** Whether the account exists and is not purged (a tab's 404). */
-const exists = (userId: string) => sql`EXISTS (SELECT 1 FROM users u WHERE u.id = ${userId}::bigint AND u.status <> 8)`;
+const exists = adminUserKept;
 
 // ─── The list and search ──────────────────────────────────────────────────
 

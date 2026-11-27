@@ -34,11 +34,11 @@ const reportTone: Readonly<Record<AdminReportSummary['status'], 'green' | 'amber
  * title when it has one.
  */
 
-function Empty({ text }: { text: string }) {
+export function Empty({ text }: { text: string }) {
   return <p className="px-4 py-8 text-center text-sm text-muted-foreground">{text}</p>;
 }
 
-function More({ show, busy, onMore }: { show: boolean; busy: boolean; onMore: () => void }) {
+export function More({ show, busy, onMore }: { show: boolean; busy: boolean; onMore: () => void }) {
   const { t } = useI18n();
   if (!show) return null;
   return (
@@ -50,7 +50,7 @@ function More({ show, busy, onMore }: { show: boolean; busy: boolean; onMore: ()
   );
 }
 
-function Panel({ title, children, className }: { title?: string; children: ReactNode; className?: string }) {
+export function Panel({ title, children, className }: { title?: string; children: ReactNode; className?: string }) {
   return (
     <section className={cn('overflow-hidden rounded-xl border bg-card text-card-foreground shadow-xs', className)}>
       {title && <h2 className="border-b px-4 py-3 text-base font-semibold sm:px-5">{title}</h2>}

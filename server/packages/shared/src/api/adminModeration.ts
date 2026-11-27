@@ -34,9 +34,10 @@ import { httpUrl, idSchema, publicUidSchema, timeSchema } from './common.js';
  * `/v1/admin/appeals*`).
  *
  * People are public ids under neutral names (`user`, `reported`,
- * `reporter`), every other id a decimal string. A chat message body travels
- * only in the answer of `POST /reports/{id}/evidence` (audited), and its
- * sender only as a role (`reporter`, `reported`, `other`).
+ * `reporter`), every other id a decimal string. Of these routes, a chat
+ * message body travels only in the answer of `POST /reports/{id}/evidence`
+ * (audited), and its sender only as a role (`reporter`, `reported`,
+ * `other`); the user page's chats are `adminChats.ts`.
  */
 
 // ─── The photo queue ──────────────────────────────────────────────────────

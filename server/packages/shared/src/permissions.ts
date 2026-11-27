@@ -34,6 +34,12 @@ export const permissionCatalog = {
   'users.gift': {},
   'users.delete': {},
   'users.export': {},
+  /**
+   * Reading any conversation of a person and its messages (the user page's
+   * chats). Restricted: `users.*` does not cover it; the seeded admin role
+   * holds it by name (0033), superadmin through `*`.
+   */
+  'users.chats': { restricted: true },
 
   'moderation.read': {},
   'moderation.decide': {},

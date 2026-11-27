@@ -1,5 +1,6 @@
 export * from './account.js';
 export * from './admin.js';
+export * from './adminChats.js';
 export * from './adminModeration.js';
 export * from './adminRules.js';
 export * from './adminUsers.js';

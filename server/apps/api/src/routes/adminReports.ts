@@ -35,7 +35,6 @@ import {
   filingAuthority,
   idSchema,
   legalHoldKind,
-  messageFlags,
   messageKind,
   photoStatus,
   reportContext,
@@ -58,7 +57,7 @@ import { adminWrite } from '../admin/audit.js';
 import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
 import { withIdLease } from '../admin/effects.js';
 import { takeAdminLimit } from '../admin/limits.js';
-import { actionOf, actionVisible, adminRefOf, filingOf, holdOf, photoUrls, promptQuestion, reportSummaryOf, resolutionVisible, userReadScope } from '../admin/refs.js';
+import { actionOf, actionVisible, adminRefOf, filingOf, holdOf, messageFlagNames, photoUrls, promptQuestion, reportSummaryOf, resolutionVisible, userReadScope } from '../admin/refs.js';
 import { HttpProblem } from '../lib/problem.js';
 import type { ConfigSnapshot } from '../services/cfg.js';
 import { adminIdOf } from './adminAuth.js';
@@ -92,11 +91,6 @@ const idCursor = z.object({ id: idSchema });
 const noSuchReport = () => new HttpProblem('not_found', { detail: 'No such report.' });
 /** Audited chat views per admin and hour (the other sensitive view, the phone, allows 20). */
 export const VIEW_CHAT_PER_HOUR = 60;
-
-function modFlags(mask: number | undefined): string[] {
-  if (!mask) return [];
-  return messageFlags.names.filter((name) => (mask & messageFlags.code(name)) !== 0);
-}
 
 /** The filings of a report's evidence (its chat aside), with the photos they name as they are now. */
 function filingsOf(app: FastifyInstance, cfg: ConfigSnapshot, items: readonly AdminEvidenceItem[], photos: ReadonlyMap<string, EvidencePhotoRow>): AdminReportFiling[] {
@@ -160,7 +154,7 @@ function chatOf(snapshots: readonly ChatSnapshot[], reporterId: string | null, t
       id: m.id,
       from: role(m.senderId),
       kind: messageKind.nameOrUndefined(m.kind) ?? 'text',
-      flags: modFlags(m.flags),
+      flags: messageFlagNames(m.flags),
       body: m.body ?? null,
       at: wireTime(m.atMs),
       late: m.fromStream === true,

@@ -160,6 +160,8 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['GET', '/v1/admin/users/{id}/sessions', '200', true],
   ['GET', '/v1/admin/users/{id}/consents', '200', true],
   ['GET', '/v1/admin/users/{id}/audit', '200', true],
+  ['GET', '/v1/admin/users/{id}/chats', '200', true],
+  ['GET', '/v1/admin/users/{id}/chats/{conversationId}', '200', true],
   ['POST', '/v1/admin/users/{id}/reveal-phone', '200', true],
   ['POST', '/v1/admin/users/{id}/test-account', '200', true],
   ['POST', '/v1/admin/users/{id}/warn', '200', true],

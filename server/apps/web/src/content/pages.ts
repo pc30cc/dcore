@@ -40,6 +40,7 @@ const privacy: SitePage = {
           heading: 'Who sees it',
           body: [
             'Other members see what you put on your profile. Companies that host or process data for us (storage, SMS, moderation, notifications) do so under contract and only on our instructions. We disclose data to authorities only when the law requires it or to protect someone from serious harm.',
+            'Our staff may view messages when this is needed to keep the service safe or to comply with the law.',
           ],
         },
         {
@@ -87,6 +88,7 @@ const privacy: SitePage = {
           heading: 'چه کسی آن را می‌بیند',
           body: [
             'دیگر کاربران آنچه را در پروفایل خود گذاشته‌اید می‌بینند. شرکت‌هایی که داده را برای ما نگه‌داری یا پردازش می‌کنند (ذخیره‌سازی، پیامک، نظارت، اعلان) طبق قرارداد و فقط به دستور ما این کار را می‌کنند. اطلاعات را فقط وقتی قانون الزام کند یا برای جلوگیری از آسیب جدی به کسی، در اختیار مراجع قرار می‌دهیم.',
+            'کارکنان ما ممکن است در صورت لزوم، برای حفظ امنیت سرویس یا رعایت قانون، پیام‌ها را ببینند.',
           ],
         },
         {
@@ -134,6 +136,7 @@ const privacy: SitePage = {
           heading: 'Kimler görüyor',
           body: [
             'Diğer üyeler profiline koyduklarını görür. Verileri bizim için barındıran veya işleyen şirketler (depolama, SMS, denetim, bildirimler) bunu sözleşmeyle ve yalnızca bizim talimatımızla yapar. Verileri resmî makamlarla yalnızca yasa gerektirdiğinde ya da birini ciddi bir zarardan korumak için paylaşırız.',
+            'Ekibimiz, hizmeti güvende tutmak ya da yasalara uymak için gerektiğinde mesajları görüntüleyebilir.',
           ],
         },
         {

@@ -87,7 +87,7 @@ export interface PostOptions {
   cookie?: string | undefined;
   origin?: string | null | undefined;
   ip?: string | undefined;
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 }
 
 /** A request as the panel sends it (its Origin, the bearer token, the refresh cookie). */
@@ -161,6 +161,30 @@ export async function installAuditFailure(db: TestDatabase): Promise<void> {
     END $$`);
   await db.sql.query(`DROP TRIGGER IF EXISTS test_audit_refuse ON audit_log`);
   await db.sql.query(`CREATE TRIGGER test_audit_refuse BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION test_audit_refuse()`);
+}
+
+/** Installs test_digest(): every table of the schema, hashed row by row (the extensions' own tables and the test's refusal list aside). */
+export async function installTableDigest(db: TestDatabase): Promise<void> {
+  await db.sql.query(`CREATE OR REPLACE FUNCTION test_digest() RETURNS TABLE (name text, digest text) LANGUAGE plpgsql AS $$
+    DECLARE r record;
+    BEGIN
+      FOR r IN SELECT c.oid::regclass AS t, c.relname
+                 FROM pg_class c
+                WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+                  AND c.relname <> 'test_audit_refused'
+                  AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+                ORDER BY c.relname LOOP
+        name := r.relname;
+        EXECUTE format('SELECT md5(coalesce(string_agg(x::text, ''|'' ORDER BY x::text), '''')) FROM %s x', r.t) INTO digest;
+        RETURN NEXT;
+      END LOOP;
+    END $$`);
+}
+
+/** Every table's digest by name (after installTableDigest). */
+export async function tableDigest(db: TestDatabase): Promise<Record<string, string>> {
+  const result = await db.sql.query<{ name: string; digest: string }>(`SELECT name, digest FROM test_digest()`);
+  return Object.fromEntries(result.rows.map((r) => [r.name, r.digest]));
 }
 
 export async function refuseAudit(db: TestDatabase, ...actions: string[]): Promise<void> {

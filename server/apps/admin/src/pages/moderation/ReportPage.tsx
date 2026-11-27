@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Eye, Gavel, ImageOff, Lock, MessageSquare, Plus,
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useFromList } from '@/lib/listState';
+import { ChatBubble } from '@/components/chat/ChatBubble';
 import { CopyId } from '@/components/CopyId';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ActionDialog } from '@/components/moderation/ActionDialog';
@@ -562,14 +563,14 @@ function ChatCard({ report }: { report: AdminReportDetail }) {
               <span className="text-xs text-muted-foreground">{t('report.takenAt', { date: formatDateTime(snapshot.takenAt, locale) })}</span>
               <ol className="grid gap-2">
                 {snapshot.messages.map((m) => (
-                  <Bubble key={m.id} from={m.from} at={m.at} kind={m.kind} flags={m.flags} late={m.late} named={m.named}>
+                  <EvidenceBubble key={m.id} from={m.from} at={m.at} kind={m.kind} flags={m.flags} late={m.late} named={m.named}>
                     {m.body}
-                  </Bubble>
+                  </EvidenceBubble>
                 ))}
                 {snapshot.requests.map((r) => (
-                  <Bubble key={r.id} from={r.from} at={r.at} kind="request" flags={[]} late={false} named={false}>
+                  <EvidenceBubble key={r.id} from={r.from} at={r.at} kind="request" flags={[]} late={false} named={false}>
                     {r.body}
-                  </Bubble>
+                  </EvidenceBubble>
                 ))}
               </ol>
             </div>
@@ -580,7 +581,8 @@ function ChatCard({ report }: { report: AdminReportDetail }) {
   );
 }
 
-function Bubble({
+/** An evidence message by its sender's role: the reported person at the end, the reporter at the start, anyone else dashed. */
+function EvidenceBubble({
   from,
   at,
   kind,
@@ -597,38 +599,20 @@ function Bubble({
   named: boolean;
   children: ReactNode;
 }) {
-  const { t, locale } = useI18n();
-  const reported = from === 'reported';
+  const { t } = useI18n();
   return (
-    <li className={cn('flex', reported ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'grid max-w-[85%] gap-1 rounded-2xl px-3 py-2 text-sm',
-          reported ? 'rounded-ee-sm bg-primary/10 text-foreground dark:bg-primary/25' : from === 'reporter' ? 'rounded-es-sm bg-muted' : 'rounded-es-sm border border-dashed',
-          named && 'ring-2 ring-amber-500/70 dark:ring-amber-400/60',
-        )}
-      >
-        <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="font-medium">{t(`evidence.from.${from}` as MessageKey)}</span>
-          {named && <Badge variant="warning">{t('evidence.named')}</Badge>}
-          {kind !== 'text' && <Badge variant="outline">{t(`messageKind.${kind}` as MessageKey)}</Badge>}
-          {flags.map((flag) => (
-            <Badge key={flag} variant={flag === 'risky' ? 'warning' : 'outline'}>
-              {t(`messageFlag.${flag}` as MessageKey)}
-            </Badge>
-          ))}
-        </span>
-        {children !== null && children !== undefined && (
-          <p dir="auto" className="whitespace-pre-wrap">
-            {children}
-          </p>
-        )}
-        <span className="text-xs text-muted-foreground">
-          {formatDateTime(at, locale)}
-          {late && ` · ${t('evidence.late')}`}
-        </span>
-      </div>
-    </li>
+    <ChatBubble
+      side={from === 'reported' ? 'end' : 'start'}
+      tone={from === 'reported' ? 'end' : from === 'reporter' ? 'start' : 'dashed'}
+      label={t(`evidence.from.${from}` as MessageKey)}
+      badges={named && <Badge variant="warning">{t('evidence.named')}</Badge>}
+      kind={kind}
+      flags={flags}
+      ring={named}
+      at={at}
+      note={late ? t('evidence.late') : undefined}
+    >
+      {children}
+    </ChatBubble>
   );
 }
-

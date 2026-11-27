@@ -16,6 +16,23 @@ export function formatDate(iso: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
 }
 
+/** The time of day alone ("19:40"), where the day is shown elsewhere. */
+export function formatTime(iso: string, locale: Locale): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(date);
+}
+
+/** A length of time as a clock in the panel's digits: `m:ss`, or `h:mm:ss` from an hour. */
+export function formatDuration(seconds: number, locale: Locale): string {
+  const total = Math.max(0, Math.round(seconds));
+  const two = new Intl.NumberFormat(locale, { minimumIntegerDigits: 2, useGrouping: false, maximumFractionDigits: 0 });
+  const hours = Math.floor(total / 3_600);
+  const minutes = Math.floor((total % 3_600) / 60);
+  const rest = total % 60;
+  return hours > 0 ? `${formatPlain(hours, locale)}:${two.format(minutes)}:${two.format(rest)}` : `${formatPlain(minutes, locale)}:${two.format(rest)}`;
+}
+
 /**
  * A day typed in a date field (`YYYY-MM-DD`, the browser's Gregorian
  * picker) in the panel's calendar, when that calendar is another one

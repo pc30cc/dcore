@@ -140,6 +140,18 @@ describe('admin permissions', () => {
     expect(admin).not.toContain('billing.write');
     expect(expandGrants(['dashboard.read'])).toEqual(['dashboard.read']);
   });
+
+  it("keeps a person's conversations (users.chats) to superadmin and the grant by name", () => {
+    expect(grantCovers('users.*', 'users.chats')).toBe(false);
+    expect(grantCovers('users.chats', 'users.chats')).toBe(true);
+    expect(grantCovers('*', 'users.chats')).toBe(true);
+    const seeded = ['users.*', 'moderation.*', 'reports.*', 'appeals.*', 'content.*', 'billing.read', 'config.*', 'campaigns.*', 'support.*', 'dashboard.read', 'audit.read', 'billing.catalog'];
+    expect(expandGrants(seeded)).not.toContain('users.chats');
+    expect(expandGrants([...seeded, 'users.chats'])).toContain('users.chats');
+    expect(expandGrants(['*'])).toContain('users.chats');
+    // Moderators hold users.read and the user actions by name, never the chats.
+    expect(grantsAllow(['users.read', 'moderation.*', 'reports.*', 'appeals.*', 'users.ban', 'users.shadowban'], 'users.chats')).toBe(false);
+  });
 });
 
 describe('the admin refresh cookie', () => {

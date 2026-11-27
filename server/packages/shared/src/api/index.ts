@@ -1,6 +1,7 @@
 export * from './admin.js';
 export * from './adminAppearance.js';
 export * from './adminCatalog.js';
+export * from './adminChats.js';
 export * from './adminModeration.js';
 export * from './adminRules.js';
 export * from './adminUsers.js';

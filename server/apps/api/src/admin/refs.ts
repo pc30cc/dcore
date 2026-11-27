@@ -23,6 +23,7 @@ import {
   intention,
   isLocale,
   legalHoldKind,
+  messageFlags,
   moderationKind,
   moderationReason,
   photoRejectReason,
@@ -70,6 +71,12 @@ export function readUserParam(app: FastifyInstance, publicUid: string): string {
 
 export function noSuchUser(): HttpProblem {
   return new HttpProblem('not_found', { detail: 'No such user.' });
+}
+
+/** The `messageFlags` names of a messages.flags mask. */
+export function messageFlagNames(mask: number | undefined): string[] {
+  if (!mask) return [];
+  return messageFlags.names.filter((name) => (mask & messageFlags.code(name)) !== 0);
 }
 
 /** An account's state as the audit rows keep it (before and after a write). */

@@ -92,7 +92,8 @@ import { PHONE_LOOKUP_LIMIT, PHONE_LOOKUPS_PER_HOUR } from './adminDeviceBans.js
  * (`userReadScope`). One statement each; a purged account
  * (a tombstone) is 404 here and absent from every list. The phone number
  * is never in these answers (POST /users/{id}/reveal-phone, audited), nor a
- * message body, a token or a hash.
+ * message body (the chats routes, adminUserChats.ts, read those), a token or
+ * a hash.
  */
 
 const userParams = z.object({ id: publicUidSchema });

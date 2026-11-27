@@ -57,6 +57,7 @@ import { adminTermRoutes } from './routes/adminTerms.js';
 import { adminTextRoutes } from './routes/adminTexts.js';
 import { adminUserActionRoutes } from './routes/adminUserActions.js';
 import { adminUserRoutes } from './routes/adminUsers.js';
+import { adminUserChatRoutes, type AdminUserChatRoutesOptions } from './routes/adminUserChats.js';
 import { callRoutes } from './routes/calls.js';
 import { livekitWebhookRoutes } from './routes/livekitWebhook.js';
 import { originsRoutes } from './routes/origins.js';
@@ -143,6 +144,8 @@ export interface AppDependencies {
   playRtdn?: PlayRtdnOptions | undefined;
   /** Password hashing and the TOTP clock of admin sign-in (tests). */
   adminAuth?: AdminAuthOptions | undefined;
+  /** The admin chats routes' stream read limits (tests). */
+  adminChats?: AdminUserChatRoutesOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -336,6 +339,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(adminAppearanceRoutes);
   await app.register(adminRtcRoutes);
   await app.register(adminUserRoutes);
+  await app.register(adminUserChatRoutes, deps.adminChats ?? {});
   await app.register(adminUserActionRoutes);
   await app.register(adminTextRoutes);
   await app.register(adminPhotoRoutes);

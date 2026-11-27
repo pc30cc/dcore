@@ -31,6 +31,7 @@ import { can, isOwner } from '@/lib/session';
 import { showToast } from '@/lib/toast';
 import { useSession } from '@/lib/useSession';
 import { savedToast, statusTone, type UserTab } from '@/lib/users';
+import { ChatsTab } from './tabs/ChatsTab';
 import { ModerationTab } from './tabs/ModerationTab';
 import { AuditTab, ConsentsTab, DevicesTab, PurchasesTab, ReportsTab, SessionsTab, WalletTab } from './tabs/RecordTabs';
 import { ProfileTab } from './tabs/ProfileTab';
@@ -119,6 +120,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
       label: 'user.tab.reports',
       shown: can(me, 'reports.read'),
     },
+    { id: 'chats', label: 'user.tab.chats', shown: can(me, 'users.chats') },
     { id: 'purchases', label: 'user.tab.purchases', shown: true },
     { id: 'wallet', label: 'user.tab.wallet', shown: true },
     { id: 'devices', label: 'user.tab.devices', shown: true },
@@ -213,6 +215,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
         </TabsContent>
         <TabsContent value="moderation">{tab === 'moderation' && <ModerationTab user={user} />}</TabsContent>
         <TabsContent value="reports">{tab === 'reports' && <ReportsTab user={user} />}</TabsContent>
+        <TabsContent value="chats">{tab === 'chats' && <ChatsTab user={user} />}</TabsContent>
         <TabsContent value="purchases">{tab === 'purchases' && <PurchasesTab user={user} />}</TabsContent>
         <TabsContent value="wallet">{tab === 'wallet' && <WalletTab user={user} />}</TabsContent>
         <TabsContent value="devices">{tab === 'devices' && <DevicesTab user={user} />}</TabsContent>

@@ -4,7 +4,20 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MemoryJobProducer } from '../src/services/jobs.js';
 import { migratedDatabase, row, seedUser, type SeededUser, type TestDatabase } from './accountSupport.js';
-import { admin, adminAs, installAuditFailure, refuseAudit, seedAdmin, signIn, startAdminHarness, type AdminHarness, type AdminSession, type SignedIn } from './adminSupport.js';
+import {
+  admin,
+  adminAs,
+  installAuditFailure,
+  installTableDigest,
+  refuseAudit,
+  seedAdmin,
+  signIn,
+  startAdminHarness,
+  tableDigest,
+  type AdminHarness,
+  type AdminSession,
+  type SignedIn,
+} from './adminSupport.js';
 import { profileVersion, seedAction, seedAppeal, seedEvidenceReport, seedMatch, seedPhone, seedPhoto, seedTexts } from './moderationSupport.js';
 import { hasInfrastructure } from './support.js';
 
@@ -41,21 +54,7 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     const pair = generateOriginsKeyPair();
     h = await startAdminHarness(db, { ORIGINS_SIGNING_KEY: pair.privateKey, ORIGINS_SIGNING_KID: 'o1' }, { jobs, realtime });
     superadmin = await adminAs(h, 'superadmin');
-    // Every table of the schema, hashed row by row (the extensions' own tables and the test's refusal list aside).
-    await db.sql.query(`CREATE OR REPLACE FUNCTION test_digest() RETURNS TABLE (name text, digest text) LANGUAGE plpgsql AS $$
-      DECLARE r record;
-      BEGIN
-        FOR r IN SELECT c.oid::regclass AS t, c.relname
-                   FROM pg_class c
-                  WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p') AND NOT c.relispartition
-                    AND c.relname <> 'test_audit_refused'
-                    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
-                  ORDER BY c.relname LOOP
-          name := r.relname;
-          EXECUTE format('SELECT md5(coalesce(string_agg(x::text, ''|'' ORDER BY x::text), '''')) FROM %s x', r.t) INTO digest;
-          RETURN NEXT;
-        END LOOP;
-      END $$`);
+    await installTableDigest(db);
   }, 120_000);
 
   afterAll(async () => {
@@ -70,8 +69,7 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
   const unique = (word: string) => `${word}${(counter += 1)}`;
 
   async function digest(): Promise<Record<string, string>> {
-    const result = await db.sql.query<{ name: string; digest: string }>(`SELECT name, digest FROM test_digest()`);
-    return Object.fromEntries(result.rows.map((r) => [r.name, r.digest]));
+    return tableDigest(db);
   }
 
   async function denyKeys(): Promise<number> {
@@ -321,6 +319,36 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
       },
     },
   };
+
+  /**
+   * Reads that write no audit row and no other record (decided 2026-11-27):
+   * a person's conversations on the user page. They are GET routes, which
+   * this guard does not cover; the list keeps them from becoming writes,
+   * and from quietly gaining an audit row, without this file changing.
+   */
+  const UNAUDITED_READS = ['GET /v1/admin/users/{id}/chats', 'GET /v1/admin/users/{id}/chats/{conversationId}'] as const;
+
+  it('keeps the unaudited reads to GET, and reading them writes no row anywhere', async () => {
+    const doc = (await h.app.inject({ method: 'GET', url: '/openapi.json' })).json<{ paths: Record<string, Record<string, unknown>> }>();
+    for (const route of UNAUDITED_READS) {
+      const [method, path] = route.split(' ') as [string, string];
+      expect(Object.keys(doc.paths[path] ?? {}), route).toEqual([method.toLowerCase()]);
+    }
+    const subject = await person();
+    const other = await person();
+    const matchId = await seedMatch(h, subject.id, other.id);
+    await db.sql.query(`INSERT INTO messages (match_id, id, sender_id, kind, body) VALUES ($1, $2, $3, 1, 'A message')`, [matchId, h.app.ids.nextId(), other.id]);
+    const before = await digest();
+    const queued = jobs.jobs.length;
+    const published = realtime.published.length;
+    for (const url of [`/v1/admin/users/${subject.publicUid}/chats`, `/v1/admin/users/${subject.publicUid}/chats/${matchId}`]) {
+      const res = await admin(h, url, undefined, { token: superadmin.accessToken });
+      expect(res.statusCode, res.body).toBe(200);
+    }
+    expect(await digest()).toEqual(before);
+    expect(jobs.jobs.length).toBe(queued);
+    expect(realtime.published.length).toBe(published);
+  });
 
   it('covers every admin write route, and names only actions the API writes', async () => {
     const doc = (await h.app.inject({ method: 'GET', url: '/openapi.json' })).json<{ paths: Record<string, Record<string, unknown>> }>();

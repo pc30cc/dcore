@@ -1,4 +1,4 @@
-import type { AdminAction, AdminReasons, AdminUserDetail, AdminUserSummary, Permission } from '@app/shared';
+import type { AdminAction, AdminChatList, AdminChatMessage, AdminChatPage, AdminChatSummary, AdminReasons, AdminUserDetail, AdminUserSummary, Permission } from '@app/shared';
 import { adminWith } from './panel';
 
 /** People and records as the admin API answers them, for the user pages' tests. */
@@ -93,3 +93,53 @@ export const reasons: AdminReasons = {
 
 /** The empty tabs a page reads when it opens on the profile. */
 export const emptyPhotos = { items: [] };
+
+// ─── Chats ──────────────────────────────────────────────────────────────
+
+/** The admin role as seeded: the user page's chats come with users.chats (0033). */
+export const CHATS_ADMIN: Permission[] = [...ADMIN, 'users.chats'];
+export const chatsAdmin = adminWith(CHATS_ADMIN, ['admin']);
+
+export const LEO = 'leooooooooooo';
+
+export function chatSummary(id: string, overrides: Partial<AdminChatSummary> = {}): AdminChatSummary {
+  return {
+    id,
+    other: { id: LEO, name: 'Leo Brandt', status: 'active' },
+    state: 'active',
+    source: 'like',
+    startedAt: '2026-11-03T10:00:00.000Z',
+    endedAt: null,
+    endedBy: null,
+    lastActivityAt: '2026-11-25T14:05:00.000Z',
+    messages: { count: 12, more: false },
+    held: false,
+    visibility: { subjectSeesOther: true, otherSeesSubject: true },
+    retentionDays: null,
+    ...overrides,
+  };
+}
+
+export function chatMessage(id: string, overrides: Partial<AdminChatMessage> = {}): AdminChatMessage {
+  return {
+    id,
+    from: 'other',
+    kind: 'text',
+    flags: [],
+    body: `Message ${id}`,
+    refId: null,
+    at: '2026-11-25T14:00:00.000Z',
+    unsentAt: null,
+    shadowed: false,
+    pending: false,
+    ...overrides,
+  };
+}
+
+export function chatPage(conversation: AdminChatSummary, items: AdminChatMessage[], overrides: Partial<AdminChatPage> = {}): AdminChatPage {
+  return { conversation, items, nextCursor: null, stream: 'complete', ...overrides };
+}
+
+export function chatList(items: AdminChatSummary[], nextCursor: string | null = null, overrides: Partial<AdminChatList> = {}): AdminChatList {
+  return { items, nextCursor, streamComplete: true, ...overrides };
+}

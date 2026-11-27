@@ -49,6 +49,15 @@ describe('site content', () => {
     }
   });
 
+  it('says on the privacy page, in every locale, that staff may view messages when needed', () => {
+    for (const locale of locales) {
+      const sections = sitePages.privacy.content[locale].sections;
+      // The fourth section, "Who sees it": who else sees data, then the staff's view of messages.
+      expect(sections[3]?.body, locale).toHaveLength(2);
+    }
+    expect(sitePages.privacy.content.en.sections[3]?.body[1]).toBe('Our staff may view messages when this is needed to keep the service safe or to comply with the law.');
+  });
+
   it('uses only placeholders the build can fill', () => {
     for (const text of [...strings(sitePages), ...strings(ui), ...strings(deletion)]) {
       for (const name of placeholders(text)) expect(known.has(name), `{${name}} in "${text}"`).toBe(true);

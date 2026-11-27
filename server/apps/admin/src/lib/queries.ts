@@ -1,6 +1,8 @@
 import type {
   AdminAccount,
   AdminAppeal,
+  AdminChatList,
+  AdminChatPage,
   AdminAppearance,
   AdminAuditAdmin,
   AdminBannedTerm,
@@ -61,6 +63,9 @@ export const queryKeys = {
   user: (id: string) => ['user', id] as const,
   /** One tab of a person's page (`param`: its view, e.g. the reports side). */
   userTab: (id: string, tab: string, param = '') => ['user', id, tab, param] as const,
+  /** A person's conversations, and one of them (its message pages). */
+  userChats: (id: string) => ['user', id, 'chats'] as const,
+  userChat: (id: string, conversationId: string) => ['user', id, 'chat', conversationId] as const,
   reasons: ['reasons'] as const,
   photoQueue: ['photoQueue'] as const,
   textQueue: ['textQueue'] as const,
@@ -119,6 +124,37 @@ export function useUserPages<T>(id: string, tab: string, path: string, param = '
     initialPageParam: null as string | null,
     getNextPageParam: (last: Page<T>) => last.nextCursor,
     queryFn: ({ pageParam, signal }) => apiRequest<Page<T>>(pagePath(path, pageParam, 20), { signal }),
+  });
+}
+
+/**
+ * A person's conversations, newest first, 20 a page. A plain read: the API
+ * marks nothing read and records nothing, and the panel never asks for it
+ * on its own (no prefetch, no polling, no realtime). Message pages leave
+ * the cache a minute after the tab closes.
+ */
+export function useUserChats(id: string) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.userChats(id),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last: AdminChatList) => last.nextCursor,
+    queryFn: ({ pageParam, signal }) => apiRequest<AdminChatList>(pagePath(`/v1/admin/users/${id}/chats`, pageParam, 20), { signal }),
+    gcTime: 60_000,
+  });
+}
+
+/**
+ * One conversation's messages, 50 a page: pages[0] is the newest, each next page older; oldest first inside a page.
+ * `enabled` false holds the first read (until the list is known).
+ */
+export function useUserChat(id: string, conversationId: string | null, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.userChat(id, conversationId ?? ''),
+    enabled: enabled && conversationId !== null,
+    initialPageParam: null as string | null,
+    getNextPageParam: (last: AdminChatPage) => last.nextCursor,
+    queryFn: ({ pageParam, signal }) => apiRequest<AdminChatPage>(pagePath(`/v1/admin/users/${id}/chats/${conversationId}`, pageParam, 50), { signal }),
+    gcTime: 60_000,
   });
 }
 
