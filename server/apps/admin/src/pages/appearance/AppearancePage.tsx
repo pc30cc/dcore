@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
 import {
   appearanceBody,
@@ -48,7 +50,7 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
   const baseId = useId();
   const [initial] = useState<AppearanceForm>(() => appearanceFormOf(view));
   const [form, setForm] = useState<AppearanceForm>(initial);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const canWrite = can(me, 'config.write');
@@ -67,7 +69,7 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
     if (!canWrite || !dirty || saving) return;
     const problem = appearanceProblem(form);
     if (problem) {
-      setNotice(t(problem));
+      setNotice((t) => t(problem));
       return;
     }
     setConfirming(true);
@@ -90,7 +92,7 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
         return;
       }
       const known = failure.code === 'field_invalid' ? appearanceServerProblem(failure.errors) : null;
-      setNotice(known ? t(known) : problemText(failure, t));
+      setNotice(known ? (t) => t(known) : (t) => problemText(failure, t));
     } finally {
       setSaving(false);
     }
@@ -190,7 +192,7 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
               {notice ? (
                 <span className="flex items-center gap-2 text-destructive">
                   <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-                  {notice}
+                  <Worded text={notice} />
                 </span>
               ) : (
                 <span className="hidden text-muted-foreground sm:inline">{dirty ? t('form.unsaved') : t('form.noChanges')}</span>

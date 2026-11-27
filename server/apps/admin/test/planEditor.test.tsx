@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { asciiDigits, moveInOrder, newPlanForm, planCreateBody, planFormOf, planPatchBody, rankOrder, serverPlanErrors, validatePlanForm } from '../src/lib/plans';
 import { fakeApi, owner, plan, planList, problem, renderPanel, resetPanel, signInAs } from './panel';
+import { isolatedIn, wholeText } from './panel';
 
 const free = plan('free', { names: { en: 'Free', fa: 'رایگان' } });
 const plus = plan('plus', { rank: 1, sort: 1, names: { en: 'Plus', fa: 'پلاس' } });
@@ -225,7 +226,8 @@ describe('the plan editor', () => {
     await user.clear(sort);
     await user.type(sort, '7');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    await screen.findByText('It could not be saved: Another plan holds this rank.');
+    const notice = await screen.findByText(wholeText('It could not be saved: Another plan holds this rank.'));
+    expect(isolatedIn(notice)).toEqual(['Another plan holds this rank.']);
   });
 
   it('keeps a read-only role out of every change', async () => {

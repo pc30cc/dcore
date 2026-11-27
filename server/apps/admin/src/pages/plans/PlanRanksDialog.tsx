@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
 import { localized } from '@/lib/format';
@@ -23,7 +25,7 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
   const { t, locale } = useI18n();
   const [order, setOrder] = useState(() => rankOrder(plans).map((plan) => plan.key));
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useWording();
   const byKey = new Map(plans.map((plan) => [plan.key, plan]));
   const initial = rankOrder(plans).map((plan) => plan.key);
   const changed = order.join() !== initial.join();
@@ -37,7 +39,8 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
       showToast((t) => t('plans.reorder.saved'));
       onOpenChange(false);
     } catch (error) {
-      setProblem(problemText(asApiError(error), t));
+      const failure = asApiError(error);
+      setProblem((t) => problemText(failure, t));
     } finally {
       setBusy(false);
     }
@@ -85,7 +88,9 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
         {problem && (
           <Alert variant="destructive">
             <TriangleAlert aria-hidden="true" />
-            <AlertDescription>{problem}</AlertDescription>
+            <AlertDescription>
+              <Worded text={problem} />
+            </AlertDescription>
           </Alert>
         )}
         <DialogFooter>

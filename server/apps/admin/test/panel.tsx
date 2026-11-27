@@ -67,6 +67,19 @@ export function fakeApi(handlers: Record<string, Handler>) {
   return { fetchFn, calls, of: (key: string) => calls.filter((call) => `${call.method} ${call.path}` === key) };
 }
 
+/**
+ * A text matcher for the innermost element whose whole text is `text`:
+ * worded notices hold their values in <bdi>s, which the default matcher
+ * (an element's own text nodes only) does not read.
+ */
+export const wholeText =
+  (text: string) =>
+  (_content: string, element: Element | null): boolean =>
+    element?.textContent === text && Array.from(element.children).every((child) => child.textContent !== text);
+
+/** The text of each <bdi> (an isolated value) under `element`. */
+export const isolatedIn = (element: Element): string[] => Array.from(element.querySelectorAll('bdi'), (bdi) => bdi.textContent);
+
 export function resetPanel(): void {
   setRuntimeConfigForTests({ ok: true, config: { apiOrigin: API, cdnOrigin: null, persianFont: null } });
   resetSessionForTests();

@@ -6,8 +6,21 @@ export type TranslateValues = Readonly<Record<string, string | number>>;
 /** `t` of the panel: the string for a key in the panel's language, placeholders filled. */
 export type Translate = (key: MessageKey, values?: TranslateValues) => string;
 
+/**
+ * How to word a text that stays on screen (a notice, a refusal): called
+ * when it is drawn, with the panel's language of that moment, by
+ * <Worded>, whose `t` isolates each string value. State holds this, never
+ * finished text, which would keep the language it was worded in.
+ */
+export type Wording = (t: Translate, locale: Locale) => string;
+
 const FSI = '\u2068';
 const PDI = '\u2069';
+
+/** `text` in a first-strong isolate (U+2068 ... U+2069): a value with no sentence of its own around it (an API detail). */
+export function isolate(text: string): string {
+  return `${FSI}${text}${PDI}`;
+}
 
 /**
  * `values` with each string in a first-strong isolate (U+2068 ... U+2069).
@@ -15,11 +28,11 @@ const PDI = '\u2069';
  * in the other script (a Latin name in a Persian sentence, an API detail)
  * is laid out in its own direction, punctuation included, and counts as a
  * single neutral character for the sentence around it, so it moves none of
- * the sentence's punctuation.
+ * the sentence's punctuation. <Worded> draws each isolate as a <bdi>.
  */
 export function isolateValues(values: TranslateValues): TranslateValues {
   const out: Record<string, string | number> = {};
-  for (const [name, value] of Object.entries(values)) out[name] = typeof value === 'string' ? `${FSI}${value}${PDI}` : value;
+  for (const [name, value] of Object.entries(values)) out[name] = typeof value === 'string' ? isolate(value) : value;
   return out;
 }
 

@@ -5,8 +5,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { isolate, type Wording } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
 import type { MessageKey } from '@/i18n/messages';
+import { Worded } from '@/i18n/Worded';
 import { ApiError, apiRequest } from '@/lib/api';
 import { checkForm, formOf, hostsFields, problemsOf, requestOf, type FieldProblem, type HostsField, type HostsForm } from '@/lib/hosts';
 import { onSessionChange } from '@/lib/session';
@@ -39,7 +41,7 @@ export function HostsPage() {
   const [form, setForm] = useState<HostsForm | null>(null);
   const [problems, setProblems] = useState<FieldProblem[]>([]);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<{ kind: 'saved' | 'error'; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ kind: 'saved' | 'error'; text: Wording } | null>(null);
   const baseId = useId();
 
   // State changes only in the request's callbacks (never synchronously in the effect below).
@@ -82,11 +84,11 @@ export function HostsPage() {
       const view = await apiRequest<OriginsAdminView>('/v1/admin/origins', { method: 'PUT', body: requestOf(form, load.view.version) });
       setLoad({ state: 'ready', view });
       setForm(formOf(view));
-      setNotice({ kind: 'saved', text: t('hosts.saved', { version: view.version }) });
+      setNotice({ kind: 'saved', text: (t) => t('hosts.saved', { version: view.version }) });
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'field_invalid') setProblems(problemsOf(failure.errors));
-      setNotice({ kind: 'error', text: failure.code === 'conflict' ? t('hosts.conflict') : failure.message });
+      setNotice({ kind: 'error', text: failure.code === 'conflict' ? (t) => t('hosts.conflict') : () => isolate(failure.message) });
     } finally {
       setSaving(false);
     }
@@ -106,7 +108,7 @@ export function HostsPage() {
         <Alert variant={load.error.status === 401 ? 'default' : 'destructive'}>
           <TriangleAlert aria-hidden="true" />
           <AlertTitle>{load.error.status === 401 ? t('hosts.signIn.title') : t('hosts.loadFailed')}</AlertTitle>
-          <AlertDescription>{load.error.status === 401 ? t('hosts.signIn.body') : load.error.message}</AlertDescription>
+          <AlertDescription>{load.error.status === 401 ? t('hosts.signIn.body') : <Worded text={() => isolate(load.error.message)} />}</AlertDescription>
         </Alert>
       )}
 
@@ -170,7 +172,9 @@ export function HostsPage() {
                     {own.length > 0 && (
                       <ul id={`${id}-problems`} className="grid gap-1 text-sm text-destructive">
                         {own.map((problem, index) => (
-                          <li key={index}>{problem.line ? t('hosts.form.entry', { entry: problem.line, message: problem.message }) : problem.message}</li>
+                          <li key={index}>
+                            <Worded text={(t) => (problem.line ? t('hosts.form.entry', { entry: problem.line, message: problem.message }) : isolate(problem.message))} />
+                          </li>
                         ))}
                       </ul>
                     )}
@@ -183,7 +187,9 @@ export function HostsPage() {
               </label>
               {notice && (
                 <Alert variant={notice.kind === 'saved' ? 'default' : 'destructive'}>
-                  <AlertDescription>{notice.text}</AlertDescription>
+                  <AlertDescription>
+                    <Worded text={notice.text} />
+                  </AlertDescription>
                 </Alert>
               )}
             </CardContent>

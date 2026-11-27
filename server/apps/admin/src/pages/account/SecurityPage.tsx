@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { passwordProblem } from '@/lib/admins';
 import { apiRequest } from '@/lib/api';
 import { logout } from '@/lib/auth';
@@ -118,7 +120,7 @@ function PasswordCard({ email }: { email: string }) {
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
   const [attempted, setAttempted] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [wrongCurrent, setWrongCurrent] = useState(false);
   const [saving, setSaving] = useState(false);
   const nextProblem = attempted ? passwordProblem(next, email) : null;
@@ -142,7 +144,7 @@ function PasswordCard({ email }: { email: string }) {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.errors.some((issue) => issue.pointer === '/currentPassword')) setWrongCurrent(true);
-      else setNotice(failure.errors.some((issue) => issue.pointer === '/newPassword') ? t('admins.error.passwordShort', { min: 12 }) : problemText(failure, t));
+      else setNotice(failure.errors.some((issue) => issue.pointer === '/newPassword') ? (t) => t('admins.error.passwordShort', { min: 12 }) : (t) => problemText(failure, t));
     } finally {
       setSaving(false);
     }
@@ -174,7 +176,9 @@ function PasswordCard({ email }: { email: string }) {
           {notice && (
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertDescription>
+                <Worded text={notice} />
+              </AlertDescription>
             </Alert>
           )}
           <div>

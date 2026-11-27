@@ -284,4 +284,14 @@ describe('request bodies', () => {
     expect(instance.routesWithUndefinedOnlyBody()).toEqual(['POST /v1/test/body/optional']);
     expect((await send(instance, '/v1/test/body/optional')).statusCode).toBe(400);
   });
+
+  it('starts with a body schema that throws on an absent body, and lists that route', async () => {
+    app = await testApp();
+    // Parsing these throws instead of reporting issues: a preprocess that reads a property, an async refinement.
+    app.post('/v1/test/body/reads', options(z.preprocess((value) => (value as { all: unknown }).all, z.boolean())), echo);
+    app.post('/v1/test/body/async', options(z.unknown().refine(async () => true)), echo);
+    await app.ready();
+    expect(app.routesWithUndefinedOnlyBody()).toEqual(['POST /v1/test/body/reads (schema throws on an absent body)', 'POST /v1/test/body/async (schema throws on an absent body)']);
+    expect((await send(app, '/v1/test/body/reads', '{"all":true}', 'application/json')).json()).toEqual({ body: true });
+  });
 });

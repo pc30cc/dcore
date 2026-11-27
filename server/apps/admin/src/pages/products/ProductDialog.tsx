@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
 import { localized } from '@/lib/format';
@@ -61,7 +63,7 @@ export function ProductDialog({
   const [form, setForm] = useState<ProductForm>(() => (product ? productFormOf(product) : newProductForm()));
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<ProductErrors>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [saving, setSaving] = useState(false);
   const context = { store, mode, product, plans } as const;
   const errors: ProductErrors = { ...(attempted ? validateProductForm(form, context) : {}), ...serverErrors };
@@ -87,7 +89,7 @@ export function ProductDialog({
     if (saving) return;
     setAttempted(true);
     if (hasErrors(validateProductForm(form, context))) {
-      setNotice(t('form.fixMarked'));
+      setNotice((t) => t('form.fixMarked'));
       return;
     }
     setSaving(true);
@@ -112,11 +114,12 @@ export function ProductDialog({
       if (failure.code === 'field_invalid' || failure.code === 'validation_failed') {
         const mapped = serverProductErrors(failure.errors);
         setServerErrors(mapped.errors);
-        setNotice(mapped.rest.length > 0 ? t('common.error.invalid', { detail: mapped.rest.map((issue) => issue.message).join('; ') }) : t('form.fixMarked'));
+        const detail = mapped.rest.map((issue) => issue.message).join('; ');
+        setNotice(mapped.rest.length > 0 ? (t) => t('common.error.invalid', { detail }) : (t) => t('form.fixMarked'));
       } else if (failure.code === 'conflict') {
-        setNotice(locked ? t('product.error.lockedConflict') : t('product.error.conflict'));
+        setNotice(locked ? (t) => t('product.error.lockedConflict') : (t) => t('product.error.conflict'));
       } else {
-        setNotice(problemText(failure, t));
+        setNotice((t) => problemText(failure, t));
       }
     } finally {
       setSaving(false);
@@ -315,7 +318,9 @@ export function ProductDialog({
           {notice && (
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertDescription>
+                <Worded text={notice} />
+              </AlertDescription>
             </Alert>
           )}
 

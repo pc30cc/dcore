@@ -8,11 +8,10 @@
  * switch, is always in the language (and direction) of the layout around it.
  */
 
-import type { Locale } from '@app/shared';
-import type { Translate } from '@/i18n/translate';
+import type { Wording } from '@/i18n/translate';
 
 /** Words a notice: `t` puts each string value in its own bidi isolate. */
-export type ToastText = (t: Translate, locale: Locale) => string;
+export type ToastText = Wording;
 
 export interface Toast {
   id: number;

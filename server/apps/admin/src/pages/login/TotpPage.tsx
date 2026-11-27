@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n/useI18n';
+import { Worded } from '@/i18n/Worded';
 import { verifyCode } from '@/lib/auth';
 import { pendingSignIn } from '@/lib/signIn';
 import { useCodeStep } from './useCodeStep';
@@ -49,7 +50,9 @@ function TotpStep({ ticket }: { ticket: NonNullable<ReturnType<typeof pendingSig
             {step.problem && (
               <Alert variant="destructive">
                 <TriangleAlert aria-hidden="true" />
-                <AlertDescription>{step.problem}</AlertDescription>
+                <AlertDescription>
+                  <Worded text={step.problem} />
+                </AlertDescription>
               </Alert>
             )}
             <Button type="submit" size="lg" className="w-full" disabled={step.busy}>

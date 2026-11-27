@@ -40,7 +40,7 @@ export function TextQueuePage() {
   const [focus, setFocus] = useState(0);
   const [rejecting, setRejecting] = useState<AdminTextItem | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<MessageKey | null>(null);
   const index = Math.min(focus, Math.max(0, items.length - 1));
   const current = items[index];
   const cards = useRef<(HTMLElement | null)[]>([]);
@@ -79,7 +79,7 @@ export function TextQueuePage() {
     dropFromPages<AdminTextItem>(queryKeys.textQueue, (x) => x.user.id !== item.user.id);
     void queryClient.invalidateQueries({ queryKey: ['user', item.user.id] });
     // The card leaving and the live region are the answer (no toast over the next card's buttons); a late app side is still said.
-    setDone(t(doneKey));
+    setDone(doneKey);
     if (sideEffects === 'failed') showToast((t) => t('common.sideEffectsLate'), 'info', 6_000);
   }
 
@@ -122,9 +122,9 @@ export function TextQueuePage() {
         actions={<RefreshButton onClick={() => void queue.refetch()} busy={queue.isFetching} />}
       />
       {current ? (
-        <QueuePosition text={positionText(t, t('queue.kind.person'), index + 1, items.length, hasNextPage)} done={done} />
+        <QueuePosition text={positionText(t, t('queue.kind.person'), index + 1, items.length, hasNextPage)} done={done && t(done)} />
       ) : (
-        done && <QueuePosition text="" done={done} />
+        done && <QueuePosition text="" done={t(done)} />
       )}
       {queue.isPending ? (
         <TableSkeleton rows={4} />

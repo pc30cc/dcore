@@ -82,7 +82,7 @@ export function DeviceBansPage() {
   const bans = useDeviceBans(kind);
   const [phone, setPhone] = useState("");
   const [found, setFound] = useState<AdminDeviceBan[] | null>(null);
-  const [phoneError, setPhoneError] = useState<string | undefined>();
+  const [phoneError, setPhoneError] = useState<MessageKey | undefined>();
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<AdminDeviceBan | null>(null);
@@ -101,7 +101,7 @@ export function DeviceBansPage() {
     event.preventDefault();
     if (!phone.trim() || searching) return;
     if (lacksCountryCode(phone)) {
-      setPhoneError(t("deviceBans.error.phone"));
+      setPhoneError("deviceBans.error.phone");
       return;
     }
     setSearching(true);
@@ -115,7 +115,7 @@ export function DeviceBansPage() {
     } catch (failure) {
       const problem = asApiError(failure);
       if (problem.errors[0]?.code === "phone_invalid")
-        setPhoneError(t("deviceBans.error.phone"));
+        setPhoneError("deviceBans.error.phone");
       else showToast((t) => problemText(problem, t), "error", 6_000);
     } finally {
       setSearching(false);
@@ -217,7 +217,7 @@ export function DeviceBansPage() {
             </div>
             {phoneError && (
               <p id={lookupErrorId} className="text-sm text-destructive">
-                {phoneError}
+                {t(phoneError)}
               </p>
             )}
           </form>

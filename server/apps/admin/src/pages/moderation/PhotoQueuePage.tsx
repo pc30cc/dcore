@@ -51,7 +51,7 @@ export function PhotoQueuePage() {
   const [rejecting, setRejecting] = useState<AdminQueuePhoto | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<MessageKey | null>(null);
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set());
   const index = Math.min(focus, Math.max(0, items.length - 1));
   const current = items[index];
@@ -115,7 +115,7 @@ export function PhotoQueuePage() {
       leave(photo);
       setRejecting(null);
       // The photo leaving the list and the live region are the answer: a toast would cover the pane's buttons.
-      setDone(t(rejectWith ? 'photos.rejected' : 'photos.approved'));
+      setDone(rejectWith ? 'photos.rejected' : 'photos.approved');
       if (result.sideEffects === 'failed') showToast((t) => t('common.sideEffectsLate'), 'info', 6_000);
     } catch (error) {
       const failure = asApiError(error);
@@ -162,14 +162,14 @@ export function PhotoQueuePage() {
         meta={current ? <QueueProgress text={position(index + 1)} /> : undefined}
         actions={<RefreshButton onClick={() => void queue.refetch()} busy={queue.isFetching} />}
       />
-      {current && <QueuePosition text={position(index + 1)} done={done} />}
+      {current && <QueuePosition text={position(index + 1)} done={done && t(done)} />}
       {queue.isPending ? (
         <QueueSkeleton />
       ) : queue.isError && items.length === 0 ? (
         <LoadError error={queue.error} onRetry={() => void queue.refetch()} />
       ) : !current ? (
         <>
-          {done && <QueuePosition text="" done={done} />}
+          {done && <QueuePosition text="" done={t(done)} />}
           <EmptyQueue />
         </>
       ) : (

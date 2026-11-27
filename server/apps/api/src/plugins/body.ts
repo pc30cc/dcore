@@ -9,8 +9,9 @@ import { z } from 'zod';
  *   as `null`, so a body that may be left out is declared `.nullish()`:
  *   `.optional()` takes `undefined` only, which never reaches the
  *   validator, and refuses that request with a 400. Every route whose body
- *   schema takes `undefined` but not `null` is listed by
- *   `routesWithUndefinedOnlyBody()`, which the route registry test keeps empty.
+ *   schema takes `undefined` but not `null`, or throws on either, is listed
+ *   by `routesWithUndefinedOnlyBody()`, which the route registry test keeps
+ *   empty.
  * - An `application/json` body of zero bytes is no body either, the same
  *   request with the header set: Fastify's own parser refuses it, this one
  *   hands the route an absent body (a required body is then refused by its
@@ -20,8 +21,20 @@ import { z } from 'zod';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Routes whose body schema takes an absent body only as `undefined` (method and path). */
+    /**
+     * Routes whose body schema takes an absent body only as `undefined`, or
+     * throws on an absent body (method and path; the latter marked).
+     */
     routesWithUndefinedOnlyBody(): string[];
+  }
+}
+
+/** Whether `schema` takes `value`; 'throws' when parsing throws instead of reporting issues (a preprocess that reads a property, an async refinement). */
+function takes(schema: z.ZodType, value: unknown): boolean | 'throws' {
+  try {
+    return schema.safeParse(value).success;
+  } catch {
+    return 'throws';
   }
 }
 
@@ -39,9 +52,12 @@ export const bodyPlugin = fp(
     const undefinedOnly: string[] = [];
     app.addHook('onRoute', (route: RouteOptions) => {
       const schema = route.schema?.body;
-      if (schema instanceof z.ZodType && schema.safeParse(undefined).success && !schema.safeParse(null).success) {
-        undefinedOnly.push(`${String(route.method)} ${route.url}`);
-      }
+      if (!(schema instanceof z.ZodType)) return;
+      const absent = takes(schema, undefined);
+      const none = takes(schema, null);
+      // Listed, never thrown from here: a throw in an onRoute hook aborts the API's start.
+      if (absent === 'throws' || none === 'throws') undefinedOnly.push(`${String(route.method)} ${route.url} (schema throws on an absent body)`);
+      else if (absent && !none) undefinedOnly.push(`${String(route.method)} ${route.url}`);
     });
     app.decorate('routesWithUndefinedOnlyBody', () => [...undefinedOnly]);
   },

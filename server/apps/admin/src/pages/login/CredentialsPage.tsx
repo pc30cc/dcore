@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { login, startSession } from '@/lib/auth';
 import { asApiError } from '@/lib/http';
 import { safeReturnPath, startPendingSignIn } from '@/lib/signIn';
@@ -36,7 +38,7 @@ export function CredentialsPage() {
   const [password, setPassword] = useState('');
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useWording();
 
   // A refresh cookie from an earlier visit signs in without the form (the guard does the same for other pages).
   useEffect(() => {
@@ -49,7 +51,7 @@ export function CredentialsPage() {
     event.preventDefault();
     if (busy) return;
     if (email.trim() === '' || password === '') {
-      setProblem(t('login.error.missing'));
+      setProblem((t) => t('login.error.missing'));
       return;
     }
     setBusy(true);
@@ -61,7 +63,7 @@ export function CredentialsPage() {
       await navigate(result.enrollRequired ? '/login/enroll' : '/login/totp');
     } catch (error) {
       const found = signInProblem(asApiError(error), 'password');
-      setProblem(t(found.key, found.values));
+      setProblem((t) => t(found.key, found.values));
     } finally {
       setBusy(false);
     }
@@ -123,7 +125,9 @@ export function CredentialsPage() {
             {problem && (
               <Alert variant="destructive">
                 <TriangleAlert aria-hidden="true" />
-                <AlertDescription>{problem}</AlertDescription>
+                <AlertDescription>
+                  <Worded text={problem} />
+                </AlertDescription>
               </Alert>
             )}
             <Button type="submit" size="lg" className="w-full" disabled={busy}>

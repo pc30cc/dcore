@@ -92,7 +92,7 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
   const id = useId();
   const admins = useAuditAdmins();
   const [draft, setDraft] = useState<AuditFilterState>(initial);
-  const [targetError, setTargetError] = useState<string | undefined>();
+  const [targetError, setTargetError] = useState<MessageKey | undefined>();
   const set = (patch: Partial<AuditFilterState>) => setDraft((current) => ({ ...current, ...patch }));
   const fromDay = dayInPanelCalendar(draft.from, locale);
   const toDay = dayInPanelCalendar(draft.to, locale);
@@ -103,7 +103,7 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
     const target = draft.targetType === 'user' ? raw.toLowerCase() : raw;
     // A target that cannot name a row stays in the field: never in the address or a request.
     if (target && !auditTargetValid(draft.targetType, target)) {
-      setTargetError(draft.targetType === 'user' ? t('deviceBans.error.user') : t('audit.error.target'));
+      setTargetError(draft.targetType === 'user' ? 'deviceBans.error.user' : 'audit.error.target');
       return;
     }
     onApply({ ...draft, target });
@@ -184,7 +184,7 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
           />
           {targetError && (
             <p id={`${id}-target-error`} className="text-xs text-destructive">
-              {targetError}
+              {t(targetError)}
             </p>
           )}
         </div>

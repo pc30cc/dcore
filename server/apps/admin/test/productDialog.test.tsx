@@ -16,6 +16,7 @@ import {
   validateProductForm,
 } from '../src/lib/products';
 import { fakeApi, owner, plan, planList, problem, renderPanel, resetPanel, signInAs } from './panel';
+import { isolatedIn, wholeText } from './panel';
 
 const free = plan('free');
 const plus = plan('plus', { rank: 1 });
@@ -227,8 +228,9 @@ describe('the product dialog', () => {
     const confirm = await screen.findByRole('alertdialog');
     expect(api.of('POST /v1/admin/store-products/41/deactivate')).toHaveLength(0);
     await user.click(within(confirm).getByRole('button', { name: 'Turn off' }));
-    // The notice isolates the product ID it names (U+2068 ... U+2069).
-    await screen.findByText('Product \u2068sub.plus\u2069 is off.');
+    // The notice isolates the product ID it names, in a <bdi>.
+    const notice = await screen.findByText(wholeText('Product sub.plus is off.'));
+    expect(isolatedIn(notice)).toEqual(['sub.plus']);
     expect(api.of('POST /v1/admin/store-products/41/deactivate')).toHaveLength(1);
   });
 });

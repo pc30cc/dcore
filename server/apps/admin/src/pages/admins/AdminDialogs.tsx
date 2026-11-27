@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { roleName, validateNewAdmin, type NewAdminErrors, type NewAdminForm } from '@/lib/admins';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
@@ -46,7 +48,7 @@ export function CreateAdminDialog({ roles, onClose, onCreated }: { roles: readon
   const baseId = useId();
   const [form, setForm] = useState<NewAdminForm>({ email: '', displayName: '', roles: [], password: '' });
   const [attempted, setAttempted] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [saving, setSaving] = useState(false);
   const errors: NewAdminErrors = attempted ? validateNewAdmin(form) : {};
 
@@ -66,7 +68,13 @@ export function CreateAdminDialog({ roles, onClose, onCreated }: { roles: readon
       onCreated(created.admin, created.initialPassword);
     } catch (error) {
       const failure = asApiError(error);
-      setNotice(failure.code === 'conflict' ? t('admins.error.emailTaken') : failure.errors.some((issue) => issue.pointer === '/password') ? t('admins.error.passwordShort', { min: 12 }) : problemText(failure, t));
+      setNotice(
+        failure.code === 'conflict'
+          ? (t) => t('admins.error.emailTaken')
+          : failure.errors.some((issue) => issue.pointer === '/password')
+            ? (t) => t('admins.error.passwordShort', { min: 12 })
+            : (t) => problemText(failure, t),
+      );
     } finally {
       setSaving(false);
     }
@@ -107,7 +115,9 @@ export function CreateAdminDialog({ roles, onClose, onCreated }: { roles: readon
           {notice && (
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertDescription>
+                <Worded text={notice} />
+              </AlertDescription>
             </Alert>
           )}
           <DialogFooter>
@@ -130,7 +140,7 @@ export function EditAdminDialog({ admin, roles, onClose, onSaved }: { admin: Adm
   const baseId = useId();
   const [displayName, setDisplayName] = useState(admin.displayName);
   const [picked, setPicked] = useState<string[]>(admin.roles);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [saving, setSaving] = useState(false);
   const nameError = displayName.trim() === '' ? 'form.required' : displayName.trim().length > 80 ? 'admins.error.nameLong' : null;
   const rolesChanged = [...picked].sort().join() !== [...admin.roles].sort().join();
@@ -152,7 +162,7 @@ export function EditAdminDialog({ admin, roles, onClose, onSaved }: { admin: Adm
       onSaved(saved);
     } catch (error) {
       const failure = asApiError(error);
-      setNotice(failure.code === 'conflict' ? t('admins.error.lastOwner') : problemText(failure, t));
+      setNotice(failure.code === 'conflict' ? (t) => t('admins.error.lastOwner') : (t) => problemText(failure, t));
     } finally {
       setSaving(false);
     }
@@ -180,7 +190,9 @@ export function EditAdminDialog({ admin, roles, onClose, onSaved }: { admin: Adm
           {notice && (
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{notice}</AlertDescription>
+              <AlertDescription>
+                <Worded text={notice} />
+              </AlertDescription>
             </Alert>
           )}
           <DialogFooter>

@@ -3,6 +3,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/i18n/useI18n';
+import { Worded } from '@/i18n/Worded';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 
@@ -26,7 +27,7 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => v
       <TriangleAlert aria-hidden="true" />
       <AlertTitle>{t('common.error.load')}</AlertTitle>
       <AlertDescription>
-        {problemText(failure, t)}
+        <Worded text={(t) => problemText(failure, t)} />
         <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
           <RefreshCw aria-hidden="true" />
           {t('common.retry')}

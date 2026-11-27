@@ -16,6 +16,8 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { localeNames } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
+import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
 import { formatDateTime, localized } from '@/lib/format';
@@ -80,7 +82,7 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
   const [form, setForm] = useState<PlanForm>(initial);
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<PlanErrors>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useWording();
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState<'archive' | 'unarchive' | null>(null);
   const canWrite = can(me, 'billing.catalog');
@@ -105,9 +107,10 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
     if (failure.code === 'field_invalid' || failure.code === 'validation_failed') {
       const mapped = serverPlanErrors(failure.errors);
       setServerErrors(mapped.errors);
-      setNotice(mapped.rest.length > 0 ? t('common.error.invalid', { detail: mapped.rest.map((issue) => issue.message).join('; ') }) : t('form.fixMarked'));
+      const detail = mapped.rest.map((issue) => issue.message).join('; ');
+      setNotice(mapped.rest.length > 0 ? (t) => t('common.error.invalid', { detail }) : (t) => t('form.fixMarked'));
     } else {
-      setNotice(problemText(failure, t));
+      setNotice((t) => problemText(failure, t));
     }
   }
 
@@ -117,7 +120,7 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
     setAttempted(true);
     const found = validatePlanForm(form, context);
     if (hasErrors(found)) {
-      setNotice(t('form.fixMarked'));
+      setNotice((t) => t('form.fixMarked'));
       return;
     }
     setSaving(true);
@@ -415,7 +418,7 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
               {notice ? (
                 <span className="flex items-center gap-2 text-destructive">
                   <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-                  {notice}
+                  <Worded text={notice} />
                 </span>
               ) : (
                 <span className="hidden text-muted-foreground sm:inline">{dirty ? t('form.unsaved') : plan ? t('form.noChanges') : t('plan.newHint')}</span>

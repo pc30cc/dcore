@@ -1,7 +1,7 @@
 import type { AdminMe } from '@app/shared';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useI18n } from '@/i18n/useI18n';
+import { useWording } from '@/i18n/useWording';
 import { asApiError } from '@/lib/http';
 import { clearPendingSignIn, type PendingSignIn } from '@/lib/signIn';
 import { signInProblem } from './authErrors';
@@ -13,16 +13,15 @@ import { signInProblem } from './authErrors';
  * (expired, used, or the account locked).
  */
 export function useCodeStep(ticket: PendingSignIn, submitCode: (mfaToken: string, code: string) => Promise<AdminMe>) {
-  const { t } = useI18n();
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useWording();
 
   async function submit(value = code) {
     if (busy) return;
     if (value.length !== 6) {
-      setProblem(t('login.error.codeLength'));
+      setProblem((t) => t('login.error.codeLength'));
       return;
     }
     if (ticket.expiresAtMs <= Date.now()) {
@@ -45,7 +44,7 @@ export function useCodeStep(ticket: PendingSignIn, submitCode: (mfaToken: string
         return;
       }
       const found = signInProblem(failure, 'code');
-      setProblem(t(found.key, found.values));
+      setProblem((t) => t(found.key, found.values));
       setCode('');
     } finally {
       setBusy(false);

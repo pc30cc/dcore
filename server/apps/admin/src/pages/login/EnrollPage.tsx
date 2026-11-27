@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/i18n/useI18n';
+import { Worded } from '@/i18n/Worded';
 import { confirmCode, enroll } from '@/lib/auth';
 import { asApiError, isAbort } from '@/lib/http';
 import { groupSecret, pendingSignIn, type PendingSignIn } from '@/lib/signIn';
@@ -148,7 +149,9 @@ function EnrollStep({ ticket }: { ticket: PendingSignIn }) {
             {step.problem && (
               <Alert variant="destructive">
                 <TriangleAlert aria-hidden="true" />
-                <AlertDescription>{step.problem}</AlertDescription>
+                <AlertDescription>
+                  <Worded text={step.problem} />
+                </AlertDescription>
               </Alert>
             )}
             <Button type="submit" size="lg" className="w-full" disabled={step.busy || secret.state !== 'ready'}>
