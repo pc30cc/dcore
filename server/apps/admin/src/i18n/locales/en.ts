@@ -6,6 +6,7 @@
 export const en = {
   'app.title': '{appName} Admin',
   'shell.admin': 'Admin',
+  'shell.totpOff': 'Two-step sign-in is off: anyone who has an admin’s password can sign in.',
 
   'nav.label': 'Sections',
   'nav.open': 'Open navigation',
@@ -412,9 +413,12 @@ export const en = {
   'admins.error.lastOwner': 'At least one enabled owner must remain.',
 
   'security.intro': 'Signed in as {email}.',
+  'security.totpOff.title': 'Two-step sign-in is off',
+  'security.totpOff.body': 'Admins sign in with the password alone: no authenticator code is asked for. Keep your password long and unique, and sign out of any session you do not recognise.',
   'security.sessions.title': 'Sessions',
   'security.sessions.body': 'Where you are signed in. A session ends after 12 hours without activity, and after 7 days at most.',
   'security.sessions.current': 'This session',
+  'security.sessions.noMfa': 'Password only',
   'security.sessions.unknownDevice': 'Unknown device',
   'security.sessions.meta': 'IP {ip} · active {seen} · since {since}',
   'security.sessions.revoke': 'Sign out',

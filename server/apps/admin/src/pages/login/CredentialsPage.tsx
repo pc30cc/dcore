@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
-import { login, startSession } from '@/lib/auth';
+import { finishSignIn, login, startSession } from '@/lib/auth';
 import { asApiError } from '@/lib/http';
 import { safeReturnPath, startPendingSignIn } from '@/lib/signIn';
 import { useSession } from '@/lib/useSession';
@@ -25,7 +25,10 @@ interface LoginState {
 /**
  * Sign-in, first step: work e-mail and password. Every refusal reads the
  * same (the API never says whether an e-mail exists); five failed attempts
- * lock the account for 15 minutes, which the message says up front.
+ * lock the account for 15 minutes, which the message says up front. When
+ * the deployment requires no second factor the answer is the whole sign-in
+ * (`session`, with no ticket for an admin who has TOTP): the panel opens the
+ * page asked for, with no code step.
  */
 export function CredentialsPage() {
   const { t } = useI18n();
@@ -58,9 +61,18 @@ export function CredentialsPage() {
     setProblem(null);
     try {
       const result = await login(email, password);
-      startPendingSignIn({ mfaToken: result.mfaToken, enrollRequired: result.enrollRequired, expiresAtMs: Date.parse(result.expiresAt), email: email.trim(), returnTo });
-      setPassword('');
-      await navigate(result.enrollRequired ? '/login/enroll' : '/login/totp');
+      if (result.session) {
+        await finishSignIn(result.session);
+        setPassword('');
+        await navigate(returnTo, { replace: true });
+        return;
+      }
+      // An answer without `session` is a ticket: the code step follows.
+      if ('mfaToken' in result) {
+        startPendingSignIn({ mfaToken: result.mfaToken, enrollRequired: result.enrollRequired, expiresAtMs: Date.parse(result.expiresAt), email: email.trim(), returnTo });
+        setPassword('');
+        await navigate(result.enrollRequired ? '/login/enroll' : '/login/totp');
+      }
     } catch (error) {
       const found = signInProblem(asApiError(error), 'password');
       setProblem((t) => t(found.key, found.values));

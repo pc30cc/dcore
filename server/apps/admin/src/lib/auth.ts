@@ -12,12 +12,17 @@ import { heldToken, sessionState, setAccessToken, signedIn, signedOut } from './
  *    only) and the refresh cookie (HttpOnly; the browser keeps it);
  * 3. `refreshSession()` trades the cookie for a new token (the cookie is
  *    rotated each time). Concurrent callers share one request.
+ *
+ * A deployment without the second factor (ADMIN_TOTP_REQUIRED=false) ends
+ * the sign-in at step 1: the login answer carries `session` (the access
+ * token; the cookie came with it), which `finishSignIn` takes.
  */
 
 const AUTH = '/v1/admin/auth';
 
+/** Step 1. With credentials: the answer sets the refresh cookie when it completes the sign-in (`session`). */
 export function login(email: string, password: string): Promise<AdminLoginResult> {
-  return send<AdminLoginResult>(`${AUTH}/login`, { method: 'POST', body: { email: email.trim(), password } });
+  return send<AdminLoginResult>(`${AUTH}/login`, { method: 'POST', body: { email: email.trim(), password }, withCookie: true });
 }
 
 const enrollments = new Map<string, Promise<AdminTotpEnrollment>>();
@@ -42,6 +47,11 @@ async function finish(result: AdminAccessToken): Promise<AdminMe> {
   const me = await loadMe(result.accessToken);
   signedIn(me);
   return me;
+}
+
+/** A login answer that completed the sign-in (no second factor required): signs in with its token. */
+export function finishSignIn(session: AdminAccessToken): Promise<AdminMe> {
+  return finish(session);
 }
 
 /** The first code of a new secret: turns it on and signs in. */

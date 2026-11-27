@@ -1,4 +1,4 @@
-import { LogOut, Menu, ShieldCheck, X } from 'lucide-react';
+import { LogOut, Menu, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +18,9 @@ import { Toaster } from './Toaster';
  * The panel's frame: a sidebar on the reading-start side (left in English,
  * right in Persian, through logical properties only) with the sections the
  * admin's roles reach, and a header with the language and theme pickers and
- * the admin's menu. On small screens the sidebar is a drawer.
+ * the admin's menu. On small screens the sidebar is a drawer. While the
+ * API signs admins in without a second factor (`totpRequired` false in
+ * /v1/admin/me) a warning bar stays under the header on every page.
  */
 export function AppShell() {
   const { t, dir } = useI18n();
@@ -133,6 +135,15 @@ export function AppShell() {
             )}
           </div>
         </header>
+        {me?.totpRequired === false && (
+          <div
+            role="alert"
+            className="sticky top-14 z-20 flex items-start gap-2 border-b border-amber-500/40 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-950 lg:px-6 dark:bg-amber-950/40 dark:text-amber-100"
+          >
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{t('shell.totpOff')}</span>
+          </div>
+        )}
         <main className="flex-1 p-4 lg:p-8">
           <Outlet />
         </main>

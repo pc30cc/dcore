@@ -28,7 +28,8 @@ import { requirePanelOrigin } from '../plugins/adminAuth.js';
  * Admin sign-in (`/v1/admin/auth/*`, no token) and the signed-in admin's
  * own account (`/v1/admin/me*`, any admin). Budgets: login 2 (the
  * credentials, then the failure count or the acceptance, which also stores a
- * rehash); enrol 1 read and a
+ * rehash), or with ADMIN_TOTP_REQUIRED=false 3 (the credentials, then the
+ * failure count or a transaction of 2: the sign-in and its audit row); enrol 1 read and a
  * transaction of 2; a code 1 read and a failure count or a transaction of
  * 2 (the sign-in and its audit row); refresh 1; logout a transaction of 2.
  */
@@ -69,10 +70,15 @@ export const adminAuthRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/v1/admin/auth/login',
     {
-      config: { pgBudget: 2 },
-      schema: { tags, summary: 'Admin sign-in, first step: e-mail and password', body: adminLoginRequestSchema, response: { 200: adminLoginResultSchema } },
+      config: { pgBudget: 3 },
+      schema: {
+        tags,
+        summary: 'Admin sign-in, first step: e-mail and password (the whole sign-in while ADMIN_TOTP_REQUIRED is false)',
+        body: adminLoginRequestSchema,
+        response: { 200: adminLoginResultSchema },
+      },
     },
-    async (request) => adminLogin(app, request, request.body.email, request.body.password),
+    async (request, reply) => adminLogin(app, request, reply, request.body.email, request.body.password),
   );
 
   app.post(
@@ -136,6 +142,7 @@ export const adminAuthRoutes: FastifyPluginAsyncZod = async (app) => {
         ...accountView(row),
         permissions: app.adminAuth.roles.permissionsOf(request.principal?.roles ?? []),
         sessionId: request.principal?.sessionId ?? '',
+        totpRequired: app.adminAuth.totpRequired,
       };
     },
   );
@@ -156,6 +163,7 @@ export const adminAuthRoutes: FastifyPluginAsyncZod = async (app) => {
           ip: row.ip,
           userAgent: row.userAgent,
           current: row.id === current,
+          mfa: row.mfa,
         })),
       };
     },

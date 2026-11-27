@@ -4,6 +4,7 @@ import type { Messages } from '../messages';
 export const tr: Messages = {
   'app.title': '{appName} Yönetim',
   'shell.admin': 'Yönetim',
+  'shell.totpOff': 'İki adımlı giriş kapalı: bir yöneticinin parolasını bilen herkes giriş yapabilir.',
 
   'nav.label': 'Bölümler',
   'nav.open': 'Menüyü aç',
@@ -410,9 +411,12 @@ export const tr: Messages = {
   'admins.error.lastOwner': 'En az bir etkin sahip kalmalı.',
 
   'security.intro': '{email} olarak giriş yapıldı.',
+  'security.totpOff.title': 'İki adımlı giriş kapalı',
+  'security.totpOff.body': 'Yöneticiler yalnızca parolayla giriş yapar; doğrulama uygulamasının kodu istenmez. Parolanızı uzun ve benzersiz tutun, tanımadığınız her oturumu kapatın.',
   'security.sessions.title': 'Oturumlar',
   'security.sessions.body': 'Giriş yaptığınız yerler. Bir oturum 12 saat işlem yapılmayınca ve en geç 7 gün sonra sona erer.',
   'security.sessions.current': 'Bu oturum',
+  'security.sessions.noMfa': 'Yalnızca parola',
   'security.sessions.unknownDevice': 'Bilinmeyen cihaz',
   'security.sessions.meta': 'IP {ip} · etkin {seen} · başlangıç {since}',
   'security.sessions.revoke': 'Çıkış yap',

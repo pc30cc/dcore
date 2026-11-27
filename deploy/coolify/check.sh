@@ -2,7 +2,7 @@
 # Static checks of docker-compose.yml without Coolify or a Docker daemon (the
 # docker CLI with its compose plugin is enough):
 #
-#   deploy/coolify/check.sh
+#   deploy/coolify/check.sh [stack.env ...]
 #
 #   1. `docker compose config` accepts the file as Coolify runs it: the
 #      repository root as the project directory, the variables of
@@ -20,6 +20,15 @@
 #   6. No Dockerfile copies files with a mode that has no execute bit into a
 #      directory COPY would create (a path ending in "/"): BuildKit gives
 #      that new directory the same mode, so a non-root process cannot enter it.
+#   7. ADMIN_TOTP_REQUIRED, as compose hands it to the api service (the
+#      JSON render, so `export`, quotes and comments in an env file read as
+#      on a deploy) and the API reads it (empty is the default; trimmed, any
+#      case, true/1/yes/on or false/0/no/off). The shared files keep it on:
+#      the file passes it as ${ADMIN_TOTP_REQUIRED:-true}, a stack that
+#      leaves it unset gets true and .env.example sets true; otherwise the
+#      check fails. An env file named on the command line (a stack's own
+#      variables) that turns it off is a WARNING line only: test stacks may
+#      turn the second factor off. A value the API refuses fails.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -119,6 +128,77 @@ if CENTRIFUGO_TOKEN_HMAC_SECRET="$sample_secret" CENTRIFUGO_API_KEY=sample-api-k
 else
   echo "check: a configuration template does NOT render" >&2
   status=1
+fi
+
+# The admin second factor: on in the shared files; off only in a stack's own variables, never silently.
+totp_line='- ADMIN_TOTP_REQUIRED=${ADMIN_TOTP_REQUIRED:-true}'
+# The api service's value rendered with env file $1: "=<value>", "unset" without one; fails when compose refuses the file.
+api_totp() {
+  docker compose --project-directory "$root" -f "$work/compose.yml" --env-file "$1" config --format json api > "$work/totp.json" 2> /dev/null || return 1
+  awk '
+    /^  "services": \{$/ { services = 1; next }
+    services && /^    "api": \{$/ { api = 1; next }
+    api && /^      "environment": \{$/ { env = 1; next }
+    env && /^      \}/ { exit }
+    env && /^        "ADMIN_TOTP_REQUIRED": "/ { value = $0; sub(/^        "ADMIN_TOTP_REQUIRED": "/, "", value); sub(/",?$/, "", value); found = 1; print "=" value; exit }
+    END { if (!found) print "unset" }
+  ' "$work/totp.json"
+}
+# How the API takes a rendered value: on, off or invalid (it does not start).
+totp_state() {
+  case $1 in
+    unset | =) echo on; return ;;
+  esac
+  case $(printf '%s' "${1#=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr 'A-Z' 'a-z') in
+    true | 1 | yes | on) echo on ;;
+    false | 0 | no | off) echo off ;;
+    *) echo invalid ;;
+  esac
+}
+totp_warned=0
+totp_failed=0
+if ! grep -Eq '^[[:space:]]*- ADMIN_TOTP_REQUIRED=\$\{ADMIN_TOTP_REQUIRED:-true\}$' "$compose"; then
+  echo "check: docker-compose.yml does not pass the api service \"$totp_line\": a stack that leaves it unset may sign admins in without a second factor" >&2
+  totp_failed=1
+fi
+sed '/ADMIN_TOTP_REQUIRED/d' "$example" > "$work/totp-unset.env"
+for env_file in "$work/totp-unset.env" "$example" "$@"; do
+  case $env_file in
+    "$work/totp-unset.env") name="a stack without ADMIN_TOTP_REQUIRED"; shared=1 ;;
+    "$example") name=".env.example"; shared=1 ;;
+    *) name=$env_file; shared=0 ;;
+  esac
+  if [ ! -f "$env_file" ]; then
+    echo "check: no such env file: $env_file" >&2
+    totp_failed=1
+    continue
+  fi
+  if ! value=$(api_totp "$env_file"); then
+    echo "check: compose does not render with $name" >&2
+    totp_failed=1
+    continue
+  fi
+  case $(totp_state "$value") in
+    on) ;;
+    off)
+      if [ "$shared" -eq 1 ]; then
+        echo "check: $name gives the api ADMIN_TOTP_REQUIRED${value}: the shared files must keep the second factor on (set it off in a test stack's own variables)" >&2
+        totp_failed=1
+      else
+        echo "check: WARNING: $name gives the api ADMIN_TOTP_REQUIRED${value}: every admin signs in with the password alone (no TOTP); test stacks only" >&2
+        totp_warned=1
+      fi
+      ;;
+    invalid)
+      echo "check: $name gives the api ADMIN_TOTP_REQUIRED${value}, which is not true or false: the API does not start" >&2
+      totp_failed=1
+      ;;
+  esac
+done
+if [ "$totp_failed" -eq 1 ]; then
+  status=1
+elif [ "$totp_warned" -eq 0 ]; then
+  echo "check: ADMIN_TOTP_REQUIRED stays true: admin sign-in asks for a TOTP code"
 fi
 
 exit "$status"

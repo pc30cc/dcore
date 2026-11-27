@@ -1,4 +1,4 @@
-import { adminAccessTokenSchema, adminLoginResultSchema, adminMeSchema, adminTotpEnrollmentSchema, problemSchemaFor } from '@app/shared';
+import { adminAccessTokenSchema, adminLoginTicketSchema, adminMeSchema, adminTotpEnrollmentSchema, problemSchemaFor } from '@app/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_REFRESH_COOKIE } from '../src/admin/session.js';
@@ -59,7 +59,7 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
     const login = await admin(h, '/v1/admin/auth/login', { email: account.email.toUpperCase(), password: account.password }, { ip });
     expect(login.statusCode).toBe(200);
     expect(statements(login)).toBeLessThanOrEqual(2);
-    const first = adminLoginResultSchema.parse(login.json());
+    const first = adminLoginTicketSchema.parse(login.json());
     expect(first.enrollRequired).toBe(false);
     expect(setCookie(login)).toBeNull();
 
@@ -289,7 +289,7 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
     const account = await seedAdmin(h, { totp: 'none' });
     const login = await admin(h, '/v1/admin/auth/login', { email: account.email, password: account.password }, { ip });
     expect(login.statusCode).toBe(200);
-    const { mfaToken, enrollRequired } = adminLoginResultSchema.parse(login.json());
+    const { mfaToken, enrollRequired } = adminLoginTicketSchema.parse(login.json());
     expect(enrollRequired).toBe(true);
 
     // The ticket is no access token, and the sign-in step for enrolled accounts does not take it.
@@ -325,7 +325,7 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
 
     // Enrolled now: the next sign-in asks for a code, and enrolment is closed.
     const next = await admin(h, '/v1/admin/auth/login', { email: account.email, password: account.password }, { ip });
-    const ticket = adminLoginResultSchema.parse(next.json());
+    const ticket = adminLoginTicketSchema.parse(next.json());
     expect(ticket.enrollRequired).toBe(false);
     expect((await admin(h, '/v1/admin/auth/totp/enroll', { mfaToken: ticket.mfaToken }, { ip })).json()).toMatchObject({ code: 'already_set' });
   });

@@ -16,12 +16,18 @@ import { unauthorized, type AuthGuard } from './auth.js';
  *   session limits and the clock of the TOTP check;
  * - `app.requirePermission(permission)`: the preHandler of every admin
  *   route. It needs an admin access token (one exists only after the TOTP
- *   step, so no admin route works before TOTP is enrolled) whose roles grant
- *   the permission, checked against the roles in memory: no statement.
+ *   step, so no admin route works before TOTP is enrolled, unless
+ *   ADMIN_TOTP_REQUIRED=false) whose roles grant the permission, checked
+ *   against the roles in memory: no statement.
  * - the panel's origin: a request to `/v1/admin/*` that carries an `Origin`
  *   other than the panel's (CORS_ADMIN_ORIGINS) is refused outright (403),
  *   on top of CORS not answering it. The routes that read the refresh cookie
  *   also require the `Origin` to be there ({@link requirePanelOrigin}).
+ * - the second factor: with ADMIN_TOTP_REQUIRED=false the password alone
+ *   signs in (`totpRequired` false, one warning at start). While it is true,
+ *   an admin token of a session the password alone opened (`amr` without
+ *   `otp`) is no token at all: the request has no principal (401), and the
+ *   session's refresh ends it.
  */
 
 export interface LoginLimit {
@@ -45,6 +51,8 @@ export interface AdminAuthRuntime {
   accessTokenTtlSeconds: number;
   sessionIdleSeconds: number;
   sessionMaxSeconds: number;
+  /** ADMIN_TOTP_REQUIRED: false lets the password alone sign in. */
+  totpRequired: boolean;
   /** The clock of the TOTP check. */
   now: () => number;
 }
@@ -79,8 +87,12 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
       accessTokenTtlSeconds: app.config.admin.accessTokenTtlSeconds,
       sessionIdleSeconds: app.config.admin.sessionIdleSeconds,
       sessionMaxSeconds: app.config.admin.sessionMaxSeconds,
+      totpRequired: app.config.admin.totpRequired,
       now: options.now ?? Date.now,
     });
+    if (!app.adminAuth.totpRequired) {
+      app.log.warn({ adminTotpRequired: false }, 'admin: ADMIN_TOTP_REQUIRED=false: the password alone signs any admin in (no second factor); test stacks only');
+    }
 
     app.decorate('requirePermission', (permission: Permission): AuthGuard => {
       return async (request: FastifyRequest, _reply: FastifyReply) => {
@@ -97,6 +109,14 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
           });
         }
       };
+    });
+
+    // After the token was verified (and the deny list read): a session without a second factor counts only while none is required.
+    app.addHook('onRequest', async (request: FastifyRequest) => {
+      const principal = request.principal;
+      if (principal?.kind !== 'admin' || principal.mfa !== false || !app.adminAuth.totpRequired) return;
+      request.principal = null;
+      request.authFailure = new TokenError('revoked', 'the session was opened without a second factor, which is required');
     });
 
     const panelOrigins = new Set(app.config.corsAdminOrigins);

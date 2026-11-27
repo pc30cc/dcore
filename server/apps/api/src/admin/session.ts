@@ -9,6 +9,7 @@ import {
   adminRevokeSessions,
   adminSetPendingTotp,
   adminSignIn,
+  adminSignInPassword,
   type LockPolicy,
 } from '@app/db';
 import { adminRevokeReason, wireTime, type AdminAccessToken, type AdminLoginResult, type AdminTotpEnrollment } from '@app/shared';
@@ -51,6 +52,17 @@ import { TOTP_SECRET_PURPOSE, base32Encode, checkTotp, generateTotpSecret, otpau
  *
  * Per-IP limits on login, codes and refresh fail closed: without Valkey
  * there is no admin sign-in (503).
+ *
+ * ADMIN_TOTP_REQUIRED=false (test stacks): step 1 completes the sign-in
+ * itself. Every check of the password step stays as it is; the password that
+ * is accepted opens the session (marked `mfa = false`, audited as
+ * `admin.login` with `mfa: false`), sets the refresh cookie and answers the
+ * access token as `session`. An account without TOTP also gets its
+ * enrolment ticket; one with TOTP gets no ticket: that sign-in clears the
+ * failure count, so a code ticket next to it would let the password alone
+ * guess codes past the lockout. Its access tokens say `amr: ["pwd"]`. Once
+ * TOTP is required again those tokens are refused and the session's refresh
+ * ends it.
  */
 
 export const ADMIN_REFRESH_COOKIE = '__Secure-admin_refresh';
@@ -204,9 +216,9 @@ export function totpIssuer(app: FastifyInstance): string {
   return app.cfg.peek()?.brand.appName ?? app.brand.appName;
 }
 
-/** Signs an admin access token (the admin audience; `roles` as the row holds them now). */
-export async function issueAdminAccess(app: FastifyInstance, adminId: number, sessionId: string, roles: readonly string[]): Promise<AdminAccessToken> {
-  const access = await app.tokens.issue({ kind: 'admin', subject: String(adminId), sessionId, roles, ttlSeconds: app.adminAuth.accessTokenTtlSeconds });
+/** Signs an admin access token (the admin audience; `roles` as the row holds them now; `mfa`: a second factor opened the session). */
+export async function issueAdminAccess(app: FastifyInstance, adminId: number, sessionId: string, roles: readonly string[], mfa = true): Promise<AdminAccessToken> {
+  const access = await app.tokens.issue({ kind: 'admin', subject: String(adminId), sessionId, roles, ttlSeconds: app.adminAuth.accessTokenTtlSeconds, mfa });
   return { accessToken: access.token, expiresAt: wireTime(access.expiresAt) };
 }
 
@@ -227,7 +239,7 @@ export async function denyAdminSessions(app: FastifyInstance, request: FastifyRe
 
 // ─── 1. E-mail and password ────────────────────────────────────────────────
 
-export async function adminLogin(app: FastifyInstance, request: FastifyRequest, email: string, password: string): Promise<AdminLoginResult> {
+export async function adminLogin(app: FastifyInstance, request: FastifyRequest, reply: FastifyReply, email: string, password: string): Promise<AdminLoginResult> {
   const runtime = app.adminAuth;
   await takeIpLimit(app, request, 'admin_login', LOGIN_IP_LIMIT, [{ name: 'admin_login_all', key: app.keys.adminLoginLimit(), ...runtime.loginLimit }]);
   const passwords = runtime.passwords;
@@ -249,9 +261,54 @@ export async function adminLogin(app: FastifyInstance, request: FastifyRequest, 
   }
   // The row as it is now decides, not the read before the hash: failures counted meanwhile may have locked it.
   const rehash = passwords.needsRehash(account.passwordHash) ? { oldHash: account.passwordHash, newHash: await passwords.hash(password) } : null;
+  if (!runtime.totpRequired) return passwordSignIn(app, request, reply, { id: account.id, passwordHash: account.passwordHash, totpEnabled: account.totpEnabled }, rehash?.newHash ?? null);
   if (!(await adminAcceptPassword(app.pg, account.id, rehash))) throw refused();
   const mfa = await openMfa(app, { adminId: account.id, enroll: !account.totpEnabled });
   return { mfaToken: mfa.token, enrollRequired: !account.totpEnabled, expiresAt: wireTime(mfa.expiresAt) };
+}
+
+/**
+ * ADMIN_TOTP_REQUIRED=false: the matched password opens the session, in one
+ * statement that decides as {@link adminAcceptPassword} does (enabled, not
+ * locked, read after the hash) and also needs the password to be the one
+ * checked. Only an account without TOTP gets a ticket (to enrol), opened
+ * first, so a sign-in that answers has both; a refused one closes it again.
+ */
+async function passwordSignIn(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  account: { id: number; passwordHash: string; totpEnabled: boolean },
+  newHash: string | null,
+): Promise<AdminLoginResult> {
+  const runtime = app.adminAuth;
+  const mfa = account.totpEnabled ? null : await openMfa(app, { adminId: account.id, enroll: true });
+  const sessionId = nextId(app);
+  const refresh = newAdminRefreshToken(sessionId);
+  const idleSeconds = Math.min(runtime.sessionIdleSeconds, runtime.sessionMaxSeconds);
+  const actor: AdminActor = { adminId: account.id, sessionId, ip: request.clientIp };
+  let signed;
+  try {
+    signed = await auditedTransaction(app, actor, async (tx, trail) => {
+      const result = await adminSignInPassword(tx, {
+        adminId: account.id,
+        checkedHash: account.passwordHash,
+        newHash,
+        session: { id: sessionId, refreshHash: refresh.hash, idleSeconds, ip: request.clientIp, userAgent: userAgentOf(request) },
+      });
+      // Disabled, locked or a new password since the read: the same refusal as a wrong password, nothing written.
+      if (!result) throw refused();
+      trail.record({ action: 'admin.login', target: 'admin', targetId: account.id, detail: { sessionId, mfa: false } });
+      return result;
+    });
+  } catch (error) {
+    if (mfa) await closeMfa(app, request, mfa.token);
+    throw error;
+  }
+  reply.header('set-cookie', refreshCookie(refresh.token, (signed.expiresAtMs - Date.now()) / 1_000));
+  request.log.info({ adminId: account.id, mfa: false }, 'admin signed in without a second factor');
+  const session = await issueAdminAccess(app, account.id, sessionId, signed.roles, false);
+  return mfa ? { mfaToken: mfa.token, enrollRequired: true, expiresAt: wireTime(mfa.expiresAt), session } : { enrollRequired: false, session };
 }
 
 // ─── 2. TOTP ───────────────────────────────────────────────────────────────
@@ -345,7 +402,7 @@ export async function adminCheckTotp(
     // The account changed since it was read (another sign-in took this step, a reset, a lock): nothing is written.
     if (!result) throw new HttpProblem('otp_invalid', { detail: 'That code cannot be used; wait for the next one.', extensions: { attemptsLeft: attemptsLeft(state.failures) } });
     if (enroll) trail.record({ action: 'admin.totp_enroll', target: 'admin', targetId: state.id });
-    trail.record({ action: 'admin.login', target: 'admin', targetId: state.id, detail: { sessionId, enrolled: enroll } });
+    trail.record({ action: 'admin.login', target: 'admin', targetId: state.id, detail: { sessionId, enrolled: enroll, mfa: true } });
     return result;
   });
   await closeMfa(app, request, input.mfaToken);
@@ -437,6 +494,7 @@ export async function adminRefreshSession(app: FastifyInstance, request: Fastify
       idleSeconds: runtime.sessionIdleSeconds,
       maxSeconds: runtime.sessionMaxSeconds,
       graceSeconds: Math.ceil(grace.graceMs / 1_000),
+      requireMfa: runtime.totpRequired,
     });
     if (outcome.outcome === 'reused') {
       request.log.warn({ adminId: outcome.adminId }, 'admin refresh token reused: session revoked');
@@ -444,8 +502,14 @@ export async function adminRefreshSession(app: FastifyInstance, request: Fastify
       await denyAdminSessions(app, request, [sessionId]);
       throw refreshRefused(reply, 'refresh_reused');
     }
+    if (outcome.outcome === 'mfa_required') {
+      request.log.info({ adminId: outcome.adminId }, 'admin session without a second factor ended: TOTP is required');
+      claimed = false;
+      await denyAdminSessions(app, request, [sessionId]);
+      throw refreshRefused(reply);
+    }
     if (outcome.outcome === 'invalid') throw refreshRefused(reply);
-    const access = await issueAdminAccess(app, outcome.adminId, sessionId, outcome.roles);
+    const access = await issueAdminAccess(app, outcome.adminId, sessionId, outcome.roles, outcome.mfa);
     const answer: GraceAnswer = { ...access, refreshToken: next.token, refreshExpiresAtMs: outcome.expiresAtMs };
     if (claimed) {
       await grace.complete(sessionId, tokenHash, sealAnswer(app, answer)).catch((error: unknown) => request.log.warn({ err: error }, 'admin refresh grace not stored'));

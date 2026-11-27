@@ -4,6 +4,7 @@ import type { Messages } from '../messages';
 export const fa: Messages = {
   'app.title': 'پنل مدیریت {appName}',
   'shell.admin': 'مدیریت',
+  'shell.totpOff': 'ورود دومرحله‌ای خاموش است؛ هر کس رمز را داشته باشد وارد می‌شود.',
 
   'nav.label': 'بخش‌ها',
   'nav.open': 'باز کردن منو',
@@ -410,9 +411,12 @@ export const fa: Messages = {
   'admins.error.lastOwner': 'دست‌کم یک مالک فعال باید بماند.',
 
   'security.intro': 'وارد شده با {email}.',
+  'security.totpOff.title': 'ورود دومرحله‌ای خاموش است',
+  'security.totpOff.body': 'مدیران فقط با رمز وارد می‌شوند و کد برنامهٔ احراز هویت خواسته نمی‌شود. رمزی بلند و یکتا نگه دارید و هر نشستی را که نمی‌شناسید ببندید.',
   'security.sessions.title': 'نشست‌ها',
   'security.sessions.body': 'جاهایی که وارد شده‌اید. هر نشست بعد از ۱۲ ساعت بی‌کاری و حداکثر بعد از ۷ روز تمام می‌شود.',
   'security.sessions.current': 'همین نشست',
+  'security.sessions.noMfa': 'فقط با رمز',
   'security.sessions.unknownDevice': 'دستگاه ناشناخته',
   'security.sessions.meta': 'IP {ip} · فعال {seen} · از {since}',
   'security.sessions.revoke': 'خروج',

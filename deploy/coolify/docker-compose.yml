@@ -298,6 +298,8 @@ services:
       - CF_EDGE_TRUST=${CF_EDGE_TRUST:-}
       - OPENAPI_ENABLED=${OPENAPI_ENABLED:-false}
       - SHUTDOWN_DRAIN_MS=${SHUTDOWN_DRAIN_MS:-5000}
+      # false: admins sign in with the password alone (no TOTP). Only in a test stack's own variables: check.sh fails if this default changes.
+      - ADMIN_TOTP_REQUIRED=${ADMIN_TOTP_REQUIRED:-true}
       - AUTH_JWT_ALG=EdDSA
       - AUTH_JWT_ISSUER=${AUTH_JWT_ISSUER:-app-api}
       - AUTH_JWT_KID=${AUTH_JWT_KID:-k1}

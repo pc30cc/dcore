@@ -102,6 +102,12 @@ const envSchema = z
     ADMIN_SESSION_IDLE_HOURS: envInt(12, { min: 1, max: 72 }),
     /** And at the latest this long after the sign-in, however often it refreshes. */
     ADMIN_SESSION_MAX_DAYS: envInt(7, { min: 1, max: 30 }),
+    /**
+     * Admin sign-in asks for a TOTP code after the password. `false` takes the
+     * second factor away from every admin (the password alone signs in, the
+     * session is marked and the API warns at start): test stacks only.
+     */
+    ADMIN_TOTP_REQUIRED: envBoolean(true),
     /** The previous key during a rotation: still accepted, never used to sign. */
     AUTH_JWT_PREVIOUS_KID: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/).optional(),
     AUTH_JWT_PREVIOUS_PUBLIC_KEY: pem('PUBLIC KEY').optional(),
@@ -286,8 +292,8 @@ export interface ApiConfig {
     current: SigningKeyConfig;
     previous?: SigningKeyConfig | undefined;
   };
-  /** Admin sign-in: the access token's lifetime and the session's idle and absolute limits. */
-  admin: { accessTokenTtlSeconds: number; sessionIdleSeconds: number; sessionMaxSeconds: number };
+  /** Admin sign-in: the access token's lifetime, the session's idle and absolute limits, and whether a TOTP code is required. */
+  admin: { accessTokenTtlSeconds: number; sessionIdleSeconds: number; sessionMaxSeconds: number; totpRequired: boolean };
   ids: { publicKey: string; billingKey: string };
   secrets: { hashPeppers: string; hashPepperKid: number; dataKeys: string; dataKeyId: number };
   edgeTrust: string;
@@ -386,6 +392,7 @@ export function loadConfig(source: Env = process.env): ApiConfig {
       accessTokenTtlSeconds: env.ADMIN_ACCESS_TOKEN_TTL_SECONDS,
       sessionIdleSeconds: env.ADMIN_SESSION_IDLE_HOURS * 3_600,
       sessionMaxSeconds: env.ADMIN_SESSION_MAX_DAYS * 86_400,
+      totpRequired: env.ADMIN_TOTP_REQUIRED,
     },
     ids: { publicKey: env.ID_PUBLIC_KEY, billingKey: env.ID_BILLING_KEY },
     secrets: {

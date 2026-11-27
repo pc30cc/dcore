@@ -13,6 +13,13 @@ import { idSchema, timeSchema } from './common.js';
  * SameSite=Strict, Path=/v1/admin/auth, rotated on every refresh). An admin
  * without TOTP enrols first (`/totp/enroll`, then `/totp/confirm`); nothing
  * else works before that.
+ *
+ * A deployment may turn the second step off (`ADMIN_TOTP_REQUIRED=false`):
+ * the password step then answers `session`, the completed sign-in (and sets
+ * the refresh cookie). An admin without TOTP also gets an enrolment ticket
+ * (`enrollRequired`); one with TOTP gets no ticket, since there is no code
+ * step to take. `/v1/admin/me` says which way the deployment signs in
+ * (`totpRequired`).
  */
 
 /** Passwords: at least 12 characters (Unicode code points, NFKC), at most 128. */
@@ -38,12 +45,30 @@ export const totpCodeSchema = z.string().regex(/^[0-9]{6}$/, 'must be 6 digits')
 
 export const adminLoginRequestSchema = z.object({ email: z.string().min(1).max(320), password: adminPasswordInputSchema });
 
-export const adminLoginResultSchema = z.object({
+export const adminAccessTokenSchema = z.object({ accessToken: z.string().min(1), expiresAt: timeSchema });
+export type AdminAccessToken = z.infer<typeof adminAccessTokenSchema>;
+
+/** The password step's answer with a ticket: always while TOTP is required, and for enrolment while it is not. */
+export const adminLoginTicketSchema = z.object({
   mfaToken: adminMfaTokenSchema,
   /** No TOTP yet: `/totp/enroll`, then `/totp/confirm`. Otherwise `/totp`. */
   enrollRequired: z.boolean(),
   expiresAt: timeSchema,
+  /**
+   * Only while the deployment requires no second factor: the sign-in is
+   * complete (the same answer as `/totp`, and the refresh cookie is set);
+   * the ticket is then needed only to set up TOTP. Absent: the code step follows.
+   */
+  session: adminAccessTokenSchema.optional(),
 });
+
+/** No second factor required and TOTP already set up: the completed sign-in alone, with no ticket for a code. */
+export const adminLoginSessionSchema = z.object({
+  enrollRequired: z.literal(false),
+  session: adminAccessTokenSchema,
+});
+
+export const adminLoginResultSchema = z.union([adminLoginTicketSchema, adminLoginSessionSchema]);
 export type AdminLoginResult = z.infer<typeof adminLoginResultSchema>;
 
 export const adminMfaRequestSchema = z.object({ mfaToken: adminMfaTokenSchema });
@@ -55,9 +80,6 @@ export const adminTotpEnrollmentSchema = z.object({
   secret: z.string().regex(/^[A-Z2-7]{32}$/),
 });
 export type AdminTotpEnrollment = z.infer<typeof adminTotpEnrollmentSchema>;
-
-export const adminAccessTokenSchema = z.object({ accessToken: z.string().min(1), expiresAt: timeSchema });
-export type AdminAccessToken = z.infer<typeof adminAccessTokenSchema>;
 
 export const adminLogoutRequestSchema = z.object({
   /** Every session of this admin, not only this one. */
@@ -85,6 +107,8 @@ export const adminMeSchema = adminAccountSchema.extend({
   /** Every catalogue permission the roles grant (what the panel may show). */
   permissions: z.array(z.string()),
   sessionId: idSchema,
+  /** Whether sign-in asks for a TOTP code (ADMIN_TOTP_REQUIRED); false: the password alone signs any admin in. */
+  totpRequired: z.boolean(),
 });
 export type AdminMe = z.infer<typeof adminMeSchema>;
 
@@ -96,6 +120,8 @@ export const adminSessionSchema = z.object({
   ip: z.string().nullable(),
   userAgent: z.string().nullable(),
   current: z.boolean(),
+  /** Whether a second factor (a TOTP code) signed this session in. */
+  mfa: z.boolean(),
 });
 export const adminSessionListSchema = z.object({ items: z.array(adminSessionSchema) });
 

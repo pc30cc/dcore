@@ -276,6 +276,8 @@ export interface AdminSession {
   ip: string | null;
   userAgent: string | null;
   current: boolean;
+  /** False: the password alone opened it (no second factor). */
+  mfa?: boolean;
 }
 
 export function useSessions() {

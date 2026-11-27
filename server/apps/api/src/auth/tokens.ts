@@ -17,6 +17,11 @@ import type { ApiConfig, SigningKeyConfig } from '../config.js';
  * each route says which scopes it serves. Revocation before expiry is the
  * Valkey deny list (`deny:sid`, `deny:uid`); refresh tokens are opaque and
  * live in `sessions` (src/auth/sessions.ts).
+ *
+ * Admin tokens carry `amr` (RFC 8176): `["pwd", "otp"]` when a TOTP code
+ * opened the session, `["pwd"]` when the password alone did (a deployment
+ * with ADMIN_TOTP_REQUIRED=false). A token without the claim was signed
+ * before it existed, when every admin session needed a code.
  */
 
 /** Who a token is for. A user token is refused by admin routes and the other way round. */
@@ -43,6 +48,8 @@ export interface Principal {
   storeCode?: number | undefined;
   /** App tokens: what the session may do (`scope`); `full` when the token names none. */
   scope: SessionScope;
+  /** Admin tokens: whether a second factor opened the session (`amr` holds `otp`). */
+  mfa?: boolean | undefined;
 }
 
 /** `full` (statuses 1-4), `restricted` (suspended or banned), `restore` (deleted, in its grace period). */
@@ -60,6 +67,8 @@ export interface IssueInput {
   scope?: SessionScope | undefined;
   /** A lifetime shorter than the configured one (admin tokens); never longer. */
   ttlSeconds?: number | undefined;
+  /** Admin tokens: false when the password alone opened the session (`amr` without `otp`). */
+  mfa?: boolean | undefined;
 }
 
 export interface IssuedToken {
@@ -96,6 +105,7 @@ const claimsSchema = z.object({
   did: z.string().regex(/^[1-9][0-9]{0,18}$/).optional(),
   st: z.number().int().min(1).max(3).optional(),
   scope: z.enum(sessionScopes).optional(),
+  amr: z.array(z.string().min(1).max(16)).max(8).optional(),
 });
 
 type Key = CryptoKey | Uint8Array;
@@ -138,7 +148,10 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
       const ttl = input.ttlSeconds === undefined ? accessTokenTtlSeconds : Math.min(accessTokenTtlSeconds, Math.max(1, Math.floor(input.ttlSeconds)));
       const exp = now + ttl;
       const payload: Record<string, unknown> = { sid: input.sessionId };
-      if (input.kind === 'admin') payload['roles'] = [...(input.roles ?? [])];
+      if (input.kind === 'admin') {
+        payload['roles'] = [...(input.roles ?? [])];
+        payload['amr'] = input.mfa === false ? ['pwd'] : ['pwd', 'otp'];
+      }
       if (input.kind === 'app') {
         if (input.deviceId !== undefined) payload['did'] = input.deviceId;
         if (input.storeCode !== undefined) payload['st'] = input.storeCode;
@@ -174,7 +187,7 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
       }
       const claims = claimsSchema.safeParse(payload);
       if (!claims.success) throw new TokenError('invalid', 'token claims malformed', { cause: claims.error });
-      const { sub, sid, jti, aud, exp, iat, roles, did, st, scope } = claims.data;
+      const { sub, sid, jti, aud, exp, iat, roles, did, st, scope, amr } = claims.data;
       return {
         kind: aud,
         subject: sub,
@@ -183,7 +196,7 @@ export async function createAccessTokens(config: ApiConfig['auth']): Promise<Acc
         tokenId: jti,
         issuedAt: new Date(iat * 1_000),
         expiresAt: new Date(exp * 1_000),
-        ...(aud === 'app' ? { deviceId: did, storeCode: st } : {}),
+        ...(aud === 'app' ? { deviceId: did, storeCode: st } : { mfa: amr === undefined || amr.includes('otp') }),
         scope: aud === 'app' ? (scope ?? 'full') : 'full',
       };
     },

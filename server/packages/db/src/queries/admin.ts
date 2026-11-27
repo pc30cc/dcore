@@ -329,6 +329,52 @@ export const adminSignIn = defineQuery({ name: 'admin.signIn', statements: 1 }, 
   return row ? { expiresAtMs: Number(row.expires_ms), roles: row.roles ?? [] } : null;
 });
 
+export interface AdminPasswordSignInInput {
+  adminId: number;
+  /** The stored hash the password was checked against: a password changed meanwhile refuses the sign-in. */
+  checkedHash: string;
+  /** A newer hash of the same password (the parameters changed), stored with the sign-in. */
+  newHash: string | null;
+  session: AdminSessionInput;
+}
+
+/**
+ * The sign-in of a deployment that requires no second factor: the password
+ * that matched opens the session (marked `mfa = false`), in one statement,
+ * only while the account is enabled and not locked at that moment and its
+ * password is still the one checked. Clears the failure count and the lock,
+ * as a full sign-in does. Null when the account changed meanwhile, and
+ * nothing is written then.
+ */
+export const adminSignInPassword = defineQuery(
+  { name: 'admin.signInPassword', statements: 1 },
+  async (tx, input: AdminPasswordSignInInput): Promise<AdminSignedIn | null> => {
+    const { session } = input;
+    const row = await maybeOne<{ expires_ms: string; roles: string[] | null }>(
+      tx,
+      sql`WITH signed AS (
+            UPDATE admin_users u
+               SET failed_logins = 0, locked_until = NULL, last_login_at = now(),
+                   password_hash = coalesce(${input.newHash}::text, u.password_hash)
+             WHERE u.id = ${input.adminId}::integer AND u.disabled_at IS NULL
+               AND (u.locked_until IS NULL OR u.locked_until <= now())
+               AND u.password_hash = ${input.checkedHash}::text
+         RETURNING u.id
+          ), s AS (
+            INSERT INTO admin_sessions (id, admin_id, expires_at, refreshed_at, ip, refresh_hash, user_agent, mfa)
+            SELECT ${session.id}::bigint, signed.id, now() + make_interval(secs => ${session.idleSeconds}::integer), now(),
+                   ${session.ip}::inet, ${session.refreshHash}::bytea, ${session.userAgent}::text, false
+              FROM signed
+         RETURNING admin_id, expires_at
+          )
+          SELECT ${ms(sql`s.expires_at`)}::text AS expires_ms,
+                 (SELECT array_agg(r.key ORDER BY r.id) FROM admin_user_roles ur JOIN admin_roles r ON r.id = ur.role_id WHERE ur.admin_id = s.admin_id) AS roles
+            FROM s`,
+    );
+    return row ? { expiresAtMs: Number(row.expires_ms), roles: row.roles ?? [] } : null;
+  },
+);
+
 // ─── Sessions ──────────────────────────────────────────────────────────────
 
 export interface AdminRefreshInput {
@@ -340,24 +386,31 @@ export interface AdminRefreshInput {
   maxSeconds: number;
   /** A rotated token used again within this window is a concurrent refresh, not a reuse. */
   graceSeconds: number;
+  /** TOTP is required (ADMIN_TOTP_REQUIRED): a session opened without it does not refresh, and ends. */
+  requireMfa: boolean;
 }
 
 export type AdminRefreshOutcome =
-  | { outcome: 'rotated'; adminId: number; expiresAtMs: number; roles: string[] }
+  | { outcome: 'rotated'; adminId: number; expiresAtMs: number; roles: string[]; mfa: boolean }
   | { outcome: 'reused'; adminId: number }
+  | { outcome: 'mfa_required'; adminId: number }
   | { outcome: 'invalid' };
 
 const refreshRow = z.object({
-  outcome: z.enum(['rotated', 'reused', 'invalid']),
+  outcome: z.enum(['rotated', 'reused', 'mfa_required', 'invalid']),
   admin_id: z.number().int().nullable(),
   expires_ms: z.string().nullable(),
   roles: z.array(z.string()).nullable(),
+  mfa: z.boolean().nullable(),
 });
 
 /**
  * Rotates a refresh token in one statement: the session must be live, its
- * admin enabled and enrolled. The token it replaced, used again after the
- * grace, revokes the session (`reused`: a copy is loose).
+ * admin enabled and, for a session a TOTP code opened, enrolled. The token
+ * it replaced, used again after the grace, revokes the session (`reused`: a
+ * copy is loose). While `requireMfa`, a session the password alone opened
+ * does not rotate: either of its tokens ends it (`mfa_required`, expires_at
+ * now), so it never comes back.
  */
 export const adminRefresh = defineQuery({ name: 'admin.refresh', statements: 1 }, async (db, input: AdminRefreshInput): Promise<AdminRefreshOutcome> => {
   const row = await one(
@@ -370,29 +423,42 @@ export const adminRefresh = defineQuery({ name: 'admin.refresh', statements: 1 }
             FROM admin_users u
            WHERE s.id = ${input.sessionId}::bigint AND s.refresh_hash = ${input.oldHash}::bytea
              AND s.revoked_at IS NULL AND s.expires_at > now()
-             AND u.id = s.admin_id AND u.disabled_at IS NULL AND u.totp_enabled_at IS NOT NULL
-       RETURNING s.admin_id, s.expires_at
+             AND u.id = s.admin_id AND u.disabled_at IS NULL
+             AND CASE WHEN s.mfa THEN u.totp_enabled_at IS NOT NULL ELSE NOT ${input.requireMfa}::boolean END
+       RETURNING s.admin_id, s.expires_at, s.mfa
+        ), unfactored AS (
+          UPDATE admin_sessions s
+             SET expires_at = now()
+           WHERE ${input.requireMfa}::boolean AND s.id = ${input.sessionId}::bigint AND NOT s.mfa
+             AND (s.refresh_hash = ${input.oldHash}::bytea OR s.prev_hash = ${input.oldHash}::bytea)
+             AND s.revoked_at IS NULL AND s.expires_at > now()
+       RETURNING s.admin_id
         ), reused AS (
           UPDATE admin_sessions s
              SET revoked_at = now(), revoke_reason = 3
            WHERE s.id = ${input.sessionId}::bigint AND s.prev_hash = ${input.oldHash}::bytea
              AND s.revoked_at IS NULL AND s.refreshed_at <= now() - make_interval(secs => ${input.graceSeconds}::integer)
+             AND (s.mfa OR NOT ${input.requireMfa}::boolean)
        RETURNING s.admin_id
         )
-        SELECT CASE WHEN r.admin_id IS NOT NULL THEN 'rotated' WHEN x.admin_id IS NOT NULL THEN 'reused' ELSE 'invalid' END AS outcome,
-               coalesce(r.admin_id, x.admin_id) AS admin_id,
+        SELECT CASE WHEN r.admin_id IS NOT NULL THEN 'rotated' WHEN m.admin_id IS NOT NULL THEN 'mfa_required'
+                    WHEN x.admin_id IS NOT NULL THEN 'reused' ELSE 'invalid' END AS outcome,
+               coalesce(r.admin_id, m.admin_id, x.admin_id) AS admin_id,
                ${ms(sql`r.expires_at`)}::text AS expires_ms,
                CASE WHEN r.admin_id IS NOT NULL THEN
                  coalesce((SELECT array_agg(ar.key ORDER BY ar.id) FROM admin_user_roles ur JOIN admin_roles ar ON ar.id = ur.role_id WHERE ur.admin_id = r.admin_id), '{}')
-               END AS roles
+               END AS roles,
+               r.mfa
           FROM (SELECT 1) one
           LEFT JOIN rotated r ON true
+          LEFT JOIN unfactored m ON true
           LEFT JOIN reused x ON true`,
   );
   const parsed = refreshRow.parse(row);
   if (parsed.outcome === 'rotated' && parsed.admin_id !== null && parsed.expires_ms !== null) {
-    return { outcome: 'rotated', adminId: parsed.admin_id, expiresAtMs: Number(parsed.expires_ms), roles: parsed.roles ?? [] };
+    return { outcome: 'rotated', adminId: parsed.admin_id, expiresAtMs: Number(parsed.expires_ms), roles: parsed.roles ?? [], mfa: parsed.mfa !== false };
   }
+  if (parsed.outcome === 'mfa_required' && parsed.admin_id !== null) return { outcome: 'mfa_required', adminId: parsed.admin_id };
   if (parsed.outcome === 'reused' && parsed.admin_id !== null) return { outcome: 'reused', adminId: parsed.admin_id };
   return { outcome: 'invalid' };
 });
@@ -461,6 +527,8 @@ export const adminSessionRowSchema = z.object({
   expiresAtMs: epochMs,
   ip: z.string().nullable(),
   userAgent: z.string().nullable(),
+  /** A TOTP code opened it (false: the password alone). */
+  mfa: z.boolean(),
 });
 export type AdminSessionRow = z.infer<typeof adminSessionRowSchema>;
 
@@ -469,7 +537,7 @@ export const adminSessionList = defineQuery({ name: 'admin.sessions', statements
   const rows = await many<{ session: unknown }>(
     db,
     sql`SELECT jsonb_build_object('id', s.id::text, 'createdAtMs', ${ms(sql`s.created_at`)}, 'refreshedAtMs', ${ms(sql`s.refreshed_at`)},
-                                  'expiresAtMs', ${ms(sql`s.expires_at`)}, 'ip', host(s.ip), 'userAgent', s.user_agent) AS session
+                                  'expiresAtMs', ${ms(sql`s.expires_at`)}, 'ip', host(s.ip), 'userAgent', s.user_agent, 'mfa', s.mfa) AS session
           FROM admin_sessions s
          WHERE s.admin_id = ${adminId}::integer AND s.revoked_at IS NULL AND s.expires_at > now()
          ORDER BY s.id DESC

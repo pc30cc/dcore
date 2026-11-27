@@ -131,6 +131,7 @@ export const owner: AdminMe = {
   lockedUntil: null,
   permissions: ['billing.read', 'billing.catalog', 'admins.read', 'admins.manage'],
   sessionId: '77',
+  totpRequired: true,
 };
 
 /** A signed-in admin of a non-owner role holding exactly these permissions. */

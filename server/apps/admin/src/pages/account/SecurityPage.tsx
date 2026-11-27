@@ -3,7 +3,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { Field } from '@/components/form/Field';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { LoadError, TableSkeleton } from '@/components/QueryState';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,10 @@ import { queryClient, queryKeys, useSessions, type AdminSession } from '@/lib/qu
 import { showToast } from '@/lib/toast';
 import { useSession } from '@/lib/useSession';
 
-/** `/me/security`: the signed-in admin's sessions (sign out one, or everywhere) and their password. */
+/**
+ * `/me/security`: the signed-in admin's sessions (sign out one, or everywhere) and their password.
+ * While the API requires no second factor it says so first, and marks the sessions the password alone opened.
+ */
 export function SecurityPage() {
   const { t, locale } = useI18n();
   const { me } = useSession();
@@ -47,6 +50,14 @@ export function SecurityPage() {
     <div className="mx-auto grid max-w-4xl gap-6">
       <PageHeader icon={ShieldCheck} title={t('account.security')} description={me ? t('security.intro', { email: me.email }) : undefined} />
 
+      {me?.totpRequired === false && (
+        <Alert variant="warning">
+          <TriangleAlert aria-hidden="true" />
+          <AlertTitle>{t('security.totpOff.title')}</AlertTitle>
+          <AlertDescription>{t('security.totpOff.body')}</AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>{t('security.sessions.title')}</CardTitle>
@@ -66,6 +77,7 @@ export function SecurityPage() {
                         {session.userAgent ? summarizeAgent(session.userAgent) : t('security.sessions.unknownDevice')}
                       </span>
                       {session.current && <Badge variant="success">{t('security.sessions.current')}</Badge>}
+                      {session.mfa === false && <Badge variant="warning">{t('security.sessions.noMfa')}</Badge>}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {t('security.sessions.meta', { ip: session.ip ?? '—', seen: formatDateTime(session.refreshedAt, locale), since: formatDateTime(session.createdAt, locale) })}
