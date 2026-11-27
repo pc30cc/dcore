@@ -9,20 +9,26 @@
     <title>%APP_TITLE%</title>
     %BRAND_STYLE%
     <script>
-      // Applies the saved theme and language before the first paint (no flash of the wrong ones).
+      // Applies the saved theme and the panel's language before the first paint (no flash of the wrong ones):
+      // the language picked in the panel's menu, else the deployment's default (/config.js, loaded first).
       (function () {
         var root = document.documentElement;
         var theme = 'system';
-        var locale = null;
+        var saved = null;
         try {
           theme = localStorage.getItem('admin.theme') || 'system';
-          locale = localStorage.getItem('admin.locale');
+          saved = localStorage.getItem('admin.locale');
         } catch (e) {}
         var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
         root.classList.toggle('dark', dark);
-        if (locale && %LOCALES%.indexOf(locale) !== -1) {
+        var locales = %LOCALES%;
+        var config = window.__APP_CONFIG__;
+        var fallback = config && typeof config.defaultLocale === 'string' ? config.defaultLocale : null;
+        var locale = saved && locales.indexOf(saved) !== -1 ? saved : fallback && locales.indexOf(fallback) !== -1 ? fallback : null;
+        if (locale) {
           root.lang = locale;
           root.dir = %RTL_LOCALES%.indexOf(locale) !== -1 ? 'rtl' : 'ltr';
+          document.title = %TITLES%[locale];
         }
       })();
     </script>

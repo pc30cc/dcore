@@ -20,10 +20,11 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
-import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
+import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { afterCommit, publishToUser, withIdLease } from '../admin/effects.js';
 import { englishReason } from '../admin/reasons.js';
 import { personLocale, photoUrls, userRefOf } from '../admin/refs.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { rejectText } from '../services/me.js';
 import { adminIdOf } from './adminAuth.js';
@@ -107,10 +108,10 @@ async function decide(
       case 'missing':
         throw new HttpProblem('not_found', { detail: 'No such photo.' });
       case 'processing':
-        throw new HttpProblem('conflict', { detail: 'The photo is still being processed.' });
+        throw adminConflict('processing', 'The photo is still being processed.');
       case 'decided_elsewhere':
         // Another admin decided it since this one saw it: nothing is written, their decision stands.
-        throw new HttpProblem('conflict', { detail: 'Already decided.' });
+        throw adminConflict('already_decided', 'Already decided.');
       case 'unchanged':
         trail.unchanged();
         break;

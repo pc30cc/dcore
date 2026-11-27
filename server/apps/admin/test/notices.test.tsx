@@ -42,15 +42,17 @@ describe('a notice on a page', () => {
     await user.type(sort, '7');
     await user.click(screen.getByRole('button', { name: messages.fa['form.save'] }));
 
-    const persian = await screen.findByText(wholeText('API نپذیرفت: name is required.'));
+    // The panel's sentence; the API's English only on a smaller line of its own, isolated.
+    const persian = await screen.findByText(wholeText(`${messages.fa['common.error.invalid']}جزئیات فنی: name is required.`));
+    expect(persian.querySelector(':scope > span.block')?.textContent).toBe('جزئیات فنی: name is required.');
     expect(isolatedIn(persian)).toEqual(['name is required.']);
     expect(persian.textContent).not.toMatch(ISOLATES);
 
     pick(messages.fa['language.label'], 'en');
     expect(document.documentElement.dir).toBe('ltr');
-    const english = await screen.findByText(wholeText('The API refused it: name is required.'));
+    const english = await screen.findByText(wholeText(`${messages.en['common.error.invalid']}Technical detail: name is required.`));
     expect(isolatedIn(english)).toEqual(['name is required.']);
-    expect(screen.queryByText(wholeText('API نپذیرفت: name is required.'))).toBeNull();
+    expect(screen.queryByText(wholeText(`${messages.fa['common.error.invalid']}جزئیات فنی: name is required.`))).toBeNull();
   });
 
   it('under the password form, follows a language switch', async () => {
@@ -61,10 +63,10 @@ describe('a notice on a page', () => {
     await user.type(screen.getByLabelText('New password', { exact: true }), 'a much longer new password');
     await user.type(screen.getByLabelText('New password, again'), 'a much longer new password');
     await user.click(screen.getByRole('button', { name: messages.en['security.password.save'] }));
-    expect(isolatedIn(await screen.findByText(wholeText('The API refused it: Try again later.')))).toEqual(['Try again later.']);
+    expect(isolatedIn(await screen.findByText(wholeText(`${messages.en['common.error.invalid']}Technical detail: Try again later.`)))).toEqual(['Try again later.']);
 
     pick(messages.en['language.label'], 'fa');
-    expect(isolatedIn(await screen.findByText(wholeText('API نپذیرفت: Try again later.')))).toEqual(['Try again later.']);
+    expect(isolatedIn(await screen.findByText(wholeText(`${messages.fa['common.error.invalid']}جزئیات فنی: Try again later.`)))).toEqual(['Try again later.']);
   });
 
   it('on the appearance page, follows a language switch', async () => {
@@ -105,18 +107,19 @@ describe('a notice on a page', () => {
       signing: { configured: false, kid: null, publicKey: null, trusted: null },
       document: null,
     });
-    let answer: unknown = problem(422, 'field_invalid', { detail: 'Some hosts are not valid.', errors: [{ in: 'body', pointer: '/hosts/api/0', code: 'origin_invalid', message: 'Use an https origin.' }] });
+    let answer: unknown = problem(422, 'field_invalid', { detail: 'must use https', errors: [{ in: 'body', pointer: '/hosts/api/0', code: 'not_https', message: 'must use https' }] });
     const api = fakeApi({ 'GET /v1/admin/origins': () => view(4), 'PUT /v1/admin/origins': () => answer });
     const user = userEvent.setup();
     renderPanel('/hosts', api, { locale: 'fa' });
     const save = await screen.findByRole('button', { name: messages.fa['hosts.form.save'] });
     await user.click(save);
 
-    // A text that is all the API's: the innermost element holding it is its <bdi>.
-    expect((await screen.findByText(wholeText('Some hosts are not valid.'))).tagName).toBe('BDI');
-    const entry = await screen.findByText(wholeText(translate('fa', 'hosts.form.entry', { entry: 1, message: 'Use an https origin.' })));
-    expect(isolatedIn(entry)).toEqual(['Use an https origin.']);
+    // The panel's words, by the issue's code: none of the API's English is shown.
+    await screen.findByText(wholeText(messages.fa['hosts.form.invalid']));
+    const entry = await screen.findByText(wholeText(translate('fa', 'hosts.form.entry', { entry: 1, message: messages.fa['hosts.issue.not_https'] })));
+    expect(isolatedIn(entry)).toEqual([messages.fa['hosts.issue.not_https']]);
     expect(document.body.textContent).not.toMatch(ISOLATES);
+    expect(document.body.textContent).not.toContain('must use https');
 
     answer = view(5);
     await user.click(save);
@@ -125,14 +128,15 @@ describe('a notice on a page', () => {
     await screen.findByText(translate('en', 'hosts.saved', { version: 5 }));
   });
 
-  it('on the hosts page, isolates the message of a read that failed', async () => {
+  it('on the hosts page, words a read that failed in the panel’s language', async () => {
     renderPanel('/hosts', fakeApi({ 'GET /v1/admin/origins': () => problem(503, 'service_unavailable', { detail: 'The store is not reachable.' }) }), { locale: 'fa' });
-    expect((await screen.findByText(wholeText('The store is not reachable.'))).tagName).toBe('BDI');
+    await screen.findByText(wholeText(messages.fa['common.error.unavailable']));
+    expect(document.body.textContent).not.toContain('The store is not reachable.');
   });
 
   it('under a list that could not be read, isolates the API’s detail', async () => {
     renderPanel('/revenue/plans', fakeApi({ 'GET /v1/admin/plans': () => refused('limit is too large.') }), { locale: 'fa' });
-    expect(isolatedIn(await screen.findByText(wholeText('API نپذیرفت: limit is too large.')))).toEqual(['limit is too large.']);
+    expect(isolatedIn(await screen.findByText(wholeText(`${messages.fa['common.error.invalid']}جزئیات فنی: limit is too large.`)))).toEqual(['limit is too large.']);
   });
 
   it('under a field (a phone number to look up, an audit target), follows a language switch', async () => {

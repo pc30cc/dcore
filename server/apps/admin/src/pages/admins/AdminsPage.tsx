@@ -78,7 +78,7 @@ export function AdminsPage() {
       showToast((t) => t(confirmText[action].done, { name: admin.displayName }));
     } catch (error) {
       const failure = asApiError(error);
-      showToast((t) => failure.code === 'conflict' ? t('admins.error.lastOwner') : problemText(failure, t), 'error', 6_000);
+      showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
       setOpen(null);
     } finally {
       setBusy(false);
@@ -142,6 +142,7 @@ export function AdminsPage() {
                               roleList.find((role) => role.key === key),
                               key,
                               locale,
+                              t,
                             )}
                           </Badge>
                         ))}

@@ -138,6 +138,12 @@ export const LIFT_DEFAULT_TEXT = 'Lifted.';
  * as `profile_text_decide()` and the rename write it: `about/job`,
  * `prompt N` (1-based) and `name`; anything else is shown as written.
  */
+/** The photo a photo rejection's note names (the server writes "photo <id>"); null for any other note. */
+export function photoNoteId(note: string | null): string | null {
+  const match = note ? /^photo ([1-9][0-9]{0,18})$/.exec(note.trim()) : null;
+  return match ? match[1]! : null;
+}
+
 export function textPartsOf(note: string, t: (key: MessageKey, values?: Record<string, string | number>) => string): string[] {
   return note
     .split(',')

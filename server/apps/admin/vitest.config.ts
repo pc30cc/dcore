@@ -8,6 +8,8 @@ export default defineConfig({
   },
   ssr: { resolve: { conditions: ['@app/source'] } },
   define: {
+    // As a build without ADMIN_DEFAULT_LOCALE: Persian (resetPanel's /config.js names English for the page tests).
+    __ADMIN_DEFAULT_LOCALE__: JSON.stringify('fa'),
     __BRAND__: JSON.stringify({
       id: 'test',
       appName: 'Test',

@@ -3,6 +3,7 @@ import { clearUnsentBody, purgeUnmatched } from '@app/db';
 import {
   adminChatListSchema,
   adminChatPageSchema,
+  adminChatRequestListSchema,
   conversationsPageSchema,
   encodeCursor,
   idTime,
@@ -175,7 +176,7 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
       const other = await person('Perm Other');
       const m = await seedMatch(h, subject.id, other.id);
       await seedMessages(m, [{ sender: subject.id }]);
-      const urls = [`/v1/admin/users/${subject.publicUid}/chats`, `/v1/admin/users/${subject.publicUid}/chats/${m}`];
+      const urls = [`/v1/admin/users/${subject.publicUid}/chats`, `/v1/admin/users/${subject.publicUid}/chats/${m}`, `/v1/admin/users/${subject.publicUid}/chat-requests`];
       for (const role of ['superadmin', 'admin']) {
         const token = await reader(role);
         for (const url of urls) expect((await get(url, token)).statusCode, `${role} ${url}`).toBe(200);
@@ -235,6 +236,47 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
       expect(unknown.statusCode).toBe(404);
       expect(unknown.json<{ detail: string }>().detail).toBe('No such conversation.');
       expect((await get(`/v1/admin/users/nope/chats`, token)).statusCode).toBe(400);
+    });
+
+    it('lists the message requests a person sent and received, in every state, newest first, as written', async () => {
+      const token = await reader();
+      const subject = await person('Requests Subject');
+      const [p1, p2, p3, p4] = [await person('Req One'), await person('Req Two'), await person('Req Three'), await person('Req Four')];
+      const accepted = await seedMatch(h, subject.id, p4.id);
+      const rows: [SeededUser, SeededUser, number, string | null][] = [
+        [subject, p1, 3, null], // sent, declined (the sender is never told)
+        [p2, subject, 1, null], // received, pending
+        [subject, p3, 5, null], // sent, withdrawn
+        [p4, subject, 2, accepted], // received, accepted: its conversation
+      ];
+      const ids: string[] = [];
+      for (const [from, to, status, matchId] of rows) {
+        const id = h.app.ids.nextId();
+        ids.push(id);
+        await db.sql.query(
+          `INSERT INTO message_requests (id, from_id, to_id, status, decided_at, match_id, body) VALUES ($1, $2, $3, $4, CASE WHEN $4::smallint = 1 THEN NULL ELSE now() END, $5, $6)`,
+          [id, from.id, to.id, status, matchId, marked(`request ${status}`)],
+        );
+      }
+      // Someone else's request is not the subject's.
+      await db.sql.query(`INSERT INTO message_requests (id, from_id, to_id, body) VALUES ($1, $2, $3, $4)`, [h.app.ids.nextId(), p1.id, p2.id, marked('not theirs')]);
+      const first = await get(`/v1/admin/users/${subject.publicUid}/chat-requests?limit=3`, token);
+      expect([first.statusCode, statements(first), first.headers['cache-control']]).toEqual([200, 1, 'no-store']);
+      const page1 = adminChatRequestListSchema.parse(first.json());
+      expect(page1.items.map((r) => r.id)).toEqual([ids[3], ids[2], ids[1]]);
+      expect(page1.items[0]).toMatchObject({ direction: 'received', other: { id: p4.publicUid }, status: 'accepted', conversationId: accepted });
+      expect(page1.items[0]!.decidedAt).not.toBeNull();
+      expect(page1.items[1]).toMatchObject({ direction: 'sent', other: { id: p3.publicUid }, status: 'withdrawn', conversationId: null });
+      expect(page1.items[2]).toMatchObject({ direction: 'received', status: 'pending', decidedAt: null });
+      expect(page1.items[2]!.body).toContain('request 1');
+      const page2 = adminChatRequestListSchema.parse((await get(`/v1/admin/users/${subject.publicUid}/chat-requests?limit=3&cursor=${page1.nextCursor}`, token)).json());
+      expect(page2.items.map((r) => [r.id, r.direction, r.status])).toEqual([[ids[0], 'sent', 'declined']]);
+      expect(page2.nextCursor).toBeNull();
+      for (const body of [first.body]) for (const raw of [subject.id, p1.id, p2.id, p3.id, p4.id]) expect(body).not.toContain(`"${raw}"`);
+      // A conversation cursor is not a request cursor; an unknown person is a 404 in one statement.
+      expect((await get(`/v1/admin/users/${subject.publicUid}/chat-requests?cursor=${encodeCursor({ c: accepted })}`, token)).statusCode).toBe(400);
+      const nobody = await get(`/v1/admin/users/${h.app.publicIds.user.encode('123456789012')}/chat-requests`, token);
+      expect([nobody.statusCode, statements(nobody)]).toEqual([404, 1]);
     });
 
     it('pages a long conversation newest first, oldest first inside a page, with no gap and no repeat', async () => {
@@ -411,7 +453,7 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
       }
     }, 60_000);
 
-    it('reads no stream for an older page below the watermark: nothing not stored yet can be there', async () => {
+    it('reads no window of the stream for an older page below the watermark: only unsends newer than it can mark its messages', async () => {
       const token = await reader();
       const a = await person('Older A');
       const b = await person('Older B');
@@ -427,9 +469,38 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
         const older = await page(token, a, m.id, `?cursor=${newest.nextCursor}`);
         expect(older.items).toHaveLength(11);
         expect(older.nextCursor).toBeNull();
-        expect(spy).not.toHaveBeenCalled();
+        // Nothing under the cursor's window is read: only from the newest entry down (for unsends), never from a time below '+'.
+        expect(spy.mock.calls.every(([, end]) => end === '+')).toBe(true);
       } finally {
         spy.mockRestore();
+      }
+    });
+
+    it('marks a message on an older page taken back while its unsend still waits in the stream', async () => {
+      const token = await reader();
+      const a = await person('Late Unsend A');
+      const b = await person('Late Unsend B');
+      const m = await matchOf(h, a.id, b.id);
+      const text = marked('old, taken back');
+      const [target] = await seedMessages(m.id, [{ sender: a.id, body: text }]);
+      await seedMessages(m.id, Array.from({ length: 60 }, () => ({ sender: b.id })));
+      const last = await sent(b, m.id, { kind: 'text', body: marked() });
+      await stored(m.id, 62);
+      await durableUpTo(last);
+      await pipeline.pause();
+      try {
+        const unsend = await sent(a, m.id, { kind: 'unsend', refId: target! });
+        const newest = await page(token, a, m.id);
+        expect(newest.items.find((i) => i.id === unsend)).toMatchObject({ kind: 'unsend', refId: target, pending: true });
+        expect(newest.items.some((i) => i.id === target)).toBe(false);
+        const older = await page(token, a, m.id, `?cursor=${newest.nextCursor}`);
+        expect(older.items.find((i) => i.id === target)).toMatchObject({ body: text, unsentAt: newest.items.find((i) => i.id === unsend)!.at });
+        // The same from a cursor that carries no place in the stream (its bound alone): the read looks above it for unsends.
+        const bare = encodeCursor({ m: (BigInt(older.items.at(-1)!.id) + 1n).toString() });
+        const again = await page(token, a, m.id, `?cursor=${bare}`);
+        expect(again.items.find((i) => i.id === target)!.unsentAt).not.toBeNull();
+      } finally {
+        pipeline.resume();
       }
     });
 
@@ -488,6 +559,88 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
         pipeline.resume();
       }
     }, 60_000);
+
+    /** Every page of a conversation, newest first, following the cursors (at most `max`). */
+    async function allPages(token: string, user: SeededUser, conversationId: string, max = 40): Promise<AdminChatPage[]> {
+      const pages: AdminChatPage[] = [];
+      let cursor: string | null = null;
+      do {
+        const next: AdminChatPage = await page(token, user, conversationId, cursor ? `?cursor=${cursor}` : '');
+        pages.push(next);
+        cursor = next.nextCursor;
+      } while (cursor && pages.length < max);
+      return pages;
+    }
+
+    it('goes on from where a read stopped, with the writer’s margins as shipped: no page reads its window again, nothing is skipped', async () => {
+      const token = await reader();
+      const a = await person('Margin A');
+      const b = await person('Margin B');
+      const c = await person('Margin C');
+      const m = await matchOf(h, a.id, b.id);
+      const elsewhere = await matchOf(h, b.id, c.id);
+      const first = await sent(a, m.id, { kind: 'text', body: marked('stored') });
+      await stored(m.id, 1);
+      await durableUpTo(first);
+      await pipeline.pause();
+      const stream = h.app.keys.stream('msg');
+      const fillers: string[] = [];
+      // Small reads, the margins left as they ship (5 s mint margin, 1 s clock slack): each window above a cut holds every filler.
+      Object.assign(streamLimits, { pageSize: 3, scanMax: 6, hardMax: 12 });
+      try {
+        const early = [await sent(b, m.id, { kind: 'text', body: marked() }), await sent(a, m.id, { kind: 'text', body: marked() })];
+        for (let i = 0; i < 20; i += 1) {
+          fillers.push((await h.redis.xadd(stream, '*', 'id', h.app.ids.nextId(), 'm', elsewhere.id, 's', c.id, 'k', '1', 'f', '0', 'b', marked('filler')))!);
+          await new Promise((resolve) => setTimeout(resolve, 3));
+        }
+        const late = await sent(a, m.id, { kind: 'text', body: marked() });
+        const pages = await allPages(token, a, m.id);
+        expect(pages.every((p) => p.stream !== 'partial')).toBe(true);
+        expect(pages.at(-1)!.nextCursor).toBeNull();
+        expect([...pages].reverse().flatMap((p) => p.items.map((i) => i.id))).toEqual([first, ...early, late]);
+        // The newest page's count leaves out what its read did not reach, and says so.
+        expect(pages[0]!.stream).toBe('backlog');
+        expect(pages[0]!.conversation).toMatchObject({ countComplete: false });
+        expect(pages[0]!.conversation!.messages.count).toBeLessThan(4);
+      } finally {
+        for (const key of Object.keys(streamLimits)) delete streamLimits[key as keyof StreamReadLimits];
+        if (fillers.length > 0) await h.redis.xdel(stream, ...fillers);
+        pipeline.resume();
+      }
+    }, 60_000);
+
+    it('pages through a backlog denser than the limits read in the margin window, with the limits as shipped', async () => {
+      const token = await reader();
+      const a = await person('Dense A');
+      const b = await person('Dense B');
+      const c = await person('Dense C');
+      const m = await matchOf(h, a.id, b.id);
+      const elsewhere = await matchOf(h, b.id, c.id);
+      const first = await sent(a, m.id, { kind: 'text', body: marked('stored') });
+      await stored(m.id, 1);
+      await durableUpTo(first);
+      await pipeline.pause();
+      const stream = h.app.keys.stream('msg');
+      const fillers: string[] = [];
+      try {
+        const early = [await sent(b, m.id, { kind: 'text', body: marked() }), await sent(a, m.id, { kind: 'text', body: marked() }), await sent(b, m.id, { kind: 'text', body: marked() })];
+        // 14,400 entries of another conversation in a second or two: more than hardMax inside any 6 s window.
+        for (let batch = 0; batch < 12; batch += 1) {
+          const writes = h.redis.pipeline();
+          for (let i = 0; i < 1_200; i += 1) writes.xadd(stream, '*', 'id', h.app.ids.nextId(), 'm', elsewhere.id, 's', c.id, 'k', '1', 'f', '0', 'b', 'filler');
+          for (const [, id] of (await writes.exec()) ?? []) fillers.push(String(id));
+        }
+        const late = await sent(a, m.id, { kind: 'text', body: marked() });
+        const pages = await allPages(token, a, m.id);
+        expect(pages.map((p) => p.stream)).not.toContain('partial');
+        expect([...pages].reverse().flatMap((p) => p.items.map((i) => i.id))).toEqual([first, ...early, late]);
+        // Each page read on from the last one: a handful of pages for 14,400 entries in reads of 5,000.
+        expect(pages.length).toBeLessThanOrEqual(5);
+      } finally {
+        for (let i = 0; i < fillers.length; i += 1_000) await h.redis.xdel(stream, ...fillers.slice(i, i + 1_000));
+        pipeline.resume();
+      }
+    }, 120_000);
 
     it('reads within its limits: a page of entries at a time, and gives up below a cursor it cannot get under', async () => {
       const { pendingMessagesOf } = await import('../src/admin/chats.js');
@@ -814,6 +967,24 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
       } finally {
         pipeline.resume();
       }
+    });
+
+    it('leaves no line in the request log for a read: nothing says who opened whose conversation', async () => {
+      const token = await reader();
+      const a = await person('Quiet A');
+      const b = await person('Quiet B');
+      const m = await matchOf(h, a.id, b.id);
+      await sent(a, m.id, { kind: 'text', body: marked() });
+      const start = h.logs.length;
+      await list(token, a);
+      const read = await page(token, a, m.id);
+      await page(token, a, m.id, `?cursor=${encodeCursor({ m: read.items.at(-1)!.id })}`);
+      expect((await get(`/v1/admin/users/${a.publicUid}/chat-requests`, token)).statusCode).toBe(200);
+      const lines = h.logs.slice(start);
+      expect(lines.filter((line) => line.includes(a.publicUid) || line.includes(m.id) || line.includes('/chat'))).toEqual([]);
+      // Other admin routes keep their request lines: the quiet is these routes' own.
+      await admin(h, `/v1/admin/users/${a.publicUid}`, undefined, { token });
+      expect(h.logs.slice(start).some((line) => line.includes(`/v1/admin/users/${a.publicUid}`))).toBe(true);
     });
 
     it('leaves no message text in any log line, the error paths included', () => {

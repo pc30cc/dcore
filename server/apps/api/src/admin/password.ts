@@ -1,5 +1,5 @@
 import { argon2, randomBytes, timingSafeEqual, type Argon2Parameters } from 'node:crypto';
-import { ADMIN_PASSWORD_MAX, ADMIN_PASSWORD_MIN } from '@app/shared';
+import { ADMIN_PASSWORD_MAX, ADMIN_PASSWORD_MIN, type AdminPasswordProblem } from '@app/shared';
 
 /**
  * Admin passwords: Argon2id (RFC 9106) through Node's own `crypto.argon2`
@@ -35,7 +35,8 @@ export function normalizePassword(password: string): string {
   return password.normalize('NFKC');
 }
 
-export type PasswordProblem = 'too_short' | 'too_long' | 'is_email';
+/** The shared codes the admin panel words. */
+export type PasswordProblem = AdminPasswordProblem;
 
 /** The policy: 12 to 128 characters (code points, after NFKC) and not the e-mail address itself. */
 export function passwordProblem(password: string, email?: string): PasswordProblem | null {

@@ -15,13 +15,25 @@ export class ApiError extends Error {
   readonly attemptsLeft: number | undefined;
   /** `rate_limited`: seconds until a retry may succeed. */
   readonly retryAfterSeconds: number | undefined;
+  /** The id the API logged the request under (support quotes it). */
+  readonly requestId: string | undefined;
+  /** `conflict`, `forbidden`: the machine word of the refusal (shared `adminProblems.ts`). */
+  readonly reason: string | undefined;
+  /** `forbidden` (`beyond_grants`): the permissions a refused role change would give. */
+  readonly permissions: readonly string[];
 
   constructor(
     status: number,
     code: string,
     message: string,
     errors: readonly FieldIssue[] = [],
-    extra: { attemptsLeft?: number | undefined; retryAfterSeconds?: number | undefined } = {},
+    extra: {
+      attemptsLeft?: number | undefined;
+      retryAfterSeconds?: number | undefined;
+      requestId?: string | undefined;
+      reason?: string | undefined;
+      permissions?: readonly string[] | undefined;
+    } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -30,7 +42,16 @@ export class ApiError extends Error {
     this.errors = errors;
     this.attemptsLeft = extra.attemptsLeft;
     this.retryAfterSeconds = extra.retryAfterSeconds;
+    this.requestId = extra.requestId;
+    this.reason = extra.reason;
+    this.permissions = extra.permissions ?? [];
   }
+}
+
+const WORD = /^[a-z][a-z0-9_.]{0,63}$/;
+
+function word(value: unknown): string | undefined {
+  return typeof value === 'string' && WORD.test(value) ? value : undefined;
 }
 
 function count(value: unknown): number | undefined {
@@ -41,7 +62,17 @@ function count(value: unknown): number | undefined {
 export function problemError(status: number, text: string, retryAfterHeader?: string | null): ApiError {
   const headerSeconds = retryAfterHeader && /^\d+$/.test(retryAfterHeader) ? Number(retryAfterHeader) : undefined;
   try {
-    const body = JSON.parse(text) as { code?: unknown; detail?: unknown; title?: unknown; errors?: unknown; attemptsLeft?: unknown; retryAfterSeconds?: unknown };
+    const body = JSON.parse(text) as {
+      code?: unknown;
+      detail?: unknown;
+      title?: unknown;
+      errors?: unknown;
+      attemptsLeft?: unknown;
+      retryAfterSeconds?: unknown;
+      requestId?: unknown;
+      reason?: unknown;
+      permissions?: unknown;
+    };
     const code = typeof body.code === 'string' ? body.code : `http_${status}`;
     const message = typeof body.detail === 'string' ? body.detail : typeof body.title === 'string' ? body.title : `HTTP ${status}`;
     const errors = Array.isArray(body.errors)
@@ -50,6 +81,9 @@ export function problemError(status: number, text: string, retryAfterHeader?: st
     return new ApiError(status, code, message, errors, {
       attemptsLeft: count(body.attemptsLeft),
       retryAfterSeconds: count(body.retryAfterSeconds) ?? headerSeconds,
+      requestId: typeof body.requestId === 'string' && body.requestId.length <= 100 ? body.requestId : undefined,
+      reason: word(body.reason),
+      permissions: Array.isArray(body.permissions) ? body.permissions.map(word).filter((p): p is string => p !== undefined) : [],
     });
   } catch {
     return new ApiError(status, `http_${status}`, `HTTP ${status}`, [], { retryAfterSeconds: headerSeconds });

@@ -32,6 +32,8 @@ afterEach(() => {
 });
 
 function renderToaster(): void {
+  // English until a test picks another language (ADMIN_DEFAULT_LOCALE=en).
+  resetPanel();
   render(
     <ThemeProvider>
       <I18nProvider>
@@ -68,13 +70,14 @@ describe('the toaster', () => {
 
     act(() => showToast((t) => t('admins.saved', { name: 'Sara' })));
     const invalid = new ApiError(400, 'validation_failed', 'Invalid request', [{ in: 'body', pointer: '/name', code: 'too_small', message: 'name is required.' }]);
-    act(() => showToast((t) => problemText(invalid, t), 'error'));
+    act(() => showToast((t, locale) => problemText(invalid, t, locale), 'error'));
 
     const [saved, refused] = notices();
     expect(saved!.textContent).toBe('Sara ذخیره شد.');
     expect(isolated(saved!)).toEqual([{ text: 'Sara', dir: null }]);
-    expect(refused!.textContent).toBe('API نپذیرفت: name is required.');
-    expect(isolated(refused!)).toEqual([{ text: 'name is required.', dir: null }]);
+    // The panel's sentence first; the API's English only on a smaller line of its own, isolated.
+    expect(refused!.textContent).toBe(`${messages.fa['common.error.invalid']}جزئیات فنی: /name: name is required.`);
+    expect(isolated(refused!)).toEqual([{ text: '/name: name is required.', dir: null }]);
     expectPanelDirection(saved!);
     expectPanelDirection(refused!);
   });

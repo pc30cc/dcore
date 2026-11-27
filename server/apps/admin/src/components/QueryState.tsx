@@ -7,12 +7,14 @@ import { Worded } from '@/i18n/Worded';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 
-/** A list that is loading: a few grey rows. */
+/** A list that is loading: a few grey rows, and "Loading…" for a screen reader. */
 export function TableSkeleton({ rows = 4 }: { rows?: number }) {
+  const { t } = useI18n();
   return (
-    <div className="grid gap-3 p-4" aria-hidden="true">
+    <div className="grid gap-3 p-4" aria-busy="true">
+      <span className="sr-only">{t('common.loading')}</span>
       {Array.from({ length: rows }, (_, index) => (
-        <Skeleton key={index} className="h-10 w-full" />
+        <Skeleton key={index} aria-hidden="true" className="h-10 w-full" />
       ))}
     </div>
   );
@@ -27,7 +29,7 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => v
       <TriangleAlert aria-hidden="true" />
       <AlertTitle>{t('common.error.load')}</AlertTitle>
       <AlertDescription>
-        <Worded text={(t) => problemText(failure, t)} />
+        <Worded text={(t, lang) => problemText(failure, t, lang)} />
         <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
           <RefreshCw aria-hidden="true" />
           {t('common.retry')}

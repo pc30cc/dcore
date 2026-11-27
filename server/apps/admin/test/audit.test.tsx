@@ -1,4 +1,6 @@
 import type { AuditEntry } from '@app/shared';
+import { messages } from '../src/i18n/messages';
+import { translate } from '../src/i18n/translate';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,7 +78,8 @@ describe('the audit log page', () => {
     const { router } = renderPanel('/system/audit', api);
     await within(await screen.findByRole('table')).findByText('user.ban');
     const filters = screen.getByRole('form', { name: 'Filters' });
-    await waitFor(() => expect(within(filters).getByRole('option', { name: 'Old Hand (disabled)' })).toBeTruthy());
+    // The name is isolated inside the option (no <bdi> there): the same words around it.
+    await waitFor(() => expect(within(filters).getByRole('option', { name: (name) => name.replace(/[\u2066-\u2069]/g, '') === 'Old Hand (disabled)' })).toBeTruthy());
     await user.selectOptions(within(filters).getByLabelText('Admin'), '4');
     await user.selectOptions(within(filters).getByLabelText('Action'), 'user.ban');
     await user.selectOptions(within(filters).getByLabelText('Target'), 'user');
@@ -114,9 +117,9 @@ describe('the audit log page', () => {
     });
     expect(api.of('POST /v1/admin/audit/export')[0]?.authorization).toBe('Bearer test-access-token');
     expect(await created.mock.calls[0]![0].text()).toContain('time,admin_id');
-    answer = problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '', code: 'too_many_rows', message: 'Narrow the filter.' }] });
+    answer = problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '', code: 'too_many_rows', message: translate('en', 'audit.export.tooMany', { max: 10_000 }) }] });
     await user.click(screen.getByRole('button', { name: 'Export CSV' }));
-    expect(await screen.findByText('Narrow the filter.')).toBeTruthy();
+    expect(await screen.findByText(translate('en', 'audit.export.tooMany', { max: 10_000 }))).toBeTruthy();
     expect(clicked).toHaveLength(1);
   });
 
@@ -130,7 +133,7 @@ describe('the audit log page', () => {
     const target = within(filters).getByLabelText('ID');
     await user.type(target, '+989121234567');
     await user.click(within(filters).getByRole('button', { name: 'Apply' }));
-    const error = await within(filters).findByText('Write a public id (13 letters).');
+    const error = await within(filters).findByText('Write a public ID (13 characters).');
     expect(target.getAttribute('aria-describedby')).toBe(error.id);
     expect(router.state.location.search).toBe('');
     expect(api.of('GET /v1/admin/audit').every((call) => call.query['target'] === undefined)).toBe(true);
@@ -180,15 +183,61 @@ describe('the audit log page', () => {
     expect(pre.parentElement?.className).toContain('w-0 min-w-full');
   });
 
-  it('shows the days chosen in the Persian calendar under the pickers', async () => {
+  it('takes the days in the Persian calendar, and asks for the Gregorian ones', async () => {
     const user = userEvent.setup();
-    renderPanel('/system/audit', auditApi(), { locale: 'fa' });
+    const { router } = renderPanel('/system/audit', auditApi(), { locale: 'fa' });
     const filters = await screen.findByRole('form', { name: 'فیلترها' });
     const from = within(filters).getByLabelText('از');
-    await user.type(from, '2026-11-20');
-    const day = new Intl.DateTimeFormat('fa', { dateStyle: 'medium' }).format(new Date('2026-11-20T12:00:00'));
-    const shown = await within(filters).findByText(day);
+    await user.type(from, '۱۴۰۵/۰۸/۲۹');
+    const shown = await within(filters).findByText('جمعه، ۲۹ آبان ۱۴۰۵');
     expect(from.getAttribute('aria-describedby')).toBe(shown.id);
+    await user.type(within(filters).getByLabelText('تا'), '1405/9/3');
+    await user.click(within(filters).getByRole('button', { name: messages.fa['audit.apply'] }));
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({ from: '2026-11-20', to: '2026-11-24' }));
+  });
+
+  it('says so at the field when the end comes before the start, and asks nothing', async () => {
+    const user = userEvent.setup();
+    const { router } = renderPanel('/system/audit', auditApi(), { locale: 'fa' });
+    const filters = await screen.findByRole('form', { name: 'فیلترها' });
+    await user.type(within(filters).getByLabelText('از'), '۱۴۰۵/۰۹/۰۳');
+    const to = within(filters).getByLabelText<HTMLInputElement>('تا');
+    await user.type(to, '۱۴۰۵/۰۸/۲۹');
+    await user.click(within(filters).getByRole('button', { name: messages.fa['audit.apply'] }));
+    // The end field refuses a day before the start (its own validity, as a browser date field's min does).
+    expect(await within(filters).findByText(messages.fa['form.day.beforeMin'].replace('{day}', '۱۴۰۵/۰۹/۰۳'))).toBeTruthy();
+    expect(to.validity.valid).toBe(false);
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('applies nothing while a day field holds text that is not a day: the list never widens to every day', async () => {
+    const user = userEvent.setup();
+    const { router } = renderPanel('/system/audit?from=2026-11-20', auditApi(), { locale: 'fa' });
+    const filters = await screen.findByRole('form', { name: 'فیلترها' });
+    const from = within(filters).getByLabelText<HTMLInputElement>('از');
+    await waitFor(() => expect(from.value).toBe('۱۴۰۵/۰۸/۲۹'));
+    for (const typed of ['1405/13/01', '2026/11/27']) {
+      await user.clear(from);
+      await user.type(from, `${typed}{Enter}`);
+      expect(from.validity.valid).toBe(false);
+      expect(within(filters).getByText(messages.fa['form.day.invalid'].replace('{example}', from.placeholder))).toBeTruthy();
+      expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({ from: '2026-11-20' });
+    }
+    // A day again: valid, and applied.
+    await user.clear(from);
+    await user.type(from, '۱۴۰۵/۰۸/۲۸{Enter}');
+    expect(from.validity.valid).toBe(true);
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({ from: '2026-11-19' }));
+  });
+
+  it('reads an id typed in Persian digits', async () => {
+    const user = userEvent.setup();
+    const { router } = renderPanel('/system/audit', auditApi(), { locale: 'fa' });
+    const filters = await screen.findByRole('form', { name: 'فیلترها' });
+    await user.selectOptions(within(filters).getByLabelText(messages.fa['audit.targetType']), 'report');
+    await user.type(within(filters).getByLabelText(messages.fa['audit.target']), '۱۲');
+    await user.click(within(filters).getByRole('button', { name: messages.fa['audit.apply'] }));
+    await waitFor(() => expect(router.state.location.search).toBe('?targetType=report&target=12'));
   });
 
   it('keeps the saved file’s address for a minute before letting it go', () => {

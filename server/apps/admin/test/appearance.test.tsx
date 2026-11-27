@@ -147,7 +147,7 @@ describe('the appearance page', () => {
       'PUT /v1/admin/appearance': () => {
         // Admin A saved white as the default while this form was open.
         current = view('white', ['neon', 'white'], 'v9');
-        return problem(409, 'conflict', { detail: 'The appearance was changed meanwhile.' });
+        return problem(409, 'conflict', { detail: 'The appearance was changed meanwhile.', reason: 'appearance_changed' });
       },
     });
     const user = userEvent.setup();
@@ -188,10 +188,10 @@ describe('the appearance page', () => {
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Save appearance' }));
     await screen.findByText('The default template must be offered.');
 
-    answer = problem(403, 'forbidden');
+    answer = problem(403, 'forbidden', { reason: 'role' });
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Save appearance' }));
-    await screen.findByText('Your role does not include this. Ask the owner if you need it.');
+    await screen.findByText('Your role does not allow this. Ask the owner if you need it.');
     expect(api.of('PUT /v1/admin/appearance')).toHaveLength(2);
   });
 

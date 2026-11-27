@@ -1,5 +1,15 @@
 import type { Locale } from '@app/shared';
 
+/** ASCII digits for Persian and Arabic-Indic ones, so a number or an id typed on a Persian keyboard counts. */
+export function asciiDigits(value: string): string {
+  return value.replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0)).replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+}
+
+/** A decimal number in the panel's digits ("4.99" as «۴٫۹۹»): an example in a field. */
+export function formatDecimal(value: number, locale: Locale, fractionDigits = 2): string {
+  return new Intl.NumberFormat(locale, { useGrouping: false, minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
+}
+
 /** A date and time in the panel's language ("9 Nov 2026, 19:40"). */
 export function formatDateTime(iso: string, locale: Locale): string {
   const date = new Date(iso);
@@ -31,18 +41,6 @@ export function formatDuration(seconds: number, locale: Locale): string {
   const minutes = Math.floor((total % 3_600) / 60);
   const rest = total % 60;
   return hours > 0 ? `${formatPlain(hours, locale)}:${two.format(minutes)}:${two.format(rest)}` : `${formatPlain(minutes, locale)}:${two.format(rest)}`;
-}
-
-/**
- * A day typed in a date field (`YYYY-MM-DD`, the browser's Gregorian
- * picker) in the panel's calendar, when that calendar is another one
- * (Solar Hijri in Persian); undefined when the picker already shows it.
- */
-export function dayInPanelCalendar(day: string, locale: Locale): string | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return undefined;
-  if (new Intl.DateTimeFormat(locale).resolvedOptions().calendar === 'gregory') return undefined;
-  // Noon, so no time zone moves it to the day before.
-  return formatDate(`${day}T12:00:00`, locale);
 }
 
 /** A whole number in the panel's language (Persian digits in Persian). */
@@ -83,4 +81,33 @@ export function localized(texts: Partial<Record<string, string>> | undefined, lo
     if (value) return value;
   }
   return fallback;
+}
+
+/** Facts as one phrase in the panel's language ("A, B and C"; «A، B و C»): an accessible name, a short list. */
+export function listOf(items: readonly string[], locale: Locale): string {
+  return new Intl.ListFormat(locale, { type: 'conjunction' }).format(items);
+}
+
+/** Facts read one after another in an accessible name ("A, B, C"; «A، B، C»), where a "·" would be read as nothing or as a dot. */
+export function factsOf(items: readonly string[], locale: Locale): string {
+  return items.join(locale === 'fa' ? '، ' : ', ');
+}
+
+/** Today as `YYYY-MM-DD` in the browser's time zone (the earliest end a date field offers). */
+export function todayDay(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** Whether the panel's calendar in `locale` is the Gregorian one (the browser's picker then fits). */
+export function gregorianPanel(locale: Locale): boolean {
+  return new Intl.DateTimeFormat(locale).resolvedOptions().calendar === 'gregory';
+}
+
+/** A day in full in the panel's language and calendar («جمعه، ۶ آذر ۱۴۰۵»). */
+export function fullDay(iso: string, locale: Locale): string {
+  // Noon, so no time zone moves it to another day.
+  const day = new Date(`${iso}T12:00:00`);
+  // ICU's full Persian pattern is «y MMMM d, EEEE» (year first, a Latin comma): the weekday leads here, as Persian writes it.
+  if (locale === 'fa') return `${new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(day)}، ${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(day)}`;
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'full' }).format(day);
 }

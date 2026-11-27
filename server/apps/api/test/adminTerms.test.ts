@@ -40,15 +40,18 @@ describe('checkTerm', () => {
     ['regex', '[z-a]', false, 'regex_invalid'],
     ['regex', '*a', false, 'regex_invalid'],
     ['regex', 'a{1001}', false, 'regex_invalid'],
-    ['regex', 'foo(?=bar)', false, 'regex_unsupported'],
-    ['regex', 'foo(?!bar)', false, 'regex_unsupported'],
-    ['regex', '(?<=a)b', false, 'regex_unsupported'],
-    ['regex', '(?<name>a)b', false, 'regex_unsupported'],
-    ['regex', '(?P<name>a)b', false, 'regex_unsupported'],
-    ['regex', '(?i)abc', false, 'regex_unsupported'],
-    ['regex', '(a)\\1', false, 'regex_unsupported'],
-    ['regex', '(?<n>a)\\k<n>', false, 'regex_unsupported'],
-    ['regex', '\\Qa.b\\E', false, 'regex_unsupported'],
+    ['regex', 'foo(?=bar)', false, 'regex_group'],
+    ['regex', 'foo(?!bar)', false, 'regex_group'],
+    ['regex', '(?<=a)b', false, 'regex_group'],
+    ['regex', '(?<name>a)b', false, 'regex_group'],
+    ['regex', '(?P<name>a)b', false, 'regex_group'],
+    ['regex', '(?i)abc', false, 'regex_group'],
+    ['regex', '(a)\\1', false, 'regex_backreference'],
+    ['regex', 'a\\k<n>', false, 'regex_backreference'],
+    // The first problem in the pattern is the one named.
+    ['regex', '(?<n>a)\\k<n>', false, 'regex_group'],
+    ['regex', '\\Qa.b\\E', false, 'regex_quote'],
+    ['regex', '[ﻻ]', false, 'regex_class_ligature'],
     ['regex', '\\bعلی\\b', false, 'regex_word_boundary'],
     ['regex', '\\b\\p{Arabic}+', false, 'regex_word_boundary'],
     ['regex', '[\\p{L}\\p{N}]{200}', false, 'regex_too_large'],
@@ -206,12 +209,12 @@ describe.skipIf(!hasInfrastructure)('admin: banned terms', () => {
     expect((await as('admin', '/v1/admin/banned-terms', body)).statusCode).toBe(201);
     const again = await as('admin', '/v1/admin/banned-terms', body);
     expect(again.statusCode).toBe(409);
-    expect(problemSchemaFor('conflict').parse(again.json()).detail).toBe('This term exists.');
+    expect(problemSchemaFor('conflict').parse(again.json())).toMatchObject({ detail: 'This term exists.', reason: 'term_exists' });
     // The same text in one language is another term.
     expect((await as('admin', '/v1/admin/banned-terms', { ...body, locale: 'fa' })).statusCode).toBe(201);
     expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: '...' }))).toMatchObject({ pointer: '/term', code: 'term_empty' });
     expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: '(x', match: 'regex' }))).toMatchObject({ pointer: '/term', code: 'regex_invalid' });
-    expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: 'x(?=a)', match: 'regex' }))).toMatchObject({ pointer: '/term', code: 'regex_unsupported' });
+    expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: 'x(?=a)', match: 'regex' }))).toMatchObject({ pointer: '/term', code: 'regex_group' });
     expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: '\\bعلی\\b', match: 'regex' }))).toMatchObject({ pointer: '/term', code: 'regex_word_boundary' });
     expect(issue(await as('admin', '/v1/admin/banned-terms', { ...body, term: '.{60}.{60}', match: 'regex' }))).toMatchObject({ pointer: '/term', code: 'regex_too_large' });
     expect((await as('admin', '/v1/admin/banned-terms', { ...body, scope: [] })).statusCode).toBe(400);

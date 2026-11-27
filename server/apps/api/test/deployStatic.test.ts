@@ -172,6 +172,9 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
         .replaceAll('@CDN_ORIGIN@', '')
         .replaceAll('@FONT_ORIGIN@', ''),
     );
+    // The build's pages of each language, and the one admin-runtime.sh copied for the deployment's default.
+    write('admin/index.fa.html', '<!doctype html><html lang="fa" dir="rtl"><head></head><body>fa</body></html>');
+    write('runtime/index.html', '<!doctype html><html lang="tr" dir="ltr"><head></head><body>runtime</body></html>');
     write('runtime/config.js', 'window.__APP_CONFIG__ = Object.freeze({});\n');
     write('runtime/config.json', '{}\n');
     write('web/en/index.html', '<!doctype html><title>en</title>');
@@ -251,6 +254,9 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
   const html: [keyof typeof ports, string, string, number][] = [
     ['admin', 'GET', '/', 200],
     ['admin', 'GET', '/users/abc', 200],
+    ['admin', 'GET', '/index.html', 200],
+    // The pages per language are copied at start, never served themselves.
+    ['admin', 'GET', '/index.fa.html', 404],
     ['admin', 'GET', '/.env', 404],
     ['admin', 'POST', '/', 405],
     ['admin', 'GET', '/%', 400],
@@ -340,6 +346,15 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
     }
   });
 
+  it('serves every route of the panel the page admin-runtime.sh wrote (the default language\'s), revalidated each time', async () => {
+    for (const path of ['/', '/users/abc', '/index.html', '/login']) {
+      const response = await fetch(`http://127.0.0.1:${ports.admin}${path}`, { headers: { accept: 'text/html' } });
+      expect(response.status, path).toBe(200);
+      expect(await response.text(), path).toContain('<body>runtime</body>');
+      expect(response.headers.get('cache-control'), path).toBe('no-cache, no-transform');
+    }
+  });
+
   it('caches a page, its revalidation, the 404 page and the slash redirect for 5 minutes', async () => {
     const page = await fetchRaw(ports.web, '/en/');
     expect(page.status).toBe(200);
@@ -361,6 +376,7 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
   // nginx sets a file's headers before it reads a Range, so its 416 page would carry them: every answer is the whole file.
   it.each([
     ['admin', '/', 'no-cache, no-transform'],
+    ['admin', '/index.html', 'no-cache, no-transform'],
     ['admin', '/assets/app.js', 'public, max-age=31536000, immutable'],
     ['admin', '/config.js', 'no-store, no-transform'],
     ['web', '/en/', 'public, max-age=300, no-transform'],

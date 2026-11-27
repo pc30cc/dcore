@@ -22,7 +22,8 @@ export function PhoneReveal({ user }: { user: AdminUserDetail }) {
         queryKey: ['user', user.id, 'audit'],
       });
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
+      const failure = asApiError(error);
+      showToast((t, lang) => (failure.code === 'not_found' ? t('user.phone.none') : problemText(failure, t, lang)), 'error', 6_000);
     } finally {
       setBusy(false);
     }

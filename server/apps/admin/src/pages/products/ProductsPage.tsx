@@ -85,7 +85,7 @@ function StoreProducts({ store }: { store: AppStore }) {
       showToast((t) => t(active ? 'product.activated' : 'product.deactivated', { id: saved.productId }));
     } catch (error) {
       const failure = asApiError(error);
-      showToast((t) => failure.code === 'conflict' ? t('product.error.archivedPlan') : problemText(failure, t), 'error', 6_000);
+      showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
       setToggle(null);
@@ -245,11 +245,15 @@ function ProductTable({
                     </span>
                   ) : (
                     <span className="tabular-nums">
-                      {product.item ? t(itemText[product.item]) : '—'} × {formatNumber(product.quantity ?? 0, locale)}
+                      {t('product.grantsLine', { item: product.item ? t(itemText[product.item]) : t('common.none'), count: formatNumber(product.quantity ?? 0, locale) })}
                     </span>
                   )}
                 </TableCell>
-                {subscription && <TableCell className="whitespace-nowrap">{product.period && product.period in periodText ? t(periodText[product.period as keyof typeof periodText]) : product.period}</TableCell>}
+                {subscription && <TableCell className="whitespace-nowrap">{product.period && product.period in periodText ? (
+                      t(periodText[product.period as keyof typeof periodText])
+                    ) : (
+                      <code dir="ltr">{product.period}</code>
+                    )}</TableCell>}
                 <TableCell>{product.badge ? <Badge variant="secondary">{t(badgeText[product.badge])}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                 <TableCell className="tabular-nums">{formatNumber(product.sort, locale)}</TableCell>
                 <TableCell className="whitespace-nowrap tabular-nums">{product.listPrice ? formatPrice(product.listPrice, locale) : <span className="text-muted-foreground">—</span>}</TableCell>

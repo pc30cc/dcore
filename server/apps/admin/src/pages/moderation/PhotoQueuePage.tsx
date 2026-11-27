@@ -12,7 +12,7 @@ import { UserRef } from '@/components/UserRef';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatNumber, regionName } from '@/lib/format';
+import { factsOf, formatNumber, regionName } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { isSensitive, photoReasons, positionText } from '@/lib/moderation';
 import { conflictText, problemText } from '@/lib/problemText';
@@ -126,7 +126,7 @@ export function PhotoQueuePage() {
         leave(photo);
         setRejecting(null);
       } else {
-        showToast((t) => problemText(failure, t), 'error', 6_000);
+        showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
       }
     } finally {
       setBusy(false);
@@ -187,7 +187,7 @@ export function PhotoQueuePage() {
                     onClick={() => tap(i)}
                     onFocus={() => i !== index && setFocus(i)}
                     aria-current={i === index ? 'true' : undefined}
-                    aria-label={[photo.user.name ?? photo.user.id, position(i + 1), ...photo.modFlags.map((flag) => t(`modFlag.${flag}` as MessageKey))].join(' · ')}
+                    aria-label={factsOf([photo.user.name ?? photo.user.id, position(i + 1), ...photo.modFlags.map((flag) => t(`modFlag.${flag}` as MessageKey))], locale)}
                     className={cn(
                       'relative block aspect-[4/5] w-full overflow-hidden rounded-lg border bg-muted outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                       i === index && 'ring-2 ring-primary ring-offset-2 ring-offset-background',

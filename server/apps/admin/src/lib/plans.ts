@@ -17,6 +17,7 @@ import {
   type PlanQuota,
 } from '@app/shared';
 import type { MessageKey } from '@/i18n/messages';
+import { asciiDigits } from './format';
 
 /**
  * The plan editor's form: what the fields hold (text as typed), the checks
@@ -106,10 +107,7 @@ export function planFormOf(plan: AdminPlan): PlanForm {
 const CONTROL = /\p{Cc}/u;
 const INTEGER = /^-?\d+$/;
 
-/** ASCII digits for Persian and Arabic-Indic ones, so a number typed on a Persian keyboard counts. */
-export function asciiDigits(value: string): string {
-  return value.replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0)).replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
-}
+export { asciiDigits };
 
 function integer(value: string): number | null {
   const text = asciiDigits(value.trim());

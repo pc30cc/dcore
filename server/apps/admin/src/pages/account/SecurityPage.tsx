@@ -1,3 +1,4 @@
+import { ADMIN_PASSWORD_MAX, ADMIN_PASSWORD_MIN } from '@app/shared';
 import { LogOut, Monitor, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { Field } from '@/components/form/Field';
@@ -40,7 +41,7 @@ export function SecurityPage() {
       queryClient.setQueryData<{ items: AdminSession[] }>(queryKeys.sessions, (data) => (data ? { items: data.items.filter((item) => item.id !== session.id) } : data));
       showToast((t) => t('security.sessions.revoked'));
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error');
+      showToast((t, lang) => problemText(asApiError(error), t, lang), 'error');
     } finally {
       setBusy(null);
     }
@@ -48,7 +49,7 @@ export function SecurityPage() {
 
   return (
     <div className="mx-auto grid max-w-4xl gap-6">
-      <PageHeader icon={ShieldCheck} title={t('account.security')} description={me ? t('security.intro', { email: me.email }) : undefined} />
+      <PageHeader icon={ShieldCheck} title={t('account.security')} description={me ? <Worded text={(say) => say('security.intro', { email: me.email })} /> : undefined} />
 
       {me?.totpRequired === false && (
         <Alert variant="warning">
@@ -73,14 +74,20 @@ export function SecurityPage() {
                   <Monitor className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <div className="grid min-w-0 flex-1 gap-0.5">
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      <span className="truncate" dir="ltr">
-                        {session.userAgent ? summarizeAgent(session.userAgent) : t('security.sessions.unknownDevice')}
-                      </span>
+                      {session.userAgent ? (
+                        <span className="truncate" dir="ltr">
+                          {summarizeAgent(session.userAgent)}
+                        </span>
+                      ) : (
+                        <span className="truncate">{t('security.sessions.unknownDevice')}</span>
+                      )}
                       {session.current && <Badge variant="success">{t('security.sessions.current')}</Badge>}
                       {session.mfa === false && <Badge variant="warning">{t('security.sessions.noMfa')}</Badge>}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {t('security.sessions.meta', { ip: session.ip ?? '—', seen: formatDateTime(session.refreshedAt, locale), since: formatDateTime(session.createdAt, locale) })}
+                      <Worded
+                        text={(say) => say('security.sessions.meta', { ip: session.ip ?? '—', seen: formatDateTime(session.refreshedAt, locale), since: formatDateTime(session.createdAt, locale) })}
+                      />
                     </span>
                   </div>
                   {!session.current && (
@@ -156,7 +163,7 @@ function PasswordCard({ email }: { email: string }) {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.errors.some((issue) => issue.pointer === '/currentPassword')) setWrongCurrent(true);
-      else setNotice(failure.errors.some((issue) => issue.pointer === '/newPassword') ? (t) => t('admins.error.passwordShort', { min: 12 }) : (t) => problemText(failure, t));
+      else setNotice((t, lang) => problemText(failure, t, lang));
     } finally {
       setSaving(false);
     }
@@ -178,7 +185,7 @@ function PasswordCard({ email }: { email: string }) {
             >
               {(control) => <Input {...control} type="password" dir="ltr" autoComplete="current-password" value={current} onChange={(event) => setCurrent(event.target.value)} />}
             </Field>
-            <Field id={`${baseId}-new`} label={t('security.password.new')} hint={t('admins.password.rule')} error={nextProblem ? t(nextProblem, { min: 12 }) : undefined}>
+            <Field id={`${baseId}-new`} label={t('security.password.new')} hint={t('admins.password.rule')} error={nextProblem ? t(nextProblem, { min: ADMIN_PASSWORD_MIN, max: ADMIN_PASSWORD_MAX }) : undefined}>
               {(control) => <Input {...control} type="password" dir="ltr" autoComplete="new-password" value={next} onChange={(event) => setNext(event.target.value)} />}
             </Field>
             <Field id={`${baseId}-repeat`} label={t('security.password.repeat')} error={repeatProblem ? t(repeatProblem) : undefined}>

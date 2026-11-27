@@ -215,19 +215,29 @@ describe('the plan editor', () => {
     expect(api.of('POST /v1/admin/plans/premium/archive')).toHaveLength(1);
   });
 
-  it('turns the API’s refusals into the panel’s words', async () => {
-    const api = fakeApi({
-      'GET /v1/admin/plans': () => planList(all),
-      'PATCH /v1/admin/plans/plus': () => problem(409, 'conflict', { detail: 'Another plan holds this rank.' }),
-    });
+  it('turns the API’s refusals into the panel’s words, by their reason, never by the English detail', async () => {
+    let answer: unknown = problem(409, 'conflict', { detail: 'Another plan holds this rank.', reason: 'rank_taken' });
+    const api = fakeApi({ 'GET /v1/admin/plans': () => planList(all), 'PATCH /v1/admin/plans/plus': () => answer });
     const user = userEvent.setup();
     renderPanel('/revenue/plans/plus', api);
     const sort = await screen.findByLabelText('Display order');
     await user.clear(sort);
     await user.type(sort, '7');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    const notice = await screen.findByText(wholeText('It could not be saved: Another plan holds this rank.'));
-    expect(isolatedIn(notice)).toEqual(['Another plan holds this rank.']);
+    const known = await screen.findByText(wholeText('Another plan holds this place. Use “Upgrade order” to swap them.'));
+    expect(isolatedIn(known)).toEqual([]);
+
+    // A reason this panel has no words for: its own sentence, the API's text only on a line of its own, isolated.
+    answer = problem(409, 'conflict', { detail: 'Something new clashed.', reason: 'brand_new' });
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    const general = (await screen.findAllByText((_content, element) => element?.tagName === 'SPAN' && (element.textContent ?? '').startsWith('It could not be saved: it changed meanwhile') && element.querySelector(':scope > span.block') !== null)).at(-1)!;
+    expect(general.querySelector('span.block')?.textContent).toBe('Technical detail: Something new clashed.');
+    expect(isolatedIn(general)).toEqual(['Something new clashed.']);
+
+    // A rule of the catalogue the API checked: the panel's words, the constraint only as the detail.
+    answer = problem(422, 'field_invalid', { detail: 'x', errors: [{ in: 'body', pointer: '', code: 'catalog_rule', message: 'The change breaks a rule of the catalogue (plans_rank_check).' }] });
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText(wholeText('The change breaks a rule of the plan catalogue.'))).toBeTruthy();
   });
 
   it('keeps a read-only role out of every change', async () => {

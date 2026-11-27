@@ -52,12 +52,14 @@ import {
   type AdminPlan,
   type AdminProduct,
   type AppStore,
+  type AdminFieldCode,
 } from '@app/shared';
 import { planOnSale } from '@app/shared/server';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { adminWrite } from '../admin/audit.js';
 import { dbErrorInfo } from '../lib/dbErrors.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 
 /**
@@ -101,8 +103,8 @@ import { HttpProblem } from '../lib/problem.js';
  *   Cafe Bazaar sells no weekly period.
  */
 
-function invalid(pointer: string, code: string, message: string): HttpProblem {
-  return new HttpProblem('field_invalid', { detail: message, errors: [{ in: 'body', pointer, code, message }] });
+function invalid(pointer: string, code: AdminFieldCode, message: string): HttpProblem {
+  return fieldInvalid(pointer, code, message);
 }
 
 function strings(texts: Readonly<Record<string, unknown>>): AdminPlan['names'] {
@@ -182,12 +184,12 @@ const isAppStore = (code: number): boolean => (appStores as readonly string[]).i
 function constraintProblem(error: unknown): never {
   const info = dbErrorInfo(error);
   if (info?.code === '23505' && info.constraint === 'plans_rank_key') {
-    throw new HttpProblem('conflict', { detail: 'Another plan holds this rank; reorder with PUT /v1/admin/plan-ranks.' });
+    throw adminConflict('rank_taken', 'Another plan holds this rank; reorder with PUT /v1/admin/plan-ranks.');
   }
   if (info?.code === '23505' && info.constraint === 'store_products_key') {
-    throw new HttpProblem('conflict', { detail: 'This store already has a row for this product id and base plan.' });
+    throw adminConflict('product_exists', 'This store already has a row for this product id and base plan.');
   }
-  if (info?.code === '23514') throw new HttpProblem('field_invalid', { detail: `The change breaks a rule of the catalogue (${info.constraint ?? 'check'}).` });
+  if (info?.code === '23514') throw fieldInvalid('', 'catalog_rule', `The change breaks a rule of the catalogue (${info.constraint ?? 'check'}).`);
   throw error;
 }
 
@@ -310,7 +312,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
             features,
           }),
         );
-        if (id === null) throw new HttpProblem('conflict', { detail: 'A plan with this key exists (keys are never reused).' });
+        if (id === null) throw adminConflict('key_taken', 'A plan with this key exists (keys are never reused).');
         const created = await reread(tx, body.key);
         trail.record({ action: 'plan.create', target: 'plan', targetId: id, detail: { key: body.key, after: planAudit(created), ...(body.copyFrom ? { copyFrom: body.copyFrom } : {}) } });
         return created;
@@ -337,7 +339,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
         const free = before.key === FREE_PLAN_KEY;
         if (free && body.rank !== undefined) throw invalid('/rank', 'free_plan', 'The free plan is the baseline: its rank stays 0.');
         if (free && body.active === false) throw invalid('/active', 'free_plan', 'The free plan is always available.');
-        if (before.archivedAtMs !== null && body.active === true) throw new HttpProblem('conflict', { detail: 'The plan is archived: bring it back first (unarchive).' });
+        if (before.archivedAtMs !== null && body.active === true) throw adminConflict('plan_archived', 'The plan is archived: bring it back first (unarchive).');
 
         const view = planView(before);
         const patch: CatalogPlanPatch = {};
@@ -415,7 +417,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
         const key = request.params.key;
         const { row, changed } = await adminWrite(app, request, async (tx, trail) => {
           const before = await lockPlan(tx, key);
-          if (before.key === FREE_PLAN_KEY) throw new HttpProblem('conflict', { detail: 'The free plan is everyone’s baseline: it is never archived.' });
+          if (before.key === FREE_PLAN_KEY) throw adminConflict('free_plan_archive', 'The free plan is everyone’s baseline: it is never archived.');
           if ((before.archivedAtMs !== null) === archive) {
             trail.unchanged();
             return { row: before, changed: false };
@@ -508,7 +510,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
     const plan = await catalogPlanRef(tx, key);
     if (!plan) throw invalid(pointer, 'unknown_plan', `No plan ${key}.`);
     if (plan.key === FREE_PLAN_KEY) throw invalid(pointer, 'free_plan', 'The free plan is not sold.');
-    if (plan.archived) throw new HttpProblem('conflict', { detail: `Plan ${key} is archived: it is not sold.` });
+    if (plan.archived) throw adminConflict('plan_not_sold', `Plan ${key} is archived: it is not sold.`);
     return plan;
   }
 
@@ -579,7 +581,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
             listCurrency: body.listPrice?.currency ?? null,
           }),
         );
-        if (id === null) throw new HttpProblem('conflict', { detail: 'This store already has a row for this product id and base plan.' });
+        if (id === null) throw adminConflict('product_exists', 'This store already has a row for this product id and base plan.');
         const created = await rereadProduct(tx, id);
         trail.record({ action: 'product.create', target: 'product', targetId: id, detail: { after: productAudit(created) } });
         return created;
@@ -641,7 +643,7 @@ export const adminCatalogRoutes: FastifyPluginAsyncZod = async (app) => {
           grants.push('plan');
         }
         if (grants.length > 0 && before.hasPurchases) {
-          throw new HttpProblem('conflict', { detail: `Purchases name this product: what it grants is fixed (${grants.join(', ')}). Make a new product instead.` });
+          throw adminConflict('product_locked', `Purchases name this product: what it grants is fixed (${grants.join(', ')}). Make a new product instead.`);
         }
         if (body.badge !== undefined && badgeCode(body.badge) !== before.badge) {
           patch.badge = badgeCode(body.badge);

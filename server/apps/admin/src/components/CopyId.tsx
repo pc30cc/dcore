@@ -11,7 +11,7 @@ export function CopyId({ value, truncate = false }: { value: string; truncate?: 
       dir="ltr"
       onClick={() => void navigator.clipboard?.writeText(value).then(() => showToast((t) => t('common.copied')))}
       className="inline-flex max-w-full min-w-0 items-center gap-1 rounded font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-      aria-label={`${t('user.copyId')} ${value}`}
+      aria-label={t('common.copyId', { id: value })}
       title={truncate ? value : undefined}
     >
       {truncate ? <span className="max-w-[9ch] truncate">{value}</span> : value}

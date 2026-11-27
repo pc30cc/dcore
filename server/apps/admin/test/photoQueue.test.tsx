@@ -158,8 +158,8 @@ describe('the photo queue', () => {
     renderPanel('/moderation/photos', queueApi({ 'GET /v1/admin/moderation/photos': () => page([queuePhoto('11', 1, { modFlags: ['nudity'], url: 'https://cdn.test/11-640.jpg', thumbUrl: 'https://cdn.test/11-320.jpg' }), queuePhoto('12', 2, { url: 'https://cdn.test/12-640.jpg', thumbUrl: 'https://cdn.test/12-320.jpg' })]) }));
     await screen.findByText('Photo 1 of 2', LIVE);
     const thumbs = within(screen.getByRole('list', { name: 'Photos' })).getAllByRole('button');
-    expect(thumbs[0]!.getAttribute('aria-label')).toBe('Person 1 · Photo 1 of 2 · Nudity');
-    expect(thumbs[1]!.getAttribute('aria-label')).toBe('Person 2 · Photo 2 of 2');
+    expect(thumbs[0]!.getAttribute('aria-label')).toBe('Person 1, Photo 1 of 2, Nudity');
+    expect(thumbs[1]!.getAttribute('aria-label')).toBe('Person 2, Photo 2 of 2');
     const region = screen.getByRole('region', { name: 'Photo under review' });
     const large = () => region.querySelector('img')!;
     expect(large().className).toContain('blur');
@@ -177,7 +177,7 @@ describe('the photo queue', () => {
   });
 
   it('drops a photo decided elsewhere, with the words for it', async () => {
-    const api = queueApi({ 'POST /v1/admin/moderation/photos/11/approve': () => problem(409, 'conflict', { detail: 'The photo is still being processed.' }) });
+    const api = queueApi({ 'POST /v1/admin/moderation/photos/11/approve': () => problem(409, 'conflict', { detail: 'The photo is still being processed.', reason: 'processing' }) });
     renderPanel('/moderation/photos', api);
     await screen.findByText('Photo 1 of 3', LIVE);
     // Veiled: A shows it first (this fixture has no image link, so no Show button).

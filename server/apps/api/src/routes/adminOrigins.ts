@@ -13,6 +13,7 @@ import { jobId } from '@app/shared/server';
 import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { nextId } from '../auth/sessions.js';
+import { adminConflict } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 
 /**
@@ -100,7 +101,7 @@ export const adminOriginsRoutes: FastifyPluginAsyncZod = async (app) => {
         const rawVersion = typeof raw === 'object' && raw !== null && Number.isSafeInteger((raw as { version?: unknown }).version) ? Number((raw as { version: number }).version) : 0;
         const currentVersion = Math.max(stored?.version ?? ORIGINS_DEFAULT_VERSION, rawVersion);
         if (body.baseVersion !== undefined && body.baseVersion !== currentVersion) {
-          throw new HttpProblem('conflict', { detail: `The hosts were changed meanwhile (version ${currentVersion}); reload and try again.` });
+          throw adminConflict('hosts_changed', `The hosts were changed meanwhile (version ${currentVersion}); reload and try again.`);
         }
         const checked = validateOrigins({
           hosts: body.hosts,
@@ -108,7 +109,7 @@ export const adminOriginsRoutes: FastifyPluginAsyncZod = async (app) => {
           allowIpHosts: body.allowIpHosts ?? false,
         });
         if (!checked.ok) {
-          const errors: FieldIssue[] = checked.issues.map((issue) => ({ in: 'body', pointer: issue.pointer, code: 'invalid', message: issue.message }));
+          const errors: FieldIssue[] = checked.issues.map((issue) => ({ in: 'body', pointer: issue.pointer, code: issue.code, message: issue.message }));
           throw new HttpProblem('field_invalid', { detail: checked.issues[0]?.message ?? 'not valid', errors });
         }
         const content = { hosts: checked.hosts, bootstrap: checked.bootstrap, allowIpHosts: checked.allowIpHosts };

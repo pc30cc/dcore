@@ -13,9 +13,11 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserRef } from '@/components/UserRef';
 import type { MessageKey } from '@/i18n/messages';
+import { hasMessage } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatDate, formatDateTime, formatNumber, localized } from '@/lib/format';
+import { auditActionLabel } from '@/lib/audit';
+import { formatDate, formatDateTime, formatDuration, formatNumber, localized } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { holdKindTone, openReport, reportStatusTone, resolutionOfPenalty } from '@/lib/moderation';
 import { problemText } from '@/lib/problemText';
@@ -108,7 +110,7 @@ function ReportView({ report }: { report: AdminReportDetail }) {
       showToast((t) => t('common.saved'));
     } catch (error) {
       const failure = asApiError(error);
-      showToast((t) => problemText(failure, t), 'error', 6_000);
+      showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
       if (failure.code === 'conflict') void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
     } finally {
       setBusy(false);
@@ -220,9 +222,9 @@ function ReportView({ report }: { report: AdminReportDetail }) {
                         <CaseNumber value={report.filing.externalRef} />
                       </span>
                     )}
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(report.filing.filedAt, locale)}
-                      {report.filing.filedBy && ` · ${report.filing.filedBy.displayName}`}
+                    <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                      <span>{formatDate(report.filing.filedAt, locale)}</span>
+                      {report.filing.filedBy && <bdi>{report.filing.filedBy.displayName}</bdi>}
                     </span>
                   </div>
                 )}
@@ -270,6 +272,8 @@ function ReportView({ report }: { report: AdminReportDetail }) {
                     <span>
                       {HISTORY_ACTIONS.has(entry.action) ? (
                         t(`report.event.${entry.action.slice('report.'.length)}` as MessageKey)
+                      ) : hasMessage(`auditAction.${entry.action}`) ? (
+                        auditActionLabel(entry.action, t)
                       ) : (
                         <bdi dir="ltr" className="font-mono text-xs">
                           {entry.action}
@@ -277,8 +281,9 @@ function ReportView({ report }: { report: AdminReportDetail }) {
                       )}
                       {count > 1 && <span className="text-muted-foreground"> ×{formatNumber(count, locale)}</span>}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDateTime(entry.at, locale)} · {entry.admin?.displayName ?? t('audit.system')}
+                    <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                      <span>{formatDateTime(entry.at, locale)}</span>
+                      {entry.admin ? <bdi>{entry.admin.displayName}</bdi> : <span>{t('audit.system')}</span>}
                     </span>
                   </li>
                 ))}
@@ -525,7 +530,7 @@ function ChatCard({ report }: { report: AdminReportDetail }) {
       // The view is audited: the history shows it on the next read.
       void queryClient.invalidateQueries({ queryKey: queryKeys.report(report.id) });
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(error), t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -564,7 +569,16 @@ function ChatCard({ report }: { report: AdminReportDetail }) {
               <ol className="grid gap-2">
                 {snapshot.messages.map((m) => (
                   <EvidenceBubble key={m.id} from={m.from} at={m.at} kind={m.kind} flags={m.flags} late={m.late} named={m.named}>
-                    {m.body}
+                    {m.call ? (
+                      <span className="text-muted-foreground">
+                        {t('chats.call.detail', {
+                          call: t(m.call.kind === 'video' ? 'evidence.call.video' : 'evidence.call.audio'),
+                          detail: m.call.outcome === 'completed' ? formatDuration(m.call.durationSeconds, locale) : t(`chats.call.${m.call.outcome}` as MessageKey),
+                        })}
+                      </span>
+                    ) : (
+                      m.body
+                    )}
                   </EvidenceBubble>
                 ))}
                 {snapshot.requests.map((r) => (

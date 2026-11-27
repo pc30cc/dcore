@@ -3,6 +3,8 @@ import type { PublicBrand } from '@app/shared';
 declare global {
   /** What the build keeps of the brand (vite.config.ts): names, colours, fonts, languages; never a host. */
   const __BRAND__: Pick<PublicBrand, 'id' | 'appName' | 'shortName' | 'colors' | 'fonts' | 'defaultLocale' | 'locales'>;
+  /** The panel's default language at build time (vite.config.ts: ADMIN_DEFAULT_LOCALE, else Persian); a deployment's /config.js wins. */
+  const __ADMIN_DEFAULT_LOCALE__: string;
 
   interface ImportMetaEnv {
     /** A development server's API origin (default http://localhost:8080); a built panel reads /config.js instead. */

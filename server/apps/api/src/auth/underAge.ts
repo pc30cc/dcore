@@ -1,4 +1,5 @@
 import { closeUnderAge, withTransaction } from '@app/db';
+import type { AutomaticBanReason } from '@app/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { HttpProblem } from '../lib/problem.js';
 import { endRealtime } from '../realtime/end.js';
@@ -50,7 +51,8 @@ export async function refuseUnderAge(app: FastifyInstance, request: FastifyReque
       userId,
       deviceId: principal.deviceId ?? null,
       banIds: [nextId(app), nextId(app), nextId(app)],
-      reason: 'under_age',
+      // A code the admin panel words (shared `automaticBanReasons`), not text.
+      reason: 'under_age' satisfies AutomaticBanReason,
     }),
   );
   if (!result.closed) return false;

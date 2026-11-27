@@ -1,6 +1,7 @@
 import { adminAuditAdmins, adminAuditSearch, type AdminAuditRow, type AuditSearch } from '@app/db';
 import {
   AUDIT_EXPORT_MAX_ROWS,
+  AUDIT_EXPORTS_PER_HOUR,
   PUBLIC_UID_PATTERN,
   adminAuditAdminsSchema,
   adminAuditExportSchema,
@@ -10,14 +11,16 @@ import {
   idSchema,
   type AuditEntry,
   type AuditFilters,
+  type AdminFieldCode,
 } from '@app/shared';
 import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
 import { takeAdminLimit } from '../admin/limits.js';
-import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
+import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { auditEntryOf, callerMay, userReadScope } from '../admin/refs.js';
+import { fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 
 /**
@@ -39,7 +42,6 @@ import { HttpProblem } from '../lib/problem.js';
  */
 
 const auditCursor = z.object({ id: idSchema });
-const EXPORT_PER_HOUR = 10;
 const DAY_MS = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -50,9 +52,9 @@ function boundMs(value: string | undefined, end: boolean): number | undefined {
   return Number.isFinite(ms) ? ms : undefined;
 }
 
-function badQuery(pointer: string, message: string, where: 'query' | 'body'): HttpProblem {
-  if (where === 'body') return fieldInvalid(pointer, 'invalid', message);
-  return new HttpProblem('validation_failed', { detail: message, errors: [{ in: 'query', pointer, code: 'invalid', message }] });
+function badQuery(pointer: string, code: AdminFieldCode, message: string, where: 'query' | 'body'): HttpProblem {
+  if (where === 'body') return fieldInvalid(pointer, code, message);
+  return new HttpProblem('validation_failed', { detail: message, errors: [{ in: 'query', pointer, code, message }] });
 }
 
 /** The filters as the database reads them; null when the target is a well-formed public id of nobody (nothing can match). */
@@ -60,18 +62,18 @@ function searchOf(app: FastifyInstance, filters: AuditFilters, where: 'query' | 
   let targetId: string | undefined;
   if (filters.target !== undefined) {
     if (filters.targetType === 'user') {
-      if (!PUBLIC_UID_PATTERN.test(filters.target)) throw badQuery('/target', 'A person is named by their public id.', where);
+      if (!PUBLIC_UID_PATTERN.test(filters.target)) throw badQuery('/target', 'not_a_public_id', 'A person is named by their public id.', where);
       const decoded = app.publicIds.user.decodeId(filters.target);
       if (decoded === null) return null;
       targetId = decoded;
     } else {
-      if (!idSchema.safeParse(filters.target).success) throw badQuery('/target', 'Not an id.', where);
+      if (!idSchema.safeParse(filters.target).success) throw badQuery('/target', 'not_an_id', 'Not an id.', where);
       targetId = filters.target;
     }
   }
   const fromMs = boundMs(filters.from, false);
   const toMs = boundMs(filters.to, true);
-  if (fromMs !== undefined && toMs !== undefined && toMs <= fromMs) throw badQuery('/to', 'The end comes before the start.', where);
+  if (fromMs !== undefined && toMs !== undefined && toMs <= fromMs) throw badQuery('/to', 'ends_before_start', 'The end comes before the start.', where);
   return {
     adminId: filters.admin === undefined ? undefined : Number(filters.admin),
     targetType: filters.targetType === undefined ? undefined : auditTarget.code(filters.targetType),
@@ -84,6 +86,9 @@ function searchOf(app: FastifyInstance, filters: AuditFilters, where: 'query' | 
 
 // ─── CSV (RFC 4180) ───────────────────────────────────────────────────────
 
+// Machine-readable in every panel language, for spreadsheets and scripts:
+// stable English column keys, action and target codes, ISO 8601 UTC times.
+// The panel shows the same rows in its own words.
 const CSV_HEADER = ['time', 'admin_id', 'admin', 'action', 'target_type', 'target', 'ip', 'detail'];
 
 /** One cell: a value a spreadsheet would run as a formula gets a leading `'`; quoted when it holds a comma, a quote or a line break. */
@@ -170,7 +175,7 @@ export const adminAuditRoutes: FastifyPluginAsyncZod = async (app) => {
       const filters = request.body;
       const search = searchOf(app, filters, 'body');
       const { shadow } = userReadScope(app, request);
-      const ticket = await takeAdminLimit(app, request, 'admin_audit_export', EXPORT_PER_HOUR);
+      const ticket = await takeAdminLimit(app, request, 'admin_audit_export', AUDIT_EXPORTS_PER_HOUR);
       let rows: AdminAuditRow[] | null = null;
       try {
         rows = await adminWrite(app, request, async (tx, trail) => {

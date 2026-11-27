@@ -73,7 +73,7 @@ import {
 } from '../admin/refs.js';
 import { normalizePhone } from '../auth/otp.js';
 import { scrubbed } from '../lib/dbErrors.js';
-import { HttpProblem } from '../lib/problem.js';
+import { adminForbidden } from '../admin/problems.js';
 import { PHONE_LOOKUP_LIMIT, PHONE_LOOKUPS_PER_HOUR } from './adminDeviceBans.js';
 
 /**
@@ -123,7 +123,7 @@ export const adminUserRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const { filter, limit, cursor } = request.query;
       const scope = userReadScope(app, request);
-      if (filter === 'shadowbanned' && !scope.shadow) throw new HttpProblem('forbidden', { detail: 'Shadowbans are not shown to this role.' });
+      if (filter === 'shadowbanned' && !scope.shadow) throw adminForbidden('shadow_hidden', 'Shadowbans are not shown to this role.');
       const rows = await adminUserList(app.pg, { filter, beforeId: readCursor(cursor), limit: limit + 1 });
       return paged(rows, limit, (row) => userSummaryOf(app, row, scope));
     },

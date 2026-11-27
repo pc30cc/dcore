@@ -80,8 +80,9 @@ export const wholeText =
 /** The text of each <bdi> (an isolated value) under `element`. */
 export const isolatedIn = (element: Element): string[] => Array.from(element.querySelectorAll('bdi'), (bdi) => bdi.textContent);
 
+/** A clean panel whose /config.js names English as the default (ADMIN_DEFAULT_LOCALE=en), so pages read in English unless a test picks a language. */
 export function resetPanel(): void {
-  setRuntimeConfigForTests({ ok: true, config: { apiOrigin: API, cdnOrigin: null, persianFont: null } });
+  setRuntimeConfigForTests({ ok: true, config: { apiOrigin: API, cdnOrigin: null, persianFont: null, defaultLocale: 'en' } });
   resetSessionForTests();
   resetAuthForTests();
   queryClient.clear();

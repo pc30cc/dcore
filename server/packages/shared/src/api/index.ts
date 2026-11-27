@@ -3,6 +3,7 @@ export * from './adminAppearance.js';
 export * from './adminCatalog.js';
 export * from './adminChats.js';
 export * from './adminModeration.js';
+export * from './adminProblems.js';
 export * from './adminRules.js';
 export * from './adminUsers.js';
 export * from './auth.js';

@@ -14,5 +14,16 @@ import { useI18n } from './useI18n';
 export function Worded({ text }: { text: Wording }) {
   const { t, locale } = useI18n();
   const say: Translate = (key, values) => t(key, values && isolateValues(values));
-  return <span>{isolatedNodes(text(say, locale))}</span>;
+  // A line after the first is a secondary one (an API's detail, a request id): smaller, on its own line.
+  const [first = '', ...rest] = text(say, locale).split('\n');
+  return (
+    <span>
+      {isolatedNodes(first)}
+      {rest.map((line, index) => (
+        <span key={index} className="mt-1 block text-xs opacity-80">
+          {isolatedNodes(line)}
+        </span>
+      ))}
+    </span>
+  );
 }

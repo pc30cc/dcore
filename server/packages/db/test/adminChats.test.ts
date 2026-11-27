@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   adminUserChatPage,
   adminUserChatPageStatement,
+  adminUserChatRequests,
+  adminUserChatRequestsStatement,
   adminUserChats,
   adminUserChatsStatement,
   createPool,
@@ -311,5 +313,32 @@ describe.skipIf(!hasDatabase)("admin: a person's conversations (migration 0033)"
     expect(page).toMatch(/messages_\w+_pkey/);
     expect(page).toContain('moderation_actions_user_idx');
     expect(page).not.toMatch(/Seq Scan/);
+  });
+
+  it('reads the message requests both ways on their sender and recipient indexes, newest first, in one statement', async (ctx) => {
+    if (!ready) ctx.skip();
+    const subject = await person();
+    const [a, b] = [await person(), await person()];
+    const insert = async (from: string, to: string, status: number) =>
+      (
+        await client.query<{ id: string }>(
+          `INSERT INTO message_requests (id, from_id, to_id, status, decided_at, body) VALUES (id_next(), $1, $2, $3, CASE WHEN $3::smallint = 1 THEN NULL ELSE now() END, 'hi') RETURNING id::text`,
+          [from, to, status],
+        )
+      ).rows[0]!.id;
+    const sent = await insert(subject, a, 3);
+    const received = await insert(b, subject, 1);
+    await insert(a, b, 1);
+    const all = await adminUserChatRequests(client, subject, { beforeId: null, limit: 10 });
+    expect(all.found).toBe(true);
+    expect(all.value.map((r) => [r.id, r.direction, r.status])).toEqual([
+      [received, 2, 1],
+      [sent, 1, 3],
+    ]);
+    expect((await adminUserChatRequests(client, subject, { beforeId: received, limit: 10 })).value.map((r) => r.id)).toEqual([sent]);
+    const planned = await plan(adminUserChatRequestsStatement(subject, { beforeId: '999999999999999999', limit: 21 }));
+    expect(planned).toContain('message_requests_from_idx');
+    expect(planned).toMatch(/message_requests_(to|inbox)_idx/);
+    expect(planned).not.toMatch(/Seq Scan/);
   });
 });

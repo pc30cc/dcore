@@ -370,7 +370,7 @@ describe.skipIf(!hasInfrastructure)('admin: reports', () => {
       const spam = await seedReport(h, { targetId: target.id, reason: 7 });
       // "Closed with a suspension" needs the suspension: none taken yet is a 422 that closes nothing.
       const early = await post(`/v1/admin/reports/${one}/resolve`, { resolution: 'suspension', sameTarget: true });
-      expect(errorOf(early)).toMatchObject({ pointer: '/resolution', code: 'wrong_resolution' });
+      expect(errorOf(early)).toMatchObject({ pointer: '/resolution', code: 'action_not_taken' });
       expect((await reportRow(one)).status).toBe(1);
       await seedAction(h, target.id, 2, 'Suspended for a week.', { reportId: one });
       const res = await post(`/v1/admin/reports/${one}/resolve`, { resolution: 'suspension', note: 'Suspended for a week.', sameTarget: true });
@@ -414,8 +414,8 @@ describe.skipIf(!hasInfrastructure)('admin: reports', () => {
       const target = await person('Dismiss Target');
       const dup = await seedReport(h, { targetId: target.id });
       const keep = await seedReport(h, { targetId: target.id });
-      expect(errorOf(await post(`/v1/admin/reports/${dup}/dismiss`, { resolution: 'ban' }))).toMatchObject({ pointer: '/resolution', code: 'wrong_resolution' });
-      expect(errorOf(await post(`/v1/admin/reports/${dup}/resolve`, { resolution: 'no_violation' }))).toMatchObject({ pointer: '/resolution', code: 'wrong_resolution' });
+      expect(errorOf(await post(`/v1/admin/reports/${dup}/dismiss`, { resolution: 'ban' }))).toMatchObject({ pointer: '/resolution', code: 'resolution_is_action' });
+      expect(errorOf(await post(`/v1/admin/reports/${dup}/resolve`, { resolution: 'no_violation' }))).toMatchObject({ pointer: '/resolution', code: 'resolution_not_action' });
       const res = await post(`/v1/admin/reports/${dup}/dismiss`, { resolution: 'duplicate' });
       expect(adminReportCloseSchema.parse(res.json()).items.map((r) => [r.id, r.status])).toEqual([[dup, 'duplicate']]);
       expect((await reportRow(keep)).status).toBe(1);
@@ -459,7 +459,7 @@ describe.skipIf(!hasInfrastructure)('admin: reports', () => {
       const onPlain = await post(`/v1/admin/reports/${plainReport}/resolve`, { resolution: 'shadowban' }, 'report_closer');
       expect([onHidden.statusCode, onPlain.statusCode]).toEqual([422, 422]);
       expect(errorOf(onHidden)).toEqual(errorOf(onPlain));
-      expect(errorOf(onHidden)).toMatchObject({ pointer: '/resolution', code: 'wrong_resolution' });
+      expect(errorOf(onHidden)).toMatchObject({ pointer: '/resolution', code: 'resolution_not_allowed' });
       expect(statements(onHidden)).toBe(0);
       for (const id of [stillOpen, plainReport]) expect((await reportRow(id)).status).toBe(1);
 

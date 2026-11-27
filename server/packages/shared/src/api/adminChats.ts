@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { callKind, callOutcome, matchSource, matchState, messageKind } from '../codes.js';
+import { callKind, callOutcome, matchSource, matchState, messageKind, requestStatus } from '../codes.js';
 import { cursorSchema, pageSchema } from '../pagination.js';
 import { adminUserRefSchema } from './adminUsers.js';
 import { idSchema, timeSchema } from './common.js';
@@ -30,6 +30,12 @@ export const adminChatSummarySchema = z.object({
   lastActivityAt: timeSchema.nullable(),
   /** Messages other than reactions and unsends, stored or not yet, counted up to 100. */
   messages: z.object({ count: z.number().int().min(0).max(100), more: z.boolean() }),
+  /**
+   * False when the read of the messages not stored yet stopped before them
+   * all (a backlog, a Valkey error): `messages.count` is then at least that
+   * many, not exactly.
+   */
+  countComplete: z.boolean(),
   /** An active legal hold names the conversation or either person (false for a caller without reports.hold). */
   held: z.boolean(),
   /** The visibility rule (context 2) each way, now; absent for a caller who may not see shadowbans. */
@@ -104,9 +110,11 @@ export type AdminChatMessage = z.infer<typeof adminChatMessageSchema>;
  * - `complete`: every one that belongs on the page;
  * - `backlog`: more wait to be stored than one read takes, so the page
  *   stops at the oldest one it read (it may hold few messages, or none) and
- *   the next page goes on from there; nothing is skipped;
+ *   the next page goes on from there, where that read stopped; nothing is
+ *   skipped (the newest page's count says it may be short: countComplete);
  * - `partial`: not all of them could be read (a Valkey error, or a backlog
- *   too dense to page through): the page may lack some.
+ *   too dense to page through): the page may lack some, or the taken-back
+ *   mark of an unsend not stored yet.
  */
 export const adminChatStreamSchema = z.enum(['complete', 'backlog', 'partial']);
 export type AdminChatStream = z.infer<typeof adminChatStreamSchema>;
@@ -121,3 +129,29 @@ export const adminChatPageSchema = z.object({
   stream: adminChatStreamSchema,
 });
 export type AdminChatPage = z.infer<typeof adminChatPageSchema>;
+
+/**
+ * A message request of the person (`/v1/admin/users/{id}/chat-requests`,
+ * users.chats): a direct message sent or received before any match, in
+ * every state the store keeps (decided ones until the retention sweep), its
+ * text as written. An accepted one also opened a conversation, which the
+ * chats list shows; `conversationId` names it.
+ */
+export const adminChatRequestSchema = z.object({
+  id: idSchema,
+  direction: z.enum(['sent', 'received']),
+  other: adminUserRefSchema,
+  status: requestStatus.schema,
+  sentAt: timeSchema,
+  decidedAt: timeSchema.nullable(),
+  body: z.string(),
+  conversationId: idSchema.nullable(),
+});
+export type AdminChatRequest = z.infer<typeof adminChatRequestSchema>;
+
+export const adminChatRequestListQuerySchema = adminChatListQuerySchema;
+export type AdminChatRequestListQuery = z.infer<typeof adminChatRequestListQuerySchema>;
+
+/** Newest first. */
+export const adminChatRequestListSchema = pageSchema(adminChatRequestSchema);
+export type AdminChatRequestList = z.infer<typeof adminChatRequestListSchema>;

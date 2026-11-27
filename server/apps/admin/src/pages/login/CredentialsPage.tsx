@@ -112,7 +112,8 @@ export function CredentialsPage() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">{t('login.password')}</Label>
-              <div className="relative">
+              {/* One direction for the field and its eye: pe-10 and end-1 then name the same side in every language. */}
+              <div className="relative" dir="ltr">
                 <Input
                   id="password"
                   type={reveal ? 'text' : 'password'}

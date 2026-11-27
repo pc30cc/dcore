@@ -15,7 +15,7 @@ import { UserRef } from '@/components/UserRef';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatDate, regionName } from '@/lib/format';
+import { asciiDigits, formatDate, regionName } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { useUsers } from '@/lib/queries';
@@ -45,14 +45,15 @@ export function UsersPage() {
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    const q = query.trim();
+    // Ids and order numbers typed on a Persian keyboard count (phones the server reads either way).
+    const q = asciiDigits(query.trim());
     if (!q || searching) return;
     setSearching(true);
     try {
       const found = await apiRequest<AdminUserSearchResult>('/v1/admin/users/search', { method: 'POST', body: { q } });
       setResults(found.items);
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(error), t, lang), 'error', 6_000);
     } finally {
       setSearching(false);
     }
@@ -70,8 +71,9 @@ export function UsersPage() {
       <PageHeader icon={Users} title={t('users.title')} />
       <Card className="gap-0 overflow-hidden py-0">
         <div className="flex flex-col gap-3 border-b p-3 sm:flex-row sm:items-center">
-          <form role="search" className="flex min-w-0 flex-1 items-center gap-2" onSubmit={(event) => void search(event)}>
-            <div className="relative min-w-0 flex-1">
+          {/* On a phone the box takes the whole row (its hint is long in some languages) and the buttons the next. */}
+          <form role="search" className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:flex-nowrap" onSubmit={(event) => void search(event)}>
+            <div className="relative min-w-0 flex-1 basis-full sm:basis-0">
               <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               {/* A text box, not type=search: the browser's own clear button would empty the box but leave the results. */}
               <Input

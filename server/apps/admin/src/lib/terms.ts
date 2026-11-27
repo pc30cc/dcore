@@ -1,4 +1,4 @@
-import { bannedTermMatch, bannedTermScope, bannedTermSeverity, type AdminBannedTerm, type BannedTermMatch, type BannedTermScope, type BannedTermSeverity, type Locale } from '@app/shared';
+import { bannedTermMatch, bannedTermScope, bannedTermSeverity, type AdminBannedTerm, type BannedTermProblem, type BannedTermMatch, type BannedTermScope, type BannedTermSeverity, type Locale } from '@app/shared';
 import type { MessageKey } from '@/i18n/messages';
 
 /** Banned terms in the panel: the choices of the form and the words the API's refusals map to. */
@@ -38,11 +38,19 @@ export function termBody(form: TermForm, before: AdminBannedTerm | null): Record
 }
 
 /** The field code of a refused term, as words. */
-export const termProblems: Readonly<Record<string, MessageKey>> = {
+export const termProblems: Readonly<Record<BannedTermProblem, MessageKey>> = {
   term_empty: 'terms.error.empty',
   regex_invalid: 'terms.error.regexInvalid',
-  regex_unsupported: 'terms.error.regexUnsupported',
+  regex_backreference: 'terms.error.regexBackreference',
+  regex_quote: 'terms.error.regexQuote',
+  regex_class_ligature: 'terms.error.regexClassLigature',
+  regex_group: 'terms.error.regexGroup',
   regex_word_boundary: 'terms.error.regexWordBoundary',
   regex_too_large: 'terms.error.regexTooLarge',
   regex_too_broad: 'terms.error.regexTooBroad',
 };
+
+/** The words of a refused term's code; null for another code. */
+export function termProblemOf(code: string): MessageKey | null {
+  return Object.hasOwn(termProblems, code) ? termProblems[code as BannedTermProblem] : null;
+}

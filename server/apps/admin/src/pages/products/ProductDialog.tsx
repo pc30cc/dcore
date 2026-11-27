@@ -12,8 +12,8 @@ import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
-import { asApiError } from '@/lib/http';
-import { localized } from '@/lib/format';
+import { ApiError, asApiError } from '@/lib/http';
+import { formatDecimal, formatPlain, localized } from '@/lib/format';
 import { hasErrors, planBadges } from '@/lib/plans';
 import {
   minorDigits,
@@ -114,12 +114,11 @@ export function ProductDialog({
       if (failure.code === 'field_invalid' || failure.code === 'validation_failed') {
         const mapped = serverProductErrors(failure.errors);
         setServerErrors(mapped.errors);
-        const detail = mapped.rest.map((issue) => issue.message).join('; ');
-        setNotice(mapped.rest.length > 0 ? (t) => t('common.error.invalid', { detail }) : (t) => t('form.fixMarked'));
-      } else if (failure.code === 'conflict') {
-        setNotice(locked ? (t) => t('product.error.lockedConflict') : (t) => t('product.error.conflict'));
+        // What no field shows, in panel words (the API's English only as a detail line).
+        const rest = new ApiError(failure.status, failure.code, failure.message, mapped.rest);
+        setNotice(mapped.rest.length > 0 ? (t, lang) => problemText(rest, t, lang) : (t) => t('form.fixMarked'));
       } else {
-        setNotice((t) => problemText(failure, t));
+        setNotice((t, lang) => problemText(failure, t, lang));
       }
     } finally {
       setSaving(false);
@@ -268,7 +267,7 @@ export function ProductDialog({
                 )}
               </Field>
               <Field id={`${baseId}-sort`} label={t('plan.sort')} error={err('sort')} {...(product ? {} : { optional: t('form.optional') })}>
-                {(control) => <Input {...control} dir="ltr" inputMode="numeric" placeholder="0" value={form.sort} onChange={(event) => update({ sort: event.target.value })} />}
+                {(control) => <Input {...control} dir="ltr" inputMode="numeric" placeholder={formatPlain(0, locale)} value={form.sort} onChange={(event) => update({ sort: event.target.value })} />}
               </Field>
               <div className="grid content-start gap-2">
                 <span className="text-sm font-medium">
@@ -280,7 +279,7 @@ export function ProductDialog({
                     dir="ltr"
                     inputMode="decimal"
                     className="min-w-0 flex-1 tabular-nums"
-                    placeholder="4.99"
+                    placeholder={formatDecimal(4.99, locale)}
                     aria-label={t('product.listPrice.amount')}
                     aria-invalid={Boolean(errors.price)}
                     value={form.price}

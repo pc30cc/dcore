@@ -3,6 +3,7 @@ import type {
   AdminAppeal,
   AdminChatList,
   AdminChatPage,
+  AdminChatRequestList,
   AdminAppearance,
   AdminAuditAdmin,
   AdminBannedTerm,
@@ -66,6 +67,7 @@ export const queryKeys = {
   /** A person's conversations, and one of them (its message pages). */
   userChats: (id: string) => ['user', id, 'chats'] as const,
   userChat: (id: string, conversationId: string) => ['user', id, 'chat', conversationId] as const,
+  userChatRequests: (id: string) => ['user', id, 'chat-requests'] as const,
   reasons: ['reasons'] as const,
   photoQueue: ['photoQueue'] as const,
   textQueue: ['textQueue'] as const,
@@ -139,6 +141,17 @@ export function useUserChats(id: string) {
     initialPageParam: null as string | null,
     getNextPageParam: (last: AdminChatList) => last.nextCursor,
     queryFn: ({ pageParam, signal }) => apiRequest<AdminChatList>(pagePath(`/v1/admin/users/${id}/chats`, pageParam, 20), { signal }),
+    gcTime: 60_000,
+  });
+}
+
+/** The message requests the person sent or received, newest first, 20 a page. */
+export function useUserChatRequests(id: string) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.userChatRequests(id),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last: AdminChatRequestList) => last.nextCursor,
+    queryFn: ({ pageParam, signal }) => apiRequest<AdminChatRequestList>(pagePath(`/v1/admin/users/${id}/chat-requests`, pageParam, 20), { signal }),
     gcTime: 60_000,
   });
 }

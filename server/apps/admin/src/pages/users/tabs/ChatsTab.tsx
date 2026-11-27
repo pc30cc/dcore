@@ -1,4 +1,4 @@
-import type { AdminChatMessage, AdminChatSummary, AdminUserDetail } from '@app/shared';
+import type { AdminChatMessage, AdminChatRequest, AdminChatSummary, AdminUserDetail } from '@app/shared';
 import { ArrowLeft, ArrowRight, EyeOff, ImageIcon, MessagesSquare, Mic, Phone, PhoneMissed, RefreshCw, SmilePlus, Undo2, Video } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
@@ -15,7 +15,7 @@ import { Worded } from '@/i18n/Worded';
 import { formatDate, formatDateTime, formatDuration } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
-import { queryClient, queryKeys, useUserChat, useUserChats } from '@/lib/queries';
+import { queryClient, queryKeys, useUserChat, useUserChatRequests, useUserChats } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import { Empty, More, Panel } from './RecordTabs';
 
@@ -26,7 +26,8 @@ import { Empty, More, Panel } from './RecordTabs';
  * until the tab is open, and a conversation's messages only once it is
  * opened and the list has answered (newest page first, older pages on
  * demand). A person without conversations shows the empty list, whatever
- * `c` says.
+ * `c` says. Below the list, the message requests the person sent or
+ * received (direct messages before any match), as written.
  */
 
 const CONVERSATION_ID = /^[1-9][0-9]{0,18}$/;
@@ -76,6 +77,7 @@ export function ChatsTab({ user }: { user: AdminUserDetail }) {
     <div className={cn('grid gap-4', !none && 'lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start')}>
       <div ref={list} className={cn('min-w-0', pane && 'hidden lg:block')}>
         <ChatList chats={chats} items={items} open={open} onOpen={(id) => setFocusOn(window.matchMedia?.(WIDE).matches ? null : id)} />
+        <RequestList userId={user.id} />
       </div>
       {!none &&
         (open === null ? (
@@ -148,11 +150,90 @@ function ChatList({
   );
 }
 
+// ─── Message requests ───────────────────────────────────────────────────
+
+const requestTone: Readonly<Record<AdminChatRequest['status'], 'green' | 'amber' | 'red' | 'gray'>> = {
+  pending: 'amber',
+  accepted: 'green',
+  declined: 'red',
+  expired: 'gray',
+  withdrawn: 'gray',
+};
+
+function RequestList({ userId }: { userId: string }) {
+  const { t } = useI18n();
+  const requests = useUserChatRequests(userId);
+  const items = requests.data?.pages.flatMap((page) => page.items) ?? [];
+  const heading = `chat-requests-${userId}`;
+  return (
+    <section aria-labelledby={heading} className="mt-4">
+      <Panel>
+        <h3 id={heading} className="border-b px-4 py-2 text-sm font-medium">
+          {t('chats.requests.title')}
+        </h3>
+        {requests.isPending ? (
+          <TableSkeleton rows={2} />
+        ) : requests.isError && items.length === 0 ? (
+          <div className="p-4">
+            <LoadError error={requests.error} onRetry={() => void requests.refetch()} />
+          </div>
+        ) : items.length === 0 ? (
+          <Empty text={t('chats.requests.empty')} />
+        ) : (
+          <ul className="divide-y" aria-labelledby={heading}>
+            {items.map((request) => (
+              <li key={request.id}>
+                <RequestRow request={request} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {requests.isFetchNextPageError && <PageError error={requests.error} />}
+        <More show={requests.hasNextPage} busy={requests.isFetchingNextPage} onMore={() => void requests.fetchNextPage()} />
+      </Panel>
+    </section>
+  );
+}
+
+function RequestRow({ request }: { request: AdminChatRequest }) {
+  const { t, locale } = useI18n();
+  const name = request.other.status === 'purged' ? t('chats.deletedAccount') : (request.other.name ?? t('users.noName'));
+  return (
+    <div className="grid gap-2 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{t(request.direction === 'sent' ? 'chats.requests.sent' : 'chats.requests.received')}</Badge>
+        {request.other.status === 'purged' ? (
+          <span className="font-medium">{name}</span>
+        ) : (
+          <Link to={`/users/${request.other.id}?tab=chats`} className="font-medium underline-offset-4 hover:underline">
+            <bdi>{name}</bdi>
+          </Link>
+        )}
+        <StatusDot tone={requestTone[request.status]} className="text-xs">
+          {t(`requestStatus.${request.status}`)}
+        </StatusDot>
+      </div>
+      <p dir="auto" className="rounded-lg bg-muted px-3 py-2 break-words whitespace-pre-wrap">
+        {request.body}
+      </p>
+      <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+        <span>{t('chats.requests.sentAt', { date: formatDateTime(request.sentAt, locale) })}</span>
+        {request.decidedAt && <span>{t('chats.requests.endedAt', { date: formatDateTime(request.decidedAt, locale) })}</span>}
+        {request.conversationId && (
+          <Link to={{ search: `?tab=chats&c=${request.conversationId}` }} className="underline-offset-4 hover:underline">
+            {t('chats.requests.open')}
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PageError({ error }: { error: unknown }) {
   const failure = asApiError(error);
   return (
     <p role="alert" className="border-t px-4 py-2 text-center text-xs text-destructive">
-      <Worded text={(t) => problemText(failure, t)} />
+      <Worded text={(t, lang) => problemText(failure, t, lang)} />
     </p>
   );
 }
@@ -190,6 +271,8 @@ function ChatRow({ chat, open, state, onOpen }: { chat: AdminChatSummary; open: 
 
 function messageCount(chat: AdminChatSummary, t: Translate): string {
   if (chat.messages.more) return t('chats.countMore', { count: chat.messages.count });
+  // The read of the messages not saved yet stopped before them all: at least this many.
+  if (!chat.countComplete) return t('chats.countAtLeast', { count: chat.messages.count });
   return chat.messages.count === 1 ? t('chats.countOne') : t('chats.count', { count: chat.messages.count });
 }
 

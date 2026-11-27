@@ -5,6 +5,7 @@ import { AdminPasswords, DEFAULT_HASH_GATE, HashGate, type HashGateOptions } fro
 import { DEFAULT_ARGON2, type Argon2Params } from '../admin/password.js';
 import { AdminRoleCatalog } from '../admin/roles.js';
 import { TokenError } from '../auth/tokens.js';
+import { adminForbidden } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { unauthorized, type AuthGuard } from './auth.js';
 
@@ -103,10 +104,7 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
         const allowed = roles.allows(principal.roles, permission);
         if (allowed === null) throw new HttpProblem('service_unavailable', { detail: 'The admin roles are not loaded yet.', headers: { 'retry-after': '5' } });
         if (!allowed) {
-          throw new HttpProblem('forbidden', {
-            detail: 'Your role does not allow this action.',
-            headers: { 'www-authenticate': 'Bearer error="insufficient_scope"' },
-          });
+          throw adminForbidden('role', 'Your role does not allow this action.', { headers: { 'www-authenticate': 'Bearer error="insufficient_scope"' } });
         }
       };
     });
@@ -123,7 +121,7 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
     app.addHook('onRequest', async (request: FastifyRequest) => {
       const origin = request.headers.origin;
       if (origin === undefined || !ADMIN_PATH.test(request.url)) return;
-      if (!panelOrigins.has(origin)) throw new HttpProblem('forbidden', { detail: 'This origin may not call the admin API.' });
+      if (!panelOrigins.has(origin)) throw adminForbidden('origin', 'This origin may not call the admin API.');
     });
 
     app.addHook('onReady', async () => {
@@ -140,6 +138,6 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
 export async function requirePanelOrigin(request: FastifyRequest): Promise<void> {
   const origin = request.headers.origin;
   if (origin === undefined || !request.server.config.corsAdminOrigins.includes(origin)) {
-    throw new HttpProblem('forbidden', { detail: 'Only the admin panel may use this session.' });
+    throw adminForbidden('origin', 'Only the admin panel may use this session.');
   }
 }

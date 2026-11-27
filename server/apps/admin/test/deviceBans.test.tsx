@@ -181,15 +181,15 @@ describe('the device bans page', () => {
     expect(within(dialog).getByRole('group', { name: 'What to ban' }).getAttribute('aria-describedby')).toBe(error.id);
   });
 
-  it('shows a typed end day in the Persian calendar under the picker', async () => {
+  it('takes the end day in the Persian calendar and shows it in full', async () => {
     const user = userEvent.setup();
     renderPanel('/moderation/device-bans', bansApi(), { locale: 'fa' });
     await user.click(await screen.findByRole('button', { name: 'مسدودسازی جدید' }));
     const dialog = await screen.findByRole('dialog', { name: 'مسدودسازی جدید' });
     expect(within(dialog).getByRole('button', { name: 'مسدودسازی' })).toBeTruthy();
     await user.selectOptions(within(dialog).getByLabelText('پایان'), 'date');
-    await user.type(within(dialog).getByLabelText('تاریخ'), '2027-03-21');
-    expect(await within(dialog).findByText(new Intl.DateTimeFormat('fa', { dateStyle: 'medium' }).format(new Date('2027-03-21T12:00:00')))).toBeTruthy();
+    await user.type(within(dialog).getByLabelText('تاریخ'), '۱۴۰۶/۰۱/۰۱');
+    expect(await within(dialog).findByText('یکشنبه، ۱ فروردین ۱۴۰۶')).toBeTruthy();
   });
 
   it('bans what a person signs in with: nothing is sent before confirming, then the exact body', async () => {
@@ -200,7 +200,7 @@ describe('the device bans page', () => {
     await user.click(screen.getByRole('button', { name: 'New ban' }));
     const dialog = await screen.findByRole('dialog', { name: 'New ban' });
     await user.click(within(dialog).getByRole('button', { name: 'Ban' }));
-    expect(await within(dialog).findByText('Write a public id (13 letters).')).toBeTruthy();
+    expect(await within(dialog).findByText('Write a public ID (13 characters).')).toBeTruthy();
     expect(api.of('POST /v1/admin/device-bans')).toHaveLength(0);
     await user.type(within(dialog).getByLabelText('Public ID'), 'userbaaaaaaaa');
     await user.click(within(dialog).getByRole('checkbox', { name: 'Google account' }));

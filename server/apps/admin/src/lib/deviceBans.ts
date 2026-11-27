@@ -1,5 +1,6 @@
-import { deviceBanKind, type DeviceBanKind } from '@app/shared';
+import { deviceBanKind, isAutomaticBanReason, moderationReason, type AdminDeviceBan, type DeviceBanKind, type ModerationReason } from '@app/shared';
 import type { MessageKey } from '@/i18n/messages';
+import type { Translate } from '@/i18n/translate';
 
 /** Device, phone and Google-account bans in the panel: the kinds and the end a choice gives. */
 
@@ -35,4 +36,23 @@ export function lacksCountryCode(value: string): boolean {
     return String(code - (code >= 0x06f0 ? 0x06f0 : 0x0660));
   });
   return /^0[1-9]/.test(compact);
+}
+
+/**
+ * A ban's reason as the panel shows it: the words for a reason the server
+ * writes by itself (no admin, no action: `under_age`), else the text as typed.
+ */
+export function banReasonText(ban: Pick<AdminDeviceBan, 'reason' | 'createdBy' | 'actionId'>, t: Translate): string {
+  if (ban.createdBy === null && ban.actionId === null && isAutomaticBanReason(ban.reason)) return t(`deviceBans.reason.${ban.reason}`);
+  // Made with a suspension or a ban, without a note: that action's reason.
+  const code = ban.actionId !== null ? ACTION_REASON.exec(ban.reason)?.[1] : undefined;
+  if (code !== undefined && (moderationReason.names as readonly string[]).includes(code)) return t(`reason.moderation.${code as ModerationReason}`);
+  return ban.reason;
+}
+
+const ACTION_REASON = /^moderation:([a-z_0-9]+)$/;
+
+/** The reason a ban made with a suspension or a ban stores when the admin wrote no note: a code, worded on display. */
+export function actionBanReason(reason: ModerationReason | ''): string {
+  return `moderation:${reason || 'other'}`;
 }

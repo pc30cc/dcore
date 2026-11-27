@@ -225,7 +225,7 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
                     <span className="grid justify-items-start gap-0.5">
                       <span dir="ltr" className="font-mono text-xs">
                         {p.productId}
-                        {p.quantity > 1 ? ` ×${p.quantity}` : ''}
+                        {p.quantity > 1 && <span> {t('purchases.quantity', { count: p.quantity })}</span>}
                       </span>
                       <span className="flex gap-1">
                         <Badge variant="outline">{t(`productKind.${p.kind}` as MessageKey)}</Badge>
@@ -307,8 +307,10 @@ export function WalletTab({ user }: { user: AdminUserDetail }) {
                   </TableCell>
                   <TableCell className="hidden text-sm tabular-nums sm:table-cell">{formatNumber(l.balanceAfter, locale)}</TableCell>
                   <TableCell className="text-sm">
-                    {t(`ledgerReason.${l.reason}` as MessageKey)}
-                    {l.admin && <span className="text-muted-foreground"> · {l.admin.displayName}</span>}
+                    <span className="flex flex-wrap gap-x-2">
+                      <span>{t(`ledgerReason.${l.reason}` as MessageKey)}</span>
+                      {l.admin && <bdi className="text-muted-foreground">{l.admin.displayName}</bdi>}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -399,7 +401,10 @@ export function SessionsTab({ user }: { user: AdminUserDetail }) {
               <TableCell>
                 {s.revokedAt ? (
                   <StatusDot tone="gray">
-                    {s.revokeReason ? t(`revokeReason.${s.revokeReason}` as MessageKey) : t('common.none')} · {formatDate(s.revokedAt, locale)}
+                    <span className="flex flex-wrap gap-x-2">
+                      <span>{s.revokeReason ? t(`revokeReason.${s.revokeReason}` as MessageKey) : t('common.none')}</span>
+                      <span>{formatDate(s.revokedAt, locale)}</span>
+                    </span>
                   </StatusDot>
                 ) : (
                   <StatusDot tone="green">{t('sessions.active')}</StatusDot>

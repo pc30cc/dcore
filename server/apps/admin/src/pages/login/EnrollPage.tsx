@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { Wording } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
 import { Worded } from '@/i18n/Worded';
 import { confirmCode, enroll } from '@/lib/auth';
@@ -32,7 +33,7 @@ export function EnrollPage() {
   return <EnrollStep ticket={ticket} />;
 }
 
-type Secret = { state: 'loading' } | { state: 'ready'; enrollment: AdminTotpEnrollment } | { state: 'failed'; message: string; alreadySet: boolean };
+type Secret = { state: 'loading' } | { state: 'ready'; enrollment: AdminTotpEnrollment } | { state: 'failed'; message: Wording; alreadySet: boolean };
 
 function EnrollStep({ ticket }: { ticket: PendingSignIn }) {
   const { t } = useI18n();
@@ -50,13 +51,14 @@ function EnrollStep({ ticket }: { ticket: PendingSignIn }) {
         if (!live || isAbort(error)) return;
         const failure = asApiError(error);
         const found = signInProblem(failure, 'code');
-        setSecret({ state: 'failed', message: t(found.key, found.values), alreadySet: failure.code === 'already_set' });
+        // Worded when drawn: a language switch neither keeps the old words nor sends the request again.
+        setSecret({ state: 'failed', message: (say) => say(found.key, found.values), alreadySet: failure.code === 'already_set' });
       },
     );
     return () => {
       live = false;
     };
-  }, [ticket.mfaToken, t]);
+  }, [ticket.mfaToken]);
 
   async function copy(value: string) {
     try {
@@ -95,7 +97,7 @@ function EnrollStep({ ticket }: { ticket: PendingSignIn }) {
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
               <AlertDescription>
-                {secret.alreadySet ? t('enroll.alreadySet') : secret.message}
+                <span className="block">{secret.alreadySet ? t('enroll.alreadySet') : <Worded text={secret.message} />}</span>
                 <Link to={secret.alreadySet ? '/login/totp' : '/login'} replace className="font-medium underline underline-offset-4">
                   {secret.alreadySet ? t('enroll.useCode') : t('login.restart')}
                 </Link>

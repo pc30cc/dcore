@@ -21,6 +21,13 @@ export function signInProblem(error: ApiError, step: 'password' | 'code'): { key
       return { key: 'common.error.notConfigured' };
     case 'forbidden':
       return { key: 'login.error.origin' };
+    case 'conflict':
+      return { key: error.reason === 'enroll_first' ? 'login.error.enrollFirst' : 'common.error.conflict' };
+    case 'already_set':
+      return { key: 'enroll.alreadySet' };
+    case 'bad_request':
+    case 'validation_failed':
+      return { key: 'common.error.badRequest' };
     default:
       return { key: 'common.error.unexpected' };
   }

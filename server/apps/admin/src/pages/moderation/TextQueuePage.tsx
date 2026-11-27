@@ -97,7 +97,7 @@ export function TextQueuePage() {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'conflict') stale();
-      else showToast((t) => conflictText(failure, t) ?? problemText(failure, t), 'error', 6_000);
+      else showToast((t, lang) => conflictText(failure, t) ?? problemText(failure, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }

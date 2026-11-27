@@ -12,17 +12,19 @@ import {
   store as storeCodes,
   wireTime,
   type AdminDeviceBan,
+  ADMIN_PHONE_LOOKUPS_PER_HOUR,
 } from '@app/shared';
 import { hashDomains } from '@app/shared/server';
 import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
-import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
+import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { withIdLease } from '../admin/effects.js';
 import { takeAdminLimit } from '../admin/limits.js';
 import { adminRefOf, callerMay, userRefOf } from '../admin/refs.js';
 import { normalizePhone } from '../auth/otp.js';
+import { adminForbidden, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { adminIdOf } from './adminAuth.js';
 
@@ -95,7 +97,7 @@ function banAudit(app: FastifyInstance, row: AdminDeviceBanRow, extra: Record<st
 
 /** A lookup by phone is never unmetered: one budget per admin and hour, shared with the user search by phone. */
 export const PHONE_LOOKUP_LIMIT = 'admin_ban_search';
-export const PHONE_LOOKUPS_PER_HOUR = 30;
+export const PHONE_LOOKUPS_PER_HOUR = ADMIN_PHONE_LOOKUPS_PER_HOUR;
 
 function e164Of(phone: string): string {
   const e164 = normalizePhone(phone);
@@ -200,7 +202,7 @@ export const adminDeviceBanRoutes: FastifyPluginAsyncZod = async (app) => {
       await adminWrite(app, request, async (tx, trail) => {
         const removed = await adminDeleteDeviceBan(tx, request.params.id, { automatic });
         if (removed.outcome === 'missing') throw new HttpProblem('not_found', { detail: 'No such ban.' });
-        if (removed.outcome === 'automatic') throw new HttpProblem('forbidden', { detail: 'An automatic ban is removed by the owner only.' });
+        if (removed.outcome === 'automatic') throw adminForbidden('automatic_ban', 'An automatic ban is removed by the owner only.');
         trail.record({
           action: 'device_ban.delete',
           target: 'device_ban',

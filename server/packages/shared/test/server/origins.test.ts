@@ -206,12 +206,14 @@ describe('the host rules', () => {
       bootstrap: [],
       allowIpHosts: false,
     });
-    expect(validateOrigins({ hosts: { api: [] } })).toEqual({ ok: false, issues: [{ pointer: '/hosts/api', message: 'at least one API host is required' }] });
+    expect(validateOrigins({ hosts: { api: [] } })).toEqual({ ok: false, issues: [{ pointer: '/hosts/api', code: 'api_required', message: 'at least one API host is required' }] });
     const checked = validateOrigins({
       hosts: { api: ['https://api.example.com', 'https://API.example.com/'], cdn: ['http://cdn.example.com'], web: Array.from({ length: 9 }, (_, i) => `https://w${i}.example.com`) },
       bootstrap: ['https://cdn.example.com/', 'https://cdn.example.com/o.json?x', 'https://cdn.example.com/bootstrap/origins.json'],
     });
     expect(checked.ok ? [] : checked.issues.map((i) => i.pointer)).toEqual(['/hosts/api/1', '/hosts/cdn/0', '/hosts/web', '/bootstrap/0', '/bootstrap/1']);
+    // Each problem carries a code the admin panel words (the message is the API's English).
+    expect(checked.ok ? [] : checked.issues.map((i) => i.code)).toEqual(['duplicate', 'not_https', 'too_many', 'not_file', 'query']);
     expect(checkBootstrapUrl('https://mirror.example.org/o/origins.json', rules)).toEqual({ ok: true, value: 'https://mirror.example.org/o/origins.json' });
   });
 

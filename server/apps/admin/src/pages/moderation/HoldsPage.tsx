@@ -19,7 +19,7 @@ import { UserRef } from '@/components/UserRef';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatDate } from '@/lib/format';
+import { asciiDigits, formatDate } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { holdKindTone, holdKinds } from '@/lib/moderation';
 import { problemText } from '@/lib/problemText';
@@ -152,9 +152,11 @@ function HoldTable({ rows, released, onRelease }: { rows: readonly AdminHold[]; 
                 )}
                 {released && (
                   <span className="grid gap-0.5 text-xs text-muted-foreground sm:hidden">
-                    <span>
-                      {t('holds.col.released')}: {hold.releasedAt ? formatDate(hold.releasedAt, locale) : t('common.none')}
-                      {hold.releasedBy && <> · {hold.releasedBy.displayName}</>}
+                    <span className="flex flex-wrap gap-x-2">
+                      <span>
+                        {t('holds.col.released')}: {hold.releasedAt ? formatDate(hold.releasedAt, locale) : t('common.none')}
+                      </span>
+                      {hold.releasedBy && <bdi>{hold.releasedBy.displayName}</bdi>}
                     </span>
                     {hold.releasedReason && <span className="bidi-plain">{hold.releasedReason}</span>}
                   </span>
@@ -200,9 +202,9 @@ function HoldTable({ rows, released, onRelease }: { rows: readonly AdminHold[]; 
             {released ? (
               <TableCell className="hidden max-w-64 text-sm sm:table-cell">
                 <span className="grid gap-0.5">
-                  <span className="whitespace-nowrap">
-                    {hold.releasedAt ? formatDate(hold.releasedAt, locale) : t('common.none')}
-                    {hold.releasedBy && <span className="text-muted-foreground"> · {hold.releasedBy.displayName}</span>}
+                  <span className="flex flex-wrap gap-x-2 whitespace-nowrap">
+                    <span>{hold.releasedAt ? formatDate(hold.releasedAt, locale) : t('common.none')}</span>
+                    {hold.releasedBy && <bdi className="text-muted-foreground">{hold.releasedBy.displayName}</bdi>}
                   </span>
                   {hold.releasedReason && <span className="text-xs text-muted-foreground bidi-plain">{hold.releasedReason}</span>}
                 </span>
@@ -309,7 +311,7 @@ function ReleaseDialog({ hold, onClose, onDone }: { hold: AdminHold; onClose: ()
       await apiRequest(`/v1/admin/holds/${hold.id}/release`, { method: 'POST', body: { reason: reason.trim() } });
       onDone();
     } catch (failure) {
-      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(failure), t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -379,9 +381,10 @@ export function NewHoldDialog({ initial = {}, onClose, onDone }: { initial?: New
     try {
       const body = {
         kind,
-        ...(user.trim() ? { user: user.trim() } : {}),
-        ...(conversationId.trim() ? { conversationId: conversationId.trim() } : {}),
-        ...(reportId.trim() ? { reportId: reportId.trim() } : {}),
+        // Ids typed on a Persian keyboard count.
+        ...(user.trim() ? { user: asciiDigits(user.trim()) } : {}),
+        ...(conversationId.trim() ? { conversationId: asciiDigits(conversationId.trim()) } : {}),
+        ...(reportId.trim() ? { reportId: asciiDigits(reportId.trim()) } : {}),
         ...(authorityRef.trim() ? { authorityRef: authorityRef.trim() } : {}),
       };
       await apiRequest('/v1/admin/holds', { method: 'POST', body });
@@ -394,7 +397,7 @@ export function NewHoldDialog({ initial = {}, onClose, onDone }: { initial?: New
       if (field) setErrors({ [field]: t(`holds.error.${field}` as MessageKey) });
       else if (issue?.code === 'no_target') setErrors({ user: t('holds.error.noTarget') });
       else if (problem.code === 'validation_failed' && pointed) setErrors({ [pointed]: t('holds.error.format') });
-      else showToast((t) => problemText(problem, t), 'error', 6_000);
+      else showToast((t, lang) => problemText(problem, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }

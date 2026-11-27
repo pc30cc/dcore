@@ -189,6 +189,10 @@ export const problemExtensions = {
   upgrade_required: z.strictObject({ minVersionCode: z.number().int().positive() }),
   quota_exceeded: z.strictObject({ feature: z.string().min(1), resetsAt: time, canBuy: z.boolean() }),
   maintenance: z.strictObject({ message: z.string().optional() }),
+  /** Why, as a word a client can branch on (the admin API's: `adminConflictReasons`). */
+  conflict: z.strictObject({ reason: z.string().min(1).optional() }),
+  /** Why, as a word (the admin API's: `adminForbiddenReasons`), and the permissions a refused role change would give. */
+  forbidden: z.strictObject({ reason: z.string().min(1).optional(), permissions: z.array(z.string().min(1)).optional() }),
 } as const satisfies Partial<Record<ErrorCode, z.ZodObject>>;
 
 type ExtensionCode = keyof typeof problemExtensions;

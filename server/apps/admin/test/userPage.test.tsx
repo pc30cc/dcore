@@ -109,7 +109,7 @@ describe('the user page', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByRole('tab', { name: 'نظارت' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'گزارش‌ها' })).toBeTruthy();
-    expect(screen.getByText('پنهان‌سازی بی‌صدا')).toBeTruthy();
+    expect(screen.getByText('پنهان‌شده (بی‌صدا)')).toBeTruthy();
     expect(screen.getByText('نگه‌داری قانونی')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'اقدام‌ها' })).toBeTruthy();
   });

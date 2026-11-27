@@ -18,6 +18,7 @@ import { badCursor, pageOf, readCursorKey } from '../admin/cursors.js';
 import { afterCommit, publishToUser, withIdLease } from '../admin/effects.js';
 import { englishReason } from '../admin/reasons.js';
 import { noSuchUser, personLocale, readUserParam, textItemOf } from '../admin/refs.js';
+import { adminConflict } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import type { ConfigSnapshot } from '../services/cfg.js';
 import { textRejectText } from '../services/me.js';
@@ -92,7 +93,7 @@ async function decide(
       case 'missing':
         throw noSuchUser();
       case 'stale':
-        throw new HttpProblem('conflict', { detail: 'The profile changed; reload it.' });
+        throw adminConflict('stale', 'The profile changed; reload it.');
       case 'invalid_part': {
         const errors =
           outcome.part === 'profile'

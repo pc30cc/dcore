@@ -109,7 +109,7 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
     expect(json(again)['detail']).toBe('Already decided.');
     expect((await send('/v1/admin/appeals/99999999999/uphold', { text: 'x' })).statusCode).toBe(404);
     expect((await send(`/v1/admin/appeals/${appeal}/uphold`, { text: 'x' }, 'support')).statusCode).toBe(403);
-    problemSchemaFor('forbidden').parse((await send(`/v1/admin/appeals/${appeal}/uphold`, { text: 'x' }, 'analyst')).json());
+    expect(problemSchemaFor('forbidden').parse((await send(`/v1/admin/appeals/${appeal}/uphold`, { text: 'x' }, 'analyst')).json())).toMatchObject({ reason: 'role' });
   });
 
   it('overturns: the action is lifted, the person is active again and reads the decision; the effects run after the commit', async () => {

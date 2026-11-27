@@ -5,12 +5,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { isolate, type Wording } from '@/i18n/translate';
+import type { Wording } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
 import type { MessageKey } from '@/i18n/messages';
 import { Worded } from '@/i18n/Worded';
 import { ApiError, apiRequest } from '@/lib/api';
 import { checkForm, formOf, hostsFields, problemsOf, requestOf, type FieldProblem, type HostsField, type HostsForm } from '@/lib/hosts';
+import { fieldText, problemText } from '@/lib/problemText';
 import { onSessionChange } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
@@ -88,7 +89,7 @@ export function HostsPage() {
     } catch (error) {
       const failure = asApiError(error);
       if (failure.code === 'field_invalid') setProblems(problemsOf(failure.errors));
-      setNotice({ kind: 'error', text: failure.code === 'conflict' ? (t) => t('hosts.conflict') : () => isolate(failure.message) });
+      setNotice({ kind: 'error', text: failure.code === 'field_invalid' ? (t) => t('hosts.form.invalid') : (t, lang) => problemText(failure, t, lang) });
     } finally {
       setSaving(false);
     }
@@ -108,7 +109,7 @@ export function HostsPage() {
         <Alert variant={load.error.status === 401 ? 'default' : 'destructive'}>
           <TriangleAlert aria-hidden="true" />
           <AlertTitle>{load.error.status === 401 ? t('hosts.signIn.title') : t('hosts.loadFailed')}</AlertTitle>
-          <AlertDescription>{load.error.status === 401 ? t('hosts.signIn.body') : <Worded text={() => isolate(load.error.message)} />}</AlertDescription>
+          <AlertDescription>{load.error.status === 401 ? t('hosts.signIn.body') : <Worded text={(t, lang) => problemText(load.error, t, lang)} />}</AlertDescription>
         </Alert>
       )}
 
@@ -173,7 +174,12 @@ export function HostsPage() {
                       <ul id={`${id}-problems`} className="grid gap-1 text-sm text-destructive">
                         {own.map((problem, index) => (
                           <li key={index}>
-                            <Worded text={(t) => (problem.line ? t('hosts.form.entry', { entry: problem.line, message: problem.message }) : isolate(problem.message))} />
+                            <Worded
+                              text={(t) => {
+                                const message = fieldText(problem.code, t, problem.field === 'bootstrap' ? '/bootstrap' : `/hosts/${problem.field}`) ?? t('field.issue.invalid');
+                                return problem.line ? t('hosts.form.entry', { entry: problem.line, message }) : message;
+                              }}
+                            />
                           </li>
                         ))}
                       </ul>

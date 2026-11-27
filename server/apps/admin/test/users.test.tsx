@@ -142,7 +142,7 @@ describe('the users page', () => {
     expect(await screen.findByRole('heading', { name: 'کاربران' })).toBeTruthy();
     expect(await screen.findByText('علی رضایی')).toBeTruthy();
     expect(document.documentElement.dir).toBe('rtl');
-    expect(screen.getAllByText('پنهان‌سازی بی‌صدا').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('پنهان‌شده (بی‌صدا)').length).toBeGreaterThan(0);
     expect(screen.getByText('حساب آزمایشی')).toBeTruthy();
     expect(screen.getAllByText('مسدود').length).toBe(2);
   });
@@ -151,7 +151,7 @@ describe('the users page', () => {
     renderPanel('/users', fakeApi({ 'GET /v1/admin/users': () => ({ items: people, nextCursor: null }) }), { locale: 'tr' });
     expect(await screen.findByRole('heading', { name: 'Kullanıcılar' })).toBeTruthy();
     expect(await screen.findByText('Sara Ahmadi')).toBeTruthy();
-    expect(screen.getAllByText('Gölge yasak').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Gölge yasaklı').length).toBeGreaterThan(0);
     expect(screen.getByText('Test hesabı')).toBeTruthy();
   });
 });

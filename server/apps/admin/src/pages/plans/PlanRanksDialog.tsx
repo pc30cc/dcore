@@ -10,7 +10,7 @@ import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
-import { localized } from '@/lib/format';
+import { formatPlain, localized } from '@/lib/format';
 import { moveInOrder, rankOrder } from '@/lib/plans';
 import { problemText } from '@/lib/problemText';
 import { queryClient, queryKeys, type PlanList } from '@/lib/queries';
@@ -40,7 +40,7 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
       onOpenChange(false);
     } catch (error) {
       const failure = asApiError(error);
-      setProblem((t) => problemText(failure, t));
+      setProblem((t, lang) => problemText(failure, t, lang));
     } finally {
       setBusy(false);
     }
@@ -60,7 +60,7 @@ export function PlanRanksDialog({ open, onOpenChange, plans }: { open: boolean; 
             const name = plan ? localized(plan.names, locale, key) : key;
             return (
               <li key={key} className="flex items-center gap-3 rounded-lg border px-3 py-2">
-                <span className="w-6 text-center text-sm text-muted-foreground tabular-nums">{index + 1}</span>
+                <span className="w-6 text-center text-sm text-muted-foreground tabular-nums">{formatPlain(index + 1, locale)}</span>
                 <span className="grid min-w-0 flex-1 justify-items-start">
                   <span className="truncate font-medium">{name}</span>
                   <code className="text-xs text-muted-foreground" dir="ltr">

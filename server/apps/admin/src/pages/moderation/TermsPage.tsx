@@ -24,7 +24,7 @@ import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { queryClient, useTerms } from '@/lib/queries';
 import { can } from '@/lib/session';
-import { severityTone, termBody, termFormOf, termLocales, termMatches, termProblems, termScopes, termSeverities, type TermForm } from '@/lib/terms';
+import { severityTone, termBody, termFormOf, termLocales, termMatches, termProblemOf, termScopes, termSeverities, type TermForm } from '@/lib/terms';
 import { showToast } from '@/lib/toast';
 import { savedToast } from '@/lib/users';
 import { useSession } from '@/lib/useSession';
@@ -67,7 +67,7 @@ export function TermsPage() {
       showToast((t) => t('terms.removed'));
       setRemoving(null);
     } catch (failure) {
-      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(failure), t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -191,7 +191,7 @@ function TermTable({ rows, writer, onEdit, onRemove }: { rows: readonly AdminBan
       changed();
       savedToast(result.sideEffects);
     } catch (failure) {
-      showToast((t) => problemText(asApiError(failure), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(failure), t, lang), 'error', 6_000);
     } finally {
       setSwitching(null);
     }
@@ -288,15 +288,16 @@ function TermDialog({ term, onClose, onDone }: { term: AdminBannedTerm | null; o
   const { t, locale, dir } = useI18n();
   const id = useId();
   const [form, setForm] = useState<TermForm>(() => termFormOf(term));
-  const [problems, setProblems] = useState<{ term?: string | undefined; scope?: string | undefined }>({});
+  // Keys, worded when drawn: a language switch with the dialog open words them again.
+  const [problems, setProblems] = useState<{ term?: MessageKey | undefined; scope?: MessageKey | undefined }>({});
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<TermForm>) => setForm((current) => ({ ...current, ...patch }));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const found: typeof problems = {};
-    if (!form.term.trim()) found.term = t('form.required');
-    if (form.scope.length === 0) found.scope = t('terms.error.scope');
+    if (!form.term.trim()) found.term = 'form.required';
+    if (form.scope.length === 0) found.scope = 'terms.error.scope';
     setProblems(found);
     if (Object.keys(found).length > 0 || busy) return;
     const body = termBody(form, term);
@@ -312,10 +313,10 @@ function TermDialog({ term, onClose, onDone }: { term: AdminBannedTerm | null; o
       onDone(result);
     } catch (failure) {
       const problem = asApiError(failure);
-      const code = problem.errors[0]?.code ?? '';
-      if (problem.code === 'conflict') setProblems({ term: t('terms.error.exists') });
-      else if (termProblems[code]) setProblems({ term: t(termProblems[code]) });
-      else showToast((t) => problemText(problem, t), 'error', 6_000);
+      const known = termProblemOf(problem.errors[0]?.code ?? '');
+      if (problem.code === 'conflict' && problem.reason === 'term_exists') setProblems({ term: 'terms.error.exists' });
+      else if (known) setProblems({ term: known });
+      else showToast((t, lang) => problemText(problem, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -328,7 +329,7 @@ function TermDialog({ term, onClose, onDone }: { term: AdminBannedTerm | null; o
           <DialogTitle>{term ? t('terms.edit') : t('terms.new')}</DialogTitle>
         </DialogHeader>
         <form className="grid gap-5" onSubmit={(event) => void submit(event)} noValidate>
-          <Field id={`${id}-term`} label={t('terms.field.term')} error={problems.term}>
+          <Field id={`${id}-term`} label={t('terms.field.term')} error={problems.term ? t(problems.term) : undefined}>
             {(control) => (
               <Input
                 {...control}
@@ -380,7 +381,7 @@ function TermDialog({ term, onClose, onDone }: { term: AdminBannedTerm | null; o
             </div>
             {problems.scope && (
               <p id={`${id}-scope-error`} className="text-sm text-destructive">
-                {problems.scope}
+                {t(problems.scope)}
               </p>
             )}
           </fieldset>

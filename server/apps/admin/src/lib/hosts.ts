@@ -1,4 +1,4 @@
-import { originRoles, validateOrigins, type OriginRole, type OriginsAdminView, type OriginsIssue, type OriginsUpdateBody } from '@app/shared';
+import { originRoles, validateOrigins, type OriginRole, type OriginsAdminView, type OriginsUpdateBody } from '@app/shared';
 
 /**
  * The Hosts screen's form: one text box per role (one origin per line, in
@@ -56,18 +56,19 @@ export interface FieldProblem {
   field: HostsField;
   /** The 1-based line, when the problem is one entry. */
   line?: number;
-  message: string;
+  /** Why (shared `originsIssueCodes`), which the page words. */
+  code: string;
 }
 
 /** Problems by field, from the API's pointers (`/hosts/api/1`, `/bootstrap/0`, `/hosts/api`). */
-export function problemsOf(issues: readonly Pick<OriginsIssue, 'pointer' | 'message'>[]): FieldProblem[] {
+export function problemsOf(issues: readonly { pointer: string; code: string }[]): FieldProblem[] {
   const out: FieldProblem[] = [];
   for (const issue of issues) {
     const parts = issue.pointer.split('/').slice(1);
     const field = (parts[0] === 'hosts' ? parts[1] : parts[0]) as HostsField | undefined;
     if (!field || !hostsFields.includes(field)) continue;
     const index = parts[0] === 'hosts' ? parts[2] : parts[1];
-    out.push({ field, ...(index !== undefined && /^\d+$/.test(index) ? { line: Number(index) + 1 } : {}), message: issue.message });
+    out.push({ field, ...(index !== undefined && /^\d+$/.test(index) ? { line: Number(index) + 1 } : {}), code: issue.code });
   }
   return out;
 }

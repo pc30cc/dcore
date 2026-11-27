@@ -113,6 +113,7 @@ export function chatSummary(id: string, overrides: Partial<AdminChatSummary> = {
     endedBy: null,
     lastActivityAt: '2026-11-25T14:05:00.000Z',
     messages: { count: 12, more: false },
+    countComplete: true,
     held: false,
     visibility: { subjectSeesOther: true, otherSeesSubject: true },
     retentionDays: null,

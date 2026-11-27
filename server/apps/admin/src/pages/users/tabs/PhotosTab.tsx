@@ -58,7 +58,7 @@ export function PhotosTab({ user }: { user: AdminUserDetail }) {
       savedToast(result.sideEffects, rejectWith ? 'photos.rejected' : 'photos.approved');
     } catch (error) {
       const failure = asApiError(error);
-      showToast((t) => problemText(failure, t), 'error', 6_000);
+      showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
       // Decided elsewhere: show the photo as it is now.
       if (failure.code === 'conflict') void queryClient.invalidateQueries({ queryKey: ['user', user.id, 'photos'] });
     } finally {

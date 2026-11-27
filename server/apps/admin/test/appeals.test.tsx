@@ -75,7 +75,7 @@ describe('the appeals page', () => {
   });
 
   it('drops an appeal decided elsewhere, with the words for it', async () => {
-    const api = appealsApi({ 'POST /v1/admin/appeals/41/uphold': () => problem(409, 'conflict', { detail: 'Already decided.' }) });
+    const api = appealsApi({ 'POST /v1/admin/appeals/41/uphold': () => problem(409, 'conflict', { detail: 'Already decided.', reason: 'already_decided' }) });
     const user = userEvent.setup();
     renderPanel('/moderation/appeals', api);
     await user.click(await screen.findByRole('button', { name: 'Uphold' }));

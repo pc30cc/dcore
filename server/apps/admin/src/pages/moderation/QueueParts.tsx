@@ -7,8 +7,10 @@ import { cn } from '@/lib/utils';
 /** The pieces the moderation pages share: a key's cap, the refresh button, the empty line, the position read aloud. */
 
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
+  const { t } = useI18n();
+  // Keys by position: on a Persian layout A and R type ش and ق; the tooltip says so.
   return (
-    <kbd dir="ltr" aria-hidden="true" className={cn('rounded border border-current/30 px-1 font-sans text-xs leading-4 font-normal opacity-80', className)}>
+    <kbd dir="ltr" aria-hidden="true" title={t('queue.keys.hint')} className={cn('rounded border border-current/30 px-1 font-sans text-xs leading-4 font-normal opacity-80', className)}>
       {children}
     </kbd>
   );

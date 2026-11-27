@@ -1,16 +1,17 @@
-import type { AdminAction, AdminPenaltyKind, AdminUserDetail, ModerationReason, SideEffects } from '@app/shared';
+import { PENALTY_MAX_DAYS, type AdminAction, type AdminPenaltyKind, type AdminUserDetail, type ModerationReason, type SideEffects } from '@app/shared';
 import { useId, useState, type FormEvent } from 'react';
+import { DayField } from '@/components/form/DayField';
 import { Field } from '@/components/form/Field';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatDate, languageName } from '@/lib/format';
+import { formatDate, gregorianPanel, languageName, todayDay } from '@/lib/format';
+import { actionBanReason } from '@/lib/deviceBans';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { useReasons } from '@/lib/queries';
@@ -32,6 +33,9 @@ import {
   type UntilChoice,
   standingPeriod,
 } from '@/lib/users';
+
+/** The longest suspension the API takes, in years (its words for a later end). */
+const PENALTY_YEARS = Math.floor(PENALTY_MAX_DAYS / 365);
 
 export type ActionKind = AdminPenaltyKind | 'lift';
 
@@ -160,7 +164,8 @@ function PenaltyFields({
    * overturning its appeal removes them); a failure leaves the ban as it is and says so.
    */
   async function banDevices(actionId: string, endsAt: string | undefined) {
-    const reason = form.note.trim() || t(`reason.moderation.${form.reason}` as MessageKey);
+    // Without a note, the moderation reason as a code (the device bans page words it in its reader's language).
+    const reason = form.note.trim() || actionBanReason(form.reason);
     try {
       await apiRequest('/v1/admin/device-bans', {
         method: 'POST',
@@ -195,9 +200,10 @@ function PenaltyFields({
     } catch (error) {
       const failure = asApiError(error);
       const code = failure.errors[0]?.code;
-      if (code === 'ends_in_past' || code === 'ends_too_far') setProblems({ [endField(form)]: 'action.error.untilPast' });
+      if (code === 'ends_in_past') setProblems({ [endField(form)]: 'action.error.untilPast' });
+      else if (code === 'ends_too_far') setProblems({ [endField(form)]: 'action.error.untilFar' });
       else if (code === 'unknown_report' || code === 'not_this_user') showToast((t) => t('action.error.report'), 'error', 6_000);
-      else showToast((t) => problemText(failure, t), 'error', 6_000);
+      else showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -252,7 +258,7 @@ function PenaltyFields({
       )}
       {kind !== 'warn' && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field id={`${id}-until`} label={t('action.until')} error={problems.until ? t(problems.until) : undefined}>
+          <Field id={`${id}-until`} label={t('action.until')} error={problems.until ? t(problems.until, { years: PENALTY_YEARS }) : undefined}>
             {(control) => (
               <NativeSelect
                 {...control}
@@ -277,16 +283,15 @@ function PenaltyFields({
             )}
           </Field>
           {form.until === 'date' ? (
-            // The end in the panel's calendar under the native (Gregorian) picker.
-            <Field id={`${id}-date`} label={t('action.date')} hint={endsOn} error={problems.date ? t(problems.date) : undefined}>
+            // The end in the panel's calendar (Solar Hijri in Persian; the browser's picker otherwise).
+            <Field id={`${id}-date`} label={t('action.date')} hint={gregorianPanel(locale) ? endsOn : undefined} error={problems.date ? t(problems.date, { years: PENALTY_YEARS }) : undefined}>
               {(control) => (
-                <Input
+                <DayField
                   {...control}
-                  type="date"
-                  dir="ltr"
                   value={form.date}
-                  onChange={(event) => {
-                    setForm({ ...form, date: event.target.value });
+                  min={todayDay()}
+                  onChange={(date) => {
+                    setForm({ ...form, date });
                     clearProblem('date');
                   }}
                 />
@@ -340,7 +345,7 @@ function LiftForm({ user, onClose, onDone }: { user: AdminUserDetail; onClose: (
         }),
       );
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(error), t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }

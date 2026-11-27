@@ -1,5 +1,6 @@
 import type { Locale } from '@app/shared';
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { useId } from 'react';
 import { localeNames } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { useTheme, type ThemeChoice } from '@/lib/theme';
@@ -11,13 +12,15 @@ const themeIcons = { light: Sun, dark: Moon, system: Monitor } as const;
 export function Preferences({ className }: { className?: string }) {
   const { t, locale, locales, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
+  // The header and the account menu of a small screen both hold one: each its own id.
+  const id = useId();
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <label className="sr-only" htmlFor="locale">
+      <label className="sr-only" htmlFor={id}>
         {t('language.label')}
       </label>
       <select
-        id="locale"
+        id={id}
         value={locale}
         onChange={(event) => setLocale(event.target.value as Locale)}
         className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"

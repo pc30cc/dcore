@@ -33,6 +33,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite, type AuditTrail } from '../admin/audit.js';
 import { generatePassword } from '../admin/password.js';
+import { adminConflict, adminForbidden, fieldInvalid } from '../admin/problems.js';
 import { denyAdminSessions } from '../admin/session.js';
 import { HttpProblem } from '../lib/problem.js';
 import { accountView, adminIdOf, passwordRefusal } from './adminAuth.js';
@@ -80,7 +81,7 @@ function readCursor(cursor: string | undefined): number {
 
 function notSelf(request: FastifyRequest, targetId: number): void {
   if (adminIdOf(request) === targetId) {
-    throw new HttpProblem('conflict', { detail: 'Change your own account from your profile, not from the admin list.' });
+    throw adminConflict('self_change', 'Change your own account from your profile, not from the admin list.');
   }
 }
 
@@ -90,7 +91,7 @@ async function keepAnOwner(tx: PoolClient, target: AdminAccountRow, losesOwner: 
   if (!losesOwner || !target.roles.includes(OWNER_ROLE) || target.disabledAtMs !== null) return;
   const owners = await adminActiveOwners(tx, OWNER_ROLE);
   if (!owners.some((id) => id !== Number(target.id))) {
-    throw new HttpProblem('conflict', { detail: 'At least one enabled owner must remain.' });
+    throw adminConflict('last_owner', 'At least one enabled owner must remain.');
   }
 }
 
@@ -124,7 +125,7 @@ export const adminAccountRoutes: FastifyPluginAsyncZod = async (app) => {
   function mayGive(request: FastifyRequest, roles: readonly string[]): void {
     const beyond = beyondCaller(request, roles);
     if (beyond.length > 0) {
-      throw new HttpProblem('forbidden', { detail: `You may give only access you hold yourself; these roles also grant ${beyond.join(', ')}.` });
+      throw adminForbidden('beyond_grants', `You may give only access you hold yourself; these roles also grant ${beyond.join(', ')}.`, { permissions: beyond });
     }
   }
 
@@ -133,7 +134,7 @@ export const adminAccountRoutes: FastifyPluginAsyncZod = async (app) => {
     const row = await adminAccountForUpdate(tx, targetId);
     if (!row) throw new HttpProblem('not_found', { detail: 'No such admin.' });
     if (beyondCaller(request, row.roles).length > 0) {
-      throw new HttpProblem('forbidden', { detail: 'This account has access your roles do not grant: only an admin holding all of it may change it.' });
+      throw adminForbidden('beyond_target', 'This account has access your roles do not grant: only an admin holding all of it may change it.');
     }
     return row;
   }
@@ -145,7 +146,7 @@ export const adminAccountRoutes: FastifyPluginAsyncZod = async (app) => {
     const unknown = unique.filter((key) => !known.has(key));
     if (unknown.length > 0) {
       const message = `Unknown role: ${unknown.join(', ')}.`;
-      throw new HttpProblem('field_invalid', { detail: message, errors: [{ in: 'body', pointer, code: 'unknown_role', message }] });
+      throw fieldInvalid(pointer, 'unknown_role', message);
     }
     // In role id order, as the account view lists them.
     return unique.sort((a, b) => (known.get(a)?.id ?? 0) - (known.get(b)?.id ?? 0));
@@ -187,7 +188,7 @@ export const adminAccountRoutes: FastifyPluginAsyncZod = async (app) => {
       const createdBy = adminIdOf(request);
       const row = await adminWrite(app, request, async (tx, trail) => {
         const id = await adminCreate(tx, { email: body.email, displayName: body.displayName, passwordHash: hash, roles, createdBy });
-        if (id === null) throw new HttpProblem('conflict', { detail: 'An admin with this e-mail exists.' });
+        if (id === null) throw adminConflict('email_taken', 'An admin with this e-mail exists.');
         const created = await adminAccount(tx, id);
         if (!created) throw new Error('admin: the new account is not readable');
         trail.record({ action: 'admin.create', target: 'admin', targetId: id, detail: { after: snapshot(created), email: created.email, passwordGenerated: generated !== null } });

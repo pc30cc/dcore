@@ -103,7 +103,7 @@ describe('action dialogs', () => {
     await waitFor(() => expect(fake.of('POST /v1/admin/device-bans')).toHaveLength(1));
     const ban = fake.of(`POST /v1/admin/users/${SARA}/ban`)[0]?.body as { endsAt: string };
     // Tied to the ban: lifting it or overturning its appeal removes them.
-    expect(fake.of('POST /v1/admin/device-bans')[0]?.body).toEqual({ from: 'user', user: SARA, kinds: ['device', 'phone', 'google'], reason: 'Spam', expiresAt: ban.endsAt, forAction: '60' });
+    expect(fake.of('POST /v1/admin/device-bans')[0]?.body).toEqual({ from: 'user', user: SARA, kinds: ['device', 'phone', 'google'], reason: 'moderation:spam', expiresAt: ban.endsAt, forAction: '60' });
     expect(await screen.findByText('Saved.')).toBeTruthy();
   });
 
@@ -144,7 +144,7 @@ describe('action dialogs', () => {
     const fake = api({
       [`PATCH /v1/admin/users/${SARA}/profile`]: () => {
         calls += 1;
-        return calls === 1 ? problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '/displayName', code: 'name_refused', message: 'x' }] }) : problem(409, 'conflict', { detail: 'The profile changed; reload it.' });
+        return calls === 1 ? problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '/displayName', code: 'name_refused', message: 'x' }] }) : problem(409, 'conflict', { detail: 'The profile changed; reload it.', reason: 'stale' });
       },
     });
     renderPanel(`/users/${SARA}`, fake);
@@ -266,7 +266,7 @@ describe('text decisions', () => {
   });
 
   it('says the profile changed on a stale version, and reloads it', async () => {
-    const fake = api({ [`POST /v1/admin/moderation/texts/${SARA}/reject`]: () => problem(409, 'conflict', { detail: 'The profile changed; reload it.' }) });
+    const fake = api({ [`POST /v1/admin/moderation/texts/${SARA}/reject`]: () => problem(409, 'conflict', { detail: 'The profile changed; reload it.', reason: 'stale' }) });
     const user = userEvent.setup();
     renderPanel(`/users/${SARA}`, fake);
     await user.click(await screen.findByRole('button', { name: 'Reject texts' }));

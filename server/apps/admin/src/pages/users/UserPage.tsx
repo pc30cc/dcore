@@ -1,4 +1,4 @@
-import type { AdminUserDetail, SideEffects } from '@app/shared';
+import { textRejectReason, type AdminUserDetail, type SideEffects } from '@app/shared';
 import { ArrowLeft, ArrowRight, LogOut, MoreHorizontal, Pencil, ShieldAlert, ShieldCheck, ShieldOff, Trash2, TriangleAlert, Undo2, UserX } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
@@ -138,7 +138,7 @@ function UserView({ user }: { user: AdminUserDetail }) {
       after(await apiRequest<{ user?: AdminUserDetail; sideEffects: SideEffects }>(path, { method: 'POST', body }));
       setOpen(null);
     } catch (error) {
-      showToast((t) => problemText(asApiError(error), t), 'error', 6_000);
+      showToast((t, lang) => problemText(asApiError(error), t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -168,18 +168,18 @@ function UserView({ user }: { user: AdminUserDetail }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-52">
-                  {live && allow.warn && <MenuItem icon={TriangleAlert} label="action.menu.warn" onSelect={() => setOpen({ kind: 'warn' })} />}
-                  {live && allow.suspend && <MenuItem icon={ShieldAlert} label="action.menu.suspend" onSelect={() => setOpen({ kind: 'suspend' })} />}
-                  {live && allow.ban && <MenuItem icon={ShieldOff} label="action.menu.ban" onSelect={() => setOpen({ kind: 'ban' })} />}
-                  {live && allow.shadowban && <MenuItem icon={UserX} label="action.menu.shadowban" onSelect={() => setOpen({ kind: 'shadowban' })} />}
-                  {live && allow.lift && <MenuItem icon={Undo2} label="action.menu.lift" onSelect={() => setOpen({ kind: 'lift' })} />}
+                  {live && allow.warn && <MenuItem icon={TriangleAlert} labelKey="action.menu.warn" onSelect={() => setOpen({ kind: 'warn' })} />}
+                  {live && allow.suspend && <MenuItem icon={ShieldAlert} labelKey="action.menu.suspend" onSelect={() => setOpen({ kind: 'suspend' })} />}
+                  {live && allow.ban && <MenuItem icon={ShieldOff} labelKey="action.menu.ban" onSelect={() => setOpen({ kind: 'ban' })} />}
+                  {live && allow.shadowban && <MenuItem icon={UserX} labelKey="action.menu.shadowban" onSelect={() => setOpen({ kind: 'shadowban' })} />}
+                  {live && allow.lift && <MenuItem icon={Undo2} labelKey="action.menu.lift" onSelect={() => setOpen({ kind: 'lift' })} />}
                   {penalties && (allow.signOut || allow.rename) && <DropdownMenuSeparator />}
-                  {allow.signOut && <MenuItem icon={LogOut} label="action.menu.signOut" onSelect={() => setOpen({ kind: 'signOut' })} />}
-                  {allow.rename && <MenuItem icon={Pencil} label="action.menu.rename" onSelect={() => setOpen({ kind: 'rename' })} />}
+                  {allow.signOut && <MenuItem icon={LogOut} labelKey="action.menu.signOut" onSelect={() => setOpen({ kind: 'signOut' })} />}
+                  {allow.rename && <MenuItem icon={Pencil} labelKey="action.menu.rename" onSelect={() => setOpen({ kind: 'rename' })} />}
                   {allow.delete && (
                     <>
                       <DropdownMenuSeparator />
-                      <MenuItem icon={Trash2} label="action.menu.delete" destructive onSelect={() => setOpen({ kind: 'delete' })} />
+                      <MenuItem icon={Trash2} labelKey="action.menu.delete" destructive onSelect={() => setOpen({ kind: 'delete' })} />
                     </>
                   )}
                 </DropdownMenuContent>
@@ -293,12 +293,12 @@ function UserView({ user }: { user: AdminUserDetail }) {
   );
 }
 
-function MenuItem({ icon: Icon, label, onSelect, destructive = false }: { icon: typeof Pencil; label: MessageKey; onSelect: () => void; destructive?: boolean }) {
+function MenuItem({ icon: Icon, labelKey, onSelect, destructive = false }: { icon: typeof Pencil; labelKey: MessageKey; onSelect: () => void; destructive?: boolean }) {
   const { t } = useI18n();
   return (
     <DropdownMenuItem destructive={destructive} onSelect={onSelect}>
       <Icon aria-hidden="true" />
-      {t(label)}
+      {t(labelKey)}
     </DropdownMenuItem>
   );
 }
@@ -356,7 +356,8 @@ function RenameDialog({ user, onClose, onDone }: { user: AdminUserDetail; onClos
   const [error, setError] = useState<{ name?: string; reason?: string }>({});
   const [busy, setBusy] = useState(false);
   const name = user.name ?? user.id;
-  const reasons = ['contact_details', 'offensive', 'sexual', 'commercial', 'impersonation', 'other'] as const;
+  // The server's own list: a reason it adds gets a label through the enum guard.
+  const reasons = textRejectReason.names;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -384,7 +385,7 @@ function RenameDialog({ user, onClose, onDone }: { user: AdminUserDetail; onClos
           queryKey: queryKeys.user(user.id),
         });
         onClose();
-      } else showToast((t) => problemText(problem, t), 'error', 6_000);
+      } else showToast((t, lang) => problemText(problem, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }

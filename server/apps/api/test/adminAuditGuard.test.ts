@@ -322,11 +322,11 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
 
   /**
    * Reads that write no audit row and no other record (decided 2026-11-27):
-   * a person's conversations on the user page. They are GET routes, which
+   * a person's conversations and message requests on the user page. They are GET routes, which
    * this guard does not cover; the list keeps them from becoming writes,
    * and from quietly gaining an audit row, without this file changing.
    */
-  const UNAUDITED_READS = ['GET /v1/admin/users/{id}/chats', 'GET /v1/admin/users/{id}/chats/{conversationId}'] as const;
+  const UNAUDITED_READS = ['GET /v1/admin/users/{id}/chats', 'GET /v1/admin/users/{id}/chats/{conversationId}', 'GET /v1/admin/users/{id}/chat-requests'] as const;
 
   it('keeps the unaudited reads to GET, and reading them writes no row anywhere', async () => {
     const doc = (await h.app.inject({ method: 'GET', url: '/openapi.json' })).json<{ paths: Record<string, Record<string, unknown>> }>();
@@ -338,10 +338,11 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     const other = await person();
     const matchId = await seedMatch(h, subject.id, other.id);
     await db.sql.query(`INSERT INTO messages (match_id, id, sender_id, kind, body) VALUES ($1, $2, $3, 1, 'A message')`, [matchId, h.app.ids.nextId(), other.id]);
+    await db.sql.query(`INSERT INTO message_requests (id, from_id, to_id, body) VALUES ($1, $2, $3, 'A request')`, [h.app.ids.nextId(), other.id, subject.id]);
     const before = await digest();
     const queued = jobs.jobs.length;
     const published = realtime.published.length;
-    for (const url of [`/v1/admin/users/${subject.publicUid}/chats`, `/v1/admin/users/${subject.publicUid}/chats/${matchId}`]) {
+    for (const url of [`/v1/admin/users/${subject.publicUid}/chats`, `/v1/admin/users/${subject.publicUid}/chats/${matchId}`, `/v1/admin/users/${subject.publicUid}/chat-requests`]) {
       const res = await admin(h, url, undefined, { token: superadmin.accessToken });
       expect(res.statusCode, res.body).toBe(200);
     }

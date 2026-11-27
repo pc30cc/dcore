@@ -1,4 +1,5 @@
 import type { AdminAction, AdminUserDetail } from '@app/shared';
+import { CopyId } from '@/components/CopyId';
 import { LoadError, TableSkeleton } from '@/components/QueryState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,7 +7,7 @@ import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { useUserPages } from '@/lib/queries';
-import { LIFT_DEFAULT_TEXT, actionTone, reasonLabel, reasonlessKinds, textPartsOf } from '@/lib/users';
+import { LIFT_DEFAULT_TEXT, actionTone, photoNoteId, reasonLabel, reasonlessKinds, textPartsOf } from '@/lib/users';
 
 /** Every moderation record of the person, newest first: the shadowban and internal notes included. */
 export function ModerationTab({ user }: { user: AdminUserDetail }) {
@@ -45,7 +46,9 @@ export function ActionRow({ action }: { action: AdminAction }) {
   const by = action.admin ? t('moderation.by', { name: action.admin.displayName }) : t('common.automatic');
   const parts = action.kind === 'text_rejected' && action.note ? textPartsOf(action.note, t) : null;
   // A lift's text comes empty to a caller without moderation.read (it is internal).
-  const note = parts ? null : action.kind === 'lift' ? (action.reasonText && action.reasonText !== LIFT_DEFAULT_TEXT ? action.reasonText : null) : action.note;
+  // A photo rejection's note is the server's own ("photo <id>"): the photo, not a note.
+  const photoId = action.kind === 'photo_rejected' ? photoNoteId(action.note) : null;
+  const note = parts || photoId ? null : action.kind === 'lift' ? (action.reasonText && action.reasonText !== LIFT_DEFAULT_TEXT ? action.reasonText : null) : action.note;
   return (
     <li className="grid gap-2 p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -68,6 +71,12 @@ export function ActionRow({ action }: { action: AdminAction }) {
             </Badge>
           ))}
         </div>
+      )}
+      {photoId && (
+        <p className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+          <span>{t('moderation.photo')}</span>
+          <CopyId value={photoId} />
+        </p>
       )}
       {note && (
         <p className="whitespace-pre-wrap text-muted-foreground">

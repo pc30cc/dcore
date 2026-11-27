@@ -208,6 +208,10 @@ export type AuditFilters = Omit<AdminAuditQuery, 'cursor' | 'limit'>;
 
 /** The most rows one export carries. */
 export const AUDIT_EXPORT_MAX_ROWS = 10_000;
+/** Phone lookups one admin may make in an hour (device bans and the user search share them). */
+export const ADMIN_PHONE_LOOKUPS_PER_HOUR = 30;
+/** Exports one admin may make in an hour. */
+export const AUDIT_EXPORTS_PER_HOUR = 10;
 
 /** The admins the audit page can filter by (`admins.read` is a superadmin permission, so the page has its own list). */
 export const adminAuditAdminsSchema = z.object({

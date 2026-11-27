@@ -130,7 +130,12 @@ function AppealCard({ appeal, canDecide, onDecide }: { appeal: AdminAppeal; canD
         <p className="text-sm whitespace-pre-wrap">
           <span className="font-medium">{t('moderation.decision')}: </span>
           <bdi>{appeal.decisionText}</bdi>
-          {appeal.decidedBy && <span className="text-muted-foreground"> · {appeal.decidedBy.displayName}</span>}
+          {appeal.decidedBy && (
+            <span className="text-muted-foreground">
+              {' · '}
+              <bdi>{appeal.decidedBy.displayName}</bdi>
+            </span>
+          )}
           {appeal.decidedAt && <span className="text-muted-foreground"> · {formatDateTime(appeal.decidedAt, locale)}</span>}
         </p>
       )}
@@ -184,7 +189,7 @@ function DecisionDialog({ appeal, decision, onClose, onDone }: { appeal: AdminAp
     } catch (failure) {
       const problem = asApiError(failure);
       const conflict = conflictText(problem, t);
-      showToast((t) => conflictText(problem, t) ?? problemText(problem, t), 'error', 6_000);
+      showToast((t, lang) => conflictText(problem, t) ?? problemText(problem, t, lang), 'error', 6_000);
       if (conflict) {
         dropFromPages<AdminAppeal>(queryKeys.appeals('open'), (a) => a.id !== appeal.id);
         onClose();

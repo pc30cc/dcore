@@ -50,14 +50,16 @@ import {
   type EvidenceRole,
   type ReportResolution,
 } from '@app/shared';
+import { decodeCallLineBody, KIND } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
-import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
+import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { withIdLease } from '../admin/effects.js';
 import { takeAdminLimit } from '../admin/limits.js';
 import { actionOf, actionVisible, adminRefOf, filingOf, holdOf, messageFlagNames, photoUrls, promptQuestion, reportSummaryOf, resolutionVisible, userReadScope } from '../admin/refs.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import type { ConfigSnapshot } from '../services/cfg.js';
 import { adminIdOf } from './adminAuth.js';
@@ -150,16 +152,21 @@ function chatOf(snapshots: readonly ChatSnapshot[], reporterId: string | null, t
     filingId: s.filingId,
     conversationId: s.conversationId ?? null,
     takenAt: wireTime(s.takenAtMs),
-    messages: (s.messages ?? []).map((m) => ({
-      id: m.id,
-      from: role(m.senderId),
-      kind: messageKind.nameOrUndefined(m.kind) ?? 'text',
-      flags: messageFlagNames(m.flags),
-      body: m.body ?? null,
-      at: wireTime(m.atMs),
-      late: m.fromStream === true,
-      named: named.has(m.id),
-    })),
+    messages: (s.messages ?? []).map((m) => {
+      // A call line's body is its stored summary, never text: it goes as `call`.
+      const line = m.kind === KIND.call ? decodeCallLineBody(m.body ?? null) : null;
+      return {
+        id: m.id,
+        from: role(m.senderId),
+        kind: messageKind.nameOrUndefined(m.kind) ?? 'text',
+        flags: messageFlagNames(m.flags),
+        body: m.kind === KIND.call ? null : (m.body ?? null),
+        ...(line ? { call: { kind: line.kind, outcome: line.outcome, durationSeconds: line.durationSeconds } } : {}),
+        at: wireTime(m.atMs),
+        late: m.fromStream === true,
+        named: named.has(m.id),
+      };
+    }),
     requests: (s.requests ?? []).map((r) => ({
       id: r.requestId,
       from: role(r.senderId),
@@ -176,11 +183,13 @@ const PENALTY_OF_RESOLUTION: Partial<Record<ReportResolution, number>> = { warni
 async function closeReport(app: FastifyInstance, request: FastifyRequest, reportId: string, kind: 'resolve' | 'dismiss', body: { resolution: ReportResolution; note?: string | undefined; sameTarget?: boolean | undefined }) {
   const group: readonly ReportResolution[] = kind === 'resolve' ? ACTION_RESOLUTIONS : CLOSE_RESOLUTIONS;
   if (!group.includes(body.resolution)) {
-    throw fieldInvalid('/resolution', 'wrong_resolution', kind === 'resolve' ? 'This resolution closes a report without an action.' : 'This resolution closes a report with an action.');
+    throw kind === 'resolve'
+      ? fieldInvalid('/resolution', 'resolution_not_action', 'This resolution closes a report without an action.')
+      : fieldInvalid('/resolution', 'resolution_is_action', 'This resolution closes a report with an action.');
   }
   const scope = userReadScope(app, request);
   // Refused before any read: whether the person is shadowbanned decides nothing for a caller who may not know it.
-  if (resolutionVisible(body.resolution, scope) !== body.resolution) throw fieldInvalid('/resolution', 'wrong_resolution', 'This resolution is not open to this role.');
+  if (resolutionVisible(body.resolution, scope) !== body.resolution) throw fieldInvalid('/resolution', 'resolution_not_allowed', 'This resolution is not open to this role.');
   const status = kind === 'resolve' ? 3 : body.resolution === 'duplicate' ? 5 : 4;
   const adminId = adminIdOf(request);
   const note = body.note ? body.note : null;
@@ -196,9 +205,9 @@ async function closeReport(app: FastifyInstance, request: FastifyRequest, report
       penaltyKind: PENALTY_OF_RESOLUTION[body.resolution] ?? null,
     });
     if (closed.outcome === 'missing') throw noSuchReport();
-    if (closed.outcome === 'closed_already') throw new HttpProblem('conflict', { detail: 'Already closed.' });
+    if (closed.outcome === 'closed_already') throw adminConflict('already_closed', 'Already closed.');
     // A report never reads "closed with a ban" (or a warning, a suspension, a shadowban) that was not taken.
-    if (closed.outcome === 'no_action') throw fieldInvalid('/resolution', 'wrong_resolution', 'No such action was taken on this person since the report.');
+    if (closed.outcome === 'no_action') throw fieldInvalid('/resolution', 'action_not_taken', 'No such action was taken on this person since the report.');
     for (const report of closed.reports) {
       trail.record({
         action: kind === 'resolve' ? 'report.resolve' : 'report.dismiss',
@@ -325,11 +334,11 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
           case 'missing':
             throw noSuchReport();
           case 'closed':
-            throw new HttpProblem('conflict', { detail: 'Already closed.' });
+            throw adminConflict('already_closed', 'Already closed.');
           case 'unknown_admin':
             throw fieldInvalid('/to', 'unknown_admin', 'No such admin, or the account is disabled.');
           case 'taken':
-            throw new HttpProblem('conflict', { detail: 'Someone else took it.' });
+            throw adminConflict('taken', 'Someone else took it.');
           case 'unchanged':
             trail.unchanged();
             return outcome.report;
@@ -383,7 +392,7 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
       const filed = await adminWrite(app, request, async (tx, trail) => {
         const outcome = await adminHoldAndFile(tx, { reportId, adminId, authority: filingAuthority.code(request.body.authority), externalRef, userHoldId, matchHoldId });
         if (outcome.outcome === 'missing') throw noSuchReport();
-        if (outcome.outcome === 'filed_already') throw new HttpProblem('conflict', { detail: 'Already filed.' });
+        if (outcome.outcome === 'filed_already') throw adminConflict('already_filed', 'Already filed.');
         trail.record({
           action: 'report.file',
           target: 'report',

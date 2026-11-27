@@ -64,8 +64,33 @@ const thread = [
   chatMessage('114', { from: 'other', body: 'Still there?', at: '2026-11-25T14:05:00.000Z', pending: true }),
 ];
 
+const REQUESTS = `GET /v1/admin/users/${SARA}/chat-requests`;
+const requests = [
+  {
+    id: '7002',
+    direction: 'received',
+    other: { id: 'omidaaaaaaaaa', name: 'Omid Karimi', status: 'active' },
+    status: 'accepted',
+    sentAt: '2026-11-20T08:00:00.000Z',
+    decidedAt: '2026-11-20T09:00:00.000Z',
+    body: 'Hi, I liked your photos',
+    conversationId: '9001',
+  },
+  {
+    id: '7001',
+    direction: 'sent',
+    other: { id: 'ninaaaaaaaaaa', name: 'Nina', status: 'active' },
+    status: 'declined',
+    sentAt: '2026-11-18T08:00:00.000Z',
+    decidedAt: '2026-11-19T08:00:00.000Z',
+    body: 'سلام، وقت داری؟',
+    conversationId: null,
+  },
+];
+
 function chatsApi(extra: Record<string, (call: Call) => unknown> = {}) {
   return fakeApi({
+    [REQUESTS]: () => ({ items: requests, nextCursor: null }),
     [`GET /v1/admin/users/${SARA}`]: () => detail(),
     [`GET /v1/admin/users/${SARA}/photos`]: () => ({ items: [] }),
     [LIST]: (call) => (call.query.cursor ? chatList([shadowed]) : chatList([open, held, gone], 'next-chats')),
@@ -170,9 +195,12 @@ describe('the Chats tab: the list', () => {
     expect(screen.queryByText('No conversation selected.')).toBeNull();
   });
 
-  it('says when messages not saved yet could not all be counted', async () => {
-    renderPanel(`/users/${SARA}?tab=chats`, chatsApi({ [LIST]: () => chatList([open], null, { streamComplete: false }) }));
+  it('says when messages not saved yet could not all be counted, and gives such a count as a lower bound', async () => {
+    const short = chatSummary('9005', { messages: { count: 3, more: false }, countComplete: false });
+    renderPanel(`/users/${SARA}?tab=chats`, chatsApi({ [LIST]: () => chatList([open, short], null, { streamComplete: false }) }));
     expect(await screen.findByText('Messages not saved yet could not all be counted.')).toBeTruthy();
+    expect(screen.getByText('At least 3 messages')).toBeTruthy();
+    expect(screen.getByText('12 messages')).toBeTruthy();
   });
 
   it('shows the empty list for a person without conversations whatever the URL names, and reads no conversation', async () => {
@@ -367,6 +395,29 @@ describe('the Chats tab: a conversation', () => {
 });
 
 describe('the Chats tab: a pure read', () => {
+  it('lists the message requests the person sent and received, with their state and text, and opens an accepted one’s conversation', async () => {
+    const api = chatsApi();
+    const user = userEvent.setup();
+    const { router } = renderPanel(`/users/${SARA}?tab=chats`, api);
+    const list = await screen.findByRole('list', { name: 'Message requests' });
+    const [accepted, declined] = within(list).getAllByRole('listitem');
+    expect(within(accepted!).getByText('Received')).toBeTruthy();
+    expect(within(accepted!).getByText('Accepted')).toBeTruthy();
+    expect(within(accepted!).getByText('Hi, I liked your photos')).toBeTruthy();
+    expect(within(declined!).getByText('Sent')).toBeTruthy();
+    expect(within(declined!).getByText('Declined')).toBeTruthy();
+    expect(within(declined!).getByRole('link', { name: 'Nina' }).getAttribute('href')).toBe('/users/ninaaaaaaaaaa?tab=chats');
+    expect(within(declined!).queryByRole('link', { name: 'Open the conversation' })).toBeNull();
+    await user.click(within(accepted!).getByRole('link', { name: 'Open the conversation' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?tab=chats&c=9001'));
+    expect(api.of(REQUESTS).every((call) => call.method === 'GET')).toBe(true);
+  });
+
+  it('says when the person has no message requests', async () => {
+    renderPanel(`/users/${SARA}?tab=chats`, chatsApi({ [REQUESTS]: () => ({ items: [], nextCursor: null }) }));
+    expect(await screen.findByText('No message requests.')).toBeTruthy();
+  });
+
   it('sends only GETs, and nothing on hover or focus', async () => {
     const api = chatsApi();
     const user = userEvent.setup();
@@ -390,7 +441,7 @@ describe('the Chats tab: a pure read', () => {
 describe('the Chats tab: Persian, phones', () => {
   it('speaks Persian right to left, in Persian digits, with the back arrow mirrored', async () => {
     renderPanel(`/users/${SARA}?tab=chats&c=9001`, chatsApi(), { locale: 'fa' });
-    expect(await screen.findByRole('tab', { name: 'چت‌ها' })).toBeTruthy();
+    expect(await screen.findByRole('tab', { name: 'گفتگوها' })).toBeTruthy();
     expect(document.documentElement.dir).toBe('rtl');
     // The messages are read once the list has answered.
     expect(await screen.findByText(wholeText('تماس صوتی از طرف Leo Brandt (۳:۱۲)'))).toBeTruthy();
@@ -400,7 +451,7 @@ describe('the Chats tab: Persian, phones', () => {
     // A Latin name in a Persian sentence is isolated.
     const line = within(pane).getByText(wholeText('Sara Ahmadi پیامی را پس گرفت'));
     expect(Array.from(line.querySelectorAll('bdi'), (bdi) => bdi.textContent)).toEqual(['Sara Ahmadi']);
-    const list = screen.getByRole('list', { name: 'چت‌ها' });
+    const list = screen.getByRole('list', { name: 'گفتگوها' });
     expect(list.textContent).toContain('۱۲ پیام');
     expect(list.textContent).toContain('بیش از ۱۰۰ پیام');
     const back = screen.getByRole('link', { name: 'همه‌ی گفتگوها' });

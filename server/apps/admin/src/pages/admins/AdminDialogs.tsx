@@ -1,15 +1,16 @@
-import { OWNER_ROLE, type AdminAccount } from '@app/shared';
+import { ADMIN_PASSWORD_MAX, ADMIN_PASSWORD_MIN, OWNER_ROLE, type AdminAccount } from '@app/shared';
 import { Check, Copy, KeyRound, TriangleAlert } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { Field } from '@/components/form/Field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
-import { roleName, validateNewAdmin, type NewAdminErrors, type NewAdminForm } from '@/lib/admins';
+import { permissionHint, permissionLabel, permissionRestricted, roleName, validateNewAdmin, type NewAdminErrors, type NewAdminForm } from '@/lib/admins';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
@@ -23,22 +24,51 @@ function RolePicker({ roles, value, onChange, invalid }: { roles: readonly Admin
     <div role="group" aria-label={t('admins.roles')} className={cn('grid gap-2 sm:grid-cols-2', invalid && 'rounded-lg ring-2 ring-destructive/40')}>
       {roles.map((role) => {
         const checked = value.includes(role.key);
+        const owner = role.key === OWNER_ROLE;
         return (
-          <label key={role.key} className={cn('flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm', checked && 'border-primary bg-primary/5')}>
-            <input
-              type="checkbox"
-              className="mt-0.5 size-4 accent-primary"
-              checked={checked}
-              onChange={(event) => onChange(event.target.checked ? [...value, role.key] : value.filter((key) => key !== role.key))}
-            />
-            <span className="grid gap-0.5">
-              <span className="font-medium">{roleName(role, role.key, locale)}</span>
-              <span className="text-xs text-muted-foreground">{role.key === OWNER_ROLE ? t('admins.role.owner') : t('admins.role.permissions', { count: role.permissions.length })}</span>
-            </span>
-          </label>
+          <div key={role.key} className={cn('grid gap-2 rounded-lg border p-3 text-sm', checked && 'border-primary bg-primary/5')}>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 accent-primary"
+                checked={checked}
+                onChange={(event) => onChange(event.target.checked ? [...value, role.key] : value.filter((key) => key !== role.key))}
+              />
+              <span className="grid gap-0.5">
+                <span className="font-medium">{roleName(role, role.key, locale, t)}</span>
+                {owner && <span className="text-xs text-muted-foreground">{t('admins.role.owner')}</span>}
+              </span>
+            </label>
+            {!owner && <RolePermissions permissions={role.permissions} />}
+          </div>
         );
       })}
     </div>
+  );
+}
+
+/** What a role grants, by the panel's names, folded (restricted ones marked). */
+function RolePermissions({ permissions }: { permissions: readonly string[] }) {
+  const { t } = useI18n();
+  return (
+    <details className="ps-7 text-xs text-muted-foreground">
+      <summary className="cursor-pointer select-none">{t('admins.role.permissions', { count: permissions.length })}</summary>
+      <ul className="mt-2 grid gap-1.5">
+        {permissions.map((permission) => (
+          <li key={permission} className="grid gap-0.5">
+            <span className="flex flex-wrap items-center gap-1.5 text-foreground">
+              {permissionLabel(permission, t)}
+              {permissionRestricted(permission) && (
+                <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
+                  {t('permission.restricted')}
+                </Badge>
+              )}
+            </span>
+            {permissionHint(permission, t) && <span>{permissionHint(permission, t)}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -68,13 +98,7 @@ export function CreateAdminDialog({ roles, onClose, onCreated }: { roles: readon
       onCreated(created.admin, created.initialPassword);
     } catch (error) {
       const failure = asApiError(error);
-      setNotice(
-        failure.code === 'conflict'
-          ? (t) => t('admins.error.emailTaken')
-          : failure.errors.some((issue) => issue.pointer === '/password')
-            ? (t) => t('admins.error.passwordShort', { min: 12 })
-            : (t) => problemText(failure, t),
-      );
+      setNotice((t, lang) => problemText(failure, t, lang));
     } finally {
       setSaving(false);
     }
@@ -107,7 +131,7 @@ export function CreateAdminDialog({ roles, onClose, onCreated }: { roles: readon
               label={t('admins.password')}
               optional={t('form.optional')}
               hint={t('admins.password.hint')}
-              error={errors.password ? t(errors.password, { min: 12 }) : undefined}
+              error={errors.password ? t(errors.password, { min: ADMIN_PASSWORD_MIN, max: ADMIN_PASSWORD_MAX }) : undefined}
             >
               {(control) => <Input {...control} type="password" dir="ltr" autoComplete="new-password" value={form.password} onChange={(event) => update({ password: event.target.value })} />}
             </Field>
@@ -162,7 +186,7 @@ export function EditAdminDialog({ admin, roles, onClose, onSaved }: { admin: Adm
       onSaved(saved);
     } catch (error) {
       const failure = asApiError(error);
-      setNotice(failure.code === 'conflict' ? (t) => t('admins.error.lastOwner') : (t) => problemText(failure, t));
+      setNotice((t, lang) => problemText(failure, t, lang));
     } finally {
       setSaving(false);
     }
@@ -229,7 +253,9 @@ export function InitialPasswordDialog({ admin, password, onClose }: { admin: Adm
             <KeyRound className="size-5" aria-hidden="true" />
           </div>
           <DialogTitle>{t('admins.password.once.title')}</DialogTitle>
-          <DialogDescription>{t('admins.password.once.body', { name: admin.displayName, email: admin.email })}</DialogDescription>
+          <DialogDescription>
+            <Worded text={(say) => say('admins.password.once.body', { name: admin.displayName, email: admin.email })} />
+          </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
           <code dir="ltr" className="flex min-h-10 flex-1 items-center rounded-md border bg-muted/50 px-3 font-mono text-sm break-all select-all">

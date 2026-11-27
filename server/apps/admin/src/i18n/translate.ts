@@ -3,6 +3,11 @@ import { messages, type MessageKey } from './messages';
 
 export type TranslateValues = Readonly<Record<string, string | number>>;
 
+/** Whether the panel has words for `key` (one built from a server value, `auditAction.${action}`). */
+export function hasMessage(key: string): key is MessageKey {
+  return Object.hasOwn(messages.en, key);
+}
+
 /** `t` of the panel: the string for a key in the panel's language, placeholders filled. */
 export type Translate = (key: MessageKey, values?: TranslateValues) => string;
 
@@ -42,7 +47,9 @@ export function isolateValues(values: TranslateValues): TranslateValues {
  * without grouping (a counter, a version, a count).
  */
 export function translate(locale: Locale, key: MessageKey, values: TranslateValues = {}, appName = ''): string {
-  const template = messages[locale][key] || messages.en[key];
+  const template: string | undefined = messages[locale][key] || messages.en[key];
+  // A key built from a server value this build has no words for (a newer API): the key, never a crash.
+  if (template === undefined) return key;
   const strings: Record<string, string> = { appName };
   let digits: Intl.NumberFormat | undefined;
   for (const [name, value] of Object.entries(values)) {

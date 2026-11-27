@@ -125,6 +125,9 @@ describe('mergeMessagePage', () => {
     // The stored probe's answer stands.
     const probed = mergeMessagePage([storedRow(target, { unsendId: unsend })], [], { before: null, limit: 10, cutAt: null });
     expect(probed.rows[0]?.unsendId).toBe(unsend);
+    // On an older page the unsend is above the cursor (not among the page's pending rows): the read's unsends still mark it.
+    const older = mergeMessagePage([storedRow(target, { senderId: OTHER })], [], { before: idAt(35), limit: 10, cutAt: null, unsends: [pending[0]!] });
+    expect(older.rows.find((r) => r.id === target)?.unsendId).toBe(unsend);
   });
 });
 
@@ -161,13 +164,16 @@ describe('adminMessageOf', () => {
 });
 
 describe('chatSummaryOf', () => {
-  const options = { unmatchedDays: 7, nowMs: NOW };
+  const options = { unmatchedDays: 7, nowMs: NOW, streamComplete: true };
 
   it('counts pending messages not stored yet, and dates the last activity by either', () => {
     const last = idAt(60);
     const newer = [pendingRow(idAt(30)), pendingRow(idAt(20), { kind: 7, refId: last }), pendingRow(idAt(10))];
     const summary = chatSummaryOf(app, chatRow({ lastId: last, count: 99, storedSince: [last] }), [pendingRow(last), ...newer], FULL_USER_SCOPE, options);
     expect(adminChatSummarySchema.parse(summary).messages).toEqual({ count: 100, more: true });
+    expect(summary.countComplete).toBe(true);
+    // A read that stopped before every message not stored yet: the count is a lower bound, and says so.
+    expect(chatSummaryOf(app, chatRow({ count: 3 }), [], FULL_USER_SCOPE, { ...options, streamComplete: false })).toMatchObject({ messages: { count: 3, more: false }, countComplete: false });
     expect(summary.lastActivityAt).toBe(new Date(idTime(newer.at(-1)!.id)).toISOString());
     expect(summary.other.id).toBe(publicIds.user.encode(OTHER));
     expect(summary.startedAt).toBe(new Date(idTime(MATCH)).toISOString());

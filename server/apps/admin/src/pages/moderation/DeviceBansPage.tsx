@@ -1,4 +1,9 @@
-import type { AdminDeviceBan, DeviceBanKind } from "@app/shared";
+import {
+  ADMIN_PHONE_LOOKUPS_PER_HOUR,
+  PENALTY_MAX_DAYS,
+  type AdminDeviceBan,
+  type DeviceBanKind,
+} from "@app/shared";
 import {
   MoreHorizontal,
   Plus,
@@ -9,6 +14,7 @@ import {
 } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
+import { DayField } from "@/components/form/DayField";
 import { Field } from "@/components/form/Field";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadError, TableSkeleton } from "@/components/QueryState";
@@ -45,9 +51,10 @@ import { UserRef } from "@/components/UserRef";
 import type { MessageKey } from "@/i18n/messages";
 import { useI18n } from "@/i18n/useI18n";
 import { apiRequest } from "@/lib/api";
-import { dayInPanelCalendar, formatDate } from "@/lib/format";
+import { asciiDigits, formatDate, todayDay } from "@/lib/format";
 import {
   banExpiry,
+  banReasonText,
   banKinds,
   isBanKind,
   lacksCountryCode,
@@ -116,7 +123,17 @@ export function DeviceBansPage() {
       const problem = asApiError(failure);
       if (problem.errors[0]?.code === "phone_invalid")
         setPhoneError("deviceBans.error.phone");
-      else showToast((t) => problemText(problem, t), "error", 6_000);
+      else if (problem.code === "rate_limited")
+        showToast(
+          (t) =>
+            t("deviceBans.error.lookupLimit", {
+              count: ADMIN_PHONE_LOOKUPS_PER_HOUR,
+              minutes: Math.max(1, Math.ceil((problem.retryAfterSeconds ?? 60) / 60)),
+            }),
+          "error",
+          6_000,
+        );
+      else showToast((t, lang) => problemText(problem, t, lang), "error", 6_000);
     } finally {
       setSearching(false);
     }
@@ -143,7 +160,7 @@ export function DeviceBansPage() {
       showToast((t) => t("deviceBans.removed"));
       setRemoving(null);
     } catch (failure) {
-      showToast((t) => problemText(asApiError(failure), t), "error", 6_000);
+      showToast((t, lang) => problemText(asApiError(failure), t, lang), "error", 6_000);
     } finally {
       setBusy(false);
     }
@@ -336,7 +353,7 @@ function BanSummary({ ban }: { ban: AdminDeviceBan }) {
         )}
       </span>
       {ban.user && <UserRef user={ban.user} link={false} wrap />}
-      <span className="bidi-plain text-muted-foreground">{ban.reason}</span>
+      <span className="bidi-plain text-muted-foreground">{banReasonText(ban, t)}</span>
     </span>
   );
 }
@@ -419,8 +436,8 @@ function BanTable({
               )}
             </TableCell>
             <TableCell className="hidden max-w-64 text-sm lg:table-cell">
-              <span className="bidi-plain line-clamp-2" title={ban.reason}>
-                {ban.reason}
+              <span className="bidi-plain line-clamp-2" title={banReasonText(ban, t)}>
+                {banReasonText(ban, t)}
               </span>
             </TableCell>
             <TableCell className="hidden text-sm sm:table-cell">
@@ -491,7 +508,7 @@ function NewBanDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { me } = useSession();
   const id = useId();
   const [from, setFrom] = useState<"user" | "phone">("user");
@@ -502,11 +519,14 @@ function NewBanDialog({
   const [date, setDate] = useState("");
   const [reason, setReason] = useState("");
   const [problems, setProblems] = useState<
-    Partial<Record<"user" | "kinds" | "phone" | "expiry" | "reason", string>>
+    // Keys, worded when drawn (a language switch words them again).
+    Partial<Record<"user" | "kinds" | "phone" | "expiry" | "reason", MessageKey>>
   >({});
+  const say = (key: MessageKey) => t(key, { years: Math.floor(PENALTY_MAX_DAYS / 365) });
   const [busy, setBusy] = useState(false);
   // The person a public id names, shown before their devices are banned (for a role that may read people).
-  const publicId = user.trim();
+  // Digits 2-7 typed on a Persian keyboard count.
+  const publicId = asciiDigits(user.trim());
   const wellFormed = /^[a-z2-7]{13}$/.test(publicId);
   const preview = from === "user" && wellFormed && can(me, "users.read");
   const target = useUser(publicId, preview);
@@ -518,14 +538,14 @@ function NewBanDialog({
     event.preventDefault();
     const found: typeof problems = {};
     const end = banExpiry(expiry, date, Date.now());
-    if (from === "user" && !wellFormed) found.user = t("deviceBans.error.user");
+    if (from === "user" && !wellFormed) found.user = "deviceBans.error.user";
     if (from === "user" && kinds.length === 0)
-      found.kinds = t("deviceBans.error.kinds");
-    if (from === "phone" && !phone.trim()) found.phone = t("form.required");
+      found.kinds = "deviceBans.error.kinds";
+    if (from === "phone" && !phone.trim()) found.phone = "form.required";
     else if (from === "phone" && lacksCountryCode(phone))
-      found.phone = t("deviceBans.error.phone");
-    if (end.error) found.expiry = t(end.error);
-    if (!reason.trim()) found.reason = t("form.required");
+      found.phone = "deviceBans.error.phone";
+    if (end.error) found.expiry = end.error;
+    if (!reason.trim()) found.reason = "form.required";
     setProblems(found);
     if (Object.keys(found).length > 0 || busy || (from === "user" && waiting))
       return;
@@ -539,7 +559,7 @@ function NewBanDialog({
         from === "user"
           ? {
               from,
-              user: user.trim(),
+              user: publicId,
               kinds: banKinds.filter((k) => kinds.includes(k)),
               ...common,
             }
@@ -550,14 +570,16 @@ function NewBanDialog({
       const problem = asApiError(failure);
       const code = problem.errors[0]?.code;
       if (problem.code === "not_found")
-        setProblems({ user: t("deviceBans.error.noUser") });
+        setProblems({ user: "deviceBans.error.noUser" });
       else if (code === "nothing_to_ban")
-        setProblems({ kinds: t("deviceBans.error.nothing") });
+        setProblems({ kinds: "deviceBans.error.nothing" });
       else if (code === "phone_invalid")
-        setProblems({ phone: t("deviceBans.error.phone") });
-      else if (code === "ends_in_past" || code === "ends_too_far")
-        setProblems({ expiry: t("action.error.untilPast") });
-      else showToast((t) => problemText(problem, t), "error", 6_000);
+        setProblems({ phone: "deviceBans.error.phone" });
+      else if (code === "ends_in_past")
+        setProblems({ expiry: "action.error.untilPast" });
+      else if (code === "ends_too_far")
+        setProblems({ expiry: "action.error.untilFar" });
+      else showToast((t, lang) => problemText(problem, t, lang), "error", 6_000);
     } finally {
       setBusy(false);
     }
@@ -596,7 +618,7 @@ function NewBanDialog({
                 id={`${id}-user`}
                 label={t("deviceBans.field.user")}
                 error={
-                  problems.user ??
+                  (problems.user && say(problems.user)) ??
                   (missing ? t("deviceBans.error.noUser") : undefined)
                 }
               >
@@ -666,7 +688,7 @@ function NewBanDialog({
                     id={`${id}-kinds-error`}
                     className="text-sm text-destructive"
                   >
-                    {problems.kinds}
+                    {say(problems.kinds)}
                   </p>
                 )}
               </fieldset>
@@ -675,7 +697,7 @@ function NewBanDialog({
             <Field
               id={`${id}-phone`}
               label={t("deviceBans.field.phone")}
-              error={problems.phone}
+              error={problems.phone && say(problems.phone)}
             >
               {(control) => (
                 <Input
@@ -696,7 +718,7 @@ function NewBanDialog({
             <Field
               id={`${id}-expiry`}
               label={t("deviceBans.field.expires")}
-              error={expiry === "date" ? undefined : problems.expiry}
+              error={expiry === "date" ? undefined : problems.expiry && say(problems.expiry)}
             >
               {(control) => (
                 <NativeSelect
@@ -717,16 +739,14 @@ function NewBanDialog({
               <Field
                 id={`${id}-date`}
                 label={t("action.date")}
-                hint={dayInPanelCalendar(date, locale)}
-                error={problems.expiry}
+                error={problems.expiry && say(problems.expiry)}
               >
                 {(control) => (
-                  <Input
+                  <DayField
                     {...control}
-                    type="date"
-                    dir="ltr"
                     value={date}
-                    onChange={(event) => setDate(event.target.value)}
+                    min={todayDay()}
+                    onChange={setDate}
                   />
                 )}
               </Field>
@@ -735,7 +755,7 @@ function NewBanDialog({
           <Field
             id={`${id}-reason`}
             label={t("deviceBans.field.reason")}
-            error={problems.reason}
+            error={problems.reason && say(problems.reason)}
           >
             {(control) => (
               <Textarea

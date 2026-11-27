@@ -1,8 +1,9 @@
-import type { AuditAction, AuditEntry, AuditTarget } from '@app/shared';
+import { AUDIT_EXPORTS_PER_HOUR, type AuditAction, type AuditEntry, type AuditTarget } from '@app/shared';
 import { ChevronDown, ChevronUp, Download, ScrollText } from 'lucide-react';
 import { Fragment, useId, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { DetailJson } from '@/components/DetailJson';
+import { DayField } from '@/components/form/DayField';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { LoadError, TableSkeleton } from '@/components/QueryState';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,11 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { MessageKey } from '@/i18n/messages';
+import { isolate } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
-import { auditActionGroups, auditActionLabel, auditFiltered, auditFiltersOf, auditParamsOf, auditQueryOf, auditRequestOf, auditTargetChoices, auditTargetValid, emptyAuditFilters, exportName, type AuditFilterState } from '@/lib/audit';
+import { auditActionGroups, auditActionLabel, auditFiltered, auditTargetLabel, auditFiltersOf, auditParamsOf, auditQueryOf, auditRequestOf, auditTargetChoices, auditTargetValid, emptyAuditFilters, exportName, type AuditFilterState } from '@/lib/audit';
 import { apiDownload, saveBlob } from '@/lib/download';
-import { dayInPanelCalendar, formatDateTime } from '@/lib/format';
+import { asciiDigits, formatDateTime } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { useAudit, useAuditAdmins } from '@/lib/queries';
@@ -44,7 +46,14 @@ export function AuditPage() {
       saveBlob(blob, exportName(filters));
     } catch (failure) {
       const problem = asApiError(failure);
-      showToast((t) => problem.errors[0]?.code === 'too_many_rows' ? t('audit.export.tooMany') : problemText(problem, t), 'error', 6_000);
+      showToast(
+        (t, lang) =>
+          problem.code === 'rate_limited'
+            ? t('audit.export.limit', { count: AUDIT_EXPORTS_PER_HOUR, minutes: Math.max(1, Math.ceil((problem.retryAfterSeconds ?? 60) / 60)) })
+            : problemText(problem, t, lang),
+        'error',
+        6_000,
+      );
     } finally {
       setExporting(false);
     }
@@ -56,7 +65,7 @@ export function AuditPage() {
         icon={ScrollText}
         title={t('audit.title')}
         actions={
-          <Button variant="outline" onClick={() => void exportCsv()} disabled={exporting}>
+          <Button variant="outline" onClick={() => void exportCsv()} disabled={exporting} title={t('audit.export.hint')}>
             <Download aria-hidden="true" />
             {exporting ? t('audit.export.busy') : t('audit.export')}
           </Button>
@@ -88,22 +97,34 @@ export function AuditPage() {
 }
 
 function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (filters: AuditFilterState) => void }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const id = useId();
   const admins = useAuditAdmins();
   const [draft, setDraft] = useState<AuditFilterState>(initial);
   const [targetError, setTargetError] = useState<MessageKey | undefined>();
-  const set = (patch: Partial<AuditFilterState>) => setDraft((current) => ({ ...current, ...patch }));
-  const fromDay = dayInPanelCalendar(draft.from, locale);
-  const toDay = dayInPanelCalendar(draft.to, locale);
-
-  function apply(event: FormEvent) {
+  const [rangeError, setRangeError] = useState(false);
+  const set = (patch: Partial<AuditFilterState>) => {
+    setDraft((current) => ({ ...current, ...patch }));
+    if (patch.from !== undefined || patch.to !== undefined) setRangeError(false);
+  };
+  function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const raw = draft.targetType ? draft.target.trim() : '';
+    // Digits typed on a Persian keyboard count.
+    const raw = draft.targetType ? asciiDigits(draft.target.trim()) : '';
     const target = draft.targetType === 'user' ? raw.toLowerCase() : raw;
     // A target that cannot name a row stays in the field: never in the address or a request.
     if (target && !auditTargetValid(draft.targetType, target)) {
-      setTargetError(draft.targetType === 'user' ? 'deviceBans.error.user' : 'audit.error.target');
+      setTargetError(draft.targetType === 'user' ? 'audit.error.user' : 'audit.error.target');
+      return;
+    }
+    // An end before the start would be refused by the API: said here, at the field.
+    if (draft.from && draft.to && draft.to < draft.from) {
+      setRangeError(true);
+      return;
+    }
+    // A day field holding text that is not a day (or a day out of range) keeps the filter as it was: never a wider list.
+    if (!event.currentTarget.checkValidity()) {
+      event.currentTarget.reportValidity();
       return;
     }
     onApply({ ...draft, target });
@@ -119,7 +140,7 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
           <option value="">{t('audit.allAdmins')}</option>
           {admins.data?.items.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.disabled ? t('audit.adminDisabled', { name: a.displayName }) : a.displayName}
+              {a.disabled ? t('audit.adminDisabled', { name: isolate(a.displayName) }) : a.displayName}
             </option>
           ))}
         </NativeSelect>
@@ -194,38 +215,23 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
           <Label htmlFor={`${id}-from`} className="text-xs text-muted-foreground">
             {t('audit.from')}
           </Label>
-          <Input
-            id={`${id}-from`}
-            type="date"
-            dir="ltr"
-            value={draft.from}
-            max={draft.to || undefined}
-            aria-describedby={fromDay ? `${id}-from-day` : undefined}
-            onChange={(event) => set({ from: event.target.value })}
-          />
-          {/* The day in the panel's calendar under the browser's (Gregorian) picker. */}
-          {fromDay && (
-            <p id={`${id}-from-day`} className="text-xs text-muted-foreground">
-              {fromDay}
-            </p>
-          )}
+          <DayField id={`${id}-from`} value={draft.from} max={draft.to || undefined} onChange={(from) => set({ from })} />
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor={`${id}-to`} className="text-xs text-muted-foreground">
             {t('audit.to')}
           </Label>
-          <Input
+          <DayField
             id={`${id}-to`}
-            type="date"
-            dir="ltr"
             value={draft.to}
             min={draft.from || undefined}
-            aria-describedby={toDay ? `${id}-to-day` : undefined}
-            onChange={(event) => set({ to: event.target.value })}
+            aria-invalid={rangeError}
+            aria-describedby={rangeError ? `${id}-range-error` : undefined}
+            onChange={(to) => set({ to })}
           />
-          {toDay && (
-            <p id={`${id}-to-day`} className="text-xs text-muted-foreground">
-              {toDay}
+          {rangeError && (
+            <p id={`${id}-range-error`} className="text-xs text-destructive">
+              {t('audit.error.range')}
             </p>
           )}
         </div>
@@ -245,7 +251,7 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
 function TargetCell({ entry }: { entry: AuditEntry }) {
   const { t } = useI18n();
   const admins = useAuditAdmins(entry.targetType === 'admin');
-  const type = t(`auditTarget.${entry.targetType}` as MessageKey);
+  const type = auditTargetLabel(entry.targetType, t);
   if (entry.targetType === 'none') return <span className="text-muted-foreground">{t('common.none')}</span>;
   // An admin is named (the filter's list is loaded already); the id stays on hover.
   const adminName = entry.targetType === 'admin' ? admins.data?.items.find((a) => a.id === entry.targetRef)?.displayName : undefined;
@@ -253,7 +259,7 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
     return (
       <span className="grid min-w-0">
         <span className="text-sm">{type}</span>
-        <span dir="auto" className="truncate text-xs text-muted-foreground" title={`${adminName} · ${entry.targetRef ?? ''}`}>
+        <span dir="auto" className="truncate text-xs text-muted-foreground" title={[adminName, entry.targetRef].filter(Boolean).join(' · ')}>
           {adminName}
         </span>
       </span>
@@ -350,7 +356,14 @@ function AuditTable({ rows }: { rows: readonly AuditEntry[] }) {
                     <div className="mb-3 md:hidden">
                       <TargetCell entry={entry} />
                     </div>
-                    {hasDetail ? <DetailJson value={entry.detail} /> : <p className="text-sm text-muted-foreground">{t('audit.noDetail')}</p>}
+                    {hasDetail ? (
+                      <div className="grid gap-1">
+                        <p className="text-xs text-muted-foreground">{t('audit.detailRaw')}</p>
+                        <DetailJson value={entry.detail} />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{t('audit.noDetail')}</p>
+                    )}
                   </TableCell>
                 </TableRow>
               )}

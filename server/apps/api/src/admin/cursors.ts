@@ -29,7 +29,4 @@ export function pageOf<R, T>(rows: readonly R[], limit: number, map: (row: R) =>
   return { items: page.map(map), nextCursor: rows.length > limit && last !== undefined ? encodeCursor(keyOf(last)) : null };
 }
 
-/** A 422 for one field of the body. */
-export function fieldInvalid(pointer: string, code: string, message: string): HttpProblem {
-  return new HttpProblem('field_invalid', { detail: message, errors: [{ in: 'body', pointer, code, message }] });
-}
+export { fieldInvalid } from './problems.js';

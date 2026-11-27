@@ -95,7 +95,7 @@ describe('the admins page', () => {
     const api = fakeApi({
       'GET /v1/admin/admins': () => ({ items: [self, account('2')], nextCursor: null }),
       'GET /v1/admin/roles': () => roles,
-      'PATCH /v1/admin/admins/2': () => problem(409, 'conflict', { detail: 'At least one enabled owner must remain.' }),
+      'PATCH /v1/admin/admins/2': () => problem(409, 'conflict', { detail: 'At least one enabled owner must remain.', reason: 'last_owner' }),
       'POST /v1/admin/admins/2/reset-totp': () => account('2', { totpEnabled: false }),
     });
     const user = userEvent.setup();

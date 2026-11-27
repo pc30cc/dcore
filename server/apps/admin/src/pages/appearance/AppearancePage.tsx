@@ -92,7 +92,7 @@ function AppearanceEditor({ view }: { view: AdminAppearance }) {
         return;
       }
       const known = failure.code === 'field_invalid' ? appearanceServerProblem(failure.errors) : null;
-      setNotice(known ? (t) => t(known) : (t) => problemText(failure, t));
+      setNotice(known ? (t) => t(known) : (t, lang) => problemText(failure, t, lang));
     } finally {
       setSaving(false);
     }

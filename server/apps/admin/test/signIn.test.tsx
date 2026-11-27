@@ -64,6 +64,19 @@ describe('sign-in', () => {
     await screen.findByText(/The e-mail or password is not right, or the account is locked for 15 minutes/);
   });
 
+  it('keeps the password’s eye on the side the field leaves free, in a right-to-left page too', async () => {
+    const api = fakeApi({ 'POST /v1/admin/auth/refresh': () => problem(401, 'refresh_invalid') });
+    renderPanel('/login', api, { locale: 'fa' });
+    const field = await screen.findByLabelText('رمز عبور', { selector: 'input' });
+    const eye = screen.getByRole('button', { name: 'نمایش رمز' });
+    expect(document.documentElement.dir).toBe('rtl');
+    // pe-10 on the field and end-1 on the button resolve against one direction: the box that holds both.
+    expect(field.className).toContain('pe-10');
+    expect(eye.className).toContain('end-1');
+    expect(field.parentElement?.closest('[dir]')).toBe(eye.closest('[dir]'));
+    expect(eye.closest('[dir]')?.getAttribute('dir')).toBe('ltr');
+  });
+
   it('says how many codes are left, and goes back to the password when the account locks', async () => {
     let codes = 0;
     const api = fakeApi({

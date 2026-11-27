@@ -40,12 +40,12 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
-import { fieldInvalid } from '../admin/cursors.js';
 import { takeAdminLimit } from '../admin/limits.js';
 import { adminModeration, afterCommit, publishToUser, withIdLease, worst } from '../admin/effects.js';
 import { englishReason } from '../admin/reasons.js';
 import { accountStateOf as stateOf, actionOf, noSuchUser, personLocale, readUserParam, removedBanAuditOf, userDetailOf, userReadScope } from '../admin/refs.js';
 import { scrubbed } from '../lib/dbErrors.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { endRealtime } from '../realtime/end.js';
 import { adminDeleteAndFinish } from '../services/deletion.js';
@@ -397,7 +397,7 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
       const outcome = await adminWrite(app, request, async (tx, trail) => {
         const renamed = await adminRenameUser(tx, { userId, version, displayName, reasonCode, reasonText: englishReason(cfg, 'text', reasonCode), actionId, adminId });
         if (renamed.outcome === 'missing') throw noSuchUser();
-        if (renamed.outcome === 'stale') throw new HttpProblem('conflict', { detail: 'The profile changed; reload it.' });
+        if (renamed.outcome === 'stale') throw adminConflict('stale', 'The profile changed; reload it.');
         // Thrown inside the transaction: the rename and its record roll back.
         if (renamed.outcome === 'renamed' && cfg.bannedTerms.severity(displayName, 'name', renamed.view.locale) >= 2) throw refused();
         if (renamed.outcome === 'unchanged') trail.unchanged();

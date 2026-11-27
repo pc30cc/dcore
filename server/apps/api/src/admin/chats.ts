@@ -10,20 +10,29 @@ import { messageFlagNames, userRefOf, type UserReadScope } from './refs.js';
  * write-behind stream, merged with the stored page, and both mapped to the
  * admin wire.
  *
- * The stream read sends only `GET` (the flush watermark) and `XREVRANGE`
- * (`wb:msg` above it): no consumer group command, no acknowledgement, no
- * script, no write. Nothing here touches the conversation's list state,
- * read or delivered pointers, unread counts, caches or realtime channels.
- * Message text never reaches a log line: a malformed entry is skipped
- * without logging it, and a failed read logs the error only.
+ * The stream read sends only `GET` (the flush watermark), `XREVRANGE`
+ * (`wb:msg` above it) and `XRANGE` of single entries: no consumer group
+ * command, no acknowledgement, no script, no write. Nothing here touches
+ * the conversation's list state, read or delivered pointers, unread counts,
+ * caches or realtime channels. Message text never reaches a log line: a
+ * malformed entry is skipped without logging it, and a failed read logs the
+ * error only.
  *
  * What bounds a read: every entry not yet durable has an id at or above the
- * watermark, so a page whose cursor is at or below it reads no stream; a
- * page with a cursor reads only the entries that can hold its messages (up
- * to the cursor's time plus the writer's margin); and one read takes at
- * most `scanMax` entries (`hardMax` to get below a cursor). When it stops
- * early, the page stops where it did (`cutAt`) and the next page goes on
- * from there, so nothing is skipped.
+ * watermark; a page with a cursor needs only the entries that can hold its
+ * messages (up to the cursor's time plus the writer's margin), the unsends
+ * of the conversation wherever they are (their targets may be on any page),
+ * and one read takes at most `scanMax` entries (`hardMax` to get below a
+ * cursor). When it stops early, the page stops where it did (`cutAt`).
+ *
+ * The pages of one conversation go on from each other's reads: the cursor
+ * carries where the last read stopped, the newest entry the reads saw, and
+ * the entries of the conversation they read but did not show yet (held: the
+ * messages below the next cursor, and the unsends of those). The next page
+ * reads the held entries one by one, the entries newer than the newest one
+ * seen, and below the stop: never again the window the last read covered.
+ * A cursor without that place (too many held entries to carry, a first
+ * read, a read that gave up) reads the window again from the cursor's time.
  */
 
 export interface StreamReadLimits {
@@ -52,12 +61,28 @@ const DAY_MS = 86_400_000;
 /** How a read of the stream went (the wire's `stream`). */
 export type StreamRead = 'complete' | 'backlog' | 'partial';
 
+/** Where the reads of a conversation's pages stand in the stream (carried by the page cursor). */
+export interface StreamPlace {
+  /** The entry the last read stopped at: the next one reads below it. Null: the reads reached the watermark. */
+  stop: string | null;
+  /** The newest entry the reads saw: only entries above it are new to the next page. */
+  top: string;
+  /** Entries of the conversation read and not shown yet (stream ids). */
+  held: readonly string[];
+}
+
 export interface PendingMessages {
-  /** Per conversation, oldest first: the messages not yet durable (at or above the watermark). */
+  /** Per conversation, oldest first: the messages not yet durable (at or above the watermark), below the cursor. */
   byMatch: Map<string, StoredMessage[]>;
+  /** With conversations named: their unsends not yet durable, wherever they are (above the cursor too), oldest first. */
+  unsends: StoredMessage[];
+  /** With conversations named: the stream entry of each message kept (in `byMatch` or `unsends`), by message id. */
+  entryOf: Map<string, string>;
   read: StreamRead;
   /** With `backlog`: every message not yet durable at or above this id was read; below it, not all. */
   cutAt: string | null;
+  /** Where this read leaves the stream for the next page (without its held entries); null: the next page reads the window again. */
+  place: Omit<StreamPlace, 'held'> | null;
 }
 
 export interface PendingQuery {
@@ -65,6 +90,8 @@ export interface PendingQuery {
   matchIds: ReadonlySet<string> | null;
   /** Only messages below this id (a page's cursor); null: no bound. */
   before?: string | null;
+  /** With a cursor: where the previous page's read stood. */
+  resume?: StreamPlace | null;
 }
 
 const byId = (a: { id: string }, b: { id: string }) => {
@@ -90,17 +117,21 @@ export function lowestId(messages: Iterable<{ id: string }>): string | null {
   return low === null ? null : low.toString();
 }
 
+type Entry = [string, string[]];
+
 /**
  * The messages in `wb:msg` that PostgreSQL may not have yet. Every entry
  * not yet written has a stream time of at least the watermark's time plus
- * the writer's margin, so the scan starts at the watermark's time; entries
+ * the writer's margin, so a scan starts at the watermark's time; entries
  * below the watermark (durable) are left to the database read. Without a
  * watermark (no writer ran since Valkey was emptied) the whole stream is
  * read, up to the limits.
  *
  * Stopping early at the oldest entry read (time T), every entry not read
  * has a stream time of at most T, and so (its id minted before its XADD,
- * on clocks within `clockSlackMs`) an id below `cutAt`.
+ * on clocks within `clockSlackMs`) an id below `cutAt`. An unsend has an id
+ * above its target's, so the unsend of any message at or above `cutAt` was
+ * read too.
  */
 export async function pendingMessagesOf(
   app: { redis: Redis; keys: KeyBuilder },
@@ -110,66 +141,147 @@ export async function pendingMessagesOf(
 ): Promise<PendingMessages> {
   const limits = { ...STREAM_READ_LIMITS, ...overrides };
   const byMatch = new Map<string, StoredMessage[]>();
+  const unsends: StoredMessage[] = [];
+  const entryOf = new Map<string, string>();
   const { matchIds } = query;
-  if (matchIds !== null && matchIds.size === 0) return { byMatch, read: 'complete', cutAt: null };
+  const named = matchIds !== null;
+  if (named && matchIds.size === 0) return { byMatch, unsends, entryOf, read: 'complete', cutAt: null, place: null };
   const bound = query.before ? BigInt(query.before) : null;
+  const resume = bound === null ? null : (query.resume ?? null);
   let read: StreamRead = 'complete';
   let cutAt: string | null = null;
+  let stop: string | null = null;
+  let top: string | null = resume?.top ?? null;
+  const seen = new Set<string>();
   try {
     const watermark = await readWatermark(app.redis, app.keys, 'msg');
-    // Every message not yet durable is at or above the watermark: none below this page's cursor.
-    if (bound !== null && watermark !== null && bound <= watermark) return { byMatch, read, cutAt };
-    const start = watermark === null || watermark <= 0n ? '-' : String(idTime(watermark).getTime());
-    // A message below the cursor was appended at most the mint margin after the cursor's time.
-    let end = bound === null ? '+' : String(idTime(bound).getTime() + limits.mintMarginMs);
+    const floor = watermark === null || watermark <= 0n ? '-' : String(idTime(watermark).getTime());
     const stream = app.keys.stream('msg');
-    let scanned = 0;
-    for (;;) {
-      const entries = (await app.redis.xrevrange(stream, end, start, 'COUNT', limits.pageSize)) as [string, string[]][];
-      for (const [, flat] of entries) {
-        // The conversation first: the other conversations' entries are never built into records.
-        if (matchIds !== null && !matchIds.has(fieldOf(flat, 'm') ?? '')) continue;
-        const fields: Record<string, string> = {};
-        for (let i = 0; i + 1 < flat.length; i += 2) fields[flat[i]!] = flat[i + 1]!;
-        let message: StoredMessage;
-        try {
-          message = parseMessageEntry(fields);
-        } catch {
-          // A malformed entry is the writer's to dead-letter; its fields are never logged here.
-          continue;
-        }
-        const n = BigInt(message.id);
-        if ((watermark !== null && n < watermark) || (bound !== null && n >= bound)) continue;
-        if (matchIds === null) message.body = null;
-        const list = byMatch.get(message.matchId);
-        if (list) list.push(message);
-        else byMatch.set(message.matchId, [message]);
+
+    const keep = ([entryId, flat]: Entry) => {
+      if (seen.has(entryId)) return;
+      seen.add(entryId);
+      if (top === null || compareEntries(entryId, top) > 0) top = entryId;
+      // The conversation first: the other conversations' entries are never built into records.
+      if (named && !matchIds.has(fieldOf(flat, 'm') ?? '')) return;
+      const fields: Record<string, string> = {};
+      for (let i = 0; i + 1 < flat.length; i += 2) fields[flat[i]!] = flat[i + 1]!;
+      let message: StoredMessage;
+      try {
+        message = parseMessageEntry(fields);
+      } catch {
+        // A malformed entry is the writer's to dead-letter; its fields are never logged here.
+        return;
       }
-      scanned += entries.length;
-      if (entries.length < limits.pageSize) break;
-      const last = entries.at(-1)![0];
-      if (scanned >= limits.scanMax) {
-        const cut = idFloor(streamMs(last) + limits.clockSlackMs + 1);
+      const n = BigInt(message.id);
+      if (watermark !== null && n < watermark) return;
+      if (!named) message.body = null;
+      else if (message.kind === KIND.unsend) {
+        unsends.push(message);
+        entryOf.set(message.id, entryId);
+      }
+      if (bound !== null && n >= bound) return;
+      if (named) entryOf.set(message.id, entryId);
+      const list = byMatch.get(message.matchId);
+      if (list) list.push(message);
+      else byMatch.set(message.matchId, [message]);
+    };
+
+    /**
+     * Entries from `end` down to `start`, a page at a time, each kept; stops
+     * when `enough` says so after a page. Returns the entries it took and
+     * whether it reached `start` (read every entry in the range).
+     */
+    const scan = async (end: string, start: string, enough: (taken: number, last: string) => boolean): Promise<{ taken: number; whole: boolean; last: string | null }> => {
+      let taken = 0;
+      let last: string | null = null;
+      for (;;) {
+        const entries = (await app.redis.xrevrange(stream, end, start, 'COUNT', limits.pageSize)) as Entry[];
+        for (const entry of entries) keep(entry);
+        taken += entries.length;
+        if (entries.length < limits.pageSize) return { taken, whole: true, last: entries.at(-1)?.[0] ?? last };
+        last = entries.at(-1)![0];
+        if (enough(taken, last)) return { taken, whole: false, last };
+        // The next page ends just before the oldest entry of this one.
+        end = `(${last}`;
+      }
+    };
+    const cutOf = (last: string) => idFloor(streamMs(last) + limits.clockSlackMs + 1);
+    /** The entries above a scanned range (unsends whose targets may be below it): `scanMax` at most; false when there were more. */
+    const above = async (start: string): Promise<boolean> => (await scan('+', start, (taken) => taken >= limits.scanMax)).whole;
+
+    if (resume !== null) {
+      // The held entries, one by one (gone: stored and trimmed since, so in the database's answer).
+      if (resume.held.length > 0) {
+        const batch = app.redis.pipeline();
+        for (const id of resume.held) batch.xrange(stream, id, id);
+        for (const [error, entries] of (await batch.exec()) ?? []) {
+          if (error) throw error;
+          for (const entry of (entries as Entry[] | null) ?? []) keep(entry);
+        }
+      }
+      // What came after the last read, then below where it stopped (nothing there once durable below this cursor).
+      if (!(await above(`(${resume.top}`))) read = 'partial';
+      const below = resume.stop !== null && !(watermark !== null && bound! <= watermark);
+      if (below && read === 'complete') {
+        const fresh = await scan(`(${resume.stop}`, floor, (taken) => taken >= limits.scanMax);
+        if (!fresh.whole) {
+          const cut = cutOf(fresh.last!);
+          read = 'backlog';
+          cutAt = (cut < bound! ? cut : bound!).toString();
+          stop = fresh.last;
+        }
+      }
+    } else if (bound !== null && watermark !== null && bound <= watermark) {
+      // Every message not yet durable is at or above the watermark: none below this page's cursor, but unsends of its messages may be.
+      if (!(await above(floor))) read = 'partial';
+    } else {
+      // A message below the cursor was appended at most the mint margin after the cursor's time.
+      const endMs = bound === null ? null : idTime(bound).getTime() + limits.mintMarginMs;
+      const main = await scan(endMs === null ? '+' : String(endMs), floor, (taken, last) => {
+        if (taken < limits.scanMax) return false;
         // Stopping here leaves the next page a cursor below this one's.
+        if (bound === null || cutOf(last) < bound) return true;
+        return taken >= limits.hardMax;
+      });
+      if (!main.whole) {
+        const cut = cutOf(main.last!);
         if (bound === null || cut < bound) {
           read = 'backlog';
           cutAt = cut.toString();
-          break;
-        }
-        if (scanned >= limits.hardMax) {
-          read = 'partial';
-          break;
-        }
+          stop = main.last;
+        } else read = 'partial';
       }
-      // The next page ends just before the oldest entry of this one.
-      end = `(${last}`;
+      if (endMs !== null && named && read !== 'partial' && !(await above(String(endMs + 1)))) read = 'partial';
     }
   } catch (error) {
     log.warn({ err: error }, 'admin chats: the message stream was not read');
-    return { byMatch: new Map(), read: 'partial', cutAt: null };
+    return { byMatch: new Map(), unsends: [], entryOf: new Map(), read: 'partial', cutAt: null, place: null };
   }
   for (const list of byMatch.values()) list.sort(byId);
-  return { byMatch, read, cutAt };
+  unsends.sort(byId);
+  const place = named && read !== 'partial' && top !== null ? { stop, top } : null;
+  return { byMatch, unsends, entryOf, read, cutAt, place };
+}
+
+/** Stream ids in stream order (`ms-seq`). */
+function compareEntries(a: string, b: string): number {
+  const [am, as] = a.split('-').map(BigInt) as [bigint, bigint];
+  const [bm, bs] = b.split('-').map(BigInt) as [bigint, bigint];
+  return am !== bm ? (am < bm ? -1 : 1) : as === bs ? 0 : as < bs ? -1 : 1;
+}
+
+/**
+ * The entries of the conversation the next page needs and this one read
+ * without showing: its messages below `next`, and the unsends of messages
+ * below `next`. Stream ids, oldest first.
+ */
+export function heldEntries(pending: PendingMessages, conversation: readonly StoredMessage[], next: string): string[] {
+  const below = BigInt(next);
+  const held = new Set<string>();
+  for (const m of conversation) if (BigInt(m.id) < below) held.add(pending.entryOf.get(m.id)!);
+  for (const u of pending.unsends) if (u.refId !== null && BigInt(u.refId) < below) held.add(pending.entryOf.get(u.id)!);
+  return [...held].filter(Boolean).sort(compareEntries);
 }
 
 /** A message of the page, stored or pending, with the id of the unsend that took it back. */
@@ -192,12 +304,13 @@ export interface AdminMessageRow {
  * stored row among the newest `limit` of the union is among the newest
  * `limit + 1` stored rows, so nothing is skipped. `next` is the next page's
  * bound: its oldest row when the union held more, `cutAt` when the stream
- * read stopped there, else null.
+ * read stopped there, else null. `unsends`: the conversation's unsends not
+ * yet durable wherever they are (default: those among `pending`).
  */
 export function mergeMessagePage(
   stored: readonly AdminChatStoredRow[],
   pending: readonly StoredMessage[],
-  page: { before: string | null; limit: number; cutAt: string | null },
+  page: { before: string | null; limit: number; cutAt: string | null; unsends?: readonly StoredMessage[] },
 ): { rows: AdminMessageRow[]; next: string | null } {
   const bound = page.before === null ? null : BigInt(page.before);
   const floor = page.cutAt === null ? null : BigInt(page.cutAt);
@@ -213,7 +326,7 @@ export function mergeMessagePage(
   }
   const newestFirst = [...union.values()].sort((a, b) => byId(b, a));
   const rows = newestFirst.slice(0, page.limit).reverse();
-  // An unsend still in the stream, or one on this page, names its target too.
+  // An unsend still in the stream (wherever it is: above this page's cursor too), or one on this page, names its target too.
   const unsends = new Map<string, string>();
   const note = (m: { id: string; kind: number; refId: string | null; senderId: string }) => {
     if (m.kind !== KIND.unsend || m.refId === null) return;
@@ -221,7 +334,7 @@ export function mergeMessagePage(
     const known = unsends.get(key);
     if (known === undefined || BigInt(m.id) < BigInt(known)) unsends.set(key, m.id);
   };
-  for (const m of pending) note(m);
+  for (const m of page.unsends ?? pending) note(m);
   for (const m of rows) note(m);
   for (const m of rows) {
     if (m.unsendId === null && m.kind !== KIND.unsend) m.unsendId = unsends.get(`${m.id}:${m.senderId}`) ?? null;
@@ -269,14 +382,15 @@ const counted = (m: { kind: number }) => m.kind !== KIND.reaction && m.kind !== 
  * A conversation as the list and the page show it. A pending message adds
  * to the count unless it is stored already (the row's `storedSince`: every
  * stored id at or above the oldest pending one); the last activity is the
- * newest of either.
+ * newest of either. `streamComplete`: the read reached every message not
+ * stored yet (else the count may leave some out, and says so).
  */
 export function chatSummaryOf(
   app: FastifyInstance,
   row: AdminChatRow,
   pending: readonly StoredMessage[],
   scope: UserReadScope,
-  options: { unmatchedDays: number; nowMs: number },
+  options: { unmatchedDays: number; nowMs: number; streamComplete: boolean },
 ): AdminChatSummary {
   const newestStored = row.lastId === null ? null : BigInt(row.lastId);
   const storedAlready = new Set(row.storedSince);
@@ -306,6 +420,7 @@ export function chatSummaryOf(
     endedBy: ended === null ? null : ended === 'system' ? 'system' : (ended === 'lo') === (row.side === 1) ? 'subject' : 'other',
     lastActivityAt: last === null ? null : wireTime(idTime(last)),
     messages: { count: Math.min(total, COUNTED_CAP), more: total > COUNTED_CAP },
+    countComplete: options.streamComplete,
     held: scope.holds && row.held,
     ...(scope.shadow ? { visibility: { subjectSeesOther: row.subjectSeesOther, otherSeesSubject: row.otherSeesSubject } } : {}),
     retentionDays: emptiedByRetention ? days : null,

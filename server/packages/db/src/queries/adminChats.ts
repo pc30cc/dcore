@@ -203,3 +203,65 @@ export const adminUserChatPage = defineQuery({ name: 'adminChats.page', statemen
     .map(([userId, startsAtMs, endsAtMs]) => ({ userId, startsAtMs, endsAtMs }));
   return { found: row.found, matched: row.matched, conversation, rows, shadows };
 });
+
+// ─── Message requests ─────────────────────────────────────────────────────
+
+export const adminChatRequestRowSchema = z.object({
+  id,
+  /** 1: the person sent it; 2: the person received it. */
+  direction: z.union([z.literal(1), z.literal(2)]),
+  other: adminUserRefRowSchema,
+  /** message_requests.status: 1 pending, 2 accepted, 3 declined, 4 expired, 5 withdrawn. */
+  status: z.number().int().min(1).max(5),
+  decidedAtMs: epochMs.nullable(),
+  /** The conversation an accepted request opened (null once that match is gone). */
+  matchId: id.nullable(),
+  body: z.string(),
+});
+export type AdminChatRequestRow = z.infer<typeof adminChatRequestRowSchema>;
+
+export interface AdminUserChatRequestsOptions {
+  beforeId: string | null;
+  /** The page size + 1. */
+  limit: number;
+}
+
+/**
+ * The person's message requests both ways, newest first (one statement):
+ * the sent ones from `message_requests_from_idx` (from_id, id), the received
+ * ones from `message_requests_to_idx` (to_id), each side `limit` rows below
+ * `beforeId`, then the newest `limit` of both. Exported for the plan checks.
+ */
+export function adminUserChatRequestsStatement(userId: string, options: AdminUserChatRequestsOptions): SqlFragment {
+  const before = options.beforeId ? sql` AND x.id < ${options.beforeId}::bigint` : sql``;
+  const columns = sql`x.id, x.status, x.decided_at, x.match_id, x.body`;
+  return sql`SELECT ${adminUserKept(userId)} AS found,
+                    coalesce((SELECT jsonb_agg(jsonb_build_object(
+                                'id', r.id::text,
+                                'direction', r.direction,
+                                'other', admin_user_ref(o),
+                                'status', r.status,
+                                'decidedAtMs', ${msOf(sql`r.decided_at`)},
+                                'matchId', r.match_id::text,
+                                'body', r.body) ORDER BY r.id DESC)
+                                FROM (SELECT * FROM (
+                                        (SELECT ${columns}, 1 AS direction, x.to_id AS other_id
+                                           FROM message_requests x WHERE x.from_id = ${userId}::bigint${before}
+                                          ORDER BY x.id DESC LIMIT ${options.limit}::integer)
+                                        UNION ALL
+                                        (SELECT ${columns}, 2, x.from_id
+                                           FROM message_requests x WHERE x.to_id = ${userId}::bigint${before}
+                                          ORDER BY x.id DESC LIMIT ${options.limit}::integer)) b
+                                       ORDER BY b.id DESC
+                                       LIMIT ${options.limit}::integer) r
+                                JOIN users o ON o.id = r.other_id), '[]'::jsonb) AS items`;
+}
+
+/** Every message request the person sent or received, newest first, `limit` rows before `beforeId`; nothing is written. */
+export const adminUserChatRequests = defineQuery(
+  { name: 'adminChats.requests', statements: 1 },
+  async (db, userId: string, options: AdminUserChatRequestsOptions): Promise<Found<AdminChatRequestRow[]>> => {
+    const row = await one<{ found: boolean; items: unknown }>(db, adminUserChatRequestsStatement(userId, options));
+    return { found: row.found, value: z.array(adminChatRequestRowSchema).parse(row.items) };
+  },
+);

@@ -1,5 +1,6 @@
 import { PUBLIC_UID_PATTERN, auditActions, type AuditAction, type AuditTarget } from '@app/shared';
 import type { MessageKey } from '@/i18n/messages';
+import { hasMessage } from '@/i18n/translate';
 
 /**
  * The audit page's filters. They live in the page's address
@@ -114,14 +115,24 @@ export function auditQueryOf(filters: AuditFilterState): string {
   return new URLSearchParams(auditRequestOf(filters)).toString();
 }
 
-/** The file name of an export: its days, when it has them. */
+/**
+ * The file name of an export: its days, when it has them. The file itself
+ * is machine-readable in every panel language (the API's CSV: stable
+ * English column keys, action and target codes, ISO 8601 UTC times), for
+ * spreadsheets and scripts; the panel shows the same rows in its words.
+ */
 export function exportName(filters: AuditFilterState): string {
   return `${['audit', filters.from, filters.to].filter(Boolean).join('-')}.csv`;
 }
 
 /** An audit action's label in the panel's language (the code itself for one this build has no words for). */
 export function auditActionLabel(action: string, t: (key: MessageKey) => string): string {
-  const key = `auditAction.${action}` as MessageKey;
-  const label = t(key);
-  return label === key ? action : label;
+  const key = `auditAction.${action}`;
+  return hasMessage(key) ? t(key) : action;
+}
+
+/** An audit target kind's label (the code for one this build has no words for). */
+export function auditTargetLabel(target: string, t: (key: MessageKey) => string): string {
+  const key = `auditTarget.${target}`;
+  return hasMessage(key) ? t(key) : target;
 }

@@ -15,6 +15,7 @@ import {
 } from '../codes.js';
 import { pageQuerySchema, pageSchema } from '../pagination.js';
 import { adminIdSchema } from './admin.js';
+import { adminChatCallSchema } from './adminChats.js';
 import {
   adminActionSchema,
   adminRefSchema,
@@ -195,7 +196,10 @@ export const adminEvidenceSchema = z.object({
           kind: messageKind.schema,
           /** `messageFlags` names. */
           flags: z.array(z.string()),
+          /** Null for a call line (see `call`). */
           body: z.string().nullable(),
+          /** A call line's summary (absent when its body is not one). */
+          call: adminChatCallSchema.optional(),
           at: timeSchema,
           /** Copied from the message stream (the database had not stored it yet). */
           late: z.boolean(),

@@ -1,11 +1,10 @@
-import { isLocale, textDirection, type Locale } from '@app/shared';
+import { textDirection, type Locale } from '@app/shared';
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { brand } from '@/lib/brand';
-import { readPreference, writePreference } from '@/lib/storage';
+import { writePreference } from '@/lib/storage';
+import { initialLocale, LOCALE_STORAGE_KEY } from './defaultLocale';
 import type { MessageKey } from './messages';
 import { translate, type TranslateValues } from './translate';
-
-const STORAGE_KEY = 'admin.locale';
 
 export interface I18nValue {
   locale: Locale;
@@ -17,12 +16,6 @@ export interface I18nValue {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const I18nContext = createContext<I18nValue | null>(null);
-
-function initialLocale(): Locale {
-  const saved = readPreference(STORAGE_KEY);
-  if (saved && isLocale(saved) && brand.locales.includes(saved)) return saved;
-  return brand.defaultLocale;
-}
 
 /**
  * `lang` (which picks the font stack in index.css) and `dir` on <html>.
@@ -54,7 +47,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((next: Locale) => {
     applyDocumentLocale(next);
     setLocaleState(next);
-    writePreference(STORAGE_KEY, next);
+    writePreference(LOCALE_STORAGE_KEY, next);
   }, []);
 
   const value = useMemo<I18nValue>(

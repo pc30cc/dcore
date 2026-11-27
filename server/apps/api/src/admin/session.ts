@@ -17,6 +17,7 @@ import type { Limit } from '@app/shared/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ipSegment } from '../auth/otp.js';
 import { nextId } from '../auth/sessions.js';
+import { adminConflict } from './problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { auditedTransaction, type AdminActor } from './audit.js';
 import { TOTP_SECRET_PURPOSE, base32Encode, checkTotp, generateTotpSecret, otpauthUri } from './totp.js';
@@ -353,7 +354,7 @@ export async function adminCheckTotp(
   if (ticket.enroll !== enroll) {
     throw enroll
       ? new HttpProblem('already_set', { detail: 'TOTP is set up for this account: sign in with a code.' })
-      : new HttpProblem('conflict', { detail: 'Set up TOTP first.' });
+      : adminConflict('enroll_first', 'Set up TOTP first.');
   }
   const state = await adminMfaState(app.pg, ticket.adminId);
   if (!state || state.disabled || state.locked) {
@@ -364,7 +365,7 @@ export async function adminCheckTotp(
     await closeMfa(app, request, input.mfaToken);
     throw mfaRefused();
   }
-  if (!state.totpSecret) throw new HttpProblem('conflict', { detail: 'Set up TOTP first.' });
+  if (!state.totpSecret) throw adminConflict('enroll_first', 'Set up TOTP first.');
   let secret: Buffer;
   try {
     secret = app.secrets.sealer.open(state.totpSecret, TOTP_SECRET_PURPOSE);

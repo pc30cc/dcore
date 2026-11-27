@@ -15,8 +15,9 @@
 #   DELETION_GRACE_DAYS        web: days before a deletion is final
 #
 # The admin panel takes no host at build time: its container writes
-# /config.js (the API and CDN origins) and its CSP from the environment at
-# every start (deploy/nginx/admin-runtime.sh).
+# /config.js (the API and CDN origins, the panel's default language), the
+# page of that language and its CSP from the environment at every start
+# (deploy/nginx/admin-runtime.sh).
 
 ARG NODE_IMAGE=node:24.22-alpine
 ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.30.6-alpine
@@ -44,11 +45,14 @@ RUN BRAND_JSON_BASE64="${BRAND_JSON_BASE64}" brand.sh \
 
 # ── Admin panel ──────────────────────────────────────────────────────────
 FROM build AS build-admin
-# The workspace packages are built first: vite.config.ts imports them.
+# The workspace packages are built first: vite.config.ts imports them. The
+# build writes index.html and one copy per language (index.<locale>.html);
+# the container serves the one of ADMIN_DEFAULT_LOCALE (admin-runtime.sh).
 RUN pnpm --filter "@app/admin..." build \
  && find apps/admin/dist -name '*.map' -delete \
- && node /usr/local/lib/deploy/admin-index.mjs apps/admin/dist/index.html \
- && node /usr/local/lib/deploy/csp.mjs admin apps/admin/dist/index.html > /tmp/csp.template
+ && ls apps/admin/dist/index.??.html > /dev/null \
+ && node /usr/local/lib/deploy/admin-index.mjs apps/admin/dist/index.html apps/admin/dist/index.??.html \
+ && node /usr/local/lib/deploy/csp.mjs admin apps/admin/dist/index.html apps/admin/dist/index.??.html > /tmp/csp.template
 
 FROM ${NGINX_IMAGE} AS admin
 COPY deploy/nginx/headers.conf deploy/nginx/admin-headers.conf /etc/nginx/snippets/

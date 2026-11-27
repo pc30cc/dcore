@@ -88,8 +88,12 @@ export function TextDecisionDialog({ parts, onClose, onDone, onStale }: { parts:
       if (failure.code === 'conflict') {
         showToast((t) => t('texts.stale'), 'error', 6_000);
         onStale();
+      } else if (failure.errors.some((issue) => issue.code === 'not_a_part')) {
+        // A part chosen is gone (the profile changed): reload it, as for a conflict.
+        showToast((t) => t('texts.error.notAPart'), 'error', 6_000);
+        onStale();
       } else {
-        showToast((t) => problemText(failure, t), 'error', 6_000);
+        showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
       }
     } finally {
       setBusy(false);

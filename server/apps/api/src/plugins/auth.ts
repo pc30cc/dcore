@@ -81,6 +81,7 @@ export const authPlugin = fp<{ tokens: AccessTokens }>(
           throw new HttpProblem('forbidden', {
             detail: 'Your role does not allow this action.',
             headers: { 'www-authenticate': 'Bearer error="insufficient_scope"' },
+            extensions: { reason: 'role' },
           });
         }
       };

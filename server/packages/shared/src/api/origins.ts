@@ -47,7 +47,9 @@ const HOST_NAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a
 /** Names that never resolve on the public internet (RFC 6761, 6762, 8375, 7686, and `internal`). */
 const SPECIAL_USE = /(^|\.)(localhost|local|test|invalid|example|internal|onion|home\.arpa)$/;
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const MAX_URL = 300;
+/** The longest entry (characters). */
+export const ORIGINS_URL_MAX = 300;
+const MAX_URL = ORIGINS_URL_MAX;
 
 function ipv4Public(parts: readonly number[]): boolean {
   const [a = 0, b = 0, c = 0] = parts;
@@ -93,62 +95,93 @@ export interface HostRules {
   allowIpHosts: boolean;
 }
 
+/**
+ * Why an entry is refused, as a code (the panel words it) beside the English
+ * message (logs, the API's own detail).
+ */
+export const originsIssueCodes = [
+  'empty',
+  'url_too_long',
+  'not_url',
+  'not_https',
+  'credentials',
+  'fragment',
+  'not_origin',
+  'query',
+  'not_file',
+  'ip_not_allowed',
+  'ip_private',
+  'host_name',
+  'host_reserved',
+  'too_many',
+  'duplicate',
+  'api_required',
+] as const;
+export type OriginsIssueCode = (typeof originsIssueCodes)[number];
+
+interface Refusal {
+  code: OriginsIssueCode;
+  message: string;
+}
+
+const refusal = (code: OriginsIssueCode, message: string): Refusal => ({ code, message });
+
 /** Checks the host of a parsed URL; returns a reason when it is not one an app may be sent to. */
-function hostProblem(hostname: string, rules: HostRules): string | null {
+function hostProblem(hostname: string, rules: HostRules): Refusal | null {
   if (hostname.startsWith('[')) {
-    if (!rules.allowIpHosts) return 'an IP address is not allowed here (allowIpHosts is off)';
+    if (!rules.allowIpHosts) return refusal('ip_not_allowed', 'an IP address is not allowed here (allowIpHosts is off)');
     const groups = ipv6Groups(hostname.slice(1, -1));
-    return groups && ipv6Public(groups) ? null : 'must be a public IP address';
+    return groups && ipv6Public(groups) ? null : refusal('ip_private', 'must be a public IP address');
   }
   const v4 = IPV4.exec(hostname);
   if (v4) {
-    if (!rules.allowIpHosts) return 'an IP address is not allowed here (allowIpHosts is off)';
+    if (!rules.allowIpHosts) return refusal('ip_not_allowed', 'an IP address is not allowed here (allowIpHosts is off)');
     const parts = v4.slice(1).map(Number);
-    return parts.every((p) => p <= 255) && ipv4Public(parts) ? null : 'must be a public IP address';
+    return parts.every((p) => p <= 255) && ipv4Public(parts) ? null : refusal('ip_private', 'must be a public IP address');
   }
-  if (!HOST_NAME.test(hostname)) return 'must be a fully qualified host name';
-  if (SPECIAL_USE.test(hostname)) return 'must be a public host name (not a local or reserved name)';
+  if (!HOST_NAME.test(hostname)) return refusal('host_name', 'must be a fully qualified host name');
+  if (SPECIAL_USE.test(hostname)) return refusal('host_reserved', 'must be a public host name (not a local or reserved name)');
   return null;
 }
 
-function parseHttps(value: string): URL | string {
+function parseHttps(value: string): URL | Refusal {
   const text = value.trim();
-  if (text.length === 0) return 'must not be empty';
-  if (text.length > MAX_URL) return `must be at most ${MAX_URL} characters`;
+  if (text.length === 0) return refusal('empty', 'must not be empty');
+  if (text.length > MAX_URL) return refusal('url_too_long', `must be at most ${MAX_URL} characters`);
   let url: URL;
   try {
     url = new URL(text);
   } catch {
-    return 'must be a URL such as https://api.example.com';
+    return refusal('not_url', 'must be a URL such as https://api.example.com');
   }
-  if (url.protocol !== 'https:') return 'must use https';
-  if (url.username !== '' || url.password !== '') return 'must not carry a user name or password';
-  if (url.hash !== '' || text.includes('#')) return 'must not carry a fragment';
+  if (url.protocol !== 'https:') return refusal('not_https', 'must use https');
+  if (url.username !== '' || url.password !== '') return refusal('credentials', 'must not carry a user name or password');
+  if (url.hash !== '' || text.includes('#')) return refusal('fragment', 'must not carry a fragment');
   return url;
 }
 
-export type Checked = { ok: true; value: string } | { ok: false; message: string };
+export type Checked = { ok: true; value: string } | { ok: false; code: OriginsIssueCode; message: string };
 
 /** `https://host[:port]`, lower case, without a trailing slash; or why the value is not one. */
 export function checkOrigin(value: string, rules: HostRules): Checked {
   const url = parseHttps(value);
-  if (typeof url === 'string') return { ok: false, message: url };
+  if (!(url instanceof URL)) return { ok: false, ...url };
   if ((url.pathname !== '/' && url.pathname !== '') || url.search !== '' || value.trim().endsWith('?')) {
-    return { ok: false, message: 'must be an origin only (no path or query)' };
+    return { ok: false, code: 'not_origin', message: 'must be an origin only (no path or query)' };
   }
   const problem = hostProblem(url.hostname, rules);
-  if (problem) return { ok: false, message: problem };
+  if (problem) return { ok: false, ...problem };
   return { ok: true, value: url.origin };
 }
 
 /** An `https` URL of a published copy of the document (a path, no query); or why it is not one. */
 export function checkBootstrapUrl(value: string, rules: HostRules): Checked {
   const url = parseHttps(value);
-  if (typeof url === 'string') return { ok: false, message: url };
-  if (url.search !== '' || value.trim().includes('?')) return { ok: false, message: 'must not carry a query' };
-  if (url.pathname === '/' || url.pathname.endsWith('/')) return { ok: false, message: 'must name a file (a path that does not end with /)' };
+  if (!(url instanceof URL)) return { ok: false, ...url };
+  if (url.search !== '' || value.trim().includes('?')) return { ok: false, code: 'query', message: 'must not carry a query' };
+  if (url.pathname === '/' || url.pathname.endsWith('/')) return { ok: false, code: 'not_file', message: 'must name a file (a path that does not end with /)' };
   const problem = hostProblem(url.hostname, rules);
-  if (problem) return { ok: false, message: problem };
+  if (problem) return { ok: false, ...problem };
   return { ok: true, value: url.toString() };
 }
 
@@ -175,6 +208,7 @@ export interface OriginsInput {
 export interface OriginsIssue {
   /** JSON Pointer into the input, e.g. `/hosts/api/1`. */
   pointer: string;
+  code: OriginsIssueCode;
   message: string;
 }
 
@@ -194,22 +228,22 @@ export function validateOrigins(input: OriginsInput): ValidatedOrigins {
   const hosts = { api: [], realtime: [], rtc: [], cdn: [], web: [] } as Record<OriginRole, string[]>;
   for (const role of originRoles) {
     const list = input.hosts[role] ?? [];
-    if (list.length > ORIGINS_PER_ROLE_MAX) issues.push({ pointer: `/hosts/${role}`, message: `at most ${ORIGINS_PER_ROLE_MAX} entries` });
+    if (list.length > ORIGINS_PER_ROLE_MAX) issues.push({ pointer: `/hosts/${role}`, code: 'too_many', message: `at most ${ORIGINS_PER_ROLE_MAX} entries` });
     list.forEach((entry, index) => {
       const checked = checkOrigin(entry, rules);
-      if (!checked.ok) issues.push({ pointer: `/hosts/${role}/${index}`, message: checked.message });
-      else if (hosts[role].includes(checked.value)) issues.push({ pointer: `/hosts/${role}/${index}`, message: 'is listed twice' });
+      if (!checked.ok) issues.push({ pointer: `/hosts/${role}/${index}`, code: checked.code, message: checked.message });
+      else if (hosts[role].includes(checked.value)) issues.push({ pointer: `/hosts/${role}/${index}`, code: 'duplicate', message: 'is listed twice' });
       else hosts[role].push(checked.value);
     });
   }
-  if ((input.hosts.api ?? []).length === 0) issues.push({ pointer: '/hosts/api', message: 'at least one API host is required' });
+  if ((input.hosts.api ?? []).length === 0) issues.push({ pointer: '/hosts/api', code: 'api_required', message: 'at least one API host is required' });
   const bootstrap: string[] = [];
   const urls = input.bootstrap ?? [];
-  if (urls.length > ORIGINS_BOOTSTRAP_MAX) issues.push({ pointer: '/bootstrap', message: `at most ${ORIGINS_BOOTSTRAP_MAX} entries` });
+  if (urls.length > ORIGINS_BOOTSTRAP_MAX) issues.push({ pointer: '/bootstrap', code: 'too_many', message: `at most ${ORIGINS_BOOTSTRAP_MAX} entries` });
   urls.forEach((entry, index) => {
     const checked = checkBootstrapUrl(entry, rules);
-    if (!checked.ok) issues.push({ pointer: `/bootstrap/${index}`, message: checked.message });
-    else if (bootstrap.includes(checked.value)) issues.push({ pointer: `/bootstrap/${index}`, message: 'is listed twice' });
+    if (!checked.ok) issues.push({ pointer: `/bootstrap/${index}`, code: checked.code, message: checked.message });
+    else if (bootstrap.includes(checked.value)) issues.push({ pointer: `/bootstrap/${index}`, code: 'duplicate', message: 'is listed twice' });
     else bootstrap.push(checked.value);
   });
   if (issues.length > 0) return { ok: false, issues };

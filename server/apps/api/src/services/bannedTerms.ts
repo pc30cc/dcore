@@ -1,4 +1,4 @@
-import { bannedTermMatch, bannedTermScope, type BannedTermMatch, type BannedTermScope } from '@app/shared';
+import { bannedTermMatch, bannedTermScope, type BannedTermMatch, type BannedTermProblem, type BannedTermScope } from '@app/shared';
 import { RE2JS } from 're2js';
 import { foldLetters, foldName } from './cities.js';
 
@@ -60,7 +60,8 @@ const MAX_CHECKED = 4_000;
  */
 export const MAX_PATTERN_INSTRUCTIONS = 100;
 
-export type TermProblemCode = 'term_empty' | 'regex_invalid' | 'regex_unsupported' | 'regex_word_boundary' | 'regex_too_large' | 'regex_too_broad';
+/** Why a term cannot be stored: the shared codes the admin panel words. */
+export type TermProblemCode = BannedTermProblem;
 export type TermCheck = { ok: true } | { ok: false; code: TermProblemCode; message: string };
 
 /** Scripts whose letters say which texts a language-bound term is for (Latin cannot tell en from tr). */
@@ -130,9 +131,9 @@ function foldPattern(pattern: string): Folded {
         out += ch;
         continue;
       }
-      if (!inClass && /[1-9]/.test(next)) return { ok: false, code: 'regex_unsupported', message: 'Backreferences are not supported.' };
-      if (next === 'k' && chars[i + 2] === '<') return { ok: false, code: 'regex_unsupported', message: 'Backreferences are not supported.' };
-      if (next === 'Q') return { ok: false, code: 'regex_unsupported', message: 'Quote with \\ instead of \\Q…\\E.' };
+      if (!inClass && /[1-9]/.test(next)) return { ok: false, code: 'regex_backreference', message: 'Backreferences are not supported.' };
+      if (next === 'k' && chars[i + 2] === '<') return { ok: false, code: 'regex_backreference', message: 'Backreferences are not supported.' };
+      if (next === 'Q') return { ok: false, code: 'regex_quote', message: 'Quote with \\ instead of \\Q…\\E.' };
       if (!inClass && (next === 'b' || next === 'B')) boundary = true;
       // A Unicode class (\pL, \p{Arabic}) reaches past Latin letters too.
       if (next === 'p' || next === 'P') wide = true;
@@ -167,7 +168,7 @@ function foldPattern(pattern: string): Folded {
       }
       wide = true;
       const folded = foldChar(ch);
-      if (Array.from(folded).length > 1) return { ok: false, code: 'regex_unsupported', message: `Write "${ch}" as separate letters.` };
+      if (Array.from(folded).length > 1) return { ok: false, code: 'regex_class_ligature', message: `Write "${ch}" as separate letters.` };
       out += folded;
       continue;
     }
@@ -186,7 +187,7 @@ function foldPattern(pattern: string): Folded {
       continue;
     }
     if (ch === '(' && chars[i + 1] === '?') {
-      if (chars[i + 2] !== ':') return { ok: false, code: 'regex_unsupported', message: UNSUPPORTED_GROUP };
+      if (chars[i + 2] !== ':') return { ok: false, code: 'regex_group', message: UNSUPPORTED_GROUP };
       out += '(?:';
       i += 2;
       continue;

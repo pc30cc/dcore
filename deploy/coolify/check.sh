@@ -29,6 +29,14 @@
 #      check fails. An env file named on the command line (a stack's own
 #      variables) that turns it off is a WARNING line only: test stacks may
 #      turn the second factor off. A value the API refuses fails.
+#   8. ADMIN_DEFAULT_LOCALE, as compose hands it to the admin service (the
+#      same renders as step 7) and the admin container reads it (trimmed;
+#      empty is fa): the file passes it as ${ADMIN_DEFAULT_LOCALE:-fa}, and
+#      the value of a stack that leaves it unset, of .env.example and of each
+#      env file named on the command line must be a panel language (en, fa
+#      or tr), and one of the brand's languages when that env file's BRAND
+#      is a brand of the repository (brands/<BRAND>/brand.json); otherwise
+#      the admin container does not start, and the check fails.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -132,17 +140,24 @@ fi
 
 # The admin second factor: on in the shared files; off only in a stack's own variables, never silently.
 totp_line='- ADMIN_TOTP_REQUIRED=${ADMIN_TOTP_REQUIRED:-true}'
-# The api service's value rendered with env file $1: "=<value>", "unset" without one; fails when compose refuses the file.
-api_totp() {
-  docker compose --project-directory "$root" -f "$work/compose.yml" --env-file "$1" config --format json api > "$work/totp.json" 2> /dev/null || return 1
-  awk '
-    /^  "services": \{$/ { services = 1; next }
-    services && /^    "api": \{$/ { api = 1; next }
-    api && /^      "environment": \{$/ { env = 1; next }
-    env && /^      \}/ { exit }
-    env && /^        "ADMIN_TOTP_REQUIRED": "/ { value = $0; sub(/^        "ADMIN_TOTP_REQUIRED": "/, "", value); sub(/",?$/, "", value); found = 1; print "=" value; exit }
+# The value compose gives NAME in SECTION ("environment", or "args" of its
+# build) of SERVICE, rendered with ENV_FILE (the JSON render, so `export`,
+# quotes and comments in an env file read as on a deploy): "=<value>", or
+# "unset" without one; fails when compose refuses the file.
+#   service_value SERVICE SECTION NAME ENV_FILE
+service_value() {
+  docker compose --project-directory "$root" -f "$work/compose.yml" --env-file "$4" config --format json "$1" > "$work/service.json" 2> /dev/null || return 1
+  awk -v svc="$1" -v section="$2" -v name="$3" '
+    $0 == "    \"" svc "\": {" { inside = 1; next }
+    inside && $0 ~ ("^ *\"" section "\": [{]$") { open = 1; next }
+    open && /^ *[}]/ { exit }
+    open && index($0, "\"" name "\": \"") { value = $0; sub(/^ *"[A-Za-z0-9_]+": "/, "", value); sub(/",?$/, "", value); found = 1; print "=" value; exit }
     END { if (!found) print "unset" }
-  ' "$work/totp.json"
+  ' "$work/service.json"
+}
+# The api service's ADMIN_TOTP_REQUIRED rendered with env file $1.
+api_totp() {
+  service_value api environment ADMIN_TOTP_REQUIRED "$1"
 }
 # How the API takes a rendered value: on, off or invalid (it does not start).
 totp_state() {
@@ -199,6 +214,60 @@ if [ "$totp_failed" -eq 1 ]; then
   status=1
 elif [ "$totp_warned" -eq 0 ]; then
   echo "check: ADMIN_TOTP_REQUIRED stays true: admin sign-in asks for a TOTP code"
+fi
+
+# The admin panel's default language: a language of the panel and of the brand, or the container stops.
+locale_line='- ADMIN_DEFAULT_LOCALE=${ADMIN_DEFAULT_LOCALE:-fa}'
+locale_failed=0
+if ! grep -Eq '^[[:space:]]*- ADMIN_DEFAULT_LOCALE=\$\{ADMIN_DEFAULT_LOCALE:-fa\}$' "$compose"; then
+  echo "check: docker-compose.yml does not pass the admin service \"$locale_line\": the panel's default language would not reach its container" >&2
+  locale_failed=1
+fi
+sed '/ADMIN_DEFAULT_LOCALE/d' "$example" > "$work/locale-unset.env"
+for env_file in "$work/locale-unset.env" "$example" "$@"; do
+  case $env_file in
+    "$work/locale-unset.env") name="a stack without ADMIN_DEFAULT_LOCALE" ;;
+    "$example") name=".env.example" ;;
+    *) name=$env_file ;;
+  esac
+  [ -f "$env_file" ] || continue
+  if ! value=$(service_value admin environment ADMIN_DEFAULT_LOCALE "$env_file"); then
+    echo "check: compose does not render with $name" >&2
+    locale_failed=1
+    continue
+  fi
+  # As admin-runtime.sh reads it: CR/LF dropped, trimmed, empty is fa.
+  locale=$(printf '%s' "${value#=}" | sed 's/\\[rn]//g; s/^[[:space:]]*//; s/[[:space:]]*$//')
+  [ "$value" != unset ] || locale=
+  [ -n "$locale" ] || locale=fa
+  case $locale in
+    en | fa | tr) ;;
+    *)
+      echo "check: $name gives the admin ADMIN_DEFAULT_LOCALE=$locale: not a panel language (en, fa, tr); the admin container does not start" >&2
+      locale_failed=1
+      continue
+      ;;
+  esac
+  brand=$(service_value admin args BRAND "$env_file" || echo unset)
+  brand=${brand#=}
+  case $brand in
+    '' | unset | *[!A-Za-z0-9_-]*) continue ;;
+  esac
+  brand_json="$root/brands/$brand/brand.json"
+  [ -f "$brand_json" ] || continue
+  brand_locales=$(tr -d '\n' < "$brand_json" | grep -o '"locales"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o '"[a-z][a-z]"' | tr -d '"' | tr '\n' ' ')
+  case " $brand_locales" in
+    *" $locale "*) ;;
+    *)
+      echo "check: $name gives the admin ADMIN_DEFAULT_LOCALE=$locale, which brand $brand does not have (its languages: ${brand_locales% }); the admin container does not start" >&2
+      locale_failed=1
+      ;;
+  esac
+done
+if [ "$locale_failed" -eq 1 ]; then
+  status=1
+else
+  echo "check: ADMIN_DEFAULT_LOCALE is a language of the admin panel"
 fi
 
 exit "$status"

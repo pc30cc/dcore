@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
-import { formatDate, formatNumber, languageName, localized, regionName } from '@/lib/format';
+import { formatDate, formatNumber, languageName, listOf, localized, regionName } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { queryClient, queryKeys } from '@/lib/queries';
@@ -56,7 +56,7 @@ export function ProfileTab({ user }: { user: AdminUserDetail }) {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.user(user.id),
         });
-      } else showToast((t) => problemText(failure, t), 'error', 6_000);
+      } else showToast((t, lang) => problemText(failure, t, lang), 'error', 6_000);
     } finally {
       setBusy(false);
     }
@@ -144,13 +144,13 @@ export function ProfileTab({ user }: { user: AdminUserDetail }) {
                 })}
               </Detail>
             )}
-            <Detail label={t('user.field.signIn')}>{[user.phoneOnFile && t('user.signIn.phone'), user.googleOnFile && t('user.signIn.google')].filter(Boolean).join(' · ') || t('common.none')}</Detail>
+            <Detail label={t('user.field.signIn')}>{listOf([user.phoneOnFile ? t('user.signIn.phone') : '', user.googleOnFile ? t('user.signIn.google') : ''].filter(Boolean), locale) || t('common.none')}</Detail>
             {user.phoneOnFile && can(me, 'users.view_phone') && (
               <Detail label={t('user.signIn.phone')}>
                 <PhoneReveal user={user} />
               </Detail>
             )}
-            <Detail label={t('user.field.openReports')}>{user.openReports.more ? `${formatNumber(20, locale)}+` : formatNumber(user.openReports.count, locale)}</Detail>
+            <Detail label={t('user.field.openReports')}>{user.openReports.more ? t('user.openReports.more', { count: 20 }) : formatNumber(user.openReports.count, locale)}</Detail>
           </dl>
         </SectionCard>
       </div>

@@ -20,8 +20,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
-import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
+import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { adminRefOf } from '../admin/refs.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { checkTerm } from '../services/bannedTerms.js';
 import { adminIdOf } from './adminAuth.js';
@@ -75,7 +76,7 @@ function checked(term: string, matchKind: number, pointer = '/term'): void {
   if (!check.ok) throw fieldInvalid(pointer, check.code, check.message);
 }
 
-const exists = () => new HttpProblem('conflict', { detail: 'This term exists.' });
+const exists = () => adminConflict('term_exists', 'This term exists.');
 
 /** After the commit: every process loads the terms again (this one too, by the same message). */
 async function announce(app: FastifyInstance, request: FastifyRequest): Promise<SideEffects> {

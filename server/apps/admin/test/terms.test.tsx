@@ -92,7 +92,7 @@ describe('the banned terms page', () => {
   });
 
   it('shows the API’s refusals at the term: a pattern outside the subset, a term that exists', async () => {
-    let answer: unknown = problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '/term', code: 'regex_unsupported', message: 'x' }] });
+    let answer: unknown = problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '/term', code: 'regex_group', message: 'x' }] });
     const api = termsApi({ 'POST /v1/admin/banned-terms': () => answer });
     const user = userEvent.setup();
     renderPanel('/moderation/terms', api);
@@ -103,8 +103,8 @@ describe('the banned terms page', () => {
     await user.click(within(dialog).getByRole('radio', { name: 'Regular expression' }));
     expect(within(dialog).getByLabelText('Term').getAttribute('dir')).toBe('ltr');
     await user.click(within(dialog).getByRole('button', { name: 'Add term' }));
-    expect(await within(dialog).findByText(/This pattern is not supported/)).toBeTruthy();
-    answer = problem(409, 'conflict', { detail: 'This term exists.' });
+    expect(await within(dialog).findByText(/Only plain and \(\?:…\) groups are supported/)).toBeTruthy();
+    answer = problem(409, 'conflict', { detail: 'This term exists.', reason: 'term_exists' });
     await user.click(within(dialog).getByRole('button', { name: 'Add term' }));
     expect(await within(dialog).findByText('This term exists.')).toBeTruthy();
   });

@@ -32,7 +32,9 @@ function TotpStep({ ticket }: { ticket: NonNullable<ReturnType<typeof pendingSig
             <KeyRound className="size-5" aria-hidden="true" />
           </div>
           <CardTitle className="text-xl" role="heading" aria-level={1}>{t('totp.title')}</CardTitle>
-          <CardDescription>{t('totp.subtitle', { email: ticket.email })}</CardDescription>
+          <CardDescription>
+            <Worded text={(say) => say('totp.subtitle', { email: ticket.email })} />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form

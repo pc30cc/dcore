@@ -1,10 +1,14 @@
+import { isLocale, type Locale } from '@app/shared';
+import { brand } from './brand';
+
 /**
- * The panel's addresses, read at run time: the container writes `/config.js`
- * when it starts (`window.__APP_CONFIG__ = { apiOrigin, cdnOrigin,
- * persianFontCss, persianFontFamily }`, from the deployment's environment),
- * and index.html loads it before the app, so no host is part of the build and
- * one image serves any domain. A development server has no `/config.js`: it
- * uses `VITE_API_BASE_URL`, else the local API on port 8080.
+ * The panel's addresses and default language, read at run time: the
+ * container writes `/config.js` when it starts (`window.__APP_CONFIG__ = {
+ * apiOrigin, cdnOrigin, persianFontCss, persianFontFamily, defaultLocale }`,
+ * from the deployment's environment), and index.html loads it before the
+ * app, so no host is part of the build and one image serves any domain. A
+ * development server has no `/config.js`: it uses `VITE_API_BASE_URL`, else
+ * the local API on port 8080, and the build's default language.
  */
 
 export interface RuntimeConfig {
@@ -14,6 +18,8 @@ export interface RuntimeConfig {
   cdnOrigin: string | null;
   /** A licensed Persian font kept outside the build: its stylesheet and the family it declares; null: the brand's font name and the system's. */
   persianFont: { cssUrl: string; family: string } | null;
+  /** ADMIN_DEFAULT_LOCALE: the language for anyone who has not picked one in the panel's menu; null: the build's default. */
+  defaultLocale: Locale | null;
 }
 
 export type RuntimeConfigResult = { ok: true; config: RuntimeConfig } | { ok: false; reason: string };
@@ -49,17 +55,30 @@ export function fontOf(cssUrl: unknown, family: unknown): RuntimeConfig['persian
   return { cssUrl: url.href, family: family.trim() };
 }
 
+/** One of the brand's languages, else null (the container refuses anything else; an old file may lack it). */
+export function localeOf(value: unknown): Locale | null {
+  return typeof value === 'string' && isLocale(value) && brand.locales.includes(value) ? value : null;
+}
+
 /** Reads the configuration the container wrote; `dev` and `devApiBaseUrl` describe a development server. */
 export function readRuntimeConfig(source: unknown, dev: boolean, devApiBaseUrl: string | undefined): RuntimeConfigResult {
   if (source !== undefined && source !== null) {
-    const record = source as { apiOrigin?: unknown; cdnOrigin?: unknown; persianFontCss?: unknown; persianFontFamily?: unknown };
+    const record = source as { apiOrigin?: unknown; cdnOrigin?: unknown; persianFontCss?: unknown; persianFontFamily?: unknown; defaultLocale?: unknown };
     const apiOrigin = originOf(record.apiOrigin);
     if (!apiOrigin) return { ok: false, reason: '/config.js names no usable API origin' };
-    return { ok: true, config: { apiOrigin, cdnOrigin: originOf(record.cdnOrigin), persianFont: fontOf(record.persianFontCss, record.persianFontFamily) } };
+    return {
+      ok: true,
+      config: {
+        apiOrigin,
+        cdnOrigin: originOf(record.cdnOrigin),
+        persianFont: fontOf(record.persianFontCss, record.persianFontFamily),
+        defaultLocale: localeOf(record.defaultLocale),
+      },
+    };
   }
   if (dev) {
     const apiOrigin = originOf(devApiBaseUrl ?? 'http://localhost:8080');
-    if (apiOrigin) return { ok: true, config: { apiOrigin, cdnOrigin: null, persianFont: null } };
+    if (apiOrigin) return { ok: true, config: { apiOrigin, cdnOrigin: null, persianFont: null, defaultLocale: null } };
     return { ok: false, reason: 'VITE_API_BASE_URL is not an origin' };
   }
   return { ok: false, reason: '/config.js was not loaded' };

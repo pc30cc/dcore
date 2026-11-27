@@ -16,6 +16,7 @@ import { adminWrite } from '../admin/audit.js';
 import { pageOf, readCursorKey } from '../admin/cursors.js';
 import { adminModeration, afterCommit, publishToUser, withIdLease } from '../admin/effects.js';
 import { accountStateOf as stateOf, appealOf, removedBanAuditOf, userReadScope } from '../admin/refs.js';
+import { adminConflict } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 import { adminIdOf } from './adminAuth.js';
 
@@ -46,9 +47,9 @@ async function decide(app: FastifyInstance, request: FastifyRequest, appealId: s
     const result = await adminDecideAppeal(tx, { appealId, overturn, adminId, text, liftId, withShadowbans: scope.shadow });
     const outcome: AppealDecision = result.outcome;
     if (!('actionId' in outcome)) {
-      if (outcome.outcome === 'decided') throw new HttpProblem('conflict', { detail: 'Already decided.' });
+      if (outcome.outcome === 'decided') throw adminConflict('already_decided', 'Already decided.');
       // Upholding a penalty that was lifted would tell its person it stands.
-      if (outcome.outcome === 'lifted') throw new HttpProblem('conflict', { detail: 'The action was lifted.' });
+      if (outcome.outcome === 'lifted') throw adminConflict('lifted', 'The action was lifted.');
       throw new HttpProblem('not_found', { detail: 'No such appeal.' });
     }
     if (!result.appeal) throw new HttpProblem('not_found', { detail: 'No such appeal.' });

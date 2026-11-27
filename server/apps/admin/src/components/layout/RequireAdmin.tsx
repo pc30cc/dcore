@@ -5,7 +5,9 @@ import { Navigate, useLocation } from 'react-router';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Wording } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
+import { Worded } from '@/i18n/Worded';
 import { startSession } from '@/lib/auth';
 import { asApiError, type ApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
@@ -38,8 +40,8 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   if (failure) {
     // A spent refresh limit is not an outage: it says so, and when to try again.
     const limited = failure.code === 'rate_limited';
-    const text =
-      failure.code === 'not_configured' ? t('common.error.notConfigured') : limited ? problemText(failure, t) : t('common.error.unreachable');
+    const text: Wording = (say, lang) =>
+      failure.code === 'not_configured' ? say('common.error.notConfigured') : limited ? problemText(failure, say, lang) : say('common.error.unreachable');
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -49,7 +51,9 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
           <CardContent className="grid gap-4">
             <Alert variant="destructive">
               <TriangleAlert aria-hidden="true" />
-              <AlertDescription>{text}</AlertDescription>
+              <AlertDescription>
+                <Worded text={text} />
+              </AlertDescription>
             </Alert>
             <Button
               onClick={() => {

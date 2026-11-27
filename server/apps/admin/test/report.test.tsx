@@ -171,7 +171,7 @@ describe('the report page', () => {
   });
 
   it('says someone else took it', async () => {
-    const api = reportApi({ [`POST /v1/admin/reports/${ID}/assign`]: () => problem(409, 'conflict', { detail: 'Someone else took it.' }) });
+    const api = reportApi({ [`POST /v1/admin/reports/${ID}/assign`]: () => problem(409, 'conflict', { detail: 'Someone else took it.', reason: 'taken' }) });
     renderPanel(`/moderation/reports/${ID}`, api);
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Assign to me' }));
     expect(await screen.findByText('Someone else took it.')).toBeTruthy();
@@ -188,7 +188,7 @@ describe('the report page', () => {
     expect(api.of(`POST /v1/admin/reports/${ID}/dismiss`)).toHaveLength(0);
     await user.selectOptions(within(dialog).getByLabelText('Resolution'), 'no_violation');
     await user.type(within(dialog).getByLabelText(/Internal note/), 'Looked at the chat');
-    await user.click(within(dialog).getByRole('checkbox', { name: "This person's other open reports for the same reason" }));
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Also close this person’s other open reports for the same reason' }));
     await user.click(within(dialog).getByRole('button', { name: 'Close without action' }));
     await waitFor(() => expect(api.of(`POST /v1/admin/reports/${ID}/dismiss`)).toHaveLength(1));
     expect(api.of(`POST /v1/admin/reports/${ID}/dismiss`)[0]?.body).toEqual({ resolution: 'no_violation', note: 'Looked at the chat', sameTarget: true });

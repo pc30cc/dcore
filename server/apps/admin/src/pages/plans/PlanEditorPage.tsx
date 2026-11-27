@@ -19,8 +19,8 @@ import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
 import { apiRequest } from '@/lib/api';
-import { asApiError } from '@/lib/http';
-import { formatDateTime, localized } from '@/lib/format';
+import { ApiError, asApiError } from '@/lib/http';
+import { formatDateTime, formatPlain, localized } from '@/lib/format';
 import {
   featuresOf,
   hasErrors,
@@ -107,10 +107,11 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
     if (failure.code === 'field_invalid' || failure.code === 'validation_failed') {
       const mapped = serverPlanErrors(failure.errors);
       setServerErrors(mapped.errors);
-      const detail = mapped.rest.map((issue) => issue.message).join('; ');
-      setNotice(mapped.rest.length > 0 ? (t) => t('common.error.invalid', { detail }) : (t) => t('form.fixMarked'));
+      // What no field shows, in panel words (the API's English only as a detail line).
+      const rest = new ApiError(failure.status, failure.code, failure.message, mapped.rest);
+      setNotice(mapped.rest.length > 0 ? (t, lang) => problemText(rest, t, lang) : (t) => t('form.fixMarked'));
     } else {
-      setNotice((t) => problemText(failure, t));
+      setNotice((t, lang) => problemText(failure, t, lang));
     }
   }
 
@@ -324,14 +325,14 @@ function PlanEditor({ list, plan }: { list: PlanList; plan?: AdminPlan }) {
                   dir="ltr"
                   inputMode="numeric"
                   disabled={isFree}
-                  value={isFree ? '0' : form.rank}
+                  value={isFree ? formatPlain(0, locale) : form.rank}
                   placeholder={plan ? undefined : t('plan.rank.auto')}
                   onChange={(event) => update({ rank: event.target.value })}
                 />
               )}
             </Field>
             <Field id={`${baseId}-sort`} label={t('plan.sort')} hint={t('plan.sort.hint')} error={err('sort')} {...(plan ? {} : { optional: t('form.optional') })}>
-              {(control) => <Input {...control} dir="ltr" inputMode="numeric" value={form.sort} placeholder={plan ? undefined : '0'} onChange={(event) => update({ sort: event.target.value })} />}
+              {(control) => <Input {...control} dir="ltr" inputMode="numeric" value={form.sort} placeholder={plan ? undefined : formatPlain(0, locale)} onChange={(event) => update({ sort: event.target.value })} />}
             </Field>
             <Field id={`${baseId}-badge`} label={t('plan.badge')} hint={t('plan.badge.hint')}>
               {(control) => (
@@ -541,7 +542,7 @@ function QuotaRow({
   field: PlanForm['quotas'][PlanQuota];
   onChange: (field: PlanForm['quotas'][PlanQuota]) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <div className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="grid gap-0.5">
@@ -566,7 +567,7 @@ function QuotaRow({
             className="pe-3 text-end tabular-nums"
             disabled={field.unlimited}
             value={field.unlimited ? '' : field.value}
-            placeholder={field.unlimited ? '∞' : '0'}
+            placeholder={field.unlimited ? '∞' : formatPlain(0, locale)}
             aria-invalid={Boolean(error)}
             aria-describedby={error ? `${id}-error ${id}-help` : `${id}-help`}
             onChange={(event) => onChange({ ...field, value: event.target.value })}

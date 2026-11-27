@@ -15,7 +15,7 @@ import {
 } from '@app/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { actorOf, adminWrite } from '../admin/audit.js';
-import { HttpProblem } from '../lib/problem.js';
+import { adminConflict, fieldInvalid } from '../admin/problems.js';
 
 /**
  * The visual templates in the admin panel:
@@ -102,14 +102,14 @@ export const adminAppearanceRoutes: FastifyPluginAsyncZod = async (app) => {
       const body = request.body;
       if (!body.offered.includes(body.defaultTemplate)) {
         const message = 'The default template must be one of the offered templates.';
-        throw new HttpProblem('field_invalid', { detail: message, errors: [{ in: 'body', pointer: '/offered', code: 'default_not_offered', message }] });
+        throw fieldInvalid('/offered', 'default_not_offered', message);
       }
       const offered = new Set(body.offered);
       const after: UiTemplatesConfig = { default: body.defaultTemplate, offered: uiTemplates.filter((id) => offered.has(id)) };
       const outcome = await adminWrite(app, request, async (tx, trail) => {
         const raw = await uiTemplatesForUpdate(tx);
         if (versionOf(raw) !== body.baseVersion) {
-          throw new HttpProblem('conflict', { detail: 'The appearance was changed meanwhile; load it again and save from there.' });
+          throw adminConflict('appearance_changed', 'The appearance was changed meanwhile; load it again and save from there.');
         }
         const stored = storedValue(raw);
         const same = stored !== null && stored.default === after.default && JSON.stringify(stored.offered) === JSON.stringify(after.offered);

@@ -66,7 +66,7 @@ describe('the text queue', () => {
 
   it('reads the queue again when a profile changed in the meantime', async () => {
     const id = textItem(1).user.id;
-    const api = queueApi({ [`POST /v1/admin/moderation/texts/${id}/approve`]: () => problem(409, 'conflict', { detail: 'The profile changed; reload it.' }) });
+    const api = queueApi({ [`POST /v1/admin/moderation/texts/${id}/approve`]: () => problem(409, 'conflict', { detail: 'The profile changed; reload it.', reason: 'stale' }) });
     renderPanel('/moderation/texts', api);
     await screen.findByText('About text 1');
     const reads = api.of('GET /v1/admin/moderation/texts').length;
