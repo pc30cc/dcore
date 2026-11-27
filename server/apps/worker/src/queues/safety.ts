@@ -1,4 +1,4 @@
-import { dueModeration, settleModeration, sweepReportEvidence } from '@app/db';
+import { dueModeration, settleModeration, sweepReportEvidence, type ActionView } from '@app/db';
 import {
   SAFETY_QUEUE,
   applyModerationEffects,
@@ -34,9 +34,15 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   status it rests at, or still penalised when another action stands),
  *   then its Valkey and realtime side: the person comes back into its
  *   peers' lists on their next read and hears `account` with the new status.
- *   Settling an account that is already in line changes nothing and
- *   publishes nothing. Event ids are planned and stored with the job first,
- *   so a retry publishes the same events.
+ *   A suspension or ban whose period ended while another restriction keeps
+ *   the status (a ban, a later suspension) changes no state, but `GET /v1/me`
+ *   lists only the actions in force: the person's own view version moves and
+ *   they hear `account` with the ended action, once per action (a marker in
+ *   kv-core outlives the sweep's week). Settling an account that is already
+ *   in line, and whose ended action was told, changes nothing and publishes
+ *   nothing. A shadowban's end never moves the view by itself. Event ids are
+ *   planned and stored with the job first, so a retry publishes the same
+ *   events.
  * - `moderation-sweep` (every 10 minutes, under a lease): an end whose job
  *   was lost (Valkey lost it, the API could not queue it) is queued again.
  * - `block-deck`: a block made while a deck refill of one of the pair was
@@ -58,17 +64,29 @@ export interface ModerationSweepResult {
   queued: number;
 }
 
+/** How long the "ended action told" marker lives: past the sweep's week of re-queued ends. */
+export const MODERATION_END_TOLD_TTL_SECONDS = 8 * 86_400;
+
+/** A suspension or ban (what `GET /v1/me` lists while in force) that was not lifted; the query reads it only once its period is over. */
+function endedInView(view: ActionView | null): view is ActionView {
+  return view !== null && (view.kind === 2 || view.kind === 3) && view.revokedAtMs === undefined;
+}
+
 export async function moderationEndJob(job: Job<ModerationEndData>, context: JobContext): Promise<ModerationEndResult> {
   const { services, log } = context;
   const data = moderationEndDataSchema.parse(job.data);
-  const outcome = await settleModeration(services.pg, data.userId);
+  const outcome = await settleModeration(services.pg, data.userId, data.actionId);
   if (outcome.outcome === 'missing') return { outcome: 'missing' };
   const changed = outcome.before.status !== outcome.after.status || outcome.before.shadowbanned !== outcome.after.shadowbanned;
-  if (!changed) {
+  const ended = endedInView(outcome.endedAction) ? outcome.endedAction : null;
+  const toldKey = services.keys.moderationEndTold(data.actionId);
+  if (!changed && (ended === null || (await context.redis.exists(toldKey)) > 0)) {
     log.info({ actionId: data.actionId }, 'moderation end: the account was already settled');
     return { outcome: 'settled', changed: false, published: 0 };
   }
-  const eventIds = plannedEventIds(outcome, data.eventIds ?? {}, () => services.ids.nextId());
+  // Unchanged state with an ended suspension or ban: the action carries the write, so the own view moves and the person hears it.
+  const effect = changed ? outcome : { ...outcome, action: ended };
+  const eventIds = plannedEventIds(effect, data.eventIds ?? {}, () => services.ids.nextId());
   if (JSON.stringify(eventIds) !== JSON.stringify(data.eventIds ?? {})) await job.updateData({ ...data, eventIds });
   const effects = await applyModerationEffects(
     {
@@ -81,13 +99,15 @@ export async function moderationEndJob(job: Job<ModerationEndData>, context: Job
       nextId: () => services.ids.nextId(),
       log,
     },
-    outcome,
+    effect,
     { eventIds },
   );
+  // After the effects ran: a run that failed before this point is retried and tells the person then.
+  if (ended !== null) await context.redis.set(toldKey, '1', 'EX', MODERATION_END_TOLD_TTL_SECONDS);
   // A call in a conversation the change ended ends with it.
   await endCallsOf(context, outcome.ended);
   log.info({ actionId: data.actionId, status: outcome.after.status, published: effects.published }, 'moderation end: settled');
-  return { outcome: 'settled', changed: true, published: effects.published };
+  return { outcome: 'settled', changed, published: effects.published };
 }
 
 export async function moderationSweepJob(context: JobContext): Promise<ModerationSweepResult> {

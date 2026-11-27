@@ -378,12 +378,12 @@ describe.skipIf(!hasDatabase)('admin moderation (migration 0027)', () => {
     const ban = await newId();
     await client.query(`SELECT moderation_apply($1, $2, 3::smallint, 2::smallint, 'Harassment.', NULL, $3, NULL, NULL)`, [ban, u, adminId]);
     const appealId = await scalar<string>(`INSERT INTO appeals (id, user_id, action_id, body) VALUES (id_next(), $1, $2, 'Not me.') RETURNING id::text AS v`, [u, ban]);
-    const decided = await adminDecideAppeal(pool, { appealId, overturn: true, adminId, text: 'You were right.', liftId: await newId() });
+    const decided = await adminDecideAppeal(pool, { appealId, overturn: true, adminId, text: 'You were right.', liftId: await newId(), withShadowbans: true });
     expect(decided.outcome).toMatchObject({ outcome: 'overturned', after: { status: 3 } });
     expect(decided.appeal).toMatchObject({ status: 3, decisionText: 'You were right.', decidedBy: { displayName: 'Mina' }, action: { id: ban } });
     expect(decided.appeal?.action.revokedAtMs).not.toBeNull();
     expect(decided.appeal?.history.map((a) => a.kind)).toEqual([5]);
-    expect((await adminDecideAppeal(pool, { appealId, overturn: false, adminId, text: 'x', liftId: await newId() })).outcome).toEqual({ outcome: 'decided' });
+    expect((await adminDecideAppeal(pool, { appealId, overturn: false, adminId, text: 'x', liftId: await newId(), withShadowbans: true })).outcome).toEqual({ outcome: 'decided' });
   });
 
   it('sweeps due evidence, skips a held report until its hold is released, keeps the report’s metadata', async (ctx) => {

@@ -8,7 +8,9 @@ import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
  * connection token, which a revoked session or account does not get. It
  * runs after the deny list was written. A kick that fails is queued as the
  * worker's `realtime-end` job, retried for longer than a connection token
- * lives; the subscribe check refuses the old token meanwhile.
+ * lives; the subscribe check refuses the old token's subscriptions
+ * meanwhile. The kick does not void that token: until it expires it can
+ * connect again, subscribing to nothing (realtime/subscribeProxy.ts).
  */
 
 type RealtimeApp = Pick<FastifyInstance, 'realtime' | 'publicIds' | 'jobs'>;

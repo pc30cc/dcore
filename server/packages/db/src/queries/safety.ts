@@ -295,13 +295,28 @@ export const revokeModeration = defineQuery(
 );
 
 const settleSchema = z.union([z.object({ outcome: z.literal('missing') }), moderationEffectSchema.extend({ outcome: z.literal('settled') })]);
-export type ModerationSettleOutcome = z.infer<typeof settleSchema>;
+/** `endedAction`: the person's view of the action whose period ended (null before its end by the database's clock, for a shadowban, another person's or an unknown action). */
+export type ModerationSettleOutcome = { outcome: 'missing' } | (Extract<z.infer<typeof settleSchema>, { outcome: 'settled' }> & { endedAction: ActionView | null });
 
-/** Puts an account in line with the actions that stand now (a period that ended). */
-export const settleModeration = defineQuery({ name: 'safety.settleModeration', statements: 1 }, async (db, userId: string): Promise<ModerationSettleOutcome> => {
-  const row = await one<{ out: unknown }>(db, sql`SELECT moderation_settle(${userId}::bigint) AS out`);
-  return settleSchema.parse(row.out);
-});
+/**
+ * Puts an account in line with the actions that stand now (a period that
+ * ended), and reads the person's view of `endedActionId` (the action whose
+ * end is settled) in the same statement.
+ */
+export const settleModeration = defineQuery(
+  { name: 'safety.settleModeration', statements: 1 },
+  async (db, userId: string, endedActionId?: string): Promise<ModerationSettleOutcome> => {
+    const row = await one<{ out: unknown; ended: unknown }>(
+      db,
+      sql`SELECT moderation_settle(${userId}::bigint) AS out,
+                 (SELECT moderation_action_view(a.id) FROM moderation_actions a
+                   WHERE a.id = ${endedActionId ?? null}::bigint AND a.user_id = ${userId}::bigint AND a.ends_at <= now()) AS ended`,
+    );
+    const out = settleSchema.parse(row.out);
+    if (out.outcome === 'missing') return out;
+    return { ...out, endedAction: row.ended === null ? null : actionViewSchema.parse(row.ended) };
+  },
+);
 
 /**
  * What appeal_decide() answers. An overturn on an account the purge already

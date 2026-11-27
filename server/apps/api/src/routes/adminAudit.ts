@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { adminWrite } from '../admin/audit.js';
 import { takeAdminLimit } from '../admin/limits.js';
 import { fieldInvalid, pageOf, readCursorKey } from '../admin/cursors.js';
-import { auditEntryOf, callerMay } from '../admin/refs.js';
+import { auditEntryOf, callerMay, userReadScope } from '../admin/refs.js';
 import { HttpProblem } from '../lib/problem.js';
 
 /**
@@ -31,7 +31,11 @@ import { HttpProblem } from '../lib/problem.js';
  * primary key or the index its filter names, newest first, `LIMIT n + 1`.
  * `target` is a person's public id when the type is `user`, else the row's
  * decimal id. An export is itself audited (`audit.export`, the filters and
- * the row count) before its file is sent.
+ * the row count) before its file is sent. A caller who may not see
+ * shadowbans (`userReadScope`) reads neither a shadowban, nor its lift, nor
+ * an export filtered on shadowbans, in the page and in the file alike (left
+ * out by the search itself), nor the flag or a "shadowban" resolution in a
+ * detail (`auditEntryOf`).
  */
 
 const auditCursor = z.object({ id: idSchema });
@@ -52,7 +56,7 @@ function badQuery(pointer: string, message: string, where: 'query' | 'body'): Ht
 }
 
 /** The filters as the database reads them; null when the target is a well-formed public id of nobody (nothing can match). */
-function searchOf(app: FastifyInstance, filters: AuditFilters, where: 'query' | 'body'): Omit<AuditSearch, 'limit' | 'beforeId'> | null {
+function searchOf(app: FastifyInstance, filters: AuditFilters, where: 'query' | 'body'): Omit<AuditSearch, 'limit' | 'beforeId' | 'withShadowbans'> | null {
   let targetId: string | undefined;
   if (filters.target !== undefined) {
     if (filters.targetType === 'user') {
@@ -135,9 +139,10 @@ export const adminAuditRoutes: FastifyPluginAsyncZod = async (app) => {
       const key = readCursorKey(auditCursor, cursor);
       const search = searchOf(app, filters, 'query');
       if (search === null) return { items: [], nextCursor: null };
-      const rows = await adminAuditSearch(app.pg, { ...search, beforeId: key?.id ?? null, limit: limit + 1 });
+      const { shadow } = userReadScope(app, request);
+      const rows = await adminAuditSearch(app.pg, { ...search, beforeId: key?.id ?? null, limit: limit + 1, withShadowbans: shadow });
       const adminDetails = callerMay(app, request, 'admins.read');
-      return pageOf(rows, limit, (row) => auditEntryOf(app, row, { adminDetails }), (row) => ({ id: row.id }));
+      return pageOf(rows, limit, (row) => auditEntryOf(app, row, { adminDetails, shadow }), (row) => ({ id: row.id }));
     },
   );
 
@@ -164,11 +169,12 @@ export const adminAuditRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const filters = request.body;
       const search = searchOf(app, filters, 'body');
+      const { shadow } = userReadScope(app, request);
       const ticket = await takeAdminLimit(app, request, 'admin_audit_export', EXPORT_PER_HOUR);
       let rows: AdminAuditRow[] | null = null;
       try {
         rows = await adminWrite(app, request, async (tx, trail) => {
-          const found = search === null ? [] : await adminAuditSearch(tx, { ...search, limit: AUDIT_EXPORT_MAX_ROWS + 1 });
+          const found = search === null ? [] : await adminAuditSearch(tx, { ...search, limit: AUDIT_EXPORT_MAX_ROWS + 1, withShadowbans: shadow });
           if (found.length > AUDIT_EXPORT_MAX_ROWS) throw fieldInvalid('', 'too_many_rows', 'Narrow the filter.');
           trail.record({ action: 'audit.export', target: 'none', detail: { filters, rows: found.length } });
           return found;
@@ -178,7 +184,7 @@ export const adminAuditRoutes: FastifyPluginAsyncZod = async (app) => {
         if (rows === null) await ticket.refund();
       }
       const adminDetails = callerMay(app, request, 'admins.read');
-      const csv = csvOf(rows.map((row) => auditEntryOf(app, row, { adminDetails })));
+      const csv = csvOf(rows.map((row) => auditEntryOf(app, row, { adminDetails, shadow })));
       return reply
         .code(200)
         .header('content-type', 'text/csv; charset=utf-8')

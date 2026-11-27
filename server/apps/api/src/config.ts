@@ -127,6 +127,7 @@ const envSchema = z
     CENTRIFUGO_TOKEN_HMAC_SECRET: z.string().min(32).optional(),
     /** The WebSocket URL apps connect to; default wss://<domains.realtime>/connection/websocket. */
     CENTRIFUGO_WS_URL: z.url({ protocol: /^wss?$/ }).optional(),
+    /** A connection token's lifetime; a revoked one can still connect (without subscribing) until it ends. */
     REALTIME_TOKEN_TTL_SECONDS: envInt(3_600, { min: 300, max: 86_400 }),
     /** Centrifugo's server API, for the events the API publishes itself (likes, ended conversations); unset: none are published. */
     CENTRIFUGO_API_URL: envUrl(['http', 'https']).optional(),

@@ -294,10 +294,11 @@ export type AdminReportHistoryRow = z.infer<typeof reportHistoryRow>;
  * A report's page in one statement: the report, its filings (the evidence
  * items, without the chat), the active holds naming it
  * (legal_holds_report_idx), its filing, the reported person's actions on it
- * (moderation_actions_user_idx), their other open reports (up to 10,
+ * (moderation_actions_user_idx; `withShadowbans` false: shadowbans are left
+ * out inside the limit), their other open reports (up to 10,
  * reports_target_idx) and its audit rows (up to 20, audit_log_target_idx).
  */
-export const adminReportDetail = defineQuery({ name: 'adminModeration.report', statements: 1 }, async (db, reportId: string): Promise<AdminReportDetailRow | null> => {
+export const adminReportDetail = defineQuery({ name: 'adminModeration.report', statements: 1 }, async (db, reportId: string, options: { withShadowbans: boolean }): Promise<AdminReportDetailRow | null> => {
   const row = await maybeOne<Record<string, unknown>>(
     db,
     sql`SELECT (SELECT ${adminReportRowSql} FROM reports r JOIN users tu ON tu.id = r.target_id LEFT JOIN users ru ON ru.id = r.reporter_id WHERE r.id = rep.id) AS summary,
@@ -310,6 +311,7 @@ export const adminReportDetail = defineQuery({ name: 'adminModeration.report', s
                coalesce((SELECT jsonb_agg(x.item ORDER BY x.id DESC)
                            FROM (SELECT m.id, admin_action_json(m) AS item FROM moderation_actions m
                                   WHERE m.user_id = rep.target_id AND m.report_id = rep.id
+                                    AND (${options.withShadowbans}::boolean OR m.kind <> 4)
                                   ORDER BY m.id DESC LIMIT 50) x), '[]'::jsonb) AS actions,
                coalesce((SELECT jsonb_agg(x.item ORDER BY x.id DESC)
                            FROM (SELECT r.id, ${adminReportRowSql} AS item
@@ -711,10 +713,14 @@ export type AdminAppealRow = z.infer<typeof adminAppealRowSchema>;
 const appealWithLocale = (appeal: SqlFragment, userId: SqlFragment) =>
   sql`(${appeal} || jsonb_build_object('locale', (SELECT lu.locale FROM users lu WHERE lu.id = ${userId})))`;
 
-/** Appeals: the open ones oldest first (appeals_queue_idx) or the decided ones newest first (the key). */
+/**
+ * Appeals: the open ones oldest first (appeals_queue_idx) or the decided ones
+ * newest first (the key). `withShadowbans` false: the person's other records
+ * leave shadowbans out inside their limit (admin_appeal_json of 0031).
+ */
 export const adminAppealList = defineQuery(
   { name: 'adminModeration.appeals', statements: 1 },
-  async (db, options: { status: 'open' | 'decided'; cursorId?: string | null | undefined; limit: number }): Promise<AdminAppealRow[]> => {
+  async (db, options: { status: 'open' | 'decided'; cursorId?: string | null | undefined; limit: number; withShadowbans: boolean }): Promise<AdminAppealRow[]> => {
     const open = options.status === 'open';
     const where = open
       ? options.cursorId
@@ -725,22 +731,22 @@ export const adminAppealList = defineQuery(
         : sql`ap.status <> 1`;
     const rows = await many<{ item: unknown }>(
       db,
-      sql`SELECT ${appealWithLocale(sql`admin_appeal_json(ap)`, sql`ap.user_id`)} AS item FROM appeals ap WHERE ${where} ORDER BY ap.id ${open ? sql`ASC` : sql`DESC`} LIMIT ${options.limit}`,
+      sql`SELECT ${appealWithLocale(sql`admin_appeal_json(ap, ${options.withShadowbans}::boolean)`, sql`ap.user_id`)} AS item FROM appeals ap WHERE ${where} ORDER BY ap.id ${open ? sql`ASC` : sql`DESC`} LIMIT ${options.limit}`,
     );
     return rows.map((r) => adminAppealRowSchema.parse(r.item));
   },
 );
 
-/** appeal_decide (0016) and the appeal after it, in one statement. */
+/** appeal_decide (0016) and the appeal after it (as {@link adminAppealList} reads it), in one statement. */
 export const adminDecideAppeal = defineQuery(
   { name: 'adminModeration.decideAppeal', statements: 1 },
-  async (db, input: { appealId: string; overturn: boolean; adminId: number; text: string; liftId: string }): Promise<{ outcome: AppealDecision; appeal: AdminAppealRow | null }> => {
+  async (db, input: { appealId: string; overturn: boolean; adminId: number; text: string; liftId: string; withShadowbans: boolean }): Promise<{ outcome: AppealDecision; appeal: AdminAppealRow | null }> => {
     const row = await one<{ out: unknown; appeal: unknown }>(
       db,
       sql`WITH d AS MATERIALIZED (
             SELECT appeal_decide(${input.appealId}::bigint, ${input.adminId}::integer, ${input.overturn}::boolean, ${input.text}::text, ${input.liftId}::bigint) AS out)
           SELECT d.out,
-                 ${appealWithLocale(sql`admin_appeal_view(${input.appealId}::bigint)`, sql`(SELECT xa.user_id FROM appeals xa WHERE xa.id = ${input.appealId}::bigint)`)} AS appeal
+                 ${appealWithLocale(sql`admin_appeal_view(${input.appealId}::bigint, ${input.withShadowbans}::boolean)`, sql`(SELECT xa.user_id FROM appeals xa WHERE xa.id = ${input.appealId}::bigint)`)} AS appeal
             FROM d`,
     );
     return { outcome: appealDecisionSchema.parse(row.out), appeal: adminAppealRowSchema.nullable().parse(row.appeal) };

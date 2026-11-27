@@ -213,6 +213,29 @@ describe.skipIf(!hasInfrastructure)('admin: appeals', () => {
     expect(full.history.map((x) => x.id)).toContain(shadow);
   });
 
+  it('fills the history of a role that may not see shadowbans with ten other records, in the list and in the decision', async () => {
+    const u = await person('Full History');
+    // Oldest first: a warning, the appealed ban, a shadowban, nine warnings.
+    const oldest = await seedAction(h, u.id, 1, 'The first one.');
+    const ban = await seedAction(h, u.id, 3, 'Spam links.');
+    const shadow = await seedAction(h, u.id, 4, 'Your account sent spam or unwanted promotion.');
+    const recent: string[] = [];
+    for (let i = 1; i <= 9; i += 1) recent.unshift(await seedAction(h, u.id, 1, `Warning ${i}.`));
+    const appeal = await seedAppeal(h, u.id, ban, 'Please.');
+    await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (43, 'appeal_decider', '{"en": "Appeal decider"}') ON CONFLICT (key) DO NOTHING`);
+    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (43, 'appeals.read'), (43, 'appeals.decide') ON CONFLICT DO NOTHING`);
+    await h.app.adminAuth.roles.reload();
+    admins.set('appeal_decider', await adminAs(h, 'appeal_decider'));
+    const listed = async (role: string) => adminAppealPageSchema.parse((await send('/v1/admin/appeals?limit=100', undefined, role)).json()).items.find((x) => x.id === appeal)!;
+    expect((await listed('appeal_decider')).history.map((x) => x.id)).toEqual([...recent, oldest]);
+    expect((await listed('moderator')).history.map((x) => x.id)).toEqual([...recent, shadow]);
+    const res = await send(`/v1/admin/appeals/${appeal}/uphold`, { text: 'The ban stays.' }, 'appeal_decider');
+    expect(res.statusCode, res.body).toBe(200);
+    expect(statements(res)).toBe(2);
+    expect(adminAppealDecisionSchema.parse(res.json()).appeal.history.map((x) => x.id)).toEqual([...recent, oldest]);
+    expect(res.body).not.toContain('shadowban');
+  });
+
   it('rolls back with a refused audit row: the appeal open, the action standing, nothing sent', async () => {
     const u = await person('Appeal Refused');
     const ban = await seedAction(h, u.id, 3, 'No.');

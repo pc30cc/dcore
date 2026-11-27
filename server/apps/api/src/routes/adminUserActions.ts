@@ -281,8 +281,11 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
       });
       let sideEffects: 'done' | 'failed';
       if (result.changed) {
-        // The person hears of a lift only when their account moved (a lifted warning reads revoked in their history).
-        const effect = sameState(result.outcome) ? { ...result.outcome, action: null } : result.outcome;
+        // A lifted suspension or ban always reaches the person (own view version, `account` with revokedAt), also when
+        // another one keeps the status where it was: GET /v1/me lists those in force. A lifted warning is in no cached
+        // view (their history reads it revoked): they hear of it only when their account moved.
+        const quiet = result.outcome.kind === 1 && sameState(result.outcome);
+        const effect = quiet ? { ...result.outcome, action: null } : result.outcome;
         sideEffects = await afterCommit(request, 'moderation effects', () => adminModeration(app).effects(effect), { userId: request.params.id, actionId });
       } else {
         // Lifted before: the own view is read again (it repairs a lift whose side failed).

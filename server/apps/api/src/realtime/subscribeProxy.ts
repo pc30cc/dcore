@@ -16,9 +16,17 @@ import { withTimeout } from '../lib/timeout.js';
  *   and access-token issue time) not revoked: `{result: {}}`;
  * - someone else's channel, or not a personal channel: error 403;
  * - no or malformed `meta`, or a revoked session or account: disconnect
- *   4501, so the connection closes and holds no connection slot;
+ *   4501, so that connection closes;
  * - Valkey not answering: error 503, temporary (fails closed; existing
  *   subscriptions are untouched and the client retries).
+ *
+ * Only subscriptions are checked here, never a connect: Centrifugo accepts
+ * any unexpired connection token, and the 3005 kick of a revocation does not
+ * void it. A copy of a revoked token can still open connections that never
+ * subscribe (they receive nothing) and so hold some of the person's
+ * connections under `client.user_connection_limit` until the token's `exp`
+ * plus Centrifugo's close delay (REALTIME_EXPIRED_CLOSE_DELAY_SECONDS); a
+ * short REALTIME_TOKEN_TTL_SECONDS keeps that window short.
  *
  * Every answer is HTTP 200 with JSON and never `{}` (an empty answer allows
  * the subscription). A request without the shared key gets HTTP 401 with no

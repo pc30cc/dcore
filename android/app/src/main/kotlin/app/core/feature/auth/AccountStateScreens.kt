@@ -117,8 +117,16 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
             runCatchingUnlessCancelled {
                 val me = api.me().value
                 val action = if (me.status.isRestricted) {
-                    val read = runCatchingUnlessCancelled { api.moderation() }.getOrNull()
-                    if (read != null) restrictingAction(read) else me.moderation.firstOrNull { it.restricts() && it.revokedAt == null }
+                    val read = runCatchingUnlessCancelled { api.moderation() }
+                    val history = read.getOrNull()
+                    when {
+                        history != null -> restrictingAction(history)
+                        // `GET /v1/me` lists only the actions in force: it never replaces a lifted one on
+                        // screen. The refresh fails instead, so the lifted state, the error line and the
+                        // round of re-reads all stay.
+                        _state.value.action?.revokedAt != null -> throw checkNotNull(read.exceptionOrNull())
+                        else -> me.moderation.firstOrNull { it.restricts() && it.revokedAt == null }
+                    }
                 } else {
                     null
                 }
@@ -129,6 +137,8 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
                 if (action?.revokedAt != null) recheckLifted() else stopLiftedRechecks()
             }.onFailure { e ->
                 _state.update { it.copy(loading = false, error = if (e is ApiError.Network) StepError.Offline else StepError.Failed) }
+                // A failed read (the account's or its moderation history) keeps the round going: the next wait, the same cap.
+                if (_state.value.action?.revokedAt != null) recheckLifted()
             }
         }
     }
@@ -174,7 +184,8 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
 
     /**
      * Lifted while the account still reads restricted: read again after each
-     * of [LIFTED_RECHECK_MS], one at a time, then only on a tap or a resume.
+     * of [LIFTED_RECHECK_MS], one at a time (a failed read counts as one),
+     * then only on a tap or a resume.
      */
     private fun recheckLifted() {
         if (liftedRecheck?.isActive == true) return

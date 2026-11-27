@@ -302,12 +302,37 @@ export function reportSummaryOf(app: FastifyInstance, row: AdminReportRow, scope
 }
 
 /** What the admin list shows (`admins.read`) and the audit log keeps to that permission: e-mails, roles, two-factor state. */
-const ADMIN_LIST_KEYS = new Set(['email', 'roles', 'totpEnabled']);
+const ADMIN_LIST_KEYS: ReadonlySet<string> = new Set(['email', 'roles', 'totpEnabled']);
+/** The account state's flag in the before and after of a write (users.shadowban or moderation.read). */
+const SHADOW_KEYS: ReadonlySet<string> = new Set(['shadowbanned']);
+/**
+ * The action filters of an export whose row count may include rows a caller
+ * without shadowban visibility is not shown: none, user.lift (a shadowban's
+ * lift) and audit.export (an export filtered on user.shadowban).
+ */
+const SHADOW_COUNTED_ACTIONS: ReadonlySet<unknown> = new Set([undefined, 'user.lift', 'audit.export']);
 
-function withoutAdminListKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutAdminListKeys);
+function withoutKeys(value: unknown, keys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) return value.map((inner) => withoutKeys(inner, keys));
   if (value === null || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !ADMIN_LIST_KEYS.has(key)).map(([key, inner]) => [key, withoutAdminListKeys(inner)]));
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.has(key)).map(([key, inner]) => [key, withoutKeys(inner, keys)]));
+}
+
+/**
+ * An audit detail as a caller without shadowban visibility reads it (the
+ * rows that name a shadowban are left out by the search): no shadowbanned
+ * flag, a "shadowban" resolution reads "other action", and an export that
+ * could have counted left-out rows shows no row count.
+ */
+function withoutShadowbans(action: string, detail: Record<string, unknown>): Record<string, unknown> {
+  const out = withoutKeys(detail, SHADOW_KEYS) as Record<string, unknown>;
+  if (out['resolution'] === 'shadowban') out['resolution'] = 'other_action';
+  if (action === 'audit.export') {
+    const filters = out['filters'];
+    const filtered = filters !== null && typeof filters === 'object' ? (filters as Record<string, unknown>)['action'] : undefined;
+    if (SHADOW_COUNTED_ACTIONS.has(filtered)) delete out['rows'];
+  }
+  return out;
 }
 
 /** Whether the caller's roles grant `permission` (false while the roles are not loaded). */
@@ -320,10 +345,13 @@ export function callerMay(app: FastifyInstance, request: FastifyRequest, permiss
  * An audit row on the wire. `adminDetails` false (a caller without
  * `admins.read`): the detail of a row about an admin leaves out what only
  * the admin list shows (e-mail, roles, two-factor state); the names stay.
+ * `shadow` false (a caller who may not see shadowbans, whose search left out
+ * the rows naming one): see {@link withoutShadowbans}.
  */
-export function auditEntryOf(app: FastifyInstance, row: AdminAuditRow, options: { adminDetails: boolean }): AuditEntry {
+export function auditEntryOf(app: FastifyInstance, row: AdminAuditRow, options: { adminDetails: boolean; shadow: boolean }): AuditEntry {
   const targetType = auditTarget.nameOrUndefined(row.targetType) ?? 'none';
-  const detail = !options.adminDetails && targetType === 'admin' && row.detail !== null ? (withoutAdminListKeys(row.detail) as Record<string, unknown>) : row.detail;
+  let detail = !options.adminDetails && targetType === 'admin' && row.detail !== null ? (withoutKeys(row.detail, ADMIN_LIST_KEYS) as Record<string, unknown>) : row.detail;
+  if (!options.shadow && detail !== null) detail = withoutShadowbans(row.action, detail);
   return {
     id: row.id,
     at: wireTime(row.atMs),

@@ -268,4 +268,76 @@ describe.skipIf(!hasInfrastructure)('admin: the audit log', () => {
     const ownerFile = await as('superadmin', '/v1/admin/audit/export', { targetType: 'admin', target: '424242' });
     expect(ownerFile.body).toContain('ops.lead@example.org');
   });
+
+  it('shows a role that reads the audit log but may not see shadowbans no shadowban, its lift or flag, on every page and in the file', async () => {
+    await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (45, 'auditor', '{"en": "Auditor"}') ON CONFLICT (key) DO NOTHING`);
+    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (45, 'audit.read') ON CONFLICT DO NOTHING`);
+    await h.app.adminAuth.roles.reload();
+    admins.set('auditor', await adminAs(h, 'auditor'));
+    const owner = admins.get('superadmin')!.account.id;
+    const p = await seedUser(h, { name: 'Shadow Audited' });
+    const state = (status: string, shadowbanned: boolean) => ({ status, shadowbanned });
+    await seed(100, { admin: owner, action: 'user.shadowban', targetType: 1, targetId: p.id, detail: { actionId: '901', reason: 'spam', note: null, before: state('active', false), after: state('active', true), ended: 0 } });
+    await seed(101, { admin: owner, action: 'user.ban', targetType: 1, targetId: p.id, detail: { actionId: '902', reason: 'scam', reasonText: 'Scam.', before: state('active', true), after: state('banned', true), ended: 0 } });
+    await seed(102, { admin: owner, action: 'user.lift', targetType: 1, targetId: p.id, detail: { actionId: '901', kind: 'shadowban', liftId: null, reasonText: 'Checked.', before: state('banned', true), after: state('banned', false) } });
+    await seed(103, { admin: owner, action: 'user.lift', targetType: 1, targetId: p.id, detail: { actionId: '902', kind: 'ban', liftId: '903', reasonText: null, before: state('banned', false), after: state('active', false) } });
+    await seed(104, { admin: owner, action: 'report.resolve', targetType: 3, targetId: '8801', detail: { status: 'resolved', resolution: 'shadowban', note: null, sameTarget: false } });
+    await seed(105, { admin: owner, action: 'audit.export', targetType: 0, targetId: null, detail: { filters: { action: 'user.shadowban', targetType: 'user', target: p.publicUid }, rows: 1 } });
+    await seed(106, { admin: owner, action: 'audit.export', targetType: 0, targetId: null, detail: { filters: { targetType: 'user', target: p.publicUid }, rows: 4 } });
+    await seed(107, { admin: owner, action: 'audit.export', targetType: 0, targetId: null, detail: { filters: { action: 'user.ban' }, rows: 2 } });
+    // An export of the exports counted the one filtered on shadowbans (105).
+    await seed(108, { admin: owner, action: 'audit.export', targetType: 0, targetId: null, detail: { filters: { action: 'audit.export' }, rows: 3 } });
+    const page = async (role: string, query: string) => {
+      const res = await as(role, `/v1/admin/audit?${query}`);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(statements(res)).toBe(1);
+      return { body: res.body, ...auditPageSchema.parse(res.json()) };
+    };
+    const onPerson = `targetType=user&target=${p.publicUid}`;
+
+    const limited = await page('auditor', `${onPerson}&limit=100`);
+    expect(limited.items.map((e) => [e.action, e.detail?.['actionId']])).toEqual([['user.lift', '902'], ['user.ban', '902']]);
+    expect(limited.items.map((e) => e.detail)).toEqual([
+      { actionId: '902', kind: 'ban', liftId: '903', reasonText: null, before: { status: 'banned' }, after: { status: 'active' } },
+      { actionId: '902', reason: 'scam', reasonText: 'Scam.', before: { status: 'active' }, after: { status: 'banned' }, ended: 0 },
+    ]);
+    expect(limited.body).not.toContain('shadowban');
+    // Pages hold only rows the caller is shown.
+    const first = await page('auditor', `${onPerson}&limit=1`);
+    expect(first.items.map((e) => e.action)).toEqual(['user.lift']);
+    const second = await page('auditor', `${onPerson}&limit=1&cursor=${first.nextCursor}`);
+    expect(second.items.map((e) => e.action)).toEqual(['user.ban']);
+    expect(second.nextCursor).toBeNull();
+    expect((await page('auditor', 'action=user.shadowban')).items).toEqual([]);
+    const tab = await as('auditor', `/v1/admin/users/${p.publicUid}/audit?limit=100`);
+    expect(tab.statusCode, tab.body).toBe(200);
+    expect(auditPageSchema.parse(tab.json()).items.map((e) => e.action)).toEqual(['user.lift', 'user.ban']);
+    expect(tab.body).not.toContain('shadowban');
+    const report = await page('auditor', 'targetType=report&target=8801');
+    expect(report.items.map((e) => e.detail?.['resolution'])).toEqual(['other_action']);
+    const exportsSeen = (await page('auditor', `action=audit.export&from=${day(4)}&limit=100`)).items.map((e) => e.detail);
+    expect(exportsSeen).toEqual([{ filters: { action: 'audit.export' } }, { filters: { action: 'user.ban' }, rows: 2 }, { filters: { targetType: 'user', target: p.publicUid } }]);
+
+    const file = await as('auditor', '/v1/admin/audit/export', { targetType: 'user', target: p.publicUid });
+    expect(file.statusCode, file.body).toBe(200);
+    expect(file.body.replace(/^\uFEFF/, '').split('\r\n')).toHaveLength(1 + 2 + 1);
+    expect(file.body).not.toContain('shadowban');
+    const own = (await auditRows(db, { action: 'audit.export', targetType: 0 })).filter((r) => r.admin_id === admins.get('auditor')!.account.id);
+    expect(own.map((r) => r.detail)).toEqual([{ filters: { targetType: 'user', target: p.publicUid }, rows: 2 }]);
+
+    // The owner reads every row as written.
+    const full = await page('superadmin', `${onPerson}&limit=100`);
+    expect(full.items.map((e) => e.action)).toEqual(['user.lift', 'user.lift', 'user.ban', 'user.shadowban']);
+    expect(full.items.at(-1)?.detail).toMatchObject({ after: { status: 'active', shadowbanned: true } });
+    expect((await page('superadmin', 'targetType=report&target=8801')).items.map((e) => e.detail?.['resolution'])).toEqual(['shadowban']);
+    const ownerFile = await as('superadmin', '/v1/admin/audit/export', { targetType: 'user', target: p.publicUid });
+    expect(ownerFile.body.replace(/^\uFEFF/, '').split('\r\n')).toHaveLength(1 + 4 + 1);
+    const exportsFull = (await page('superadmin', `action=audit.export&from=${day(4)}&to=${day(4)}&limit=100`)).items.map((e) => e.detail);
+    expect(exportsFull).toEqual([
+      { filters: { action: 'audit.export' }, rows: 3 },
+      { filters: { action: 'user.ban' }, rows: 2 },
+      { filters: { targetType: 'user', target: p.publicUid }, rows: 4 },
+      { filters: { action: 'user.shadowban', targetType: 'user', target: p.publicUid }, rows: 1 },
+    ]);
+  });
 });

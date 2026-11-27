@@ -61,11 +61,14 @@ describe.skipIf(!hasDatabase)('admin rules (migration 0028)', () => {
     if (!ready) ctx.skip();
     const now = Date.now();
     const cases: [Parameters<typeof adminAuditSearchStatement>[0], RegExp][] = [
-      [{ action: 'user.ban', limit: 21 }, /action_id_idx/],
-      [{ adminId: 3, limit: 21 }, /admin_id_id_idx/],
-      [{ targetType: 1, targetId: '12345', limit: 21 }, /target_type_target_id_id_idx/],
-      [{ targetType: 17, limit: 21 }, /target_type_id_idx/],
-      [{ fromMs: now - 86_400_000, toMs: now, limit: 21 }, /_pkey/],
+      [{ action: 'user.ban', limit: 21, withShadowbans: true }, /action_id_idx/],
+      [{ adminId: 3, limit: 21, withShadowbans: true }, /admin_id_id_idx/],
+      [{ targetType: 1, targetId: '12345', limit: 21, withShadowbans: true }, /target_type_target_id_id_idx/],
+      [{ targetType: 17, limit: 21, withShadowbans: true }, /target_type_id_idx/],
+      [{ fromMs: now - 86_400_000, toMs: now, limit: 21, withShadowbans: true }, /_pkey/],
+      // Without shadowbans: the same index, the rows it leaves out filtered on it.
+      [{ targetType: 1, targetId: '12345', limit: 21, withShadowbans: false }, /target_type_target_id_id_idx/],
+      [{ action: 'user.lift', limit: 21, withShadowbans: false }, /action_id_idx/],
     ];
     for (const [search, index] of cases) {
       const text = await plan(adminAuditSearchStatement(search));
@@ -73,7 +76,7 @@ describe.skipIf(!hasDatabase)('admin rules (migration 0028)', () => {
       expect(text, JSON.stringify(search)).not.toMatch(/Seq Scan/);
     }
     // A time range prunes the partitions outside it.
-    const ranged = await plan(adminAuditSearchStatement({ action: 'user.ban', fromMs: now - 3_600_000, toMs: now, limit: 21 }));
+    const ranged = await plan(adminAuditSearchStatement({ action: 'user.ban', fromMs: now - 3_600_000, toMs: now, limit: 21, withShadowbans: true }));
     expect(ranged).toMatch(/Subplans Removed|One-Time Filter|action_id_idx/);
     const { rows } = await client.query<{ n: number }>(
       `SELECT count(*)::integer AS n FROM pg_indexes WHERE tablename LIKE 'audit_log_p%' AND indexdef LIKE '%(action, id)%'`,

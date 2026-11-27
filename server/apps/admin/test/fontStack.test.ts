@@ -98,6 +98,22 @@ describe('the font stack of the panel', () => {
     expect(declarations(root?.body ?? '', property)[0]).toMatch(/^var\(--font-latin\)/);
   });
 
+  it('names the Persian face in the default stack after every system UI font and before the generic family: Latin text never falls to it', () => {
+    const setters = all.filter((r) => declarations(r.body, property).length > 0);
+    const root = setters.find((r) => r.selector.split(',').map((s) => s.trim()).includes(':root'));
+    const families = (declarations(root?.body ?? '', property)[0] ?? '').split(',').map((family) => family.trim());
+    expect(families[0]).toBe('var(--font-latin)');
+    const persian = families.indexOf('var(--font-persian)');
+    expect(persian, 'the Persian face is in the default stack').toBeGreaterThan(0);
+    for (const system of ['ui-sans-serif', 'system-ui', '-apple-system', '"Segoe UI"']) {
+      const at = families.indexOf(system);
+      expect(at, `${system} is in the default stack`).toBeGreaterThan(0);
+      expect(at, `${system} comes before the Persian face`).toBeLessThan(persian);
+    }
+    expect(families.at(-1)).toBe('sans-serif');
+    expect(persian).toBe(families.length - 2);
+  });
+
   it('never copies a brand family into a font-family directly', () => {
     for (const rule of all) {
       for (const value of declarations(rule.body, 'font-family')) {

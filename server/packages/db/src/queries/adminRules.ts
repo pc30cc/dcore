@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { joinSql, many, maybeOne, one, sql, type SqlFragment } from '../query.js';
-import { adminAuditRowSql, adminUserRefRowSchema, parseAdminAuditRow, type AdminAuditRow } from './adminUsers.js';
+import { adminAuditRowSql, adminUserRefRowSchema, auditWithoutShadowbansSql, parseAdminAuditRow, type AdminAuditRow } from './adminUsers.js';
 import { defineQuery } from './define.js';
 import { adminEpochMs, adminIdText, adminRefRow, adminRefSql, msOf } from './adminShared.js';
 
@@ -348,10 +348,13 @@ export interface AuditSearch {
   toMs?: number | undefined;
   beforeId?: string | null | undefined;
   limit: number;
+  /** False for a caller who may not see shadowbans: {@link auditWithoutShadowbansSql}. */
+  withShadowbans: boolean;
 }
 
 function auditConditions(search: AuditSearch): SqlFragment {
   const conditions: SqlFragment[] = [sql`TRUE`];
+  if (!search.withShadowbans) conditions.push(auditWithoutShadowbansSql);
   if (search.adminId !== undefined) conditions.push(sql`l.admin_id = ${search.adminId}::integer`);
   if (search.targetType !== undefined) conditions.push(sql`l.target_type = ${search.targetType}::smallint`);
   if (search.targetId !== undefined) conditions.push(sql`l.target_id = ${search.targetId}::bigint`);

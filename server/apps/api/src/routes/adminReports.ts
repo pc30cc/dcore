@@ -254,11 +254,11 @@ export const adminReportRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request): Promise<AdminReportDetail> => {
       const cfg = app.cfg.get();
-      const row = await adminReportDetail(app.pg, request.params.id);
+      const scope = userReadScope(app, request);
+      const row = await adminReportDetail(app.pg, request.params.id, { withShadowbans: scope.shadow });
       if (!row) throw noSuchReport();
       const ids = evidencePhotoIds(row.items);
       const photos = ids.length > 0 ? await adminEvidencePhotos(app.pg, ids) : [];
-      const scope = userReadScope(app, request);
       const summary = reportSummaryOf(app, row.report, scope);
       const contact = cfg.app['safety.child_safety_contact'];
       return {

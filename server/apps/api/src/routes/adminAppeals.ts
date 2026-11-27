@@ -40,9 +40,10 @@ const appealCursor = z.object({ id: idSchema });
 
 async function decide(app: FastifyInstance, request: FastifyRequest, appealId: string, overturn: boolean, text: string) {
   const adminId = adminIdOf(request);
+  const scope = userReadScope(app, request);
   const liftId = await withIdLease(() => app.ids.nextId());
   const decided = await adminWrite(app, request, async (tx, trail) => {
-    const result = await adminDecideAppeal(tx, { appealId, overturn, adminId, text, liftId });
+    const result = await adminDecideAppeal(tx, { appealId, overturn, adminId, text, liftId, withShadowbans: scope.shadow });
     const outcome: AppealDecision = result.outcome;
     if (!('actionId' in outcome)) {
       if (outcome.outcome === 'decided') throw new HttpProblem('conflict', { detail: 'Already decided.' });
@@ -89,7 +90,7 @@ async function decide(app: FastifyInstance, request: FastifyRequest, appealId: s
     );
   }
   const removed = 'deviceBans' in outcome ? { deviceBansRemoved: outcome.deviceBans.length } : {};
-  return { appeal: appealOf(app, appeal, userReadScope(app, request)), ...removed, sideEffects };
+  return { appeal: appealOf(app, appeal, scope), ...removed, sideEffects };
 }
 
 export const adminAppealRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -106,8 +107,9 @@ export const adminAppealRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const { status, limit, cursor } = request.query;
       const key = readCursorKey(appealCursor, cursor);
-      const rows = await adminAppealList(app.pg, { status, cursorId: key?.id ?? null, limit: limit + 1 });
       const scope = userReadScope(app, request);
+      // A shadowban leaves the person's history inside its limit (no gap of ten says one existed).
+      const rows = await adminAppealList(app.pg, { status, cursorId: key?.id ?? null, limit: limit + 1, withShadowbans: scope.shadow });
       return pageOf(rows, limit, (row) => appealOf(app, row, scope), (row) => ({ id: row.id }));
     },
   );

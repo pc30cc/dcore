@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { inlineScrollDelta } from '../src/lib/useSelectedInView';
@@ -195,6 +195,84 @@ describe('the tab strip after a change of language or font', () => {
       });
       await waitFor(() => expectInStrip(tab));
       expect(lastScroll()?.behavior).toBe('auto');
+    } finally {
+      delete (document as { fonts?: unknown }).fonts;
+    }
+  });
+
+  /** A deep link to Consents with fonts still loading, once the frame after the jump has passed. */
+  async function deepLinkWhileFontsLoad(): Promise<{ fonts: EventTarget; tab: HTMLElement; strip: HTMLElement }> {
+    const fonts = Object.assign(new EventTarget(), { status: 'loading', ready: new Promise<void>(() => undefined) });
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts });
+    signInAs(fullAdmin);
+    renderPanel(`/users/${SARA}?tab=consents`, userApi());
+    const tab = await screen.findByRole('tab', { name: 'Consents', selected: true });
+    await waitFor(() => expectInStrip(tab));
+    await act(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+    return { fonts, tab, strip: stripOf(tab) };
+  }
+
+  /** Another face (a weight, a subset) arrives and the tabs grow. */
+  async function aFaceLoads(fonts: EventTarget): Promise<void> {
+    tabWidth = 160;
+    act(() => {
+      fonts.dispatchEvent(new Event('loadingdone'));
+    });
+    await act(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+  }
+
+  it('leaves the strip where the person scrolled it when a font loads later', async () => {
+    try {
+      const { fonts, strip } = await deepLinkWhileFontsLoad();
+      // The person swipes back to the first tabs (a drag, a wheel, the keyboard: the strip scrolls); Consents leaves the view.
+      act(() => {
+        strip.scrollLeft = 0;
+        fireEvent.scroll(strip);
+      });
+      scrollBy.mockClear();
+      await aFaceLoads(fonts);
+      expect(scrollBy).not.toHaveBeenCalled();
+      expect(strip.scrollLeft).toBe(0);
+    } finally {
+      delete (document as { fonts?: unknown }).fonts;
+    }
+  });
+
+  it.each([
+    ['a vertical wheel', (strip: HTMLElement) => fireEvent.wheel(strip, { deltaY: 120 })],
+    ['a vertical swipe of the page', (strip: HTMLElement) => fireEvent.touchStart(strip, { touches: [{ clientX: 10, clientY: 10 }] })],
+    ['a press', (strip: HTMLElement) => fireEvent.pointerDown(strip)],
+    ['a key', (strip: HTMLElement) => fireEvent.keyDown(strip, { key: 'Tab' })],
+  ] as const)('keeps bringing the tab back after %s over the strip that does not scroll it', async (_name, input) => {
+    try {
+      const { fonts, tab, strip } = await deepLinkWhileFontsLoad();
+      input(strip);
+      scrollBy.mockClear();
+      await aFaceLoads(fonts);
+      expect(scrollBy).toHaveBeenCalled();
+      expectInStrip(tab);
+    } finally {
+      delete (document as { fonts?: unknown }).fonts;
+    }
+  });
+
+  it('takes its own scroll for its own: the scroll event of a correction stops nothing', async () => {
+    try {
+      const { fonts, tab, strip } = await deepLinkWhileFontsLoad();
+      await aFaceLoads(fonts);
+      expectInStrip(tab);
+      // The event of that correction arrives after it.
+      act(() => {
+        fireEvent.scroll(strip);
+      });
+      scrollBy.mockClear();
+      tabWidth = 220;
+      act(() => {
+        fonts.dispatchEvent(new Event('loadingdone'));
+      });
+      await act(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
+      expect(scrollBy).toHaveBeenCalled();
+      expectInStrip(tab);
     } finally {
       delete (document as { fonts?: unknown }).fonts;
     }

@@ -560,18 +560,28 @@ export function parseAdminAuditRow(value: unknown): AdminAuditRow {
   return auditRow.parse(value);
 }
 
-/** The audit rows about the person (target user; audit_log_target_idx), newest first. */
+/**
+ * The audit rows (alias `l`) a caller who may not see shadowbans reads: not a
+ * shadowban, not the lift of one, not an export filtered on shadowbans. In
+ * the statement, so a page and an export's row count hold only rows it shows.
+ */
+export const auditWithoutShadowbansSql = sql`l.action <> 'user.shadowban'
+  AND NOT (l.action = 'user.lift' AND l.detail ->> 'kind' IS NOT DISTINCT FROM 'shadowban')
+  AND NOT (l.action = 'audit.export' AND l.detail #>> '{filters,action}' IS NOT DISTINCT FROM 'user.shadowban')`;
+
+/** The audit rows about the person (target user; audit_log_target_idx), newest first; `withShadowbans` false: {@link auditWithoutShadowbansSql}. */
 export const adminUserAudit = defineQuery(
   { name: 'adminUsers.audit', statements: 1 },
-  async (db, userId: string, options: { beforeId?: string | null | undefined; limit: number }): Promise<Found<AdminAuditRow[]>> => {
+  async (db, userId: string, options: { beforeId?: string | null | undefined; limit: number; withShadowbans: boolean }): Promise<Found<AdminAuditRow[]>> => {
     const after = options.beforeId ? sql` AND l.id < ${options.beforeId}::bigint` : sql``;
+    const shown = options.withShadowbans ? sql`` : sql` AND ${auditWithoutShadowbansSql}`;
     const row = await one<{ found: boolean; items: unknown }>(
       db,
       sql`SELECT ${exists(userId)} AS found,
                  coalesce((SELECT jsonb_agg(x.item ORDER BY x.id DESC)
                              FROM (SELECT l.id, ${adminAuditRowSql} AS item
                                      FROM audit_log l
-                                    WHERE l.target_type = 1 AND l.target_id = ${userId}::bigint${after}
+                                    WHERE l.target_type = 1 AND l.target_id = ${userId}::bigint${after}${shown}
                                     ORDER BY l.id DESC
                                     LIMIT ${options.limit}) x), '[]'::jsonb) AS items`,
     );

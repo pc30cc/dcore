@@ -1,4 +1,17 @@
 # Rendered by media-runtime.sh into /tmp/runtime/media.conf.
+
+# A location's caching holds for the object (200, 206, or 304 on
+# revalidation) only: any other answer (nginx's 413 page, the store's own
+# refusals it passes on) is never cached, never rewritten.
+map $status $media_object_cache {
+    ~^(200|206|304)$ "public, max-age=86400";
+    default "no-store, no-transform";
+}
+map $status $media_origins_cache {
+    ~^(200|206|304)$ "public, max-age=300";
+    default "no-store, no-transform";
+}
+
 upstream media_store {
     server @ORIGIN@;
     keepalive 16;
@@ -58,7 +71,7 @@ server {
         proxy_hide_header Server;
         proxy_ignore_headers Set-Cookie;
 
-        add_header Cache-Control "public, max-age=300" always;
+        add_header Cache-Control $media_origins_cache always;
         add_header X-Content-Type-Options "nosniff" always;
     }
 
@@ -93,7 +106,7 @@ server {
         proxy_ignore_headers Set-Cookie;
 
         # A variant never changes under its key; the link itself expires.
-        add_header Cache-Control "public, max-age=86400" always;
+        add_header Cache-Control $media_object_cache always;
         add_header X-Content-Type-Options "nosniff" always;
     }
 }

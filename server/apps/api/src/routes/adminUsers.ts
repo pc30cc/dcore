@@ -412,10 +412,11 @@ export const adminUserRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const userId = readUserParam(app, request.params.id);
       const { limit, cursor } = request.query;
-      const { found, value } = await adminUserAudit(app.pg, userId, { beforeId: readCursor(cursor), limit: limit + 1 });
+      const { shadow } = userReadScope(app, request);
+      const { found, value } = await adminUserAudit(app.pg, userId, { beforeId: readCursor(cursor), limit: limit + 1, withShadowbans: shadow });
       if (!found) throw noSuchUser();
       const adminDetails = callerMay(app, request, 'admins.read');
-      return paged(value, limit, (row) => auditEntryOf(app, row, { adminDetails }));
+      return paged(value, limit, (row) => auditEntryOf(app, row, { adminDetails, shadow }));
     },
   );
 

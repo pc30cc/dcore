@@ -75,6 +75,8 @@ export function createKeys(prefix: string) {
     entitlementsVersion: (uid: string | bigint) => k('entv', uid),
     /** Moves after every wallet change (kv-core): cached entitlements of an older wallet version are not shown, the plan in them still counts. */
     entitlementsWalletVersion: (uid: string | bigint) => k('entwv', uid),
+    /** Set (kv-core) once the person was told that the period of a suspension or ban ended, so a later run of its end job tells nothing. */
+    moderationEndTold: (actionId: string | bigint) => k('mend', actionId),
 
     // Store purchases: one verification per token at a time and the Play RTDN dedupe (kv-core); the
     // record of a token the server has verified, so a repeat or a restore costs no statement (kv-cache)

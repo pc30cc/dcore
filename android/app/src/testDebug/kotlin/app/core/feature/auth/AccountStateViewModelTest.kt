@@ -4,11 +4,16 @@ import androidx.lifecycle.viewModelScope
 import app.core.common.Diag
 import app.core.common.FakeClock
 import app.core.model.AccountStatus
+import app.core.feature.onboarding.StepError
 import app.core.model.AppealStatus
+import app.core.model.Me
+import app.core.model.ModerationHistory
 import app.core.model.ModerationKind
 import app.core.model.ProblemCodes
 import app.core.net.ApiError
+import app.core.net.Fetched
 import app.core.net.SampleApi
+import app.core.net.ServerApi
 import app.core.store.ExternalSignIn
 import app.core.store.SmsCodeReceiver
 import kotlinx.coroutines.Dispatchers
@@ -110,8 +115,10 @@ class AccountStateViewModelTest {
     }
 
     /** A suspended account on the restricted screen, then its suspension lifted while the account still reads suspended. */
-    private suspend fun TestScope.liftedButStillRestricted(): Triple<SampleApi, AuthGate, AccountStateViewModel> {
-        val api = SampleApi(clock = clock)
+    private suspend fun TestScope.liftedButStillRestricted(
+        api: SampleApi = SampleApi(clock = clock),
+        modelApi: ServerApi = api,
+    ): Triple<SampleApi, AuthGate, AccountStateViewModel> {
         val gate = AuthGate(api, ExternalSignIn.None, SmsCodeReceiver.None, backgroundScope, Diag.Silent)
         gate.start()
         runCurrent()
@@ -123,7 +130,7 @@ class AccountStateViewModelTest {
             assertEquals(ProblemCodes.ACCOUNT_SUSPENDED, e.code)
         }
         runCurrent()
-        val model = AccountStateViewModel(api, gate)
+        val model = AccountStateViewModel(modelApi, gate)
         runCurrent()
         val action = model.state.value.action!!
         api.liftModeration(action.id, accountCatchesUp = false)
@@ -169,6 +176,108 @@ class AccountStateViewModelTest {
         runCurrent()
         assertNull(model.state.value.action)
         assertEquals(Root.Main, gate.root.value)
+        model.viewModelScope.cancel()
+    }
+
+    @Test
+    fun aFailedRereadKeepsTheRoundGoingUpToTheSameCap() = runTest(dispatcher) {
+        val sample = SampleApi(clock = clock)
+        var down = false
+        var failed = 0
+        val flaky = object : ServerApi by sample {
+            override suspend fun me(): Fetched<Me> {
+                if (down) {
+                    failed++
+                    throw ApiError.Network(java.io.IOException("down"))
+                }
+                return sample.me()
+            }
+        }
+        val (api, gate, model) = liftedButStillRestricted(sample, flaky)
+        val reads = api.reads()
+        // The first automatic read finds no network.
+        down = true
+        advanceTimeBy(LIFTED_RECHECK_MS[0])
+        runCurrent()
+        assertEquals(1, failed)
+        assertEquals(StepError.Offline, model.state.value.error)
+        assertNotNull(model.state.value.action?.revokedAt)
+        // Back online: the next wait still ends in a read, and the one after it.
+        down = false
+        advanceTimeBy(LIFTED_RECHECK_MS[1] - 1)
+        runCurrent()
+        assertEquals("not before ${LIFTED_RECHECK_MS[1]}ms", reads, api.reads())
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals("read after the failed one", reads + 1, api.reads())
+        assertNull(model.state.value.error)
+        advanceTimeBy(LIFTED_RECHECK_MS[2])
+        runCurrent()
+        assertEquals(reads + 2, api.reads())
+        // The failed read counted as one of them: no fourth.
+        advanceTimeBy(60 * 60_000L)
+        runCurrent()
+        assertEquals(reads + 2, api.reads())
+        assertEquals(1, failed)
+        // A tap that fails after the round starts no new one either.
+        down = true
+        model.refresh()
+        runCurrent()
+        assertEquals(2, failed)
+        advanceTimeBy(60 * 60_000L)
+        runCurrent()
+        assertEquals(2, failed)
+        assertEquals(reads + 2, api.reads())
+        assertEquals(Root.Restricted, gate.root.value)
+        model.viewModelScope.cancel()
+    }
+
+    @Test
+    fun aFailedModerationReadKeepsTheLiftedActionAndTheRound() = runTest(dispatcher) {
+        val sample = SampleApi(clock = clock)
+        var down = false
+        var failed = 0
+        val flaky = object : ServerApi by sample {
+            override suspend fun moderation(): ModerationHistory {
+                if (down) {
+                    failed++
+                    throw ApiError.Network(java.io.IOException("down"))
+                }
+                return sample.moderation()
+            }
+        }
+        val (api, gate, model) = liftedButStillRestricted(sample, flaky)
+        val lifted = model.state.value.action!!
+        val reads = api.reads()
+        // The first automatic read gets the account (still suspended) but not its moderation history.
+        down = true
+        advanceTimeBy(LIFTED_RECHECK_MS[0])
+        runCurrent()
+        assertEquals(1, failed)
+        assertEquals("the account itself was read", reads + 1, api.reads())
+        val state = model.state.value
+        assertEquals(StepError.Offline, state.error)
+        assertEquals("the lifted one stays on screen", lifted.id, state.action?.id)
+        assertNotNull(state.action?.revokedAt)
+        assertEquals(AccountStatus.Suspended, state.status)
+        // Back online: the round goes on with the next wait, and the one after it.
+        down = false
+        advanceTimeBy(LIFTED_RECHECK_MS[1] - 1)
+        runCurrent()
+        assertEquals("not before ${LIFTED_RECHECK_MS[1]}ms", reads + 1, api.reads())
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals("read after the failed one", reads + 2, api.reads())
+        assertNull(model.state.value.error)
+        assertNotNull(model.state.value.action?.revokedAt)
+        advanceTimeBy(LIFTED_RECHECK_MS[2])
+        runCurrent()
+        assertEquals(reads + 3, api.reads())
+        // The failed read counted as one of them: no fourth.
+        advanceTimeBy(60 * 60_000L)
+        runCurrent()
+        assertEquals(reads + 3, api.reads())
+        assertEquals(Root.Restricted, gate.root.value)
         model.viewModelScope.cancel()
     }
 

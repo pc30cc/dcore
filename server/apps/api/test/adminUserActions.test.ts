@@ -12,8 +12,12 @@ import {
   userChannel,
   type RealtimeEnvelope,
 } from '@app/shared';
-import { CdnUrlSigner, FakeObjectStorage, FakeRealtimePublisher, IdGeneratorUnavailableError, accountJobNames, type MediaStore } from '@app/shared/server';
+import { CdnUrlSigner, FakeObjectStorage, FakeRealtimePublisher, IdGeneratorUnavailableError, accountJobNames, type MediaStore, type ModerationEndData } from '@app/shared/server';
+import { createPool } from '@app/db';
+import { loadConfig as loadWorkerConfig, moderationEndJob, type JobContext } from '@app/worker';
+import type { Job } from 'bullmq';
 import type { LightMyRequestResponse } from 'fastify';
+import pino from 'pino';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryJobProducer } from '../src/services/jobs.js';
 import { call, json, migratedDatabase, row, rows, seedUser, statements, type SeededUser, type TestDatabase } from './accountSupport.js';
@@ -407,6 +411,122 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
       expect(again.statusCode).toBe(200);
       expect(statements(again)).toBe(1);
       expect(await auditRows(db, { action: 'user.lift', targetId: u.id })).toHaveLength(1);
+    });
+
+    /** A restricted session of a banned or suspended person (after the second of the revocation), as the refresh gives it. */
+    async function restrictedToken(user: SeededUser): Promise<string> {
+      const refreshToken = await refreshTokenFor(h, user);
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      const refreshed = await call(h, '/v1/auth/refresh', { method: 'POST', body: { refreshToken } });
+      expect(refreshed.statusCode, refreshed.body).toBe(403);
+      return String(json(refreshed)['accessToken']);
+    }
+
+    async function ownModeration(token: string): Promise<string[]> {
+      const res = await call(h, '/v1/me', { token });
+      expect(res.statusCode, res.body).toBe(200);
+      return (meSchema.parse(res.json()).moderation ?? []).map((a) => a.id);
+    }
+
+    it('lifts a suspension under a standing ban: the status stays, GET /v1/me drops it and the person hears it lifted', async () => {
+      const u = await person('Ban And Suspension');
+      const ban = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/ban`, { reason: 'scam', reasonText: 'Scam.' })).json()).action;
+      const suspension = adminActionResultSchema.parse(
+        (await send('POST', `/v1/admin/users/${u.publicUid}/suspend`, { reason: 'spam', reasonText: 'Pause.', endsAt: new Date(Date.now() + 3 * DAY).toISOString() })).json(),
+      ).action;
+      const token = await restrictedToken(u);
+      expect(await ownModeration(token)).toEqual([suspension.id, ban.id]);
+      const heard = events(u, 'account').length;
+      const res = await send('POST', `/v1/admin/users/${u.publicUid}/lift`, { actionId: suspension.id, reasonText: 'Too much.' }, 'moderator');
+      expect(res.statusCode, res.body).toBe(200);
+      const body = adminActionResultSchema.parse(res.json());
+      expect(body).toMatchObject({ user: { status: 'banned' }, action: { id: suspension.id, standing: false }, sideEffects: 'done' });
+      expect((await audited('user.lift', u, 'moderator')).detail).toMatchObject({ before: { status: 'banned' }, after: { status: 'banned' } });
+      // The cached view moved: the lifted suspension is gone, the ban stands.
+      expect(await ownModeration(token)).toEqual([ban.id]);
+      const told = events(u, 'account');
+      expect(told).toHaveLength(heard + 1);
+      expect(realtimePayloads.account.parse(told.at(-1)!.d)).toMatchObject({ status: 'banned', moderation: { id: suspension.id, kind: 'suspension', revokedAt: body.action.revokedAt } });
+    });
+
+    it('lifts one of two suspensions: still suspended, GET /v1/me lists the other one only', async () => {
+      const u = await person('Two Suspensions');
+      const suspend = async (days: number) =>
+        adminActionResultSchema.parse(
+          (await send('POST', `/v1/admin/users/${u.publicUid}/suspend`, { reason: 'spam', reasonText: `${days} days.`, endsAt: new Date(Date.now() + days * DAY).toISOString() })).json(),
+        ).action;
+      const first = await suspend(3);
+      const second = await suspend(5);
+      const token = await restrictedToken(u);
+      expect(await ownModeration(token)).toEqual([second.id, first.id]);
+      const heard = events(u, 'account').length;
+      const body = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/lift`, { actionId: first.id })).json());
+      expect(body.user.status).toBe('suspended');
+      expect(await ownModeration(token)).toEqual([second.id]);
+      const told = events(u, 'account');
+      expect(told).toHaveLength(heard + 1);
+      expect(realtimePayloads.account.parse(told.at(-1)!.d)).toMatchObject({ status: 'suspended', moderation: { id: first.id, revokedAt: body.action.revokedAt } });
+    });
+
+    it('ends a suspension under a standing ban on its own: GET /v1/me drops it at once (no 304 over it), the person hears it once', async () => {
+      const u = await person('Suspension Ends Under Ban');
+      const ban = adminActionResultSchema.parse((await send('POST', `/v1/admin/users/${u.publicUid}/ban`, { reason: 'scam', reasonText: 'Scam.' })).json()).action;
+      const suspension = adminActionResultSchema.parse(
+        (await send('POST', `/v1/admin/users/${u.publicUid}/suspend`, { reason: 'spam', reasonText: 'Pause.', endsAt: new Date(Date.now() + 3 * DAY).toISOString() })).json(),
+      ).action;
+      const token = await restrictedToken(u);
+      const before = await call(h, '/v1/me', { token });
+      expect((meSchema.parse(before.json()).moderation ?? []).map((a) => a.id)).toEqual([suspension.id, ban.id]);
+      // The suspension's period is over; its end job runs (the worker's, on the same database and Valkey).
+      await db.sql.query(`UPDATE moderation_actions SET starts_at = now() - interval '2 hours', ends_at = now() - interval '1 second' WHERE id = $1`, [suspension.id]);
+      const pool = createPool({ connectionString: db.url, applicationName: 'admin-actions-worker', max: 1 });
+      const worker: JobContext = {
+        config: loadWorkerConfig({
+          NODE_ENV: 'test',
+          LOG_LEVEL: 'silent',
+          DATABASE_URL: db.url,
+          REDIS_URL: h.app.config.redis.url,
+          REDIS_KEY_PREFIX: h.prefix,
+          ID_PUBLIC_KEY: h.app.config.ids.publicKey,
+          ID_BILLING_KEY: h.app.config.ids.billingKey,
+          WORKER_ID: 'admin-actions-worker',
+        }),
+        redis: h.redis,
+        log: pino({ level: 'silent' }),
+        token: 'test-token',
+        services: { pg: pool, cache: h.redis, ids: h.app.ids, keys: h.app.keys, publicIds: h.app.publicIds, realtime, media: null, photoModerator: { moderate: async () => ({ decision: 'review' }) } as never },
+      };
+      const endJob = () => {
+        const job = {
+          name: 'moderation-end',
+          id: `moderation-end.${suspension.id}`,
+          data: { actionId: suspension.id, userId: u.id } as ModerationEndData,
+          async updateData(next: ModerationEndData) {
+            job.data = next;
+          },
+        };
+        return job as unknown as Job<ModerationEndData>;
+      };
+      try {
+        const heard = events(u, 'account').length;
+        expect(await moderationEndJob(endJob(), worker)).toEqual({ outcome: 'settled', changed: false, published: 1 });
+        expect(await row(db, `SELECT status FROM users WHERE id = $1`, [u.id])).toEqual({ status: 6 });
+        // The app's copy no longer matches: a full answer that lists the ban only.
+        const after = await call(h, '/v1/me', { token, headers: { 'if-none-match': String(before.headers['etag']) } });
+        expect(after.statusCode, after.body).toBe(200);
+        expect((meSchema.parse(after.json()).moderation ?? []).map((a) => a.id)).toEqual([ban.id]);
+        const told = events(u, 'account');
+        expect(told).toHaveLength(heard + 1);
+        const payload = realtimePayloads.account.parse(told.at(-1)!.d);
+        expect(payload).toMatchObject({ status: 'banned', moderation: { id: suspension.id, kind: 'suspension' } });
+        expect(payload.moderation).not.toHaveProperty('revokedAt');
+        // The sweep queues the end again while the ban stands: a later run tells nothing and the view stays.
+        expect(await moderationEndJob(endJob(), worker)).toEqual({ outcome: 'settled', changed: false, published: 0 });
+        expect((await call(h, '/v1/me', { token, headers: { 'if-none-match': String(after.headers['etag']) } })).statusCode).toBe(304);
+        expect(events(u, 'account')).toHaveLength(heard + 1);
+      } finally {
+        await pool.end();
+      }
     });
 
     it('lifts a warning without telling the person, refuses another person’s action and rolls back with a refused row', async () => {

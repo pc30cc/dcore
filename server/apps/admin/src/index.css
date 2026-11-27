@@ -122,11 +122,19 @@
   /*
    * The UI font stack per language. Default and override stay in this layer:
    * an unlayered declaration would beat the override. Elements with a lang of
-   * their own (per-locale fields, options) switch with it.
+   * their own (per-locale fields, options) switch with it. Fallback is per
+   * character, in this order: the default names the Persian face after the
+   * system UI fonts and before the generic family, so every Latin glyph (and
+   * Turkish letters) stays with the system UI font and the run-time Persian
+   * font is neither used nor fetched for Latin text, while Arabic-script
+   * glyphs in user-written text (which carries no lang) come from the Persian
+   * face wherever the system UI font has none, instead of an arbitrary
+   * system fallback. A system UI font that has Arabic script (Segoe UI) draws
+   * it itself.
    */
   :root,
   [lang] {
-    --font-ui: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-ui: var(--font-latin), ui-sans-serif, system-ui, -apple-system, "Segoe UI", var(--font-persian), sans-serif;
   }
   [lang|="fa"] {
     --font-ui: var(--font-persian), Tahoma, ui-sans-serif, system-ui, sans-serif;

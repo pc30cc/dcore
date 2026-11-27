@@ -28,7 +28,10 @@ export function motionBehavior(): ScrollBehavior {
  * (the new language's face, or a stylesheet that arrives late) finish loading
  * later. The tab is brought back after that frame, once `document.fonts` is
  * ready, and each time a font load completes, until `value` or `layoutKey`
- * change again.
+ * change again, or until the strip scrolls to an offset the hook did not
+ * leave it at: the person's own scroll of the strip (a drag, a swipe, a
+ * wheel, the keyboard) is never undone, while input that does not move the
+ * strip (a vertical wheel or page swipe over it, a tap) stops nothing.
  */
 export function useSelectedInView(strip: RefObject<HTMLElement | null>, value: string, layoutKey: string): void {
   const shown = useRef<string | null>(null);
@@ -47,22 +50,35 @@ export function useSelectedInView(strip: RefObject<HTMLElement | null>, value: s
     bring(animate ? motionBehavior() : 'auto');
     if (animate) return;
     let alive = true;
+    /** The offset the hook last left the strip at (read after its own instant scroll, and after any clamp by layout). */
+    let settled = element.scrollLeft;
     const again = () => {
-      if (alive) bring('auto');
+      if (!alive) return;
+      bring('auto');
+      settled = element.scrollLeft;
     };
     const fonts = (document as { fonts?: FontFaceSet }).fonts;
     const whenFontsReady = () => {
       if (fonts?.status === 'loading') void fonts.ready.then(again);
     };
+    // A scroll event is dispatched after the scroll it reports: an offset the hook left is its own scroll.
+    const moved = () => {
+      if (Math.abs(element.scrollLeft - settled) >= 1) detach();
+    };
+    const detach = () => {
+      alive = false;
+      fonts?.removeEventListener?.('loadingdone', again);
+      element.removeEventListener('scroll', moved);
+    };
     whenFontsReady();
     fonts?.addEventListener?.('loadingdone', again);
+    element.addEventListener('scroll', moved, { passive: true });
     const frame = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame(() => {
       again();
       whenFontsReady();
     }) : undefined;
     return () => {
-      alive = false;
-      fonts?.removeEventListener?.('loadingdone', again);
+      detach();
       if (frame !== undefined) window.cancelAnimationFrame(frame);
     };
   }, [strip, value, layoutKey]);

@@ -469,6 +469,23 @@ describe.skipIf(!hasInfrastructure)('admin: reports', () => {
       expect(adminReportCloseSchema.parse(other.json()).items.map((r) => [r.id, r.resolution])).toEqual([[stillOpen, 'other_action']]);
     });
 
+    it('fills the actions of a report up to their limit for a role that may not see shadowbans', async () => {
+      await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (44, 'report_reader', '{"en": "Report reader"}') ON CONFLICT (key) DO NOTHING`);
+      await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (44, 'users.read'), (44, 'reports.read') ON CONFLICT DO NOTHING`);
+      await h.app.adminAuth.roles.reload();
+      admins.set('report_reader', await adminAs(h, 'report_reader'));
+      const u = await person('Many Warnings');
+      const report = await seedReport(h, { targetId: u.id });
+      // Oldest first: a warning, a shadowban, then 49 warnings; the page holds the 50 newest.
+      const oldest = await seedAction(h, u.id, 1, 'First.', { reportId: report });
+      const shadow = await seedAction(h, u.id, 4, 'Spam.', { reportId: report });
+      const recent: string[] = [];
+      for (let i = 0; i < 49; i += 1) recent.unshift(await seedAction(h, u.id, 1, `Warning ${i}.`, { reportId: report }));
+      const actions = async (role: string) => adminReportDetailSchema.parse((await get(`/v1/admin/reports/${report}`, role)).json()).actions.map((a) => a.id);
+      expect(await actions('report_reader')).toEqual([...recent, oldest]);
+      expect(await actions('moderator')).toEqual([...recent, shadow]);
+    });
+
     it('rolls back with a refused audit row', async () => {
       const target = await person('Close Refused');
       const report = await seedReport(h, { targetId: target.id });

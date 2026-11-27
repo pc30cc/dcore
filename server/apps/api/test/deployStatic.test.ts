@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { request } from 'node:http';
+import { createServer as createHttpServer, request, type Server } from 'node:http';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -47,11 +47,12 @@ interface Answer {
   type: string;
   cacheControl: string[];
   headers: string[];
+  etag: string;
 }
 
-function fetchRaw(port: number, path: string, method = 'GET'): Promise<Answer> {
+function fetchRaw(port: number, path: string, method = 'GET', headers: Record<string, string> = {}): Promise<Answer> {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, method, headers: { accept: 'text/html' } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, method, headers: { accept: 'text/html', ...headers } }, (res) => {
       res.resume();
       res.on('end', () => {
         const raw = res.rawHeaders;
@@ -61,7 +62,7 @@ function fetchRaw(port: number, path: string, method = 'GET'): Promise<Answer> {
           names.push(raw[i]!.toLowerCase());
           if (raw[i]!.toLowerCase() === 'cache-control') cacheControl.push(raw[i + 1]!);
         }
-        resolve({ status: res.statusCode ?? 0, type: String(res.headers['content-type'] ?? ''), cacheControl, headers: names });
+        resolve({ status: res.statusCode ?? 0, type: String(res.headers['content-type'] ?? ''), cacheControl, headers: names, etag: String(res.headers.etag ?? '') });
       });
     });
     req.on('error', reject);
@@ -83,10 +84,42 @@ async function listening(port: number): Promise<boolean> {
 
 const NO_TRANSFORM = /(^|,\s*)no-transform(\s*,|$)/;
 
+const OBJECT = 'jpg';
+const OBJECT_TAG = '"v1"';
+
+/**
+ * Stands in for the object store behind the media origin: while `up`, it
+ * answers as S3 does (the object, a part of it, not modified, its XML refusal
+ * of a range past the end); otherwise it drops the connection (nginx's 502).
+ */
+function objectStore(state: { up: boolean }): Server {
+  return createHttpServer((req, res) => {
+    if (!state.up) {
+      req.socket.destroy();
+      return;
+    }
+    const headers = { 'cache-control': 'no-cache', etag: OBJECT_TAG, 'accept-ranges': 'bytes', 'x-amz-request-id': 'r' };
+    const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '');
+    if (req.headers['if-none-match'] === OBJECT_TAG) {
+      res.writeHead(304, headers).end();
+    } else if (range && Number(range[1]) >= OBJECT.length) {
+      res.writeHead(416, { ...headers, 'content-type': 'application/xml' }).end('<Error><Code>InvalidRange</Code></Error>');
+    } else if (range) {
+      const start = Number(range[1]);
+      const end = Math.min(OBJECT.length - 1, range[2] ? Number(range[2]) : OBJECT.length - 1);
+      res.writeHead(206, { ...headers, 'content-type': 'image/jpeg', 'content-range': `bytes ${start}-${end}/${OBJECT.length}` }).end(OBJECT.slice(start, end + 1));
+    } else {
+      res.writeHead(200, { ...headers, 'content-type': 'image/jpeg' }).end(OBJECT);
+    }
+  });
+}
+
 describe.skipIf(!available)('the static sites and the media origin on nginx (no-transform)', () => {
   const work = mkdtempSync(join(tmpdir(), 'static-nginx-'));
   const ports = { admin: 0, web: 0, media: 0 };
   let nginx: ChildProcess | undefined;
+  const storeState = { up: false };
+  const store = objectStore(storeState);
 
   function write(path: string, text: string): void {
     mkdirSync(dirname(join(work, path)), { recursive: true });
@@ -97,7 +130,9 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
     ports.admin = await freePort();
     ports.web = await freePort();
     ports.media = await freePort();
-    const closed = await freePort();
+    await new Promise<void>((resolve) => store.listen(0, '127.0.0.1', resolve));
+    const storeAddress = store.address();
+    const storePort = typeof storeAddress === 'object' && storeAddress ? storeAddress.port : 0;
     const paths: [string, string][] = [
       ['/etc/nginx/snippets/', `${work}/snippets/`],
       ['/tmp/runtime/', `${work}/runtime/`],
@@ -140,9 +175,12 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
       ['/usr/share/nginx/html', `${work}/web`],
       ['/etc/nginx/snippets/', `${work}/snippets/`],
     ]);
+    // The media image's http block limits request bodies; the shared http block here does not.
+    const bodyLimit = /^\s*client_max_body_size\s+([^;]+);/m.exec(readFileSync(join(DEPLOY, 'media/nginx.conf'), 'utf8'))?.[1];
+    if (!bodyLimit) throw new Error('deploy/media/nginx.conf sets no client_max_body_size any more: update this test');
     const media = replaceAll(readFileSync(join(DEPLOY, 'media/media.conf.template'), 'utf8'), [
-      ['listen 8080;', `listen 127.0.0.1:${ports.media};`],
-      ['@ORIGIN@', `127.0.0.1:${closed}`],
+      ['listen 8080;', `listen 127.0.0.1:${ports.media};\n    client_max_body_size ${bodyLimit};`],
+      ['@ORIGIN@', `127.0.0.1:${storePort}`],
       ['@BUCKET@', 'media'],
       ['@ORIGIN_SECRET@', 'x'.repeat(32)],
     ]);
@@ -166,7 +204,7 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
         '  types { text/html html; text/css css; application/javascript js; application/json json; text/plain txt; image/png png; application/xml xml; }',
         '  default_type application/octet-stream;',
         '  access_log off;',
-        // Stands in for njs verify.ok: one path passes as signed, to reach the store (a closed port here).
+        // Stands in for njs verify.ok: one path passes as signed, to reach the store.
         '  map $uri $media_ok { default "0"; /signed/a.jpg "1"; }',
         `  include ${work}/admin.conf;`,
         `  include ${work}/web.conf;`,
@@ -190,6 +228,7 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
 
   afterAll(() => {
     nginx?.kill('SIGTERM');
+    store.close();
     rmSync(work, { recursive: true, force: true });
   });
 
@@ -229,11 +268,48 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
     if (site !== 'media') expect(answer.headers).toContain('x-content-type-options');
   });
 
+  // Declared only, never sent: nginx refuses on the header, before reading a byte.
+  const tooLarge = (bytes: number) => ({ 'content-length': String(bytes) });
+  const changedSince = { 'if-unmodified-since': 'Thu, 01 Jan 1970 00:00:01 GMT' };
+  // nginx's own error pages inside locations that cache their files (assets, run-time configuration, media).
+  const errors: [keyof typeof ports, string, string, Record<string, string>, number][] = [
+    ['admin', 'POST', '/assets/app.js', {}, 405],
+    ['admin', 'DELETE', '/assets/app.js', {}, 405],
+    ['admin', 'GET', '/assets/app.js', changedSince, 412],
+    ['admin', 'GET', '/assets/app.js', tooLarge(2 * 1024 * 1024), 413],
+    ['admin', 'POST', '/config.js', {}, 405],
+    ['admin', 'POST', '/config.json', {}, 405],
+    ['admin', 'GET', '/config.js', tooLarge(2 * 1024 * 1024), 413],
+    ['web', 'POST', '/_astro/a.css', {}, 405],
+    ['web', 'DELETE', '/_astro/a.css', {}, 405],
+    ['web', 'GET', '/_astro/a.css', changedSince, 412],
+    ['web', 'GET', '/_astro/a.css', tooLarge(2 * 1024 * 1024), 413],
+    ['web', 'POST', '/media/a.png', {}, 405],
+    ['web', 'POST', '/.well-known/assetlinks.json', {}, 405],
+    // A page's URL: what depends on the request is not stored under it.
+    ['web', 'POST', '/en/', {}, 405],
+    ['web', 'GET', '/en/', changedSince, 412],
+    ['web', 'GET', '/en/', tooLarge(2 * 1024 * 1024), 413],
+    ['web', 'GET', '/missing/', tooLarge(2 * 1024 * 1024), 413],
+    ['media', 'POST', '/a/b.jpg', tooLarge(2048), 413],
+    ['media', 'GET', '/a/b.jpg', tooLarge(2048), 413],
+    ['media', 'GET', '/signed/a.jpg', tooLarge(2048), 413],
+    ['media', 'GET', '/bootstrap/origins.json', tooLarge(2048), 413],
+  ];
+
+  it.each(errors)('%s %s %s %j: an error page with a single Cache-Control that forbids storing and transformation', async (site, method, path, headers, status) => {
+    const answer = await fetchRaw(ports[site], path, method, headers);
+    expect(answer.status).toBe(status);
+    expect(answer.type).toMatch(/^text\/html/);
+    expect(answer.cacheControl).toEqual(['no-store, no-transform']);
+    if (site !== 'media') expect(answer.headers).toContain('x-content-type-options');
+  });
+
   it('keeps the caching of assets, run-time configuration and well-known files', async () => {
     const exact: [keyof typeof ports, string, string][] = [
       ['admin', '/assets/app.js', 'public, max-age=31536000, immutable'],
-      ['admin', '/config.js', 'no-store'],
-      ['admin', '/config.json', 'no-store'],
+      ['admin', '/config.js', 'no-store, no-transform'],
+      ['admin', '/config.json', 'no-store, no-transform'],
       ['web', '/_astro/a.css', 'public, max-age=31536000, immutable'],
       ['web', '/media/a.png', 'public, max-age=86400'],
       ['web', '/.well-known/assetlinks.json', 'public, max-age=3600'],
@@ -242,6 +318,69 @@ describe.skipIf(!available)('the static sites and the media origin on nginx (no-
       const answer = await fetchRaw(ports[site], path);
       expect(answer.status, `${site} ${path}`).toBe(200);
       expect(answer.cacheControl, `${site} ${path}`).toEqual([value]);
+      const same = await fetchRaw(ports[site], path, 'GET', { 'if-none-match': answer.etag });
+      expect(same.status, `${site} ${path} revalidated`).toBe(304);
+      expect(same.cacheControl, `${site} ${path} revalidated`).toEqual([value]);
+    }
+  });
+
+  it('caches a page, its revalidation, the 404 page and the slash redirect for 5 minutes', async () => {
+    const page = await fetchRaw(ports.web, '/en/');
+    expect(page.status).toBe(200);
+    expect(page.cacheControl).toEqual(['public, max-age=300, no-transform']);
+    const same = await fetchRaw(ports.web, '/en/', 'GET', { 'if-none-match': page.etag });
+    expect(same.status).toBe(304);
+    expect(same.cacheControl).toEqual(['public, max-age=300, no-transform']);
+    for (const [path, status] of [
+      ['/missing/', 404],
+      ['/_astro/', 404],
+      ['/en', 301],
+    ] as const) {
+      const answer = await fetchRaw(ports.web, path);
+      expect(answer.status, path).toBe(status);
+      expect(answer.cacheControl, path).toEqual(['public, max-age=300, no-transform']);
+    }
+  });
+
+  // nginx sets a file's headers before it reads a Range, so its 416 page would carry them: every answer is the whole file.
+  it.each([
+    ['admin', '/', 'no-cache, no-transform'],
+    ['admin', '/assets/app.js', 'public, max-age=31536000, immutable'],
+    ['admin', '/config.js', 'no-store, no-transform'],
+    ['web', '/en/', 'public, max-age=300, no-transform'],
+    ['web', '/_astro/a.css', 'public, max-age=31536000, immutable'],
+    ['web', '/media/a.png', 'public, max-age=86400'],
+    ['web', '/.well-known/assetlinks.json', 'public, max-age=3600'],
+  ] as const)('%s %s: a byte range gets the whole file with its caching', async (site, path, value) => {
+    for (const range of ['bytes=999999-', 'bytes=0-0']) {
+      const answer = await fetchRaw(ports[site], path, 'GET', { range });
+      expect(answer.status, range).toBe(200);
+      expect(answer.cacheControl, range).toEqual([value]);
+      expect(answer.headers, range).not.toContain('accept-ranges');
+    }
+  });
+
+  it('keeps the caching of what the store serves and caches none of its refusals', async () => {
+    storeState.up = true;
+    try {
+      const rows: [string, Record<string, string>, number, string][] = [
+        ['/signed/a.jpg', {}, 200, 'public, max-age=86400'],
+        ['/signed/a.jpg', { range: 'bytes=0-0' }, 206, 'public, max-age=86400'],
+        ['/signed/a.jpg', { 'if-none-match': OBJECT_TAG }, 304, 'public, max-age=86400'],
+        ['/signed/a.jpg', { range: 'bytes=999999-' }, 416, 'no-store, no-transform'],
+        ['/bootstrap/origins.json', {}, 200, 'public, max-age=300'],
+        ['/bootstrap/origins.json', { 'if-none-match': OBJECT_TAG }, 304, 'public, max-age=300'],
+        ['/bootstrap/origins.json', { range: 'bytes=999999-' }, 416, 'no-store, no-transform'],
+      ];
+      for (const [path, headers, status, value] of rows) {
+        const answer = await fetchRaw(ports.media, path, 'GET', headers);
+        const label = `${path} ${JSON.stringify(headers)}`;
+        expect(answer.status, label).toBe(status);
+        expect(answer.cacheControl, label).toEqual([value]);
+        expect(answer.headers, label).not.toContain('x-amz-request-id');
+      }
+    } finally {
+      storeState.up = false;
     }
   });
 

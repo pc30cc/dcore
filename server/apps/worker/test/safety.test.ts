@@ -26,6 +26,7 @@ import {
   createKeys,
   createPublicIds,
   queuePrefix,
+  readVersion,
   safetyJobIds,
   type ModerationEndData,
 } from '@app/shared/server';
@@ -454,6 +455,69 @@ describe.skipIf(!hasDatabase || !hasRedis)('safety writes (PostgreSQL as app_rw,
       expect(await redis.exists(keys.conversationListChecked(peer))).toBe(0);
       expect(await moderationEndJob(job, context)).toEqual({ outcome: 'settled', changed: false, published: 0 });
       expect(realtime.on(userChannel(publicIds.user.encode(u)))).toHaveLength(1);
+    });
+
+    it('tells the end of a suspension that leaves the status as it was once, with the ended action; a shadowban that ends moves nothing', async () => {
+      const ended = async (actionId: string) =>
+        db.admin.query(`UPDATE moderation_actions SET starts_at = now() - interval '2 hours', ends_at = now() - interval '1 second' WHERE id = $1`, [actionId]);
+      const applied = async (userId: string, kind: 2 | 3 | 4, endsInMs?: number) => {
+        const out = await applyModeration(pg, { actionId: ids.nextId(), userId, kind, reasonCode: 2, reasonText: `Kind ${kind}.`, endsAt: endsInMs ? new Date(Date.now() + endsInMs) : undefined });
+        if (out.outcome !== 'applied') throw new Error('not applied');
+        return out.actionId;
+      };
+      const channel = (userId: string) => userChannel(publicIds.user.encode(userId));
+
+      // The earlier of two suspensions ends: still suspended, the own view moves, `account` names the ended one.
+      const u = await person();
+      const first = await applied(u, 2, 60_000);
+      await applied(u, 2, 86_400_000);
+      await ended(first);
+      const version = await readVersion(redis, keys.meVersion(u));
+      const job = fakeJob<ModerationEndData>('moderation-end', { actionId: first, userId: u });
+      const { result, tally } = await statementCounter.measure(() => moderationEndJob(job, context));
+      expect(result).toEqual({ outcome: 'settled', changed: false, published: 1 });
+      expect(tally.statements).toBe(1);
+      expect(await status(u)).toEqual({ status: 5, shadowbanned: false });
+      expect(await readVersion(redis, keys.meVersion(u))).toBeGreaterThan(version);
+      const told = realtime.on(channel(u));
+      expect(told.map((e) => e.t)).toEqual(['account']);
+      expect(told[0]!.d).toMatchObject({ status: 'suspended', moderation: { id: first, kind: 'suspension' } });
+      expect(job.data.eventIds?.['account']).toBe(told[0]!.id);
+      // A retry of that job, and a new job for the same end (the sweep), tell nothing more.
+      const moved = await readVersion(redis, keys.meVersion(u));
+      expect(await moderationEndJob(job, context)).toEqual({ outcome: 'settled', changed: false, published: 0 });
+      expect(await moderationEndJob(fakeJob<ModerationEndData>('moderation-end', { actionId: first, userId: u }), context)).toEqual({ outcome: 'settled', changed: false, published: 0 });
+      expect(realtime.on(channel(u))).toHaveLength(1);
+      expect(await readVersion(redis, keys.meVersion(u))).toBe(moved);
+
+      // A run whose event failed is retried and tells then, under the same event id.
+      const w = await person();
+      const underBan = await applied(w, 2, 60_000);
+      await applied(w, 3);
+      await ended(underBan);
+      const failing = fakeJob<ModerationEndData>('moderation-end', { actionId: underBan, userId: w });
+      realtime.failWith = new Error('centrifugo down');
+      try {
+        await expect(moderationEndJob(failing, context)).rejects.toThrow(/account event/);
+      } finally {
+        realtime.failWith = null;
+      }
+      const planned = failing.data.eventIds?.['account'];
+      expect(planned).toBeDefined();
+      expect(await moderationEndJob(failing, context)).toEqual({ outcome: 'settled', changed: false, published: 1 });
+      expect(realtime.on(channel(w)).map((e) => [e.id, (e.d as { status: string }).status])).toEqual([[planned, 'banned']]);
+
+      // A shadowban that ends under a ban: nothing the person reads changed, so their view does not move and nothing is sent.
+      const s = await person();
+      const shadow = await applied(s, 4, 60_000);
+      await applied(s, 3);
+      await ended(shadow);
+      const quiet = await readVersion(redis, keys.meVersion(s));
+      const heard = realtime.on(channel(s)).length;
+      expect(await moderationEndJob(fakeJob<ModerationEndData>('moderation-end', { actionId: shadow, userId: s }), context)).toEqual({ outcome: 'settled', changed: true, published: 0 });
+      expect(await status(s)).toEqual({ status: 6, shadowbanned: false });
+      expect(await readVersion(redis, keys.meVersion(s))).toBe(quiet);
+      expect(realtime.on(channel(s))).toHaveLength(heard);
     });
 
     it('queues the end of a period whose job was lost, once per lease', async () => {

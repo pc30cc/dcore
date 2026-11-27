@@ -10,8 +10,9 @@ import { requireScope, sessionOf } from '../services/session.js';
  * it with; `sub` is the public id, it expires after
  * REALTIME_TOKEN_TTL_SECONDS and carries no `info`. `meta` holds the session
  * and the issue time of the access token it was minted with; Centrifugo hands
- * it to the subscribe check (realtime/subscribeProxy.ts), which refuses the
- * token once that session or the account's tokens are revoked. The claims
+ * it to the subscribe check (realtime/subscribeProxy.ts), which refuses its
+ * subscriptions once that session or the account's tokens are revoked (it
+ * still connects, subscribing to nothing, until it expires). The claims
  * are exactly exp, iat, meta and sub: `channels`, `subs` or `channel` would
  * pass the check by. No statement, no Valkey.
  */
