@@ -1,6 +1,6 @@
 import { clearDeadPushToken } from '@app/db';
 import type { PushPayload } from '@app/shared';
-import type { PushSender } from '@app/shared/server';
+import { countEvents, type PushSender } from '@app/shared/server';
 import type { JobContext } from '../queues/types.js';
 
 /**
@@ -8,7 +8,8 @@ import type { JobContext } from '../queues/types.js';
  * each device: accepted, worth a retry later (429, 5xx, the network), dead
  * (the token is cleared on its row, so nothing is sent to it again), or
  * refused for another reason (logged by status only; a push token never
- * reaches a log).
+ * reaches a log). The day's accepted and failed sends are counted for the
+ * dashboard's provider health (`ev:push_ok`, `ev:push_fail`).
  */
 
 export interface PushDevice {
@@ -78,5 +79,28 @@ export async function deliverPush(
         }
       }),
   );
+  // Provider health: accepted versus worth a retry or refused (a dead token is the device's, not FCM's).
+  countPushes(context, delivery.sent.length, delivery.retry.length + delivery.refused);
   return delivery;
+}
+
+/** Counts sends for the provider health (`ev:push_ok`, `ev:push_fail`); never awaited. */
+export function countPushes(context: Pick<JobContext, 'redis' | 'services' | 'log'>, ok: number, failed: number): void {
+  if (ok <= 0 && failed <= 0) return;
+  countEvents(context.redis, context.services.keys, { push_ok: Math.max(0, ok), push_fail: Math.max(0, failed) }).catch((error: unknown) =>
+    context.log.debug({ err: error }, 'push outcome not counted'),
+  );
+}
+
+/** Tallies send outcomes: accepted, and failed (a dead token is the device's, not FCM's). */
+export function pushTally(): { add(outcome: { ok: boolean; unregistered?: boolean | undefined }): void; ok: number; failed: number } {
+  const tally = {
+    ok: 0,
+    failed: 0,
+    add(outcome: { ok: boolean; unregistered?: boolean | undefined }) {
+      if (outcome.ok) tally.ok += 1;
+      else if (!outcome.unregistered) tally.failed += 1;
+    },
+  };
+  return tally;
 }

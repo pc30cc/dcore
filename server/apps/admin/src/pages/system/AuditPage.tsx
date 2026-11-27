@@ -248,6 +248,30 @@ function FilterBar({ initial, onApply }: { initial: AuditFilterState; onApply: (
   );
 }
 
+/**
+ * Where a row's target opens, by its kind: the row's own page or its list.
+ * A kind not listed here (or one whose function answers null) shows its id
+ * without a link; a person's row always opens their user page.
+ */
+const targetLinks: Partial<Record<AuditTarget, (entry: AuditEntry) => string | null>> = {
+  report: (entry) => (entry.targetRef ? `/moderation/reports/${entry.targetRef}` : null),
+  legal_hold: () => '/moderation/holds',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
+};
+
 function TargetCell({ entry }: { entry: AuditEntry }) {
   const { t } = useI18n();
   const admins = useAuditAdmins(entry.targetType === 'admin');
@@ -266,7 +290,7 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
     );
   }
   const id = entry.user ?? entry.targetRef;
-  const href = entry.user ? `/users/${entry.user}` : entry.targetType === 'report' && entry.targetRef ? `/moderation/reports/${entry.targetRef}` : entry.targetType === 'legal_hold' ? '/moderation/holds' : null;
+  const href = entry.user ? `/users/${entry.user}` : (targetLinks[entry.targetType]?.(entry) ?? null);
   return (
     <span className="grid min-w-0">
       <span className="text-sm">{type}</span>

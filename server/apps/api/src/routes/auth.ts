@@ -111,7 +111,8 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/v1/auth/refresh',
     {
-      config: { pgBudget: 1 },
+      // The app refreshes whenever a call needs a token, also from background work: not a sign of use.
+      config: { pgBudget: 1, activity: false },
       schema: {
         tags: ['auth'],
         summary: 'Rotate the refresh token',
@@ -131,7 +132,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
     '/v1/auth/logout',
     {
-      config: { pgBudget: 1 },
+      config: { pgBudget: 1, activity: false },
       preHandler: app.requireUser,
       schema: { tags: ['auth'], summary: 'Sign out here, or everywhere', body: logoutRequestSchema.nullish() },
     },

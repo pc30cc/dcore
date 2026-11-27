@@ -1,6 +1,7 @@
 import { createMatch, matchOfPair, mutualLikeExists, refundSuperLike, spendSuperLike, withTransaction, type MatchRow } from '@app/db';
 import { idTime, wireTime, type Conversation, type PeerSummary, type Swipe, type SwipeResult, type SwipesResponse } from '@app/shared';
 import {
+  countEvents,
   addSeen,
   announceMatch,
   appendMatch,
@@ -164,6 +165,7 @@ export class SwipeService {
       ]);
     }
     if (passed.length > 0) await dropPendingLikers(app.redis, app.keys, me, passed, this.now);
+    this.count(targets, results);
 
     const used = await readQuotas(app.redis, app.keys, me, this.now);
     return {
@@ -173,6 +175,22 @@ export class SwipeService {
         superlikes: { limit: superLimit, used: used.superlikes, resetsAt: wireTime(quotaPeriod('superlikes', this.now).resetsAtMs) },
       },
     };
+  }
+
+  /**
+   * The dashboard's day counters: accepted likes, super likes and passes
+   * (a resend, a quota refusal and a skipped target are not swipes); test
+   * accounts count nothing. Never awaited into the answer.
+   */
+  private count(targets: readonly Target[], results: readonly SwipeResult[]): void {
+    if (this.account.test) return;
+    const counts = { like: 0, superlike: 0, pass: 0 };
+    targets.forEach(({ swipe }, i) => {
+      const result = results[i]?.result;
+      if (result === 'passed') counts.pass += 1;
+      else if (result === 'liked' || result === 'matched') counts[swipe.action === 'superlike' ? 'superlike' : 'like'] += 1;
+    });
+    countEvents(this.app.redis, this.app.keys, counts, this.now).catch((error: unknown) => this.log.warn({ err: error }, 'swipes: not counted'));
   }
 
   private async like(swipe: Swipe, targetId: string, limit: number): Promise<SwipeResult> {

@@ -1,4 +1,4 @@
-import { PlayDeveloperApi, PlayStoreVerifier } from '@app/shared/server';
+import { PlayDeveloperApi, PlayStoreVerifier, providerOutcome } from '@app/shared/server';
 import type { StoreVerifierFactory } from '../verifiers.js';
 
 /**
@@ -8,10 +8,11 @@ import type { StoreVerifierFactory } from '../verifiers.js';
  * 4 s an attempt, one retry of a read, 8 s in all; past them the app gets
  * 503 `store_unavailable` and sends the purchase again later.
  */
-export const playVerifierFactory: StoreVerifierFactory = (config) => {
+export const playVerifierFactory: StoreVerifierFactory = (config, log, deps) => {
   const play = config.store.play;
   if (!play) return null;
+  const onOutcome = providerOutcome(deps.redis, deps.keys, 'store', (error) => log.debug({ err: error }, 'store outcome not counted'));
   return new PlayStoreVerifier({
-    api: new PlayDeveloperApi({ packageName: play.packageName, account: play.serviceAccount, timeoutMs: 4_000, totalTimeoutMs: 8_000, retries: 1 }),
+    api: new PlayDeveloperApi({ packageName: play.packageName, account: play.serviceAccount, timeoutMs: 4_000, totalTimeoutMs: 8_000, retries: 1, onOutcome }),
   });
 };

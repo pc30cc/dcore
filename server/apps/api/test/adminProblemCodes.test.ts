@@ -15,6 +15,10 @@ const files = [
   ...readdirSync(join(SRC, 'routes'))
     .filter((name) => name.startsWith('admin') && name.endsWith('.ts'))
     .map((name) => join(SRC, 'routes', name)),
+  // The areas' admin routes (each area's plugin and the files beside it).
+  ...readdirSync(join(SRC, 'routes/areas'))
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => join(SRC, 'routes/areas', name)),
   ...readdirSync(join(SRC, 'admin'))
     .filter((name) => name.endsWith('.ts') && name !== 'problems.ts')
     .map((name) => join(SRC, 'admin', name)),

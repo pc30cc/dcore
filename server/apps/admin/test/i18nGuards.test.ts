@@ -212,6 +212,20 @@ describe('server values the panel shows have words in every language', () => {
       ['plan.flag.', planFlagKeys],
       ['plan.quota.', planQuotaKeys],
       ['deviceBans.reason.', automaticBanReasons],
+
+      // dashboard
+
+      // content
+
+      // revenue
+
+      // growth
+
+      // app
+
+      // support
+
+      // system
     ];
     for (const [prefix, codes] of tables) expectWords(prefix, codes);
   });
@@ -232,6 +246,10 @@ describe('server values the panel shows have words in every language', () => {
       ...readdirSync(join(api, 'routes'))
         .filter((name) => name.startsWith('admin') && name.endsWith('.ts'))
         .map((name) => join(api, 'routes', name)),
+      // The areas' admin routes (each area's plugin and the files beside it).
+      ...readdirSync(join(api, 'routes/areas'))
+        .filter((name) => name.endsWith('.ts'))
+        .map((name) => join(api, 'routes/areas', name)),
       ...readdirSync(join(api, 'admin')).map((name) => join(api, 'admin', name)),
       join(api, 'plugins/adminAuth.ts'),
       // Services whose refusals an admin route passes on as they are.

@@ -2,27 +2,28 @@ import type { Permission } from '@app/shared';
 import {
   Ban,
   Contrast,
-  FileText,
   Flag,
   Globe,
   Image as ImageIcon,
   Layers,
-  LayoutDashboard,
-  LifeBuoy,
   Lock,
-  Palette,
   Scale,
   ScrollText,
-  Server,
   ShoppingBag,
   Smartphone,
-  TrendingUp,
   Type,
   UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import type { MessageKey } from '@/i18n/messages';
+import * as app from '@/pages/app/area';
+import * as content from '@/pages/content/area';
+import * as dashboard from '@/pages/dashboard/area';
+import * as growth from '@/pages/growth/area';
+import * as revenue from '@/pages/revenue/area';
+import * as support from '@/pages/support/area';
+import * as system from '@/pages/system/area';
 
 export interface Section {
   /** Path under the panel root; '' is the dashboard. */
@@ -53,14 +54,17 @@ export const moderationSections: readonly Section[] = [
   { path: 'moderation/device-bans', label: 'nav.deviceBans', icon: Smartphone, permission: 'moderation.read' },
 ];
 
-/** The panel's navigation, in order. */
+/**
+ * The panel's navigation, in order. An area's items come from its own
+ * module (`pages/<area>/area.tsx`), spread where they belong in the group.
+ */
 export const sectionGroups: readonly SectionGroup[] = [
-  { label: 'nav.group.overview', items: [{ path: '', label: 'nav.dashboard', icon: LayoutDashboard, spec: 1 }] },
+  { label: 'nav.group.overview', items: [...dashboard.sections] },
   {
     label: 'nav.group.operations',
     items: [
       { path: 'users', label: 'nav.users', icon: Users, permission: 'users.read' },
-      { path: 'support', label: 'nav.support', icon: LifeBuoy, spec: 8 },
+      ...support.sections,
     ],
   },
   { label: 'nav.group.moderation', items: moderationSections },
@@ -69,24 +73,26 @@ export const sectionGroups: readonly SectionGroup[] = [
     items: [
       { path: 'revenue/plans', label: 'nav.plans', icon: Layers, permission: 'billing.read' },
       { path: 'revenue/products', label: 'nav.products', icon: ShoppingBag, permission: 'billing.read' },
+      ...revenue.sections,
     ],
   },
   {
     label: 'nav.group.product',
     items: [
       { path: 'app/appearance', label: 'nav.appearance', icon: Contrast, permission: 'config.read' },
-      { path: 'content', label: 'nav.content', icon: FileText, spec: 4 },
-      { path: 'growth', label: 'nav.growth', icon: TrendingUp, spec: 6 },
-      { path: 'brand', label: 'nav.brand', icon: Palette, spec: 7 },
+      ...content.sections,
+      ...growth.sections,
+      ...app.sections,
     ],
   },
   {
     label: 'nav.group.system',
     items: [
       { path: 'system/admins', label: 'nav.admins', icon: UserCog, permission: 'admins.read' },
+      ...system.roleSections,
       { path: 'hosts', label: 'nav.hosts', icon: Globe, owner: true },
       { path: 'system/audit', label: 'nav.audit', icon: ScrollText, permission: 'audit.read' },
-      { path: 'system', label: 'nav.system', icon: Server, spec: 9 },
+      ...system.jobSections,
     ],
   },
 ];

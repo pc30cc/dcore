@@ -25,12 +25,19 @@ import {
   UserPage,
   UsersPage,
 } from '@/pages/lazy';
+import * as app from '@/pages/app/area';
+import * as content from '@/pages/content/area';
+import * as dashboard from '@/pages/dashboard/area';
+import * as growth from '@/pages/growth/area';
 import { CredentialsPage } from '@/pages/login/CredentialsPage';
 import { ModerationIndex } from '@/pages/moderation/ModerationIndex';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import * as revenue from '@/pages/revenue/area';
 import { SectionPage } from '@/pages/SectionPage';
+import * as support from '@/pages/support/area';
+import * as system from '@/pages/system/area';
 
-/** Every route of the panel; tests mount them in a memory router. */
+/** Every route of the panel; tests mount them in a memory router. An area's routes come from its own module (`pages/<area>/area.tsx`). */
 export const routes: RouteObject[] = [
   { path: '/login', element: <CredentialsPage /> },
   {
@@ -181,6 +188,13 @@ export const routes: RouteObject[] = [
           </Loading>
         ),
       },
+      ...dashboard.routes,
+      ...content.routes,
+      ...revenue.routes,
+      ...growth.routes,
+      ...app.routes,
+      ...support.routes,
+      ...system.routes,
       { path: '*', element: <NotFoundPage /> },
     ],
   },

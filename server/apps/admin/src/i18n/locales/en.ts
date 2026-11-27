@@ -1,7 +1,8 @@
 /**
- * The panel's English strings: the reference every other language follows
- * (same keys, same placeholders). `{appName}` and other placeholders are
- * filled at run time; no brand name is written here.
+ * The panel's core English strings: the reference every other language
+ * follows (same keys, same placeholders). `{appName}` and other placeholders
+ * are filled at run time; no brand name is written here. An area's keys
+ * live in its own module (`locales/<area>/`), never here.
  */
 export const en = {
   'app.title': '{appName} Admin',

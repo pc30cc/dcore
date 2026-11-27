@@ -42,6 +42,12 @@ export interface SmsRouterOptions {
    * provider keys still signs in.
    */
   fallback?: SmsSender | undefined;
+  /**
+   * Told how each provider attempt went, for the provider health counters:
+   * true when it sent, false when it was unavailable. A number the provider
+   * refuses (`rejected`) says nothing about the provider and is not told.
+   */
+  onAttempt?: ((ok: boolean, provider: SmsProviderName) => void) | undefined;
 }
 
 export class SmsRouter {
@@ -50,12 +56,22 @@ export class SmsRouter {
   private readonly now: () => number;
   private readonly downUntil = new Map<SmsProviderName, number>();
   private readonly fallback: SmsSender | undefined;
+  private readonly onAttempt: ((ok: boolean, provider: SmsProviderName) => void) | undefined;
 
   constructor(senders: Iterable<SmsSender>, options: SmsRouterOptions = {}) {
     this.senders = new Map([...senders].map((sender) => [sender.name, sender]));
     this.coolDownMs = options.coolDownMs ?? 30_000;
     this.now = options.now ?? Date.now;
     this.fallback = options.fallback;
+    this.onAttempt = options.onAttempt;
+  }
+
+  private attempted(ok: boolean, provider: SmsProviderName): void {
+    try {
+      this.onAttempt?.(ok, provider);
+    } catch {
+      // Counting never changes a send.
+    }
   }
 
   /** The providers configured in this process. */
@@ -82,11 +98,13 @@ export class SmsRouter {
         try {
           const receipt = await sender.send({ ...message, channel });
           this.downUntil.delete(sender.name);
+          this.attempted(true, sender.name);
           return { ...receipt, channel, failedOver: attempts.map((a) => a.provider) };
         } catch (error) {
           const smsError = error instanceof SmsError ? error : new SmsError(sender.name, 'unavailable', 'failed', { cause: error });
           attempts.push({ provider: sender.name, reason: smsError.message });
           if (smsError.kind === 'rejected') throw new SmsRoutingError('rejected', attempts);
+          this.attempted(false, sender.name);
           this.downUntil.set(sender.name, this.now() + this.coolDownMs);
         }
       }

@@ -103,6 +103,20 @@ export const appConfigSchemas = {
   'brand.welcome': welcomeOverrideSchema,
   /** The visual templates: the default and the ones offered to people (templates.ts). */
   'ui.templates': uiTemplatesConfigSchema,
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 } as const;
 
 export type AppConfigKey = keyof typeof appConfigSchemas;

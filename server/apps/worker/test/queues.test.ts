@@ -88,7 +88,23 @@ describe('the queues the worker runs', () => {
       'safety/requests-sweep',
       'system/heartbeat',
       'system/origins-publish',
-    ]);
+
+      // dashboard
+      'stats/live',
+      'stats/rollup',
+
+      // content
+
+      // revenue
+
+      // growth
+
+      // app
+
+      // support
+
+      // system
+    ].sort());
   });
 
   it('come with the write-behind consumers: wb:like and wb:msg in batch mode and wb:match, unless streams are turned off', () => {

@@ -14,12 +14,13 @@ import { detail, SARA } from './userFixtures';
 const SEEDED_GRANTS: Readonly<Record<string, readonly string[]>> = {
   superadmin: ['*'],
   // users.chats is restricted (users.* does not cover it): 0033 grants it by name.
-  admin: ['users.*', 'moderation.*', 'reports.*', 'appeals.*', 'content.*', 'billing.read', 'config.*', 'campaigns.*', 'support.*', 'dashboard.read', 'audit.read', 'billing.catalog', 'users.chats'],
+  admin: ['users.*', 'moderation.*', 'reports.*', 'appeals.*', 'content.*', 'billing.read', 'config.*', 'campaigns.*', 'support.*', 'dashboard.read', 'audit.read', 'billing.catalog', 'users.chats', 'dashboard.revenue'],
   moderator: ['users.read', 'moderation.*', 'reports.*', 'appeals.*', 'dashboard.read', 'users.warn', 'users.suspend', 'users.ban', 'users.shadowban', 'users.lift', 'users.revoke_sessions'],
   support: ['users.read', 'support.*', 'dashboard.read'],
-  finance: ['users.read', 'billing.*', 'dashboard.read'],
+  finance: ['users.read', 'billing.*', 'dashboard.read', 'dashboard.revenue'],
   marketing: ['campaigns.*', 'content.read', 'dashboard.read'],
-  analyst: ['dashboard.read'],
+  // dashboard.revenue: 0035 grants it to admin, finance and analyst.
+  analyst: ['dashboard.read', 'dashboard.revenue'],
 };
 
 const W7D = ['Users', 'Photos', 'Texts', 'Reports', 'Appeals', 'Legal holds', 'Banned terms', 'Device bans', 'Audit log'];

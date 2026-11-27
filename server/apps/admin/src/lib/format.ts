@@ -89,8 +89,9 @@ export function listOf(items: readonly string[], locale: Locale): string {
 }
 
 /** Facts read one after another in an accessible name ("A, B, C"; «A، B، C»), where a "·" would be read as nothing or as a dot. */
-export function factsOf(items: readonly string[], locale: Locale): string {
-  return items.join(locale === 'fa' ? '، ' : ', ');
+export function factsOf(items: readonly string[], locale: Locale, isolate = false): string {
+  // Isolated, a fact that starts in another script (a Latin code before Persian digits) keeps its own order.
+  return (isolate ? items.map((item) => `\u2068${item}\u2069`) : items).join(locale === 'fa' ? '، ' : ', ');
 }
 
 /** Today as `YYYY-MM-DD` in the browser's time zone (the earliest end a date field offers). */

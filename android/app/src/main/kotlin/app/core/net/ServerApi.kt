@@ -396,4 +396,12 @@ interface ServerApi {
 
     /** `POST /v1/events`: at most 100 first-party analytics events. Never retried. */
     suspend fun sendEvents(events: List<AppEvent>)
+
+    // content
+
+    // growth
+
+    // app
+
+    // support
 }

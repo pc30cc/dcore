@@ -5,6 +5,7 @@ import {
   KavenegarSender,
   LoggingSmsSender,
   OtpStore,
+  providerOutcome,
   RefreshGrace,
   SmsIrSender,
   SmsRouter,
@@ -71,7 +72,8 @@ export const authServicesPlugin = fp<AuthServicesOptions>(
     app.log.info({ providers: senders.map((s) => s.name) }, 'sms providers');
 
     app.decorate('authSettings', options.authSettings ?? new AuthSettingsHolder());
-    app.decorate('sms', new SmsRouter(senders, { fallback }));
+    const smsOutcome = providerOutcome(app.redis, app.keys, 'sms', (error) => app.log.debug({ err: error }, 'sms outcome not counted'));
+    app.decorate('sms', new SmsRouter(senders, { fallback, onAttempt: (ok) => smsOutcome(ok) }));
     app.decorate('otp', new OtpStore({ redis: app.redis, keys: app.keys, hasher: app.secrets.hasher, sealer: app.secrets.sealer }));
     app.decorate('limits', new FailClosedLimits(app.redis));
     app.decorate('refreshGrace', new RefreshGrace({ redis: app.redis, keys: app.keys, graceMs: options.refreshGraceMs }));

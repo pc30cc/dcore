@@ -48,6 +48,20 @@ export const CONFLICT_TEXT: Readonly<Record<AdminConflictReason, MessageKey>> = 
   product_exists: 'product.error.conflict',
   plan_not_sold: 'product.error.archivedPlan',
   product_locked: 'product.error.lockedConflict',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 };
 
 /** Every reason a 403 of the admin API names (`beyond_grants` lists the permissions too). */
@@ -58,6 +72,20 @@ export const FORBIDDEN_TEXT: Readonly<Record<AdminForbiddenReason, MessageKey>> 
   automatic_ban: 'deviceBans.error.automatic',
   origin: 'login.error.origin',
   shadow_hidden: 'users.error.shadowHidden',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 };
 
 /** Every field code the admin API writes, in general words (a form may say more at its field). */
@@ -127,6 +155,20 @@ export const FIELD_TEXT: Readonly<Record<AdminFieldCode, MessageKey>> = {
   regex_word_boundary: 'terms.error.regexWordBoundary',
   regex_too_large: 'terms.error.regexTooLarge',
   regex_too_broad: 'terms.error.regexTooBroad',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 };
 
 /** The problem codes worded here; any other the panel treats by its HTTP status. */

@@ -66,3 +66,28 @@ describe('the destructive button', () => {
     }
   });
 });
+
+describe('the chart colours', () => {
+  const contrast = (a: [number, number, number], b: [number, number, number]) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('stand out from the card (3:1, graphics) in both themes', () => {
+    for (const block of [':root', '.dark'] as const) {
+      const card = linear(token(block, 'card'));
+      for (const slot of [1, 2, 3, 4, 5]) expect(contrast(linear(token(block, `chart-${slot}`)), card), `${block} --chart-${slot}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('are told apart from each other in a chart of three (slots 1-3, normal vision)', () => {
+    for (const block of [':root', '.dark'] as const) {
+      const [a, b, c] = [1, 2, 3].map((slot) => token(block, `chart-${slot}`));
+      // Hue angles at least 60° apart, so the three read as different colours.
+      for (const [x, y] of [[a!, b!], [b!, c!], [a!, c!]] as const) {
+        const apart = Math.abs(x[2] - y[2]) % 360;
+        expect(Math.min(apart, 360 - apart), block).toBeGreaterThanOrEqual(60);
+      }
+    }
+  });
+});

@@ -8,6 +8,7 @@ import { maintQueue } from './maint.js';
 import { photoQueue } from './photo.js';
 import { pushQueue } from './push.js';
 import { safetyQueue } from './safety.js';
+import { statsQueue } from './stats.js';
 import { systemQueue } from './system.js';
 import type { QueueDefinition } from './types.js';
 
@@ -28,6 +29,21 @@ export function defaultQueues(config: WorkerConfig): QueueDefinition[] {
     safetyQueue,
     iapQueue(),
     ...(config.maint.enabled ? [maintQueue] : []),
+
+    // dashboard
+    statsQueue,
+
+    // content
+
+    // revenue
+
+    // growth
+
+    // app
+
+    // support
+
+    // system
   ];
 }
 
@@ -48,3 +64,21 @@ export * from './push.js';
 export * from './safety.js';
 export * from './system.js';
 export * from './types.js';
+
+// dashboard
+export * from './stats.js';
+export * from '../stats/live.js';
+export * from '../stats/queueCounts.js';
+export * from '../stats/rollup.js';
+
+// content
+
+// revenue
+
+// growth
+
+// app
+
+// support
+
+// system

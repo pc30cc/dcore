@@ -137,3 +137,33 @@ export class FakeRealtimePublisher implements RealtimePublisher {
     return this.published.filter((p) => p.channels.includes(channel)).map((p) => p.envelope);
   }
 }
+
+/**
+ * People connected to Centrifugo now: `/api/info`, the sum of `num_users`
+ * over its nodes (a person connected to two nodes counts twice). Throws a
+ * `ProviderError` when Centrifugo cannot be asked.
+ */
+export async function centrifugoOnlineUsers(options: CentrifugoOptions): Promise<number> {
+  const base = options.apiUrl.replace(/\/+$/, '');
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      options.fetch ?? defaultFetch,
+      `${base}/api/info`,
+      { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': options.apiKey }, body: '{}' },
+      options.timeoutMs ?? 2_000,
+    );
+  } catch (error) {
+    throw new ProviderError('centrifugo', 'info unreachable', { retryable: true, cause: error });
+  }
+  if (!response.ok) {
+    throw new ProviderError('centrifugo', `info answered ${response.status}: ${await bodySnippet(response)}`, {
+      status: response.status,
+      retryable: isRetryableStatus(response.status),
+    });
+  }
+  const reply = (await response.json().catch(() => null)) as { error?: unknown; result?: { nodes?: { num_users?: unknown }[] } } | null;
+  const nodes = reply?.result?.nodes;
+  if (!Array.isArray(nodes) || reply?.error) throw new ProviderError('centrifugo', 'info answered without nodes', { retryable: true });
+  return nodes.reduce((sum, node) => sum + (typeof node.num_users === 'number' && node.num_users > 0 ? Math.floor(node.num_users) : 0), 0);
+}

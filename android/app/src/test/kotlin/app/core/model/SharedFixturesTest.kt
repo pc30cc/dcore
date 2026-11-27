@@ -91,6 +91,14 @@ class SharedFixturesTest {
         "restore-result" to RestoreResult.serializer(),
         "entitlements" to Entitlements.serializer(),
         "boost-started" to BoostStarted.serializer(),
+
+        // content
+
+        // growth
+
+        // app
+
+        // support
     )
 
     /** The model of every realtime event's payload (`d`). A fixture with no entry fails [everyRealtimePayloadDecodesWithoutFallingBack]. */

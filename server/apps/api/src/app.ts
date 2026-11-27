@@ -34,6 +34,7 @@ import { bodyPlugin } from './plugins/body.js';
 import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
 import { clientIpPlugin } from './plugins/clientIp.js';
 import { denyListPlugin } from './plugins/denyList.js';
+import { activityPlugin, type ActivityPluginOptions } from './plugins/activity.js';
 import { errorsPlugin } from './plugins/errors.js';
 import { openapiPlugin } from './plugins/openapi.js';
 import { originsPlugin, type OriginsOptions } from './plugins/origins.js';
@@ -58,6 +59,13 @@ import { adminTextRoutes } from './routes/adminTexts.js';
 import { adminUserActionRoutes } from './routes/adminUserActions.js';
 import { adminUserRoutes } from './routes/adminUsers.js';
 import { adminUserChatRoutes, type AdminUserChatRoutesOptions } from './routes/adminUserChats.js';
+import { dashboardAreaRoutes } from './routes/areas/dashboard.js';
+import { contentAreaRoutes } from './routes/areas/content.js';
+import { revenueAreaRoutes } from './routes/areas/revenue.js';
+import { growthAreaRoutes } from './routes/areas/growth.js';
+import { appAreaRoutes } from './routes/areas/app.js';
+import { supportAreaRoutes } from './routes/areas/support.js';
+import { systemAreaRoutes } from './routes/areas/system.js';
 import { callRoutes } from './routes/calls.js';
 import { livekitWebhookRoutes } from './routes/livekitWebhook.js';
 import { originsRoutes } from './routes/origins.js';
@@ -146,6 +154,8 @@ export interface AppDependencies {
   adminAuth?: AdminAuthOptions | undefined;
   /** The admin chats routes' stream read limits (tests). */
   adminChats?: AdminUserChatRoutesOptions | undefined;
+  /** The clock and size of the "active today" marks (tests). */
+  activity?: Omit<ActivityPluginOptions, 'userIdOf'> | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -297,6 +307,8 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(clientPlugin, { policy: () => clientPolicy.get(), defaultLocale: 'en' });
   await app.register(authPlugin, { tokens });
   await app.register(denyListPlugin, { denyList, userIdOf: (subject) => publicIds.user.decodeId(subject) });
+  // dashboard
+  await app.register(activityPlugin, { ...deps.activity, userIdOf: (subject) => publicIds.user.decodeId(subject) });
   await app.register(rateLimitPlugin, {
     redis,
     keyPrefix: config.redis.keyPrefix,
@@ -313,8 +325,10 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(originsPlugin, deps.origins ?? {});
   await app.register(authServicesPlugin, deps.authServices ?? {});
   await app.register(adminAuthPlugin, deps.adminAuth ?? {});
+  // system
   await app.register(callsPlugin, deps.calls ?? {});
   await app.register(storePlugin, deps.store ?? {});
+  // app
 
   await app.register(healthRoutes, { readiness });
   await app.register(accountRoutes);
@@ -348,6 +362,13 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(adminTermRoutes);
   await app.register(adminDeviceBanRoutes);
   await app.register(adminAuditRoutes);
+  await app.register(dashboardAreaRoutes);
+  await app.register(contentAreaRoutes);
+  await app.register(revenueAreaRoutes);
+  await app.register(growthAreaRoutes);
+  await app.register(appAreaRoutes);
+  await app.register(supportAreaRoutes);
+  await app.register(systemAreaRoutes);
   await app.register(originsRoutes);
   await app.register(adminOriginsRoutes);
   await app.register(storeRoutes);

@@ -98,7 +98,8 @@ export const storeRoutes: FastifyPluginAsyncZod = async (app) => {
     '/v1/store/restore',
     {
       preHandler: signedIn,
-      config: { pgBudget: 0, rateLimit: { max: 30, timeWindow: 3_600_000 } },
+      // Also sent by the background purchase sync: not a sign of use.
+      config: { pgBudget: 0, activity: false, rateLimit: { max: 30, timeWindow: 3_600_000 } },
       schema: { tags: ['store'], summary: 'Restore purchases the server may not have', body: restoreRequestSchema, response: { 200: restoreResultSchema } },
     },
     async (request) => {

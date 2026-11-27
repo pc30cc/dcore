@@ -29,6 +29,8 @@ export const deviceRoutes: FastifyPluginAsyncZod = async (app) => {
       preHandler: fullOnly,
       config: {
         pgBudget: 2,
+        // The push registration runs from a background job (token rotations): not a sign of use.
+        activity: false,
         rateLimit: {
           max: 10,
           timeWindow: 3_600_000,

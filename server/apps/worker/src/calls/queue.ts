@@ -37,7 +37,7 @@ import {
 } from '@app/shared/server';
 import { DelayedError, type Job } from 'bullmq';
 import { z } from 'zod';
-import { releaseDeadToken } from '../push/deliver.js';
+import { countPushes, pushTally, releaseDeadToken } from '../push/deliver.js';
 import { firstName, pushLocale } from '../push/texts.js';
 import { dropTextOnLastFailure } from '../queues/push.js';
 import { queueJob } from '../social/jobs.js';
@@ -389,15 +389,21 @@ async function sendMissedCall(context: JobContext, sender: PushSender, call: Liv
   const target = await pushTargetsOf(services.pg, call.calleeId);
   if (!target || (target.notifyFlags & notifyFlags.code('calls')) === 0) return;
   const previews = (target.notifyFlags & notifyFlags.code('previews')) !== 0;
-  for (const device of target.devices) {
-    const payload = pushPayload(
-      'call_missed',
-      { callId: call.id, conversationId: call.matchId },
-      { text: missedCallText(pushLocale(device.locale ?? target.locale), call.kind, previews, call.callerName) },
-    );
-    const outcome = await sender.send(device.token, payload);
-    if (!outcome.ok && outcome.unregistered) await releaseDeadToken(context, device.id, device.token);
-    else if (!outcome.ok) log.warn({ status: outcome.status, callId: call.id }, 'missed-call push not delivered');
+  const tally = pushTally();
+  try {
+    for (const device of target.devices) {
+      const payload = pushPayload(
+        'call_missed',
+        { callId: call.id, conversationId: call.matchId },
+        { text: missedCallText(pushLocale(device.locale ?? target.locale), call.kind, previews, call.callerName) },
+      );
+      const outcome = await sender.send(device.token, payload);
+      tally.add(outcome);
+      if (!outcome.ok && outcome.unregistered) await releaseDeadToken(context, device.id, device.token);
+      else if (!outcome.ok) log.warn({ status: outcome.status, callId: call.id }, 'missed-call push not delivered');
+    }
+  } finally {
+    countPushes(context, tally.ok, tally.failed);
   }
 }
 
@@ -415,6 +421,7 @@ export async function ringPushJob(job: CallJob, context: JobContext, runtime: Ca
   const step = await ringPushStep(redis, services.keys, data.callId, 'begin', now);
   if (step.step !== 'go') return { outcome: 'skipped', reason: step.step === 'skip' ? step.reason : step.step };
   const rung: RungDevice[] = [];
+  const tally = pushTally();
   try {
     // Whatever the callee's `calls` switch says: it silences only the missed-call notification; a match's
     // call consent is what stops calls.
@@ -431,11 +438,13 @@ export async function ringPushJob(job: CallJob, context: JobContext, runtime: Ca
       for (const device of target.devices) {
         rung.push({ d: device.id, t: device.token });
         const outcome = await sender.send(device.token, payload);
+        tally.add(outcome);
         if (!outcome.ok && outcome.unregistered) await releaseDeadToken(context, device.id, device.token);
         else if (!outcome.ok) log.warn({ status: outcome.status, callId: call.id }, 'ring not delivered');
       }
     }
   } finally {
+    countPushes(context, tally.ok, tally.failed);
     // Whatever happened, the stop may go now: to exactly the devices this ring went to.
     await ringPushStep(redis, services.keys, data.callId, 'done', runtime.now(), rung);
   }
@@ -462,14 +471,18 @@ export async function ringStopJob(job: CallJob, context: JobContext, runtime: Ca
     devices = (target?.devices ?? []).map((d) => ({ d: d.id, t: d.token }));
   }
   const payload = pushPayload('call_cancel', { callId: data.callId, reason: data.reason });
-  let sent = 0;
-  for (const device of devices) {
-    if (step.answeredDevice && device.d === step.answeredDevice) continue;
-    const outcome = await sender.send(device.t, payload);
-    if (outcome.ok) sent += 1;
-    else if (!outcome.unregistered) log.warn({ status: outcome.status, callId: data.callId }, 'ring stop not delivered');
+  const tally = pushTally();
+  try {
+    for (const device of devices) {
+      if (step.answeredDevice && device.d === step.answeredDevice) continue;
+      const outcome = await sender.send(device.t, payload);
+      tally.add(outcome);
+      if (!outcome.ok && !outcome.unregistered) log.warn({ status: outcome.status, callId: data.callId }, 'ring stop not delivered');
+    }
+  } finally {
+    countPushes(context, tally.ok, tally.failed);
   }
-  return { outcome: 'stopped', devices: sent };
+  return { outcome: 'stopped', devices: tally.ok };
 }
 
 // ─── The queue ──────────────────────────────────────────────────────────

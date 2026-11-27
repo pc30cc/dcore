@@ -7,6 +7,7 @@ import { defaultQueues, type JobContext, type QueueDefinition } from './queues/i
 import { createWorkerRedis } from './redis.js';
 import { createWorkerServices, type WorkerServices } from './services.js';
 import { closeSocialQueues } from './social/jobs.js';
+import { closeStatsQueues } from './stats/queueCounts.js';
 import { startBatchConsumer, type BatchConsumerOptions, type BatchResult } from './streams/batch.js';
 import { startStreamConsumer, type StreamConsumerOptions, type StreamDelivery } from './streams/consumer.js';
 import { defaultConsumers } from './streams/index.js';
@@ -135,6 +136,22 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
     }
   }
 
+  // dashboard
+  // The test-account set before the first message batch (the message counter leaves them out).
+  void services.testAccounts?.ids();
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
+
   logger.info(
     { queues: definitions.map((q) => q.name), streams: consumerDefinitions.map((c) => c.stream) },
     'worker started',
@@ -148,6 +165,22 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
         // Workers finish their active jobs before close() resolves.
         await Promise.allSettled([...workers.map((w) => w.close()), ...consumers.map((c) => c.stop())]);
         await Promise.allSettled(schedulerQueues.map((q) => q.close()));
+
+        // dashboard
+        await closeStatsQueues(shared);
+
+        // content
+
+        // revenue
+
+        // growth
+
+        // app
+
+        // support
+
+        // system
+
         await closeSocialQueues(shared);
         if (owned) await owned.close().catch((error: unknown) => logger.error({ err: error }, 'closing services failed'));
         await Promise.allSettled([...consumerConnections, shared].map((c) => c.quit()));

@@ -1,7 +1,7 @@
-import type { Messages } from '../messages';
+import type { en } from './en';
 
 /** The panel's Turkish strings (same keys and placeholders as English). */
-export const tr: Messages = {
+export const tr: Readonly<Record<keyof typeof en, string>> = {
   'app.title': '{appName} Yönetim Paneli',
   'shell.admin': 'Yönetim',
   'shell.totpOff': 'İki adımlı giriş kapalı: bir yöneticinin parolasını bilen herkes giriş yapabilir.',

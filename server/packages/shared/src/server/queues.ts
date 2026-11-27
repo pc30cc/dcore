@@ -46,6 +46,21 @@ export const queueJobs = {
   chat: ['like-notes', 'unsend-clear', 'read-flush'],
   maint: ['partitions', 'active-drain', 'sessions-cleanup', 'lk-rebuild'],
   iap: ['ack', 'consume', 'recheck', 'refund-check', 'revoke', 'sub-end', 'rtdn', 'voided', 'checks'],
+
+  // dashboard
+  stats: ['live', 'rollup'],
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 } as const satisfies Partial<Record<QueueName, readonly string[]>>;
 
 /** Queues that have jobs. */

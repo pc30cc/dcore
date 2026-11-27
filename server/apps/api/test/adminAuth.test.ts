@@ -645,7 +645,8 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
   it('lets admins.manage granted by name reach no account and give no role beyond its own access', async () => {
     const owner = await seedAdmin(h);
     const adminRole = await seedAdmin(h, { roles: ['admin'] });
-    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) SELECT id, p FROM admin_roles, unnest(ARRAY['admins.manage', 'admins.read']) p WHERE key = 'support' ON CONFLICT DO NOTHING`);
+    // dashboard.revenue too: the analyst role holds it (0035), and a manager gives no role beyond its own access.
+    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) SELECT id, p FROM admin_roles, unnest(ARRAY['admins.manage', 'admins.read', 'dashboard.revenue']) p WHERE key = 'support' ON CONFLICT DO NOTHING`);
     await h.app.adminAuth.roles.reload();
     try {
       const lead = await seedAdmin(h, { roles: ['support'] });
@@ -698,7 +699,7 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
       expect((await admin(h, `/v1/admin/admins/${id}/reset-password`, {}, { token: t })).statusCode).toBe(200);
       expect((await admin(h, `/v1/admin/admins/${id}/disable`, {}, { token: t })).statusCode).toBe(200);
     } finally {
-      await db.sql.query(`DELETE FROM admin_role_permissions WHERE role_id = 4 AND permission IN ('admins.manage', 'admins.read')`);
+      await db.sql.query(`DELETE FROM admin_role_permissions WHERE role_id = 4 AND permission IN ('admins.manage', 'admins.read', 'dashboard.revenue')`);
       await h.app.adminAuth.roles.reload();
     }
   });

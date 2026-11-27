@@ -318,6 +318,20 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
         return send('POST', '/v1/admin/users/search', { q: '+989121110099' });
       },
     },
+
+    // dashboard
+
+    // content
+
+    // revenue
+
+    // growth
+
+    // app
+
+    // support
+
+    // system
   };
 
   /**

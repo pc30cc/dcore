@@ -155,6 +155,34 @@ export function createKeys(prefix: string) {
     conversationListChecked: (uid: string | bigint) => k('cl', 'ok', uid),
     /** A person's name, first photo and badge for lists, under their own-account version `mev` (kv-cache). */
     peerSummary: (uid: string | bigint, version: number) => k('ps', uid, version),
+
+    // dashboard
+    /** A day's counter (`ev:<name>:<yyyymmdd>`, kv-core, 45 days): swipes, messages, provider calls. */
+    statsCounter: (name: string, day: string) => k('ev', name, day),
+    /** The day's active people as a HyperLogLog (`hll:dau:<yyyymmdd>`, kv-core, 45 days), for weekly and monthly counts. */
+    statsDau: (day: string) => k('hll', 'dau', day),
+    /** The stats/live snapshot (JSON, kv-core, 10 min). */
+    statsLive: () => k('stats', 'live'),
+    /** The raw ids of test accounts (set, kv-core, 15 min), kept by stats/live; the live read intersects it with `la:<today>`. */
+    statsTestIds: () => k('stats', 'testids'),
+    /** The newest day stats/rollup finished (`YYYY-MM-DD`, kv-core, 45 days). */
+    statsLastDay: () => k('stats', 'last'),
+    /** A revenue read for its parameters and the newest rolled-up day (JSON, kv-cache, 5 min). */
+    statsRevenue: (lastDay: string, from: string, to: string, currency: string) => k('stats', 'rev', lastDay, from, to, currency),
+    /** The system/heartbeat beat (`{at, workerId}`, kv-core, 90 s); the same name as the worker's `heartbeatKey(prefix)`. */
+    workerHeartbeat: () => k('worker', 'heartbeat'),
+
+    // content
+
+    // revenue
+
+    // growth
+
+    // app
+
+    // support
+
+    // system
   };
 }
 

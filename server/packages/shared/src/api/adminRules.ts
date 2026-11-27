@@ -180,6 +180,20 @@ export const auditActions = [
   'device_ban.create',
   'device_ban.delete',
   'audit.export',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ] as const;
 export type AuditAction = (typeof auditActions)[number];
 export const auditActionSchema = z.enum(auditActions);

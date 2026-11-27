@@ -158,6 +158,15 @@ fun AppNavHost(config: Config?) {
                 OpenTarget.Chats -> { backStack.backToMain(); tabs.trySend(MainTab.CHATS) }
                 OpenTarget.Likes -> { backStack.backToMain(); tabs.trySend(MainTab.LIKES) }
                 OpenTarget.Profile -> { backStack.backToMain(); tabs.trySend(MainTab.PROFILE) }
+
+                // content
+
+                // growth
+
+                // app
+
+                // support
+
                 else -> backStack.backToMain()
             }
             links.taken(target)
@@ -212,6 +221,14 @@ fun AppNavHost(config: Config?) {
                                 },
                             )
                         }
+
+                        // content
+
+                        // growth
+
+                        // app
+
+                        // support
                     },
                 )
                 StorePrompts(root, config, Modifier.align(Alignment.BottomCenter))

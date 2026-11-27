@@ -1,7 +1,7 @@
-import type { Messages } from '../messages';
+import type { en } from './en';
 
 /** The panel's Persian strings (same keys and placeholders as English). */
-export const fa: Messages = {
+export const fa: Readonly<Record<keyof typeof en, string>> = {
   'app.title': 'پنل مدیریت {appName}',
   'shell.admin': 'مدیریت',
   'shell.totpOff': 'ورود دومرحله‌ای خاموش است؛ هر کس رمز را داشته باشد وارد می‌شود.',

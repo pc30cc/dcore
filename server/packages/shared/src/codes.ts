@@ -609,6 +609,10 @@ export const auditTarget = codes('audit_log', 'target_type', {
   legal_hold: [16, 'legal hold'],
   banned_term: [17, 'banned term'],
   device_ban: [18, 'device ban'],
+  profile_field: [19, 'profile field'],
+  prompt: [20, 'prompt'],
+  support_reply: [21, 'support reply'],
+  support_tag: [22, 'support tag'],
 });
 export type AuditTarget = (typeof auditTarget.names)[number];
 
@@ -744,6 +748,20 @@ export type NotifyFlag = (typeof notifyFlags.names)[number];
 /** messages, matches, likes and calls on; offers and previews off. */
 export const NOTIFY_FLAGS_DEFAULT = 15;
 
+// dashboard
+
+// content
+
+// revenue
+
+// growth
+
+// app
+
+// support
+
+// system
+
 /** Every table, for the test that holds them against the SQL comments. */
 export const codeTables: readonly CodeTable<string>[] = [
   accountStatus,
@@ -808,4 +826,18 @@ export const codeTables: readonly CodeTable<string>[] = [
   subscriptionStatus,
   ledgerReason,
   notifyFlags,
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ];

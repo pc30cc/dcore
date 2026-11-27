@@ -54,7 +54,8 @@ export const callRoutes: FastifyPluginAsyncZod = async (app) => {
     '/v1/calls/:id/rang',
     {
       preHandler: fullOnly,
-      config: { pgBudget: 0, rateLimit: { max: 60, timeWindow: 60_000, keyGenerator: perUser('call-rang') } },
+      // Posted when a ring push arrives, with the phone in a pocket: not a sign of use.
+      config: { pgBudget: 0, activity: false, rateLimit: { max: 60, timeWindow: 60_000, keyGenerator: perUser('call-rang') } },
       schema: { tags: ['calls'], summary: 'The ring showed on this phone', params: callParamsSchema },
     },
     async (request, reply) => {

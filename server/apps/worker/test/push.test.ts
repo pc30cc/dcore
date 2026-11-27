@@ -15,6 +15,7 @@ import {
   parseServiceAccount,
   placeCall,
   readCall,
+  utcDay,
   type CallJobQueue,
 } from '@app/shared/server';
 import { DelayedError, type Job } from 'bullmq';
@@ -429,6 +430,30 @@ describe.skipIf(!hasDatabase || !hasRedis)('the push sender (PostgreSQL, Valkey,
       expect(stops[0]!.body.message).toMatchObject({ data: { type: 'call_cancel', callId, reason: 'answered_elsewhere' }, android: { priority: 'HIGH', ttl: '45s', collapse_key: `call:${callId}` } });
       // A ring is data-only: the app draws it (no notification block, no text).
       expect(rings[0]!.body.message.android).toEqual({ priority: 'HIGH', ttl: '45s', collapse_key: `call:${callId}` });
+    });
+
+    it('counts each ring and stop in the provider health: accepted as push_ok, a failing FCM as push_fail', async () => {
+      const { callId, phones } = await ringingCall();
+      const { rows } = await db.admin.query<{ push_token: string }>(`SELECT push_token FROM devices WHERE id = ANY($1::bigint[]) ORDER BY id`, [phones]);
+      fcm.answerAlways(rows[1]!.push_token, 'unavailable');
+      const day = utcDay(Date.now());
+      const read = async () => ({
+        ok: Number((await redis.get(keys.statsCounter('push_ok', day))) ?? 0),
+        failed: Number((await redis.get(keys.statsCounter('push_fail', day))) ?? 0),
+      });
+      const settle = async (want: { ok: number; failed: number }) => {
+        for (let i = 0; i < 100; i += 1) {
+          const now = await read();
+          if (now.ok >= want.ok && now.failed >= want.failed) return now;
+          await new Promise((r) => setTimeout(r, 10));
+        }
+        return read();
+      };
+      const before = await read();
+      await calls.process(callJob('ring-push', { callId, peerName: 'Ava' }), context);
+      expect(await settle({ ok: before.ok + 1, failed: before.failed + 1 })).toEqual({ ok: before.ok + 1, failed: before.failed + 1 });
+      await calls.process(callJob('ring-stop', { callId, reason: 'cancelled' }), context);
+      expect(await settle({ ok: before.ok + 2, failed: before.failed + 2 })).toEqual({ ok: before.ok + 2, failed: before.failed + 2 });
     });
 
     it('rings with a first name only, never one that is really a phone number or an e-mail address', async () => {

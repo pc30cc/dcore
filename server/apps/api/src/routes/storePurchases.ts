@@ -17,7 +17,8 @@ import { requireScope, sessionOf } from '../services/session.js';
 export const storePurchaseRoutes: FastifyPluginAsyncZod = async (app) => {
   const signedIn = requireScope(app, app.account, ['full', 'restricted']);
   const response = { 200: purchaseResultSchema, 202: purchasePendingSchema };
-  const limits = { pgBudget: 0, rateLimit: { max: 30, timeWindow: 3_600_000 } };
+  // Also sent by the background purchase sync: not a sign of use (`activity: false`).
+  const limits = { pgBudget: 0, activity: false, rateLimit: { max: 30, timeWindow: 3_600_000 } };
 
   app.post(
     '/v1/store/play/purchases',

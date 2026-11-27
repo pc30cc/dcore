@@ -40,6 +40,20 @@ export const adminConflictReasons = [
   'product_exists',
   'plan_not_sold',
   'product_locked',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ] as const;
 export type AdminConflictReason = (typeof adminConflictReasons)[number];
 
@@ -56,6 +70,20 @@ export const adminForbiddenReasons = [
   'origin',
   /** Shadowbans are not shown to the caller's role. */
   'shadow_hidden',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ] as const;
 export type AdminForbiddenReason = (typeof adminForbiddenReasons)[number];
 
@@ -124,6 +152,20 @@ export const adminFieldCodes = [
   'resolution_not_allowed',
   'action_not_taken',
   ...bannedTermProblems,
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ] as const;
 export type AdminFieldCode = (typeof adminFieldCodes)[number];
 

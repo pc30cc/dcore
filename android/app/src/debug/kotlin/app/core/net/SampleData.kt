@@ -512,4 +512,12 @@ internal object SampleData {
         ConsumableProduct("cons.spotlight.1", WalletItem.Spotlight, 1, badge = "new", sort = 7),
         ConsumableProduct("cons.dm.5", WalletItem.Dm, 5, sort = 8),
     )
+
+    // content
+
+    // growth
+
+    // app
+
+    // support
 }

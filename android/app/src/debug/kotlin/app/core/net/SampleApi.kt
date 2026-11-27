@@ -2146,6 +2146,14 @@ class SampleApi(
     /** How many analytics events arrived, for tests. */
     val eventsCount: Int get() = eventsReceived
 
+    // content
+
+    // growth
+
+    // app
+
+    // support
+
     private fun refused(text: String): Boolean = REFUSED.any { text.contains(it, ignoreCase = true) }
 
     companion object {

@@ -1,4 +1,4 @@
-import { BazaarVerifier, PardakhtClient, RedisBazaarCallMeter } from '@app/shared/server';
+import { BazaarVerifier, PardakhtClient, RedisBazaarCallMeter, providerOutcome } from '@app/shared/server';
 import type { IapIntegrationFactory } from './verifiers.js';
 
 /**
@@ -19,7 +19,13 @@ export const bazaarIntegrationFactory: IapIntegrationFactory = (config, log, dep
     verifier = new BazaarVerifier({
       packageName: bazaar.packageName,
       rsaPublicKey: bazaar.rsaPublicKey,
-      api: new PardakhtClient({ packageName: bazaar.packageName, auth: bazaar.auth, meter, timeoutMs: 15_000 }),
+      api: new PardakhtClient({
+        packageName: bazaar.packageName,
+        auth: bazaar.auth,
+        meter,
+        timeoutMs: 15_000,
+        onOutcome: providerOutcome(deps.redis, deps.keys, 'store', (error) => log.debug({ err: error }, 'store outcome not counted')),
+      }),
       log,
     });
   } catch (error) {

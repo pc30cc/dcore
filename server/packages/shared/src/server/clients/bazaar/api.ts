@@ -149,7 +149,16 @@ export interface PardakhtClientOptions {
   /** Counts every API call and holds back background calls near the quota or in a burst. */
   meter?: BazaarCallMeter | undefined;
   now?: (() => number) | undefined;
+  /**
+   * Told how each request went, for the provider health counters: false when
+   * Bazaar was unreachable or answered 5xx, 429, an auth or quota refusal;
+   * true for an answer about the purchase (found, not found, refunded).
+   */
+  onOutcome?: ((ok: boolean) => void) | undefined;
 }
+
+/** Failures that say Bazaar (or our access to it) is not working, not something about one purchase. */
+const PROVIDER_FAILURES: ReadonlySet<string> = new Set(['unavailable', 'auth', 'quota', 'config']);
 
 interface ErrorBody {
   error: string | undefined;
@@ -196,6 +205,7 @@ export class PardakhtClient implements BazaarApi {
   private readonly timeoutMs: number;
   private readonly meter: BazaarCallMeter | undefined;
   private readonly now: () => number;
+  private readonly onOutcome: ((ok: boolean) => void) | undefined;
   private access: { token: string; untilMs: number } | null = null;
   private refreshing: Promise<string> | null = null;
 
@@ -207,6 +217,15 @@ export class PardakhtClient implements BazaarApi {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.meter = options.meter;
     this.now = options.now ?? Date.now;
+    this.onOutcome = options.onOutcome;
+  }
+
+  private outcome(ok: boolean): void {
+    try {
+      this.onOutcome?.(ok);
+    } catch {
+      // Counting never changes a call.
+    }
   }
 
   private path(...segments: string[]): string {
@@ -244,10 +263,12 @@ export class PardakhtClient implements BazaarApi {
         this.timeoutMs,
       );
     } catch (error) {
+      this.outcome(false);
       throw this.unreachable('token', error);
     }
     const body = await response.json().catch(() => null);
     if (!response.ok) {
+      this.outcome(false);
       const { error } = errorBodyOf(body);
       const kind = response.status === 400 || response.status === 401 || response.status === 403 ? 'auth' : 'unavailable';
       throw new BazaarApiError(kind, `token refresh answered ${response.status}${error ? ` ${error}` : ''}`, { status: response.status, code: error });
@@ -283,6 +304,7 @@ export class PardakhtClient implements BazaarApi {
         this.timeoutMs,
       );
     } catch (error) {
+      this.outcome(false);
       throw this.unreachable(operation, error);
     }
     const text = await response.text().catch(() => '');
@@ -291,11 +313,19 @@ export class PardakhtClient implements BazaarApi {
       try {
         body = JSON.parse(text);
       } catch {
-        if (response.ok) throw new BazaarApiError('unavailable', `${operation} answered ${response.status} with a body that is not JSON`, { status: response.status });
+        if (response.ok) {
+          this.outcome(false);
+          throw new BazaarApiError('unavailable', `${operation} answered ${response.status} with a body that is not JSON`, { status: response.status });
+        }
       }
     }
-    if (response.ok) return { status: response.status, body };
-    throw await this.failure(operation, response, body);
+    if (response.ok) {
+      this.outcome(true);
+      return { status: response.status, body };
+    }
+    const failure = await this.failure(operation, response, body);
+    this.outcome(!PROVIDER_FAILURES.has(failure.kind));
+    throw failure;
   }
 
   private async failure(operation: Operation, response: Response, body: unknown): Promise<BazaarApiError> {

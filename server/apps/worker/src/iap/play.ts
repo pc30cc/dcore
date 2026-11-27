@@ -4,6 +4,7 @@ import {
   PlayDeveloperApi,
   PlayStoreVerifier,
   decodeRtdn,
+  providerOutcome,
   isStoreError,
   subscriptionNotificationType,
   tokenHash,
@@ -219,9 +220,10 @@ export class PlayJobs {
 }
 
 /** The worker's Google Play integration, from `PLAY_*`: reads may wait longer than in the API (no person waits). */
-export const playIntegrationFactory: IapIntegrationFactory = (config) => {
+export const playIntegrationFactory: IapIntegrationFactory = (config, log, deps) => {
   const play = config.store.play;
   if (!play) return null;
-  const api = new PlayDeveloperApi({ packageName: play.packageName, account: play.serviceAccount, timeoutMs: 10_000, totalTimeoutMs: 30_000, retries: 2 });
+  const onOutcome = providerOutcome(deps.redis, deps.keys, 'store', (error) => log.debug({ err: error }, 'store outcome not counted'));
+  const api = new PlayDeveloperApi({ packageName: play.packageName, account: play.serviceAccount, timeoutMs: 10_000, totalTimeoutMs: 30_000, retries: 2, onOutcome });
   return new PlayJobs(new PlayStoreVerifier({ api }), play.packageName).integration();
 };

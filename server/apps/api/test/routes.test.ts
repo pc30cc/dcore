@@ -206,6 +206,28 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   ['GET', '/v1/admin/audit', '200', true],
   ['GET', '/v1/admin/audit/admins', '200', true],
   ['POST', '/v1/admin/audit/export', '200', false],
+
+  // dashboard
+  ['GET', '/v1/admin/stats/live', '200', true],
+  ['GET', '/v1/admin/stats/daily', '200', true],
+  ['GET', '/v1/admin/stats/retention', '200', true],
+  ['GET', '/v1/admin/stats/funnel', '200', true],
+  ['GET', '/v1/admin/stats/places', '200', true],
+  ['GET', '/v1/admin/stats/revenue', '200', true],
+  ['GET', '/v1/admin/stats/conversion', '200', true],
+  ['GET', '/v1/admin/stats/moderation', '200', true],
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
 ];
 
 describe('the route registry', () => {

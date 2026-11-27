@@ -1,10 +1,11 @@
 import { loadBrand } from '@app/config';
-import { createPool, type Pool } from '@app/db';
+import { createPool, testAccountIds, type Pool } from '@app/db';
 import type { Brand } from '@app/shared';
 import {
   CentrifugoPublisher,
   FcmSender,
   IdGenerator,
+  TestAccounts,
   createKeys,
   createMediaStore,
   createPublicIds,
@@ -46,6 +47,50 @@ export interface WorkerServices {
   iap?: IapServices | undefined;
   /** The brand served (BRAND), loaded at start; absent (tests): loaded from `config.brand` when first needed. */
   brand?: Brand | undefined;
+
+  // dashboard
+  /** The raw ids of test accounts, kept 10 minutes (absent in tests: made from `pg` when a stats job needs it). */
+  testAccounts?: TestAccounts | undefined;
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
+}
+
+/** More test accounts than this: the set is cut (logged), and the statistics count the rest as people. */
+export const TEST_ACCOUNTS_MAX = 10_000;
+
+/** The test-account set of a pool: users_test_idx, at most {@link TEST_ACCOUNTS_MAX} ids. */
+export function testAccountsFrom(pg: Pool, logger: Pick<Logger, 'error' | 'warn'>): TestAccounts {
+  return new TestAccounts({
+    load: async () => {
+      const ids = await testAccountIds(pg, TEST_ACCOUNTS_MAX + 1);
+      if (ids.length > TEST_ACCOUNTS_MAX) logger.error({ max: TEST_ACCOUNTS_MAX }, 'test accounts: more than the statistics can leave out');
+      return ids.slice(0, TEST_ACCOUNTS_MAX);
+    },
+    onError: (error) => logger.warn({ err: error }, 'test accounts: not reloaded; the last set stays'),
+  });
+}
+
+const fallbackTestAccounts = new WeakMap<Pool, TestAccounts>();
+
+/** The process's test-account set, or one made once for this pool (suites that build services by hand). */
+export function testAccountsOf(services: Pick<WorkerServices, 'pg' | 'testAccounts'>, logger: Pick<Logger, 'error' | 'warn'>): TestAccounts {
+  if (services.testAccounts) return services.testAccounts;
+  let made = fallbackTestAccounts.get(services.pg);
+  if (!made) {
+    made = testAccountsFrom(services.pg, logger);
+    fallbackTestAccounts.set(services.pg, made);
+  }
+  return made;
 }
 
 export interface OwnedServices {
@@ -95,6 +140,21 @@ export function createWorkerServices(config: WorkerConfig, redis: Redis, logger:
     push: config.push ? new FcmSender({ account: config.push.account }) : null,
     iap: iapServicesFrom(config, logger, { redis, keys: createKeys(config.redis.keyPrefix) }),
     brand,
+
+    // dashboard
+    testAccounts: testAccountsFrom(pg, logger),
+
+    // content
+
+    // revenue
+
+    // growth
+
+    // app
+
+    // support
+
+    // system
   };
   return {
     services,

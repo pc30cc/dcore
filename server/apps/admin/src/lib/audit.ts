@@ -20,8 +20,35 @@ export interface AuditFilterState {
 
 export const emptyAuditFilters: AuditFilterState = { admin: '', targetType: '', target: '', action: '', from: '', to: '' };
 
-/** The kinds of row the API audits, in the order the filter lists them. */
-export const auditTargetChoices: readonly AuditTarget[] = ['user', 'report', 'appeal', 'legal_hold', 'banned_term', 'device_ban', 'admin', 'plan', 'product', 'config', 'none'];
+/** The kinds of row the API audits, in the order the filter lists them (`none` last). */
+export const auditTargetChoices: readonly AuditTarget[] = [
+  'user',
+  'report',
+  'appeal',
+  'legal_hold',
+  'banned_term',
+  'device_ban',
+  'admin',
+  'plan',
+  'product',
+  'config',
+
+  // dashboard
+
+  // content
+
+  // revenue
+
+  // growth
+
+  // app
+
+  // support
+
+  // system
+
+  'none',
+];
 
 /** The actions, grouped by their area (`user.ban` is in `user`). */
 export const auditActionGroups: readonly { area: string; label: MessageKey; actions: AuditAction[] }[] = (() => {
@@ -39,6 +66,20 @@ export const auditActionGroups: readonly { area: string; label: MessageKey; acti
     banned_term: 'audit.area.banned_term',
     device_ban: 'audit.area.device_ban',
     audit: 'audit.area.audit',
+
+    // dashboard
+
+    // content
+
+    // revenue
+
+    // growth
+
+    // app
+
+    // support
+
+    // system
   };
   const groups: { area: string; label: MessageKey; actions: AuditAction[] }[] = [];
   for (const action of auditActions) {

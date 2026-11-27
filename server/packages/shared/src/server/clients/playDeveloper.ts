@@ -270,6 +270,13 @@ export interface PlayDeveloperApiOptions {
   retries?: number | undefined;
   now?: (() => number) | undefined;
   sleep?: ((ms: number) => Promise<void>) | undefined;
+  /**
+   * Told how each request went, for the provider health counters: false when
+   * Google was unreachable, timed out, or answered 5xx, 429, 401 (after a new
+   * access token) or 403, or no access token could be had; true for any
+   * other answer (an answer about the purchase).
+   */
+  onOutcome?: ((ok: boolean) => void) | undefined;
 }
 
 interface CallOptions {
@@ -295,6 +302,7 @@ export class PlayDeveloperApi {
   private readonly retries: number;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly onOutcome: ((ok: boolean) => void) | undefined;
   /** Requests sent to the API (tests count store calls). */
   requests = 0;
 
@@ -307,6 +315,7 @@ export class PlayDeveloperApi {
     this.retries = options.retries ?? 2;
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.onOutcome = options.onOutcome;
     this.tokens = new GoogleServiceAccountTokens({
       account: options.account,
       scope: ANDROID_PUBLISHER_SCOPE,
@@ -320,6 +329,14 @@ export class PlayDeveloperApi {
   /** Token exchanges so far (tests). */
   get tokenExchanges(): number {
     return this.tokens.exchanges;
+  }
+
+  private outcome(ok: boolean): void {
+    try {
+      this.onOutcome?.(ok);
+    } catch {
+      // Counting never changes a call.
+    }
   }
 
   private app(path: string): string {
@@ -404,6 +421,7 @@ export class PlayDeveloperApi {
       try {
         access = await this.tokens.token();
       } catch (error) {
+        this.outcome(false);
         if (error instanceof PlayApiError) throw error;
         throw new PlayApiError(`${options.what}: no access token`, { status: 0, retryable: true, cause: error });
       }
@@ -427,10 +445,16 @@ export class PlayDeveloperApi {
         );
         if (response.ok) {
           const text = await response.text();
-          if (text.trim().length === 0) return {};
+          if (text.trim().length === 0) {
+            this.outcome(true);
+            return {};
+          }
           try {
-            return JSON.parse(text) as unknown;
+            const parsed = JSON.parse(text) as unknown;
+            this.outcome(true);
+            return parsed;
           } catch (error) {
+            this.outcome(false);
             throw new PlayApiError(`${options.what}: the answer is not JSON`, { status: response.status, retryable: true, cause: error });
           }
         }
@@ -441,8 +465,10 @@ export class PlayDeveloperApi {
           this.tokens.invalidate(access);
           continue;
         }
+        this.outcome(!(response.status >= 500 || response.status === 429 || response.status === 401 || response.status === 403));
       } catch (error) {
         if (error instanceof PlayApiError) throw error;
+        this.outcome(false);
         failure = new PlayApiError(`${options.what}: ${timedOut(error) ? 'timed out' : 'network error'}`, { status: 0, retryable: true, cause: error });
       }
       if (!failure.retryable || !options.idempotent || attempt >= this.retries) throw failure;

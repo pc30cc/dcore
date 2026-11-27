@@ -19,6 +19,8 @@ export interface PermissionInfo {
 
 export const permissionCatalog = {
   'dashboard.read': {},
+  /** Money figures on the dashboard and in the statistics (revenue, MRR, conversion). */
+  'dashboard.revenue': {},
 
   'users.read': {},
   'users.view_phone': {},
