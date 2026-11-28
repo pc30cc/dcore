@@ -147,9 +147,9 @@ function AdjustmentTable({ rows }: { rows: readonly AdminWalletAdjustment[] }) {
           <TableHead>{t('wallet.col.item')}</TableHead>
           <TableHead>{t('wallet.col.change')}</TableHead>
           <TableHead className="hidden sm:table-cell">{t('wallet.col.after')}</TableHead>
-          <TableHead className="hidden lg:table-cell">{t('walletAdjust.col.kind')}</TableHead>
+          <TableHead className="hidden xl:table-cell">{t('walletAdjust.col.kind')}</TableHead>
           <TableHead className="hidden md:table-cell">{t('grants.col.by')}</TableHead>
-          <TableHead className="hidden lg:table-cell">{t('purchase.note')}</TableHead>
+          <TableHead className="hidden xl:table-cell">{t('purchase.note')}</TableHead>
           <TableHead className="hidden sm:table-cell">{t('wallet.col.when')}</TableHead>
         </TableRow>
       </TableHeader>
@@ -162,11 +162,12 @@ function AdjustmentTable({ rows }: { rows: readonly AdminWalletAdjustment[] }) {
             <TableCell className="text-sm">
               <span className="grid justify-items-start gap-0.5">
                 <span>{t(`walletItem.${row.item}`)}</span>
-                <span className="text-xs text-muted-foreground">
-                  {row.store ? t(`store.${row.store}`) : t('store.admin')}
-                  {/* Below lg the kind sits here (its column is hidden), and on a phone the time. */}
-                  <span className="lg:hidden"> · {t(row.reason === 'gift' ? 'walletAdjust.kind.gift' : 'walletAdjust.kind.correction')}</span>
-                </span>
+                <span className="text-xs whitespace-nowrap text-muted-foreground">{row.store ? t(`store.${row.store}`) : t('store.admin')}</span>
+                {/* Below xl the kind sits here (its column is hidden), drawn as that column draws it. */}
+                <Badge variant="outline" className="xl:hidden">
+                  {t(row.reason === 'gift' ? 'walletAdjust.kind.gift' : 'walletAdjust.kind.correction')}
+                </Badge>
+                {/* On a phone the time. */}
                 <span className="text-xs whitespace-nowrap text-muted-foreground sm:hidden">{formatDate(row.at, locale)}</span>
               </span>
             </TableCell>
@@ -175,20 +176,20 @@ function AdjustmentTable({ rows }: { rows: readonly AdminWalletAdjustment[] }) {
                 <span dir="ltr" className={cn('tabular-nums', row.delta > 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300')}>
                   {row.delta > 0 ? `+${formatNumber(row.delta, locale)}` : formatNumber(row.delta, locale)}
                 </span>
-                {/* Below lg the note sits here (its column is hidden). */}
+                {/* Below xl the note sits here (its column is hidden). */}
                 {row.note && (
-                  <p dir="auto" className="line-clamp-2 text-xs break-words text-muted-foreground lg:hidden">
+                  <p dir="auto" className="line-clamp-2 text-xs break-words text-muted-foreground xl:hidden">
                     {row.note}
                   </p>
                 )}
               </span>
             </TableCell>
             <TableCell className="hidden text-sm tabular-nums sm:table-cell">{formatNumber(row.balanceAfter, locale)}</TableCell>
-            <TableCell className="hidden lg:table-cell">
+            <TableCell className="hidden xl:table-cell">
               <Badge variant="outline">{t(row.reason === 'gift' ? 'walletAdjust.kind.gift' : 'walletAdjust.kind.correction')}</Badge>
             </TableCell>
             <TableCell className="hidden text-sm md:table-cell">{row.admin ? <bdi>{row.admin.displayName}</bdi> : t('common.none')}</TableCell>
-            <TableCell className="hidden max-w-64 lg:table-cell">
+            <TableCell className="hidden max-w-64 xl:table-cell">
               {row.note ? (
                 <p dir="auto" className="line-clamp-2 text-sm break-words text-muted-foreground" title={row.note}>
                   {row.note}

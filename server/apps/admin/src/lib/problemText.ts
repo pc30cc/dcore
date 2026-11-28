@@ -237,29 +237,43 @@ function isFieldCode(code: string): code is AdminFieldCode {
   return Object.hasOwn(FIELD_TEXT, code);
 }
 
+/** A field code's sentence as data: its key and the numbers it names, worded when drawn. */
+export interface FieldMessage {
+  key: MessageKey;
+  values?: Readonly<Record<string, number>>;
+}
+
 /**
- * The words for a field code (with the numbers its sentence names); null for
- * one the API does not write (a schema keyword). `pointer` is the field's
+ * The sentence of a field code (with the numbers it names); null for one the
+ * API does not write (a schema keyword). `pointer` is the field's
  * (`/bootstrap`, `/hosts/api`, …) where the number depends on the list.
+ * State keeps this, never finished text, so a change of the panel's language
+ * redraws it.
  */
-export function fieldText(code: string, t: Translate, pointer = ''): string | null {
+export function fieldMessage(code: string, pointer = ''): FieldMessage | null {
   if (!isFieldCode(code)) return null;
   switch (code) {
     case 'too_short':
-      return t('admins.error.passwordShort', { min: ADMIN_PASSWORD_MIN });
+      return { key: 'admins.error.passwordShort', values: { min: ADMIN_PASSWORD_MIN } };
     case 'too_long':
-      return t('admins.error.passwordLong', { max: ADMIN_PASSWORD_MAX });
+      return { key: 'admins.error.passwordLong', values: { max: ADMIN_PASSWORD_MAX } };
     case 'url_too_long':
-      return t('hosts.issue.url_too_long', { max: ORIGINS_URL_MAX });
+      return { key: 'hosts.issue.url_too_long', values: { max: ORIGINS_URL_MAX } };
     case 'too_many':
-      return t('hosts.issue.too_many', { max: pointer.startsWith('/bootstrap') ? ORIGINS_BOOTSTRAP_MAX : ORIGINS_PER_ROLE_MAX });
+      return { key: 'hosts.issue.too_many', values: { max: pointer.startsWith('/bootstrap') ? ORIGINS_BOOTSTRAP_MAX : ORIGINS_PER_ROLE_MAX } };
     case 'ends_too_far':
-      return t('action.error.untilFar', { years: Math.floor(PENALTY_MAX_DAYS / 365) });
+      return { key: 'action.error.untilFar', values: { years: Math.floor(PENALTY_MAX_DAYS / 365) } };
     case 'too_many_rows':
-      return t('audit.export.tooMany', { max: AUDIT_EXPORT_MAX_ROWS });
+      return { key: 'audit.export.tooMany', values: { max: AUDIT_EXPORT_MAX_ROWS } };
     default:
-      return t(FIELD_TEXT[code]);
+      return { key: FIELD_TEXT[code] };
   }
+}
+
+/** The words for a field code in the panel's language of the moment (see {@link fieldMessage}). */
+export function fieldText(code: string, t: Translate, pointer = ''): string | null {
+  const message = fieldMessage(code, pointer);
+  return message && t(message.key, message.values);
 }
 
 /** The words for a known 409; null for any other answer. */

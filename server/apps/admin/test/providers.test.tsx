@@ -2,6 +2,7 @@ import { expandGrants, type AdminProvider } from '@app/shared';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { translate } from '../src/i18n/translate';
 import { appliedSummary, missingSecrets, providerBody, providerFormOf } from '../src/lib/providerForm';
 import { configList, configSaved, provider, providersView, rtcView, STORED, v } from './appFixtures';
 import { adminWith, fakeApi, problem, renderPanel, resetPanel, signInAs, type Call } from './panel';
@@ -114,7 +115,14 @@ describe('/app/providers', () => {
     expect((await row('Firebase Cloud Messaging')).getByText('Deployment')).toBeTruthy();
     // The deployment's storage, LiveKit and moderation, read-only.
     expect((await row('Object storage and CDN')).getByText('media-private · media')).toBeTruthy();
-    expect((await row('LiveKit')).getByText('Fingerprint 444444444444')).toBeTruthy();
+    const livekit = await row('LiveKit');
+    expect(livekit.getByText('Fingerprint 444444444444')).toBeTruthy();
+    // The address is its one fact.
+    expect(livekit.getAllByRole('definition').map((dd) => dd.textContent)).toEqual(['https://livekit.example.com']);
+    // LiveKit's API key is drawn like the storage access key: its fingerprint, never the key itself.
+    expect(livekit.getByTitle('API key').textContent).toContain('••• 555555555555');
+    expect(livekit.getByText('Fingerprint 555555555555')).toBeTruthy();
+    expect(livekit.queryByText('API key', { selector: 'dt' })).toBeNull();
     expect((await row('Automatic review')).getByText('Human review only')).toBeTruthy();
     // No secret ever reaches the page: only 12-hex fingerprints.
     expect(document.body.textContent).not.toMatch(/key-|BEGIN|private_key/);
@@ -385,6 +393,46 @@ describe('/app/providers', () => {
       credentialTtlSeconds: 7_200,
       maxLiveCalls: null,
     });
+  });
+
+  it('redraws the calls network’s numbers in the digits of a language picked in the header', async () => {
+    const user = userEvent.setup();
+    renderPanel('/app/providers', api());
+    const network = async (title: string) => within((await screen.findByText(title, { selector: '[data-slot="card-title"]' })).closest<HTMLElement>('[data-slot="card"]')!);
+    expect((await network('Calls network')).getByRole<HTMLInputElement>('textbox', { name: 'Credential lifetime (minutes)' }).value).toBe('60');
+    await user.selectOptions(screen.getByLabelText('Language'), 'fa');
+    const rtc = await network('شبکه‌ی تماس');
+    expect(rtc.getByRole<HTMLInputElement>('textbox', { name: 'مدت اعتبار رمز رله (دقیقه)' }).value).toBe('۶۰');
+    expect(rtc.getByRole('button', { name: 'ذخیره' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('words the calls network’s range error in the language picked in the header', async () => {
+    const user = userEvent.setup();
+    renderPanel('/app/providers', api());
+    const network = async (title: string) => within((await screen.findByText(title, { selector: '[data-slot="card-title"]' })).closest<HTMLElement>('[data-slot="card"]')!);
+    let rtc = await network('Calls network');
+    const ttl = rtc.getByRole('textbox', { name: 'Credential lifetime (minutes)' });
+    await user.clear(ttl);
+    await user.type(ttl, '5');
+    await user.click(rtc.getByRole('button', { name: 'Save' }));
+    expect(rtc.getByText('Use a number from 10 to 1440.')).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText('Language'), 'fa');
+    rtc = await network('شبکه‌ی تماس');
+    const faRange = translate('fa', 'appConfig.error.range', { min: 10, max: 1440 });
+    expect(faRange).toContain('۱۴۴۰');
+    expect(rtc.getByText(faRange)).toBeTruthy();
+    expect(rtc.queryByText('Use a number from 10 to 1440.')).toBeNull();
+    // The card's notice says the same, in the same language.
+    expect(rtc.getByText(translate('fa', 'form.fixMarked'))).toBeTruthy();
+  });
+
+  it('draws no empty facts list for a LiveKit without an address', async () => {
+    const unset = { set: false, fingerprint: null, unreadable: false };
+    const view = providersView();
+    renderPanel('/app/providers', api({ 'GET /v1/admin/providers': () => ({ ...view, readOnly: { ...view.readOnly, livekit: { configured: false, apiUrl: null, apiKey: unset, apiSecret: unset, identitySecret: unset } } }) }));
+    const livekit = (await screen.findByText('LiveKit', { selector: 'li span.font-medium' })).closest('li')!;
+    expect(livekit.querySelector('dl')).toBeNull();
+    expect(livekit.querySelector('ul')).toBeNull();
   });
 
   it('asks before removing the relay secret, naming the countries that lose the relay', async () => {

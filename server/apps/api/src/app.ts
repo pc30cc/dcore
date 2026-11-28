@@ -17,7 +17,7 @@ import {
   type RealtimePublisher,
   type ServerSecrets,
 } from '@app/shared/server';
-import Fastify, { LogController } from 'fastify';
+import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Redis } from 'ioredis';
 import pino, { type Logger } from 'pino';
@@ -35,7 +35,7 @@ import { ClientPolicyHolder, clientPlugin } from './plugins/client.js';
 import { clientIpPlugin } from './plugins/clientIp.js';
 import { denyListPlugin } from './plugins/denyList.js';
 import { activityPlugin, type ActivityPluginOptions } from './plugins/activity.js';
-import { errorsPlugin } from './plugins/errors.js';
+import { ApiLogController, errorsPlugin } from './plugins/errors.js';
 import { openapiPlugin } from './plugins/openapi.js';
 import { originsPlugin, type OriginsOptions } from './plugins/origins.js';
 import { pgBudgetPlugin } from './plugins/pgBudget.js';
@@ -193,7 +193,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
     trustProxy: config.trustProxy,
     bodyLimit: config.bodyLimitBytes,
     requestIdHeader: false,
-    logController: new LogController({ requestIdLogLabel: 'requestId' }),
+    logController: new ApiLogController({ requestIdLogLabel: 'requestId' }),
     genReqId: (request) => {
       const inbound = request.headers['x-request-id'];
       return typeof inbound === 'string' && REQUEST_ID.test(inbound) ? inbound : randomUUID();

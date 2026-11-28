@@ -1,8 +1,9 @@
-import { expandGrants } from '@app/shared';
+import { ADMIN_PASSWORD_MIN, expandGrants } from '@app/shared';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { closedBySave, countriesCheck, legalCheck, limitsCheck, maintenanceValue, raisedRequired, typedNumber, versionsCheck } from '../src/lib/appConfigForm';
+import { translate } from '../src/i18n/translate';
+import { closedBySave, countriesCheck, inDigitsOf, legalCheck, limitsCheck, maintenanceValue, raisedRequired, serverProblems, typedNumber, versionsCheck } from '../src/lib/appConfigForm';
 import { configList, configSaved, STORED, v } from './appFixtures';
 import { adminWith, fakeApi, problem, renderPanel, resetPanel, signInAs, type Call } from './panel';
 
@@ -46,6 +47,16 @@ describe('the settings forms', () => {
   it('read numbers typed in any digits and check the API’s bounds', () => {
     expect(typedNumber(' ۴۵ ')).toBe(45);
     expect(typedNumber('4.5')).toBeNull();
+    // Redrawn in another language's digits, only the digits change.
+    expect(inDigitsOf('۴5 ', 'fa')).toBe('۴۵ ');
+    expect(inDigitsOf('٤۵x', 'en')).toBe('45x');
+    // A refusal at a field is kept as data (a key and its numbers), worded when drawn.
+    const issue = (pointer: string, code: string) => ({ in: 'body' as const, pointer, code, message: 'English.' });
+    expect(serverProblems([issue('/value/terms', 'out_of_range'), issue('/value/privacy', 'too_short'), issue('/value/x', 'too_big')], 'versions/', () => ({ min: 1, max: 1000 }))).toEqual({
+      'versions/terms': { key: 'appConfig.error.range', values: { min: 1, max: 1000 } },
+      'versions/privacy': { key: 'admins.error.passwordShort', values: { min: ADMIN_PASSWORD_MIN } },
+      'versions/x': { key: 'appConfig.error.invalid' },
+    });
     const checked = versionsCheck({
       cafe_bazaar: { required: '50', recommended: '49' },
       google_play: { required: '2100000001', recommended: '1' },
@@ -508,6 +519,101 @@ describe('/app/config', () => {
     );
     expect(await screen.findByText('It could not be loaded')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('redraws its numbers in the digits of a language picked in the header, keeping what was typed', async () => {
+    const puts: Call[] = [];
+    const user = userEvent.setup();
+    renderPanel('/app/config', api({ 'PUT /v1/admin/config/limits.rates': configSaved(puts) }));
+    let limits = await card('Limits per person');
+    await user.clear(limits.getByRole('textbox', { name: 'Messages a minute' }));
+    await user.type(limits.getByRole('textbox', { name: 'Messages a minute' }), '90');
+
+    await user.selectOptions(screen.getByLabelText('Language'), 'fa');
+    limits = await card('محدودیت‌های هر کاربر');
+    const field = (scope: typeof limits, name: string) => scope.getByRole<HTMLInputElement>('textbox', { name }).value;
+    expect(field(limits, 'کشیدن کارت در ساعت')).toBe('۶۰۰');
+    expect(field(limits, 'پیام در دقیقه')).toBe('۹۰');
+    expect(field(await card('نسخه‌های اپ'), 'حداقل نسخه در کافه‌بازار')).toBe('۴۱');
+    expect(field(await card('حقوقی'), 'سیاست حریم خصوصی')).toBe('۳');
+    expect(field(await card('مدت نگهداری داده‌ها'), 'پیام‌ها پس از لغو مچ')).toBe('۷');
+    // The edit is still an edit, and Discard goes back to the stored value in the new digits.
+    await user.click(limits.getByRole('button', { name: 'لغو تغییرات' }));
+    expect(field(limits, 'پیام در دقیقه')).toBe('۶۰');
+    expect(limits.getByRole('button', { name: 'ذخیره' }).hasAttribute('disabled')).toBe(true);
+
+    await user.clear(limits.getByRole('textbox', { name: 'پیام در دقیقه' }));
+    await user.type(limits.getByRole('textbox', { name: 'پیام در دقیقه' }), '۷۵');
+    await user.selectOptions(screen.getByLabelText('زبان'), 'en');
+    limits = await card('Limits per person');
+    expect(field(limits, 'Swipes an hour')).toBe('600');
+    expect(field(limits, 'Messages a minute')).toBe('75');
+    await user.click(limits.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect((puts[0]?.body as { value: { messages_per_minute: number } } | undefined)?.value.messages_per_minute).toBe(75));
+  });
+
+  it('keeps wrapped labels readable, inputs side by side on one line, and the legal versions one under another on a phone', async () => {
+    renderPanel('/app/config', api());
+    const limits = await card('Limits per person');
+    // The shared label is set solid; inside a settings card a label that wraps gets line spacing.
+    const label = limits.getByText('Messages in one chat in 10 seconds');
+    expect(label.getAttribute('data-slot')).toBe('label');
+    expect(label.closest('fieldset')!.className).toContain('[&_[data-slot=label]]:leading-snug');
+    // Side by side (sm), each field spans the label, input and hint rows, its label at the bottom.
+    expect(label.parentElement!.className).toMatch(/\bsm:row-span-3\b.*\bsm:grid-rows-subgrid\b.*\bsm:\[&>label\]:self-end/);
+    const legal = await card('Legal');
+    const privacy = legal.getByRole('textbox', { name: 'Privacy policy' });
+    // Keyed to the card's width (beside the limits card it is half as wide), not the viewport's.
+    const fieldset = privacy.closest('fieldset')!;
+    expect(fieldset.className).toMatch(/(^|\s)@container(\s|$)/);
+    const versions = fieldset.querySelector(':scope > div')!;
+    expect(versions.className).toMatch(/\bgrid-cols-1\b.*@lg:grid-cols-3\b/);
+    expect(versions.className).not.toMatch(/\bsm:grid-cols-3\b/);
+    expect(legal.getByText('Privacy policy').parentElement!.className).toMatch(/@lg:row-span-3\b.*@lg:grid-rows-subgrid\b.*@lg:\[&>label\]:self-end/);
+    expect(privacy.className).toMatch(/\bw-32\b.*@lg:w-full\b/);
+    // The footer line keeps a width of its own: on a narrow card the buttons go under it, never squeeze it word by word.
+    const footer = legal.getByRole('button', { name: 'Save' }).closest('[data-slot="card-footer"]')!;
+    expect(footer.className).toContain('flex-wrap');
+    expect(footer.firstElementChild!.className).toMatch(/\bmin-w-0\b.*\bflex-auto\b/);
+  });
+
+  it('words the field errors in the language picked in the header: its own range checks and the API’s', async () => {
+    const fake = api({
+      'PUT /v1/admin/config/limits.rates': () =>
+        problem(422, 'field_invalid', { errors: [{ in: 'body', pointer: '/value/reports_per_day', code: 'out_of_range', message: 'x' }] }),
+    });
+    const user = userEvent.setup();
+    renderPanel('/app/config', fake, { locale: 'fa' });
+    // The retention card's own check, in Persian with Persian digits.
+    let retention = await card('مدت نگهداری داده‌ها');
+    const unmatched = retention.getByRole('textbox', { name: 'پیام‌ها پس از لغو مچ' });
+    await user.clear(unmatched);
+    await user.type(unmatched, '۹۹۹');
+    await user.click(retention.getByRole('button', { name: 'ذخیره' }));
+    const faRange = translate('fa', 'appConfig.error.range', { min: 1, max: 90 });
+    expect(faRange).toContain('۹۰');
+    expect(retention.getByText(faRange)).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText('زبان'), 'en');
+    retention = await card('Data retention');
+    expect(retention.getByText('Use a number from 1 to 90.')).toBeTruthy();
+    expect(retention.queryByText(faRange)).toBeNull();
+    expect(retention.getByRole<HTMLInputElement>('textbox', { name: 'Messages after an unmatch' }).value).toBe('999');
+
+    // A refusal the API made at a field (out_of_range), then a switch back to Persian.
+    let limits = await card('Limits per person');
+    const swipes = limits.getByRole('textbox', { name: 'Swipes an hour' });
+    await user.clear(swipes);
+    await user.type(swipes, '700');
+    await user.click(limits.getByRole('button', { name: 'Save' }));
+    expect(await limits.findByText('Use a number from 10 to 50.')).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText('Language'), 'fa');
+    limits = await card('محدودیت‌های هر کاربر');
+    expect(limits.getByText(translate('fa', 'appConfig.error.range', { min: 10, max: 50 }))).toBeTruthy();
+    expect(limits.queryByText('Use a number from 10 to 50.')).toBeNull();
+    expect(limits.getByText(translate('fa', 'form.fixMarked'))).toBeTruthy();
+    retention = await card('مدت نگهداری داده‌ها');
+    expect(retention.getByText(faRange)).toBeTruthy();
   });
 
   it('reads in Persian, with Persian digits, and takes Persian digits typed', async () => {

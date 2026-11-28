@@ -1,12 +1,14 @@
 import { ADMIN_CONFIG_BOUNDS, distanceUnits, locales, type AppConfig, type DistanceUnit, type FieldIssue, type Locale } from '@app/shared';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { MessageKey } from '@/i18n/messages';
 import type { Translate } from '@/i18n/translate';
-import { asciiDigits } from './format';
-import { fieldText } from './problemText';
+import { asciiDigits, formatPlain } from './format';
+import { fieldMessage } from './problemText';
 
 /**
  * The forms of `/app/config`, one per card: what the inputs hold (numbers
- * as typed, in any digits), the value a save sends, the checks the API
+ * as typed, in any digits, redrawn in the panel's digits when its language
+ * changes), the value a save sends, the checks the API
  * makes again (bounds, a suggested version not below the required one,
  * legal versions that only go up), and what each change asks the admin to
  * confirm.
@@ -34,12 +36,42 @@ export function typedNumber(value: string): number | null {
   return /^\d{1,10}$/.test(text) ? Number(text) : null;
 }
 
+/** A number field's text in the panel's digits for `locale`: only the digits change, anything else typed stays. */
+export function inDigitsOf(text: string, locale: Locale): string {
+  return asciiDigits(text).replace(/[0-9]/g, (digit) => formatPlain(Number(digit), locale));
+}
+
+/** Every field of a form of number fields in `locale`'s digits. */
+export function fieldsInDigitsOf<K extends string>(form: Readonly<Record<K, string>>, locale: Locale): Record<K, string> {
+  return Object.fromEntries(Object.entries<string>(form).map(([name, text]) => [name, inDigitsOf(text, locale)])) as Record<K, string>;
+}
+
+/**
+ * Keeps a form's numbers in the digits of the panel's language: when the
+ * language changes, each setter's form is rewritten by `redigit` (what was
+ * typed stays, only its digits change), so the form and the copy Discard
+ * goes back to stay comparable. It runs while rendering, so the switch
+ * draws the new digits at once.
+ */
+export function useDigitsFollowLocale<F>(locale: Locale, redigit: (form: F, locale: Locale) => F, ...setters: readonly Dispatch<SetStateAction<F>>[]): void {
+  const [drawnIn, setDrawnIn] = useState(locale);
+  if (drawnIn !== locale) {
+    setDrawnIn(locale);
+    for (const set of setters) set((form) => redigit(form, locale));
+  }
+}
+
 /** A field's problem: a key and its values. */
 export interface Problem {
   key: MessageKey;
   values?: Readonly<Record<string, number | string>>;
 }
 export type Problems = Readonly<Record<string, Problem>>;
+
+/** Problems worded in the panel's language of this render: state keeps them as data, so a change of language redraws them. */
+export function wordedProblems(problems: Problems, t: Translate): Record<string, string> {
+  return Object.fromEntries(Object.entries(problems).map(([field, problem]) => [field, t(problem.key, problem.values)]));
+}
 
 const range = (min: number, max: number): Problem => ({
   key: 'appConfig.error.range',
@@ -69,6 +101,13 @@ export function versionsFormOf(value: AppConfig['app.min_version'], plain: (n: n
       required: plain(value.google_play.required),
       recommended: plain(value.google_play.recommended),
     },
+  };
+}
+
+export function versionsInDigitsOf(form: VersionsForm, locale: Locale): VersionsForm {
+  return {
+    cafe_bazaar: fieldsInDigitsOf(form.cafe_bazaar, locale),
+    google_play: fieldsInDigitsOf(form.google_play, locale),
   };
 }
 
@@ -295,6 +334,11 @@ export function legalFormOf(versions: AppConfig['legal.versions'], contact: AppC
   };
 }
 
+/** The version fields in `locale`'s digits; the contact as typed. */
+export function legalInDigitsOf(form: LegalForm, locale: Locale): LegalForm {
+  return { ...form, versions: fieldsInDigitsOf(form.versions, locale) };
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function legalCheck(
@@ -339,15 +383,17 @@ export function raisedTexts(before: AppConfig['legal.versions'], after: AppConfi
 /**
  * A refusal's field issues as the card's problems: `/value/<path>` of the
  * key saved, at `prefix` + `<path>` (e.g. `versions/terms`); a bound refused
- * says its range when the card knows it.
+ * says its range when the card knows it. Problems are data (a key and its
+ * numbers), worded when drawn, so they follow a change of the panel's
+ * language.
  */
-export function serverProblems(issues: readonly FieldIssue[], t: Translate, prefix = '', bounds?: (path: string) => { min: number; max: number } | null): Record<string, string> {
-  const out: Record<string, string> = {};
+export function serverProblems(issues: readonly FieldIssue[], prefix = '', bounds?: (path: string) => { min: number; max: number } | null): Record<string, Problem> {
+  const out: Record<string, Problem> = {};
   for (const issue of issues) {
     const path = issue.pointer.replace(/^\/value\/?/, '');
     const field = `${prefix}${path}`;
     const known = issue.code === 'out_of_range' ? bounds?.(path) : null;
-    out[field] = known ? t('appConfig.error.range', known) : (fieldText(issue.code, t, issue.pointer) ?? t('appConfig.error.invalid'));
+    out[field] = known ? range(known.min, known.max) : (fieldMessage(issue.code, issue.pointer) ?? { key: 'appConfig.error.invalid' });
   }
   return out;
 }

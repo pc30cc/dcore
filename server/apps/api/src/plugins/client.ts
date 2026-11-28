@@ -168,7 +168,7 @@ export const clientPlugin = fp<ClientPluginOptions>(
       const current = policy();
       if (rules.maintenance && current.maintenance.enabled) {
         const message = current.maintenance.message[request.locale] ?? current.maintenance.message[defaultLocale];
-        throw new HttpProblem('maintenance', { extensions: { message }, headers: { 'retry-after': '120' } });
+        throw new HttpProblem('maintenance', { extensions: { message }, headers: { 'retry-after': '120' }, expected: true });
       }
       const required = current.minVersion[client.store];
       if (rules.minVersion && client.versionCode < required) {

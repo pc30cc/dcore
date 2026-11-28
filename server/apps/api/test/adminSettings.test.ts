@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { adminConfigListSchema, adminConfigResultSchema, adminConfigKeyList, type AdminConfigItem, type AppConfig } from '@app/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { checkConfigRules, settingsVersion, stableJson } from '../src/admin/configRules.js';
+import { checkConfigRules, parseConfigValue, settingsVersion, stableJson } from '../src/admin/configRules.js';
 import { HttpProblem } from '../src/lib/problem.js';
 import { call, migratedDatabase, row, seedUser, statements, type TestDatabase } from './accountSupport.js';
 import { admin, adminAs, lastAudit, seedAdmin, startAdminHarness, type AdminHarness, type AdminSession } from './adminSupport.js';
@@ -137,12 +137,23 @@ describe.skipIf(!hasInfrastructure)('admin: app settings', () => {
     expect(fieldOf(await put(superadmin, 'retention.unsent_body_hours', 500, unsent.version))).toMatchObject({ pointer: '/value', code: 'out_of_range' });
     const legal = await item('legal.versions');
     const lowered = await put(superadmin, 'legal.versions', { ...(legal.value as object), privacy: 0 }, legal.version);
-    expect(fieldOf(lowered)?.pointer).toBe('/value/privacy');
+    // The stored schema refuses 0 too; the panel's bound answers first, at the field.
+    expect(fieldOf(lowered)).toMatchObject({ pointer: '/value/privacy', code: 'out_of_range' });
+    expect(fieldOf(await put(superadmin, 'legal.versions', { ...(legal.value as object), terms: 0 }, legal.version))).toMatchObject({ pointer: '/value/terms', code: 'out_of_range' });
+    // The stored schema holds unmatched messages to 1..90 itself: 0 and 91 still answer the panel's out_of_range.
+    const unmatched = await item('retention.unmatched_messages_days');
+    for (const value of [0, 91]) {
+      expect(fieldOf(await put(superadmin, 'retention.unmatched_messages_days', value, unmatched.version)), String(value)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    }
+    expect(fieldOf(await put(superadmin, 'retention.unmatched_messages_days', 1.5, unmatched.version))).toMatchObject({ pointer: '/value', code: 'invalid' });
+    const evidence = await item('retention.report_evidence_days');
+    expect(fieldOf(await put(superadmin, 'retention.report_evidence_days', 0, evidence.version))).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(fieldOf(await put(superadmin, 'app.min_version', { cafe_bazaar: { required: -1, recommended: 0 }, google_play: { required: 0, recommended: 0 } }, versions.version))).toMatchObject({ pointer: '/value/cafe_bazaar/required', code: 'out_of_range' });
     const value = legal.value as { terms: number; privacy: number; guidelines: number };
     if (value.privacy > 1) expect(fieldOf(await put(superadmin, 'legal.versions', { ...value, privacy: value.privacy - 1 }, legal.version))?.code).toBe('version_lowered');
     const limits = await item('limits.rates');
     const rates = limits.value as Record<string, number>;
-    expect(fieldOf(await put(superadmin, 'limits.rates', { ...rates, reports_per_day: 0 }, limits.version))?.pointer).toBe('/value/reports_per_day');
+    expect(fieldOf(await put(superadmin, 'limits.rates', { ...rates, reports_per_day: 0 }, limits.version))).toMatchObject({ pointer: '/value/reports_per_day', code: 'out_of_range' });
     expect(fieldOf(await put(superadmin, 'limits.rates', { ...rates, swipes_per_hour: 10 }, limits.version))).toMatchObject({ pointer: '/value/swipes_per_hour', code: 'out_of_range' });
     // Reports never below the shipped 10 a day (a safety path); the other caps stay near what shipped.
     for (const [field, value] of [
@@ -323,5 +334,51 @@ describe.skipIf(!hasInfrastructure)('admin: app settings with the second factor 
     const res = await admin(h, '/v1/admin/config/legal.versions', { value: legal.value, baseVersion: legal.version }, { token, method: 'PUT' });
     expect(res.statusCode, res.body).toBe(200);
     expect((await admin(h, '/v1/admin/providers', undefined, { token })).statusCode).toBe(200);
+  });
+});
+
+describe('admin: app setting bounds', () => {
+  const issueOf = (key: Parameters<typeof parseConfigValue>[0], value: unknown) => {
+    try {
+      parseConfigValue(key, value);
+      return null;
+    } catch (error) {
+      if (!(error instanceof HttpProblem)) throw error;
+      return (error.toProblem('r').errors ?? [])[0] ?? null;
+    }
+  };
+
+  it('answers out_of_range at the field before the stored schema, wherever the schema has a range of its own', () => {
+    // Stored schema 1..90, the panel's bounds 1..90: both edges outside answer the panel's code.
+    expect(issueOf('retention.unmatched_messages_days', 0)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('retention.unmatched_messages_days', 91)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('retention.unmatched_messages_days', 90)).toBeNull();
+    // Positive integers in the stored schemas.
+    expect(issueOf('retention.message_requests_days', 0)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('retention.unsent_body_hours', 0)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('retention.report_evidence_days', 0)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('retention.deleted_account_days', 0)).toMatchObject({ pointer: '/value', code: 'out_of_range' });
+    expect(issueOf('legal.versions', { terms: 0, privacy: 1, guidelines: 1 })).toMatchObject({ pointer: '/value/terms', code: 'out_of_range' });
+    expect(issueOf('legal.versions', { terms: 1, privacy: 1, guidelines: 1_001 })).toMatchObject({ pointer: '/value/guidelines', code: 'out_of_range' });
+    expect(issueOf('limits.rates', { swipes_per_hour: 600, messages_per_minute: 60, messages_per_conversation: 0, reports_per_day: 10 })).toMatchObject({
+      pointer: '/value/messages_per_conversation',
+      code: 'out_of_range',
+    });
+    expect(issueOf('app.min_version', { cafe_bazaar: { required: 0, recommended: 0 }, google_play: { required: 0, recommended: -1 } })).toMatchObject({
+      pointer: '/value/google_play/recommended',
+      code: 'out_of_range',
+    });
+  });
+
+  it('leaves what is not a number in range to the schema', () => {
+    expect(issueOf('retention.unmatched_messages_days', 1.5)).toMatchObject({ pointer: '/value', code: 'invalid' });
+    expect(issueOf('retention.unmatched_messages_days', '30')).toMatchObject({ pointer: '/value', code: 'invalid' });
+    expect(issueOf('legal.versions', { terms: 1, privacy: 1 })).toMatchObject({ pointer: '/value/guidelines', code: 'invalid' });
+    expect(issueOf('legal.versions', 'x')).toMatchObject({ pointer: '/value', code: 'invalid' });
+    expect(issueOf('app.min_version', { cafe_bazaar: { required: 10, recommended: 5 }, google_play: { required: 0, recommended: 0 } })).toMatchObject({
+      pointer: '/value/cafe_bazaar/recommended',
+      code: 'below_required',
+    });
+    expect(issueOf('app.maintenance', { enabled: true, message: {} })).toBeNull();
   });
 });

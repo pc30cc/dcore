@@ -70,7 +70,8 @@ export class HashGate {
 
 function busy(): HttpProblem {
   const retryAfter = String(HASH_BUSY_RETRY_SECONDS);
-  return new HttpProblem('service_unavailable', { detail: 'Too many sign-ins at once; try again in a few seconds.', headers: { 'retry-after': retryAfter } });
+  // Load shed on purpose, not a failure: no stack in the log.
+  return new HttpProblem('service_unavailable', { detail: 'Too many sign-ins at once; try again in a few seconds.', headers: { 'retry-after': retryAfter }, expected: true });
 }
 
 /** The admin password operations of the process, each through the gate (a full queue answers 503). */

@@ -241,7 +241,7 @@ function readOnlyOf(app: FastifyInstance, applied: readonly AppliedEntry[] | nul
     livekit: {
       configured: livekit !== undefined,
       apiUrl: livekit?.apiUrl ?? null,
-      apiKey: livekit?.apiKey ?? null,
+      apiKey: fp(livekit?.apiKey),
       apiSecret: fp(livekit?.apiSecret),
       identitySecret: fp(livekit?.identitySecret),
     },

@@ -67,12 +67,14 @@ export function ProvidersPage() {
         <RtcCard />
         <List>
           <ReadOnlyRow name={t('provider.livekit')} configured={view.readOnly.livekit.configured}>
-            <Facts>
-              {view.readOnly.livekit.apiUrl && <Fact label={t('providers.field.url')} value={view.readOnly.livekit.apiUrl} />}
-              {view.readOnly.livekit.apiKey && <Fact label={t('providers.field.apiKey')} value={view.readOnly.livekit.apiKey} />}
-            </Facts>
+            {view.readOnly.livekit.apiUrl && (
+              <Facts>
+                <Fact label={t('providers.field.url')} value={view.readOnly.livekit.apiUrl} />
+              </Facts>
+            )}
             <Secrets
               secrets={{
+                apiKey: view.readOnly.livekit.apiKey,
                 apiSecret: view.readOnly.livekit.apiSecret,
                 identitySecret: view.readOnly.livekit.identitySecret,
               }}

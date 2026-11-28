@@ -18,8 +18,10 @@ import {
   countriesCheck,
   countriesFormOf,
   countryCode,
+  fieldsInDigitsOf,
   legalCheck,
   legalFormOf,
+  legalInDigitsOf,
   legalTexts,
   limitNames,
   limitsCheck,
@@ -39,13 +41,17 @@ import {
   storeOfVersionKey,
   typedNumber,
   units,
+  useDigitsFollowLocale,
   versionsCheck,
   versionsFormOf,
+  versionsInDigitsOf,
   versionStores,
+  wordedProblems,
   type CountriesForm,
   type LegalForm,
   type LegalText,
   type LimitName,
+  type Problem,
   type Problems,
   type RetentionKey,
   type Stores,
@@ -66,7 +72,8 @@ import { SettingsCard } from './SettingsCard';
  * saves only those, with the versions they were read at. A save the API
  * refuses at a field shows there; one refused because another admin saved
  * meanwhile reloads the card. The page keys each card by its versions, so a
- * save (or a newer read) starts it again from the stored values.
+ * save (or a newer read) starts it again from the stored values; a change of
+ * the panel's language redraws the numbers in its digits, keeping edits.
  */
 
 export interface CardNotice {
@@ -91,8 +98,9 @@ function useWritable(...items: AdminConfigItem[]): boolean {
 }
 
 /** A card without fields of its own: a refusal at a field is said in the footer alone. */
-const ignoreFields = (_fields: Record<string, string>): void => undefined;
+const ignoreFields = (_fields: Problems): void => undefined;
 
+/** A field's problem worded in the panel's language of this render (problems are kept as data). */
 const problemOf = (problems: Problems, t: Translate, field: string): string | undefined => {
   const problem = problems[field];
   return problem ? t(problem.key, problem.values) : undefined;
@@ -102,8 +110,7 @@ const problemOf = (problems: Problems, t: Translate, field: string): string | un
  * Saves settings one after another, stopping at the first refusal; what was
  * saved is stored at the end (the card then starts again from it).
  */
-function useSaver({ setNotice }: CardNotice, onFields: (fields: Record<string, string>) => void, bounds?: (key: AdminConfigKey, path: string) => { min: number; max: number } | null) {
-  const { t } = useI18n();
+function useSaver({ setNotice }: CardNotice, onFields: (fields: Problems) => void, bounds?: (key: AdminConfigKey, path: string) => { min: number; max: number } | null) {
   const [saving, setSaving] = useState(false);
   async function save(
     entries: readonly {
@@ -126,7 +133,7 @@ function useSaver({ setNotice }: CardNotice, onFields: (fields: Record<string, s
         showToast((t) => t('settings.conflict'), 'error', 6_000);
         void queryClient.invalidateQueries({ queryKey: appKeys.config });
       } else if (failure.code === 'field_invalid' && entry) {
-        onFields(serverProblems(failure.errors, t, entry.prefix ?? '', (path) => bounds?.(entry.item.key, path) ?? null));
+        onFields(serverProblems(failure.errors, entry.prefix ?? '', (path) => bounds?.(entry.item.key, path) ?? null));
         setNotice((t) => t('form.fixMarked'));
       } else {
         setNotice((t, lang) => problemText(failure, t, lang));
@@ -183,10 +190,11 @@ export function VersionsCard({ item, ...notice }: { item: AdminConfigItem } & Ca
   const id = useId();
   const stored = item.value as AppConfig['app.min_version'];
   const plain = (n: number) => formatPlain(n, locale);
-  const [initial] = useState(() => versionsFormOf(stored, plain));
+  const [initial, setInitial] = useState(() => versionsFormOf(stored, plain));
   const [form, setForm] = useState(initial);
+  useDigitsFollowLocale(locale, versionsInDigitsOf, setInitial, setForm);
   const [problems, setProblems] = useState<Problems>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Problems>({});
   const [pending, setPending] = useState<{
     value: AppConfig['app.min_version'];
     raised: { store: Stores; code: number }[];
@@ -252,7 +260,7 @@ export function VersionsCard({ item, ...notice }: { item: AdminConfigItem } & Ca
                     key={field}
                     id={`${id}-${key}`}
                     label={t(field === 'required' ? 'appConfig.versions.required' : 'appConfig.versions.suggested')}
-                    error={problemOf(problems, t, key) ?? fieldErrors[key]}
+                    error={problemOf(problems, t, key) ?? problemOf(fieldErrors, t, key)}
                   >
                     {(control) => (
                       <Input
@@ -324,7 +332,7 @@ export function MaintenanceCard({ item, ...notice }: { item: AdminConfigItem } &
   const [initial] = useState(() => maintenanceFormOf(stored));
   const [form, setForm] = useState(initial);
   const [problems, setProblems] = useState<Problems>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Problems>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const writable = useWritable(item);
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
@@ -398,7 +406,7 @@ export function MaintenanceCard({ item, ...notice }: { item: AdminConfigItem } &
                   </span>
                 </span>
               }
-              error={problemOf(problems, t, field) ?? fieldErrors[field]}
+              error={problemOf(problems, t, field) ?? problemOf(fieldErrors, t, field)}
             >
               {(control) => (
                 <Textarea
@@ -555,7 +563,7 @@ export function CountriesCard({ item, ...notice }: { item: AdminConfigItem } & C
   const [initial] = useState(() => countriesFormOf(stored));
   const [form, setForm] = useState<CountriesForm>(initial);
   const [problems, setProblems] = useState<Problems>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Problems>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const writable = useWritable(item);
   const strip = (f: CountriesForm) =>
@@ -637,7 +645,7 @@ export function CountriesCard({ item, ...notice }: { item: AdminConfigItem } & C
           </div>
           <ul className="grid gap-3">
             {form.countries.map((row, i) => {
-              const error = problemOf(problems, t, `countries/${i}/code`) ?? fieldErrors[`countries/${i}/code`] ?? fieldErrors[`countries/${i}`];
+              const error = problemOf(problems, t, `countries/${i}/code`) ?? problemOf(fieldErrors, t, `countries/${i}/code`) ?? problemOf(fieldErrors, t, `countries/${i}`);
               const label = name(row.code) || t('appConfig.countries.code');
               return (
                 <li key={row.rowId} className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-3 rounded-lg border p-3 md:grid-cols-[minmax(0,1fr)_8rem_9rem_2.25rem] md:items-start md:border-0 md:p-0">
@@ -758,10 +766,11 @@ export function LimitsCard({ item, ...notice }: { item: AdminConfigItem } & Card
   const id = useId();
   const stored = item.value as AppConfig['limits.rates'];
   const plain = (n: number) => formatPlain(n, locale);
-  const [initial] = useState(() => limitsFormOf(stored, plain));
+  const [initial, setInitial] = useState(() => limitsFormOf(stored, plain));
   const [form, setForm] = useState(initial);
+  useDigitsFollowLocale(locale, fieldsInDigitsOf, setInitial, setForm);
   const [problems, setProblems] = useState<Problems>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Problems>({});
   const writable = useWritable(item);
   const dirty = limitNames.some((name) => asciiDigits(form[name].trim()) !== asciiDigits(initial[name]));
   const { saving, save } = useSaver(notice, setFieldErrors, (_, path) => ADMIN_CONFIG_BOUNDS.limits[path as LimitName] ?? null);
@@ -798,13 +807,15 @@ export function LimitsCard({ item, ...notice }: { item: AdminConfigItem } & Card
           return (
             <Field
               key={name}
+              // Side by side, a label that wraps keeps both inputs on one line.
+              className="sm:row-span-3 sm:grid-rows-subgrid sm:[&>label]:self-end"
               id={`${id}-${name}`}
               label={t(limitLabel[name])}
               hint={t('appConfig.range', {
                 min: formatPlain(min, locale),
                 max: formatPlain(max, locale),
               })}
-              error={problemOf(problems, t, name) ?? fieldErrors[name]}
+              error={problemOf(problems, t, name) ?? problemOf(fieldErrors, t, name)}
             >
               {(control) => (
                 <Input
@@ -846,10 +857,12 @@ export function LegalCard({ versions, contact, ...notice }: { versions: AdminCon
   const id = useId();
   const storedVersions = versions.value as AppConfig['legal.versions'];
   const storedContact = contact.value as AppConfig['safety.child_safety_contact'];
-  const [initial] = useState<LegalForm>(() => legalFormOf(storedVersions, storedContact, (n) => formatPlain(n, locale)));
+  const [initial, setInitial] = useState<LegalForm>(() => legalFormOf(storedVersions, storedContact, (n) => formatPlain(n, locale)));
   const [form, setForm] = useState<LegalForm>(initial);
+  useDigitsFollowLocale(locale, legalInDigitsOf, setInitial, setForm);
   const [problems, setProblems] = useState<Problems>({});
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Problems>({});
+  const fieldTexts = wordedProblems(fieldErrors, t);
   const [pending, setPending] = useState<Pending | null>(null);
   const writable = useWritable(versions, contact);
   const norm = (f: LegalForm) =>
@@ -912,18 +925,19 @@ export function LegalCard({ versions, contact, ...notice }: { versions: AdminCon
         notice.setNotice(null);
       }}
     >
-      <fieldset className="grid gap-3">
+      <fieldset className="@container grid gap-3">
         <legend className="mb-3 text-sm font-semibold">{t('appConfig.legal.versions')}</legend>
-        <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+        {/* Keyed to the card's width, not the viewport's (beside the limits card it is half as wide): one under another until the three names fit on a line each. */}
+        <div className="grid grid-cols-1 gap-4 @lg:grid-cols-3 @lg:gap-x-3 @lg:gap-y-2">
           {legalTexts.map((text) => {
             const field = `versions/${text}`;
             return (
-              <Field key={text} className="row-span-3 grid-rows-subgrid [&>label]:self-end" id={`${id}-${text}`} label={t(legalLabel[text])} error={problemOf(problems, t, field) ?? fieldErrors[field]}>
+              <Field key={text} className="@lg:row-span-3 @lg:grid-rows-subgrid @lg:[&>label]:self-end" id={`${id}-${text}`} label={t(legalLabel[text])} error={problemOf(problems, t, field) ?? problemOf(fieldErrors, t, field)}>
                 {(control) => (
                   <Input
                     {...control}
                     {...numberInput}
-                    className="tabular-nums"
+                    className="w-32 tabular-nums @lg:w-full"
                     value={form.versions[text]}
                     onChange={(event) =>
                       change({
@@ -944,10 +958,10 @@ export function LegalCard({ versions, contact, ...notice }: { versions: AdminCon
       <fieldset className="grid gap-3">
         <legend className="mb-3 text-sm font-semibold">{t('appConfig.legal.contact')}</legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field id={`${id}-name`} label={t('appConfig.legal.contactName')} error={problemOf(problems, t, 'contact/name') ?? fieldErrors['contact/name']}>
+          <Field id={`${id}-name`} label={t('appConfig.legal.contactName')} error={problemOf(problems, t, 'contact/name') ?? fieldTexts['contact/name']}>
             {(control) => <Input {...control} dir="auto" autoComplete="off" value={form.name} onChange={(event) => change({ ...form, name: event.target.value })} />}
           </Field>
-          <Field id={`${id}-email`} label={t('appConfig.legal.contactEmail')} error={problemOf(problems, t, 'contact/email') ?? fieldErrors['contact/email']}>
+          <Field id={`${id}-email`} label={t('appConfig.legal.contactEmail')} error={problemOf(problems, t, 'contact/email') ?? fieldTexts['contact/email']}>
             {(control) => <Input {...control} type="email" dir="ltr" autoComplete="off" value={form.email} onChange={(event) => change({ ...form, email: event.target.value })} />}
           </Field>
         </div>
@@ -977,20 +991,21 @@ export function RetentionCard({ items, ...notice }: { items: Items } & CardNotic
     return write !== null && can(me, write);
   };
   const editable = shown.filter(may);
-  const [initial] = useState(() => Object.fromEntries(shown.map((key) => [key, formatPlain(items[key]!.value as number, locale)])) as Record<RetentionKey, string>);
+  const [initial, setInitial] = useState(() => Object.fromEntries(shown.map((key) => [key, formatPlain(items[key]!.value as number, locale)])) as Record<RetentionKey, string>);
   const [form, setForm] = useState(initial);
-  const [problems, setProblems] = useState<Record<string, string>>({});
+  useDigitsFollowLocale(locale, fieldsInDigitsOf, setInitial, setForm);
+  const [problems, setProblems] = useState<Problems>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const dirty = editable.some((key) => asciiDigits(form[key].trim()) !== asciiDigits(initial[key]));
   const { saving, save } = useSaver(notice, setProblems, (key) => ADMIN_CONFIG_BOUNDS.retention[key as RetentionKey] ?? null);
 
   function submit() {
-    const found: Record<string, string> = {};
+    const found: Record<string, Problem> = {};
     const entries: { item: AdminConfigItem; value: number; prefix: string }[] = [];
     for (const key of editable) {
       if (asciiDigits(form[key].trim()) === asciiDigits(initial[key])) continue;
       const checked = retentionCheck(key, form[key]);
-      if (checked.problem) found[key] = t(checked.problem.key, checked.problem.values);
+      if (checked.problem) found[key] = checked.problem;
       else
         entries.push({
           item: items[key]!,
@@ -1033,7 +1048,7 @@ export function RetentionCard({ items, ...notice }: { items: Items } & CardNotic
         {shown.map((key) => {
           const { min, max } = ADMIN_CONFIG_BOUNDS.retention[key];
           const locked = !may(key);
-          const error = problems[key] ?? problems[`${key}/`];
+          const error = problemOf(problems, t, key) ?? problemOf(problems, t, `${key}/`);
           const inputId = `${id}-${key}`;
           return (
             <li key={key} className="grid gap-2">

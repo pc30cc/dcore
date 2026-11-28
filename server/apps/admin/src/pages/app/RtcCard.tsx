@@ -1,4 +1,4 @@
-import type { RtcSettingsView } from '@app/shared';
+import type { Locale, RtcSettingsView } from '@app/shared';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { Field } from '@/components/form/Field';
@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { apiRequest } from '@/lib/api';
-import { numberInput, typedNumber } from '@/lib/appConfigForm';
+import { inDigitsOf, numberInput, typedNumber, useDigitsFollowLocale, wordedProblems, type Problem, type Problems } from '@/lib/appConfigForm';
 import { appKeys, useRtcSettings } from '@/lib/appSettings';
 import { formatPlain, listOf, regionName } from '@/lib/format';
 import { asApiError } from '@/lib/http';
@@ -64,6 +64,9 @@ const codes = (text: string) =>
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean);
 
+/** The number fields in `locale`'s digits (after a change of the panel's language). */
+const rtcInDigitsOf = (form: RtcForm, locale: Locale): RtcForm => ({ ...form, ttl: inDigitsOf(form.ttl, locale), maxLive: inDigitsOf(form.maxLive, locale) });
+
 export function RtcCard() {
   const rtc = useRtcSettings();
   if (rtc.isPending) return <TableSkeleton rows={4} />;
@@ -76,7 +79,7 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
   const { me } = useSession();
   const id = useId();
   const plain = (n: number) => formatPlain(n, locale);
-  const [initial] = useState<RtcForm>(() => ({
+  const [initial, setInitial] = useState<RtcForm>(() => ({
     wsUrl: view.wsUrl ?? '',
     turnUrls: view.turnUrls.join('\n'),
     countries: view.countries.join(', '),
@@ -86,7 +89,10 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
     removeSecret: false,
   }));
   const [form, setForm] = useState(initial);
-  const [problems, setProblems] = useState<Record<string, string>>({});
+  useDigitsFollowLocale(locale, rtcInDigitsOf, setInitial, setForm);
+  // Kept as data (a key and its numbers) and worded when drawn, so a change of the panel's language redraws them.
+  const [problems, setProblems] = useState<Problems>({});
+  const errors = wordedProblems(problems, t);
   const [notice, setNotice] = useWording();
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState<RtcBody | null>(null);
@@ -108,26 +114,13 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
   }
 
   async function submit() {
-    const found: Record<string, string> = {};
+    const found: Record<string, Problem> = {};
     const ttl = typedNumber(form.ttl);
-    if (ttl === null || ttl < TTL_MIN_MINUTES || ttl > TTL_MAX_MINUTES)
-      found['credentialTtlSeconds'] = t('appConfig.error.range', {
-        min: plain(TTL_MIN_MINUTES),
-        max: plain(TTL_MAX_MINUTES),
-      });
+    if (ttl === null || ttl < TTL_MIN_MINUTES || ttl > TTL_MAX_MINUTES) found['credentialTtlSeconds'] = { key: 'appConfig.error.range', values: { min: TTL_MIN_MINUTES, max: TTL_MAX_MINUTES } };
     const maxLive = form.maxLive.trim() === '' ? null : typedNumber(form.maxLive);
-    if (maxLive === null && form.maxLive.trim() !== '')
-      found['maxLiveCalls'] = t('appConfig.error.range', {
-        min: plain(0),
-        max: plain(MAX_LIVE),
-      });
-    else if (maxLive !== null && maxLive > MAX_LIVE)
-      found['maxLiveCalls'] = t('appConfig.error.range', {
-        min: plain(0),
-        max: plain(MAX_LIVE),
-      });
+    if ((maxLive === null && form.maxLive.trim() !== '') || (maxLive !== null && maxLive > MAX_LIVE)) found['maxLiveCalls'] = { key: 'appConfig.error.range', values: { min: 0, max: MAX_LIVE } };
     codes(form.countries).forEach((code) => {
-      if (!/^[A-Z]{2}$/.test(code) && code !== '*') found['countries'] = t('providers.rtc.error.country');
+      if (!/^[A-Z]{2}$/.test(code) && code !== '*') found['countries'] = { key: 'providers.rtc.error.country' };
     });
     setProblems(found);
     if (Object.keys(found).length > 0) {
@@ -170,8 +163,8 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
         return;
       }
       if (failure.code === 'field_invalid') {
-        const fields: Record<string, string> = {};
-        for (const issue of failure.errors) fields[issue.pointer.replace(/^\//, '').split('/')[0]!] = t('appConfig.error.invalid');
+        const fields: Record<string, Problem> = {};
+        for (const issue of failure.errors) fields[issue.pointer.replace(/^\//, '').split('/')[0]!] = { key: 'appConfig.error.invalid' };
         setProblems(fields);
       }
       setNotice((t, lang) => problemText(failure, t, lang));
@@ -203,7 +196,7 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
         <Field
           id={`${id}-ws`}
           label={t('providers.rtc.wsUrl')}
-          error={problems['wsUrl']}
+          error={errors['wsUrl']}
           hint={
             !form.wsUrl.trim() && view.effectiveWsUrl ? (
               <>
@@ -235,7 +228,7 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
             />
           )}
         </Field>
-        <Field id={`${id}-countries`} label={t('providers.rtc.countries')} hint={t('providers.rtc.countries.all')} error={problems['countries']}>
+        <Field id={`${id}-countries`} label={t('providers.rtc.countries')} hint={t('providers.rtc.countries.all')} error={errors['countries']}>
           {(control) => (
             <Input
               {...control}
@@ -248,7 +241,7 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
             />
           )}
         </Field>
-        <Field id={`${id}-turn`} label={t('providers.rtc.turnUrls')} error={problems['turnUrls']} className="md:col-span-2">
+        <Field id={`${id}-turn`} label={t('providers.rtc.turnUrls')} error={errors['turnUrls']} className="md:col-span-2">
           {(control) => (
             <Textarea {...control} dir="ltr" rows={3} spellCheck={false} className="font-mono text-xs" value={form.turnUrls} onChange={(event) => update({ ...form, turnUrls: event.target.value })} />
           )}
@@ -260,14 +253,14 @@ function RtcEditor({ view }: { view: RtcSettingsView }) {
             min: plain(TTL_MIN_MINUTES),
             max: plain(TTL_MAX_MINUTES),
           })}
-          error={problems['credentialTtlSeconds']}
+          error={errors['credentialTtlSeconds']}
         >
           {(control) => <Input {...control} {...numberInput} className="w-28 tabular-nums" value={form.ttl} onChange={(event) => update({ ...form, ttl: event.target.value })} />}
         </Field>
-        <Field id={`${id}-max`} label={t('providers.rtc.maxLive')} hint={t('providers.rtc.maxLive.none')} error={problems['maxLiveCalls']}>
+        <Field id={`${id}-max`} label={t('providers.rtc.maxLive')} hint={t('providers.rtc.maxLive.none')} error={errors['maxLiveCalls']}>
           {(control) => <Input {...control} {...numberInput} className="w-28 tabular-nums" value={form.maxLive} onChange={(event) => update({ ...form, maxLive: event.target.value })} />}
         </Field>
-        <Field id={`${id}-secret`} label={t('providers.rtc.secret')} error={problems['sharedSecret']} className="md:col-span-2">
+        <Field id={`${id}-secret`} label={t('providers.rtc.secret')} error={errors['sharedSecret']} className="md:col-span-2">
           {(control) => (
             <div className="flex flex-wrap items-center gap-2">
               <Input

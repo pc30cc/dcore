@@ -482,7 +482,8 @@ export async function adminRefreshSession(app: FastifyInstance, request: Fastify
         claimed = true;
         break;
       }
-      if (Date.now() >= deadline) throw new HttpProblem('service_unavailable', { detail: 'Try again.', headers: { 'retry-after': '1' } });
+      // Another request still holds the token: an answer on purpose, not a failure.
+      if (Date.now() >= deadline) throw new HttpProblem('service_unavailable', { detail: 'Try again.', headers: { 'retry-after': '1' }, expected: true });
       await new Promise((resolve) => setTimeout(resolve, WAIT_STEP_MS));
     }
   } catch (error) {

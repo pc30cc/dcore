@@ -254,7 +254,7 @@ export function providersView(): AdminProviders {
       livekit: {
         configured: true,
         apiUrl: 'https://livekit.example.com',
-        apiKey: 'APIkey1',
+        apiKey: fp('555555555555'),
         apiSecret: fp('444444444444'),
         identitySecret: unset,
       },

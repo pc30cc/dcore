@@ -79,6 +79,8 @@ describe('admin hash gate', () => {
       expect(error).toBeInstanceOf(HttpProblem);
       expect((error as HttpProblem).statusCode).toBe(503);
       expect((error as HttpProblem).init.headers?.['retry-after']).toBe('5');
+      // Load shed on purpose: logged without a stack, never as a failure.
+      expect((error as HttpProblem).init.expected).toBe(true);
     }
     busy.pending.release();
     await holding;

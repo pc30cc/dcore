@@ -312,18 +312,29 @@ describe('wallet gifts and corrections', () => {
     const row = change.closest('tr')!;
     const [person, item, delta] = within(row).getAllByRole('cell');
     expect(person!.className).toContain('min-w-0');
-    // The kind beside the balance, shown until its own column appears (lg).
-    expect(within(item!).getByText(/Correction/).className).toContain('lg:hidden');
+    // The kind under the balance, drawn as its own column draws it (a badge), until that column appears (xl).
+    const kind = within(item!).getByText('Correction');
+    expect(kind.getAttribute('data-slot')).toBe('badge');
+    expect(kind.className).toContain('xl:hidden');
+    const balance = kind.previousElementSibling!;
+    expect(balance.textContent).toBe('Google Play');
+    expect(balance.className).toMatch(/\bwhitespace-nowrap\b.*\btext-muted-foreground\b/);
+    expect(within(item!).queryByText(/·/)).toBeNull();
+    // The kind and note columns appear from xl: from lg the sidebar takes their room.
+    const heads = within(row.closest('table')!).getAllByRole('columnheader');
+    for (const name of ['Kind', 'Note']) expect(heads.find((th) => th.textContent === name)!.className).toContain('hidden xl:table-cell');
+    const kindCell = within(row).getAllByRole('cell').find((cell) => cell !== item && within(cell).queryByText('Correction'))!;
+    expect(kindCell.className).toContain('hidden xl:table-cell');
     // The time under the item, until its column appears (sm).
     const when = within(item!).getByText(/Nov 25, 2026/);
     expect(when.className).toContain('sm:hidden');
     // On a phone the day alone, on one line (the time has its own column from sm).
     expect(when.className).toContain('whitespace-nowrap');
     expect(when.textContent).toBe('Nov 25, 2026');
-    // The note under the change, clamped, until its column appears (lg).
+    // The note under the change, clamped, until its column appears (xl).
     const note = within(delta!).getByText('Double credit');
     expect(note.className).toContain('line-clamp-2');
-    expect(note.className).toContain('lg:hidden');
+    expect(note.className).toContain('xl:hidden');
     // No badge left in the change cell to push the table past the card.
     expect(within(delta!).queryByText('Correction')).toBeNull();
   });

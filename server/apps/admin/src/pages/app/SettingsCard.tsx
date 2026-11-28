@@ -67,12 +67,14 @@ export function SettingsCard({
           )}
         </CardHeader>
         <CardContent>
-          <fieldset disabled={!writable || saving} className="grid min-w-0 gap-5">
+          {/* A field label that wraps keeps readable line spacing (the shared label is set solid). */}
+          <fieldset disabled={!writable || saving} className="grid min-w-0 gap-5 [&_[data-slot=label]]:leading-snug">
             {children}
           </fieldset>
         </CardContent>
         <CardFooter className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-4">
-          <div className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
+          {/* Sized by its text: when the line and the buttons do not fit side by side, the buttons go under it instead of squeezing it word by word. */}
+          <div className="min-w-0 flex-auto text-xs text-muted-foreground" aria-live="polite">
             {notice ? (
               <span className="flex items-start gap-2 text-sm text-destructive">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

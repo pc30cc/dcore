@@ -19,6 +19,14 @@ import { hasInfrastructure } from './support.js';
 
 const sha12 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 12);
 
+/** The deployment's LiveKit credentials: read-only in the panel, shown as fingerprints. */
+const LIVEKIT = {
+  LIVEKIT_API_URL: 'http://livekit.test.invalid:7880',
+  LIVEKIT_API_KEY: 'APIprovidersKey01',
+  LIVEKIT_API_SECRET: 'livekit-providers-secret-0123456789abcdef',
+  LIVEKIT_IDENTITY_SECRET: 'identity-providers-secret-0123456789abcd',
+};
+
 function serviceAccount(email = 'push@demo-project.iam.gserviceaccount.com'): string {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   return JSON.stringify({ type: 'service_account', project_id: 'demo-project', client_email: email, private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), private_key_id: 'k1' });
@@ -38,7 +46,7 @@ describe.skipIf(!hasInfrastructure)('admin: provider credentials', () => {
 
   beforeAll(async () => {
     db = await migratedDatabase();
-    h = await startAdminHarness(db, {}, { providers: { fetch: fakeFetch, reportEveryMs: 60_000 } });
+    h = await startAdminHarness(db, LIVEKIT, { providers: { fetch: fakeFetch, reportEveryMs: 60_000 } });
     superadmin = await adminAs(h, 'superadmin');
     adminRole = await adminAs(h, 'admin');
     // A role holding the exact grant (restricted permissions need it by name).
@@ -79,6 +87,18 @@ describe.skipIf(!hasInfrastructure)('admin: provider credentials', () => {
     expect((await list(delegated)).res.statusCode).toBe(200);
     expect((await admin(h, '/v1/admin/providers/rtc', undefined, { token: adminRole.accessToken })).statusCode).toBe(403);
     expect((await admin(h, '/v1/admin/providers/rtc', undefined, { token: delegated.accessToken })).statusCode).toBe(200);
+  });
+
+  it('shows the deployment\'s LiveKit credentials as fingerprints only, its API key id too', async () => {
+    const { res, body } = await list();
+    const livekit = body!.readOnly.livekit;
+    expect(livekit).toMatchObject({ configured: true, apiUrl: LIVEKIT.LIVEKIT_API_URL });
+    // The same 12 hex as `printf %s "$KEY" | sha256sum | cut -c1-12`, like the storage access key.
+    expect(livekit.apiKey).toEqual({ set: true, fingerprint: sha12(LIVEKIT.LIVEKIT_API_KEY), unreadable: false });
+    expect(livekit.apiSecret).toEqual({ set: true, fingerprint: sha12(LIVEKIT.LIVEKIT_API_SECRET), unreadable: false });
+    expect(livekit.identitySecret).toEqual({ set: true, fingerprint: sha12(LIVEKIT.LIVEKIT_IDENTITY_SECRET), unreadable: false });
+    for (const value of [LIVEKIT.LIVEKIT_API_KEY, LIVEKIT.LIVEKIT_API_SECRET, LIVEKIT.LIVEKIT_IDENTITY_SECRET]) expect(res.body).not.toContain(value);
+    expect(body!.readOnly.storage.accessKeyId).toEqual({ set: false, fingerprint: null, unreadable: false });
   });
 
   it('keeps a secret write-only: fingerprints in the answer, the audit row and the logs, never the key', async () => {

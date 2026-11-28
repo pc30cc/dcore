@@ -4,6 +4,12 @@ export interface HttpProblemInit extends ProblemInit {
   /** Response headers that belong to the error, e.g. WWW-Authenticate or Retry-After. */
   headers?: Readonly<Record<string, string>> | undefined;
   cause?: unknown;
+  /**
+   * A 5xx answered on purpose (maintenance, load shed, a wait that timed
+   * out), not a failure: logged without a stack, the code on the request's
+   * own line. Real outages of the same code leave it unset.
+   */
+  expected?: true | undefined;
 }
 
 /**

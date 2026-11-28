@@ -56,7 +56,8 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
 
   beforeAll(async () => {
     db = await migratedDatabase();
-    h = await startAdminHarness(db, {}, { realtime, jobs, chat: { presence }, adminChats: { stream: streamLimits } });
+    // The providers' process report (a timer) stays out of the key snapshots below.
+    h = await startAdminHarness(db, {}, { realtime, jobs, chat: { presence }, adminChats: { stream: streamLimits }, providers: { reportEveryMs: 3_600_000 } });
     pipeline = await startChatPipeline(h, realtime, { claimIdleMs: 3_000 });
     await installTableDigest(db);
   }, 120_000);

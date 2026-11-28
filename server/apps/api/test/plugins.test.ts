@@ -1,8 +1,13 @@
+import type { InjectOptions } from 'fastify';
+import pino from 'pino';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { AdminPasswords, HashGate } from '../src/admin/hashing.js';
 import type { ApiApp } from '../src/app.js';
+import { HttpProblem } from '../src/lib/problem.js';
 import { ClientPolicyHolder, OPEN_POLICY, clientPolicyFromConfig, parseClientHeader, pickLocale } from '../src/plugins/client.js';
 import { rateLimitKey } from '../src/plugins/rateLimit.js';
+import { CHEAP_ARGON2 } from './adminSupport.js';
 import { testApp, testConfig } from './support.js';
 
 let app: ApiApp | undefined;
@@ -13,11 +18,29 @@ afterEach(async () => {
 
 const policy = new ClientPolicyHolder();
 
-async function started(): Promise<ApiApp> {
+/** A password gate held full by one run that never ends until released: every other run is refused at once. */
+const fullGate = new HashGate({ concurrency: 1, queue: 0 });
+let releaseGate: () => void = () => undefined;
+
+async function started(logLines?: string[]): Promise<ApiApp> {
   policy.set(OPEN_POLICY);
-  app = await testApp(testConfig(), { clientPolicy: policy });
+  const logger = logLines ? { logger: pino({ level: 'debug' }, { write: (line: string) => void logLines.push(line) }) } : {};
+  app = await testApp(testConfig(), { clientPolicy: policy, ...logger });
   const echo = async (request: { client: unknown; locale: string }) => ({ client: request.client, locale: request.locale });
   app.get('/v1/test/echo', { config: { pgBudget: 0 } }, echo);
+  app.get('/v1/test/broken', { config: { pgBudget: 0 } }, async () => {
+    throw new Error('broken on purpose');
+  });
+  // A dependency that is down: the same code a planned answer may carry, but a failure.
+  app.get('/v1/test/down', { config: { pgBudget: 0 } }, async () => {
+    throw new HttpProblem('service_unavailable', { detail: 'Try again in a moment.', cause: new Error('dependency down') });
+  });
+  // The admin password queue full: load shed on purpose.
+  const passwords = new AdminPasswords(CHEAP_ARGON2, fullGate);
+  app.get('/v1/test/busy', { config: { pgBudget: 0 } }, async () => {
+    await passwords.burn('x');
+    return {};
+  });
   // Stand-ins for routes another part of the API may already serve.
   if (!app.hasRoute({ method: 'POST', url: '/v1/auth/logout' })) app.post('/v1/auth/logout', { config: { pgBudget: 1 } }, echo);
   if (!app.hasRoute({ method: 'POST', url: '/v1/me/deletion' })) app.post('/v1/me/deletion', { config: { pgBudget: 4 } }, echo);
@@ -82,6 +105,65 @@ describe('X-Client', () => {
     expect((await instance.inject({ method: 'GET', url: '/v1/config?store=play&locale=en', headers: { 'x-client': 'play/1' } })).json()).toMatchObject({ code: 'service_unavailable' });
     expect((await instance.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     expect((await instance.inject({ method: 'POST', url: '/v1/webhooks/play' })).statusCode).toBe(200);
+  });
+
+  it('logs answers given on purpose at info on the request\'s own line, without a stack, and real failures at error', async () => {
+    const lines: string[] = [];
+    const instance = await started(lines);
+    type Line = { level: number; msg: string; requestId?: string; code?: string; res?: { statusCode?: number }; err?: { stack?: string } };
+    const linesOf = async (inject: InjectOptions) => {
+      const response = await instance.inject(inject);
+      const id = String(response.headers['x-request-id']);
+      return { response, logged: lines.map((line) => JSON.parse(line) as Line).filter((line) => line.requestId === id) };
+    };
+    /** A refusal leaves Fastify's two lines and no other: "request completed" carries the code and the status. */
+    const answeredOnPurpose = (logged: readonly Line[], code: string, status: number) => {
+      expect(logged.filter((line) => line.level >= 40 || line.err !== undefined)).toEqual([]);
+      expect(logged.map((line) => line.msg)).toEqual(['incoming request', 'request completed']);
+      expect(logged[1]).toMatchObject({ level: 30, code, res: { statusCode: status } });
+    };
+
+    policy.set({ ...OPEN_POLICY, maintenance: { enabled: true, message: { en: 'Back soon.' } } });
+    const maintenance = await linesOf({ method: 'GET', url: '/v1/test/echo', headers: { 'x-client': 'bazaar/1' } });
+    expect(maintenance.response.statusCode).toBe(503);
+    answeredOnPurpose(maintenance.logged, 'maintenance', 503);
+
+    policy.set({ ...OPEN_POLICY, minVersion: { bazaar: 10, play: 10 } });
+    const upgrade = await linesOf({ method: 'GET', url: '/v1/test/echo', headers: { 'x-client': 'bazaar/1' } });
+    expect(upgrade.response.statusCode).toBe(426);
+    answeredOnPurpose(upgrade.logged, 'upgrade_required', 426);
+    const header = await linesOf({ method: 'GET', url: '/v1/test/echo' });
+    expect(header.response.statusCode).toBe(400);
+    answeredOnPurpose(header.logged, 'bad_request', 400);
+
+    policy.set(OPEN_POLICY);
+    // The password queue full: a 503 shed on purpose, no error line and no stack.
+    const holding = fullGate.run(() => new Promise<void>((resolve) => (releaseGate = resolve)));
+    try {
+      const busy = await linesOf({ method: 'GET', url: '/v1/test/busy', headers: { 'x-client': 'bazaar/1' } });
+      expect(busy.response.statusCode).toBe(503);
+      expect(busy.response.headers['retry-after']).toBe('5');
+      answeredOnPurpose(busy.logged, 'service_unavailable', 503);
+    } finally {
+      releaseGate();
+      await holding;
+    }
+    const ok = await linesOf({ method: 'GET', url: '/v1/test/echo', headers: { 'x-client': 'bazaar/1' } });
+    expect(ok.logged.find((line) => line.msg === 'request completed')).not.toHaveProperty('code');
+
+    // Real failures: a problem with a 5xx code (a dependency down) and an error that is not a problem.
+    for (const [url, stack] of [
+      ['/v1/test/down', 'dependency down'],
+      ['/v1/test/broken', 'broken on purpose'],
+    ] as const) {
+      const failed = await linesOf({ method: 'GET', url, headers: { 'x-client': 'bazaar/1' } });
+      expect(failed.response.statusCode, url).toBeGreaterThanOrEqual(500);
+      const errors = failed.logged.filter((line) => line.level >= 50);
+      expect(errors.map((line) => line.msg), url).toEqual(['request failed']);
+      expect(JSON.stringify(errors[0]?.err), url).toContain(stack);
+      expect(errors[0]?.err?.stack, url).toBeTruthy();
+      expect(failed.logged.filter((line) => line.level < 50 && line.err !== undefined), url).toEqual([]);
+    }
   });
 
   it('reads the policy from app_config with its store words', () => {

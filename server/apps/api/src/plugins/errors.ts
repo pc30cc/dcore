@@ -7,7 +7,7 @@ import {
   type IssueLocation,
   type Problem,
 } from '@app/shared';
-import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
+import { LogController, type FastifyError, type FastifyReply, type FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { hasZodFastifySchemaValidationErrors, isResponseSerializationError } from 'fastify-type-provider-zod';
 import { HttpProblem } from '../lib/problem.js';
@@ -32,12 +32,45 @@ const CODE_BY_STATUS: Readonly<Record<number, ErrorCode>> = {
   503: 'service_unavailable',
 };
 
+/**
+ * Whether a problem is a failure of the server (logged at error with its
+ * stack) rather than an answer given on purpose. A 5xx answered on purpose
+ * (maintenance, a full password queue, a refresh that waited its time out)
+ * is marked `expected` where it is thrown: the same code also answers real
+ * outages, so the code alone cannot tell them apart.
+ */
+function isServerFailure(error: HttpProblem): boolean {
+  return error.statusCode >= 500 && error.init.expected !== true;
+}
+
+/** The code each problem answer carried, for Fastify's "request completed" line. */
+const answeredCodes = new WeakMap<FastifyReply, string>();
+
+/**
+ * Fastify's request lines, with the problem's code on "request completed"
+ * when the answer was a problem: a refusal (4xx, or a 5xx answered on
+ * purpose) adds no line of its own, the line every request already leaves
+ * carries the code.
+ */
+export class ApiLogController extends LogController {
+  override requestCompleted(error: Error | null | undefined, request: FastifyRequest, reply: FastifyReply, metadata?: Record<string, unknown>): void {
+    const code = answeredCodes.get(reply);
+    if (error || code === undefined) {
+      super.requestCompleted(error, request, reply, metadata);
+      return;
+    }
+    if (this.isLogDisabled(request)) return;
+    reply.log.info({ res: reply, responseTime: reply.elapsedTime, code }, 'request completed');
+  }
+}
+
 /** The path the problem is about, without the query string. */
 function instanceOf(request: FastifyRequest): string {
   return request.url.split('?')[0] ?? request.url;
 }
 
 function sendProblem(reply: FastifyReply, body: Problem, headers?: Readonly<Record<string, string>>): FastifyReply {
+  answeredCodes.set(reply, body.code);
   if (headers) reply.headers(headers);
   // Serialized here, not by a route's response schema: a problem has its own shape.
   return reply.code(body.status).type(PROBLEM_CONTENT_TYPE).serializer(JSON.stringify).send(body);
@@ -63,7 +96,7 @@ export const errorsPlugin = fp(
   async (app) => {
     app.setErrorHandler((error: FastifyError | HttpProblem, request: FastifyRequest, reply: FastifyReply) => {
       if (error instanceof HttpProblem) {
-        if (error.statusCode >= 500) request.log.error({ err: error }, 'request failed');
+        if (isServerFailure(error)) request.log.error({ err: error }, 'request failed');
         return sendProblem(reply, error.toProblem(request.id, instanceOf(request)), error.init.headers);
       }
 

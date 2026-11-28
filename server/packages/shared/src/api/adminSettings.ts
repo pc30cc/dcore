@@ -357,7 +357,8 @@ export const adminProvidersReadOnlySchema = z.object({
   livekit: z.object({
     configured: z.boolean(),
     apiUrl: z.string().nullable(),
-    apiKey: z.string().nullable(),
+    /** The API key's id, as a fingerprint like the secrets (it names the deployment's credentials). */
+    apiKey: secretViewSchema,
     apiSecret: secretViewSchema,
     identitySecret: secretViewSchema,
   }),
