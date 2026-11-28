@@ -15,7 +15,9 @@ import { jobId } from '../queues.js';
  *   missed notification; Bazaar: validUntil + 1 h, how renewals and expiries
  *   are learnt) and apply what it says; a failure is tried again until
  *   `untilMs` (default: a day after `atMs`), and the hourly sweep queues it
- *   again while the row's check stays overdue.
+ *   again while the row's check stays overdue. With `refunded`, an admin's
+ *   refund at the store is applied from the stored row instead (no store
+ *   call).
  * - `refund-check.<purchaseId>`: one more look at a purchase when its refund
  *   window closes (Bazaar: day 7); `atMs` is when it was due.
  * - `checks`: the hourly sweep (re-checks overdue in the database, owed
@@ -38,7 +40,19 @@ export type AckJob = z.input<typeof ackJobSchema>;
 export const consumeJobSchema = z.object({ purchaseId: ID, store: STORE, deadlineMs: z.number().int().positive().optional(), tries: z.number().int().nonnegative().default(0) });
 export type ConsumeJob = z.input<typeof consumeJobSchema>;
 
-export const recheckJobSchema = z.object({ purchaseId: ID, store: STORE, atMs: z.number().int().positive(), untilMs: z.number().int().positive().optional() });
+/**
+ * `refunded`: an admin's refund the store made whose state could not be
+ * written then; the refunded state is applied from the stored row (no
+ * store call: a read cannot tell it, Google shows a refunded subscription
+ * as EXPIRED).
+ */
+export const recheckJobSchema = z.object({
+  purchaseId: ID,
+  store: STORE,
+  atMs: z.number().int().positive(),
+  untilMs: z.number().int().positive().optional(),
+  refunded: z.literal(true).optional(),
+});
 export type RecheckJob = z.input<typeof recheckJobSchema>;
 
 /** `atMs` absent (a job queued before it was carried): the job's own time plus its delay. */

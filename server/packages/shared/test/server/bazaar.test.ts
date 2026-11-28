@@ -2,6 +2,8 @@ import { generateKeyPairSync } from 'node:crypto';
 import { Redis } from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  BAZAAR_ADMIN_ACTIONS,
+  BAZAAR_DOCUMENTED_ADMIN_ACTIONS,
   BAZAAR_BACKGROUND_DAILY_CAP,
   BAZAAR_CHECK_SPREAD_MS,
   BAZAAR_DAILY_QUOTA,
@@ -387,6 +389,44 @@ describe('the Bazaar verifier', () => {
     const before = fake.count();
     expect(await verifier.acknowledge()).toBe('already');
     expect(fake.count()).toBe(before);
+  });
+
+  it('offers an admin no store action until its request shape is confirmed; never more than the API documents', async () => {
+    expect(verifier.adminActions).toEqual(BAZAAR_ADMIN_ACTIONS);
+    expect(BAZAAR_ADMIN_ACTIONS).toEqual({ subscription: [], consumable: [] });
+    fake.putInapp('cons-adm-0', { productId: 'cons.boost.1', developerPayload: REF });
+    const before = fake.count();
+    expect(await rejection(verifier.refund(ref('cons-adm-0', 'cons.boost.1', 'consumable'), { prorated: false }))).toMatchObject({ kind: 'invalid' });
+    expect(await rejection(verifier.cancel(ref('sub-x', 'sub.plus.1m', 'subscription')))).toMatchObject({ kind: 'invalid' });
+    expect(fake.count()).toBe(before);
+    const wide = new BazaarVerifier({
+      packageName: PACKAGE,
+      rsaPublicKey: publicKeyB64,
+      api,
+      now: () => now,
+      adminActions: { subscription: ['cancel', 'refund', 'refund_prorated'], consumable: ['refund', 'cancel'] },
+    });
+    expect(wide.adminActions).toEqual(BAZAAR_DOCUMENTED_ADMIN_ACTIONS);
+  });
+
+  it('refunds a one-time product and stops a renewal for an admin, asked urgently (past the day\'s background quota); a repeat is already', async () => {
+    const admin = new BazaarVerifier({ packageName: PACKAGE, rsaPublicKey: publicKeyB64, api, now: () => now, adminActions: BAZAAR_DOCUMENTED_ADMIN_ACTIONS });
+    fake.putInapp('cons-adm-1', { productId: 'cons.boost.1', developerPayload: REF });
+    fake.putSubscription('sub-adm-1', { sku: 'sub.plus.1m', validUntilMs: NOW + DAY, autoRenewing: true });
+    // The background calls of the day are spent: a background re-check is held back, an admin's is not.
+    fake.forced.push({ status: 403, body: { error: 'quota_exceeded' } });
+    expect(await rejection(admin.recheck(ref('cons-adm-1', 'cons.boost.1', 'consumable')))).toMatchObject({ kind: 'unavailable' });
+    expect(await rejection(admin.recheck(ref('cons-adm-1', 'cons.boost.1', 'consumable')))).toMatchObject({ kind: 'unavailable' });
+    expect((await admin.recheck(ref('cons-adm-1', 'cons.boost.1', 'consumable'), { urgent: true })).state).toBe('purchased');
+    expect(await admin.refund(ref('cons-adm-1', 'cons.boost.1', 'consumable'), { prorated: false })).toBe('done');
+    expect(await admin.refund(ref('cons-adm-1', 'cons.boost.1', 'consumable'), { prorated: false })).toBe('already');
+    expect((await admin.recheck(ref('cons-adm-1', 'cons.boost.1', 'consumable'), { urgent: true })).state).toBe('revoked');
+    expect(await admin.cancel(ref('sub-adm-1', 'sub.plus.1m', 'subscription'))).toBe('done');
+    expect(await admin.cancel(ref('sub-adm-1', 'sub.plus.1m', 'subscription'))).toBe('already');
+    // No refund of a subscription, nor a prorated one, is documented.
+    expect(await rejection(admin.refund(ref('sub-adm-1', 'sub.plus.1m', 'subscription'), { prorated: false }))).toMatchObject({ kind: 'invalid' });
+    expect(await rejection(admin.refund(ref('cons-adm-1', 'cons.boost.1', 'consumable'), { prorated: true }))).toMatchObject({ kind: 'invalid' });
+    meter.days.clear();
   });
 
   it('spreads checks evenly over the window and keeps each token on its own offset', () => {

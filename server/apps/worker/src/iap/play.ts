@@ -1,4 +1,4 @@
-import { purchaseByToken, type KnownPurchase } from '@app/db';
+import { purchaseByToken } from '@app/db';
 import { storeEventSource } from '@app/shared';
 import {
   PlayDeveloperApi,
@@ -8,6 +8,7 @@ import {
   isStoreError,
   subscriptionNotificationType,
   tokenHash,
+  verifiedFromRow,
   voidedRefundType,
   type RtdnJob,
   type VerifiedPurchase,
@@ -60,34 +61,6 @@ export interface VoidedEntry {
   token: string;
   orderId: string | null;
   refundType: number | null;
-}
-
-/** A stored purchase as a verified state (when Google no longer answers for its token). */
-function fromRow(row: KnownPurchase, state: VerifiedPurchase['state'], nowMs: number): VerifiedPurchase {
-  const subscription = row.kind === 1;
-  return {
-    kind: subscription ? 'subscription' : 'consumable',
-    productId: row.productId,
-    basePlanId: row.basePlanId,
-    state,
-    purchasedAtMs: row.purchasedAtMs,
-    expiresAtMs: row.expiresAtMs,
-    autoRenew: subscription ? false : null,
-    accountRef: null,
-    orderId: row.orderId,
-    linkedPurchaseToken: null,
-    quantity: row.quantity,
-    isTest: false,
-    region: null,
-    acknowledged: row.acknowledged,
-    consumed: row.consumed,
-    eventMs: nowMs,
-    amount: null,
-    nextCheckAtMs: null,
-    refundCheckAtMs: null,
-    needsAcknowledge: false,
-    needsConsume: false,
-  };
 }
 
 export class PlayJobs {
@@ -164,7 +137,7 @@ export class PlayJobs {
         if (isStoreError(error, 'invalid')) return null;
         throw error;
       });
-      if (!read) verified = fromRow(row, 'revoked', now);
+      if (!read) verified = verifiedFromRow(row, 'revoked', now);
       else {
         const latest = read.verified.orderId;
         const current = entry.orderId === null || latest === null || latest === entry.orderId;
@@ -176,7 +149,7 @@ export class PlayJobs {
         if (isStoreError(error, 'invalid')) return null;
         throw error;
       });
-      verified = read ? read.verified : fromRow(row, 'revoked', now);
+      verified = read ? read.verified : verifiedFromRow(row, 'revoked', now);
     }
     return this.apply(context, verified, entry.token, source);
   }

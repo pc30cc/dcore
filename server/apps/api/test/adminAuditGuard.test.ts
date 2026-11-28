@@ -1,5 +1,6 @@
-import { adminPlanSchema, adminProductSchema, auditActions, type AuditAction } from '@app/shared';
-import { FakeRealtimePublisher, generateOriginsKeyPair } from '@app/shared/server';
+import { randomUUID } from 'node:crypto';
+import { adminGrantResultSchema, adminPlanSchema, adminProductSchema, auditActions, type AuditAction } from '@app/shared';
+import { FakeRealtimePublisher, FakeStoreVerifier, generateOriginsKeyPair } from '@app/shared/server';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MemoryJobProducer } from '../src/services/jobs.js';
@@ -19,6 +20,7 @@ import {
   type SignedIn,
 } from './adminSupport.js';
 import { profileVersion, seedAction, seedAppeal, seedEvidenceReport, seedMatch, seedPhone, seedPhoto, seedTexts } from './moderationSupport.js';
+import { seedPurchase, type SeededPurchase } from './revenueSupport.js';
 import { hasInfrastructure } from './support.js';
 
 /**
@@ -45,6 +47,9 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
   let h: AdminHarness;
   const realtime = new FakeRealtimePublisher();
   const jobs = new MemoryJobProducer();
+  // Stores for the purchase actions (every admin action offered).
+  const play = new FakeStoreVerifier('play');
+  const bazaar = new FakeStoreVerifier('bazaar');
   let superadmin: AdminSession;
   let counter = 0;
 
@@ -52,7 +57,7 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     db = await migratedDatabase();
     await installAuditFailure(db);
     const pair = generateOriginsKeyPair();
-    h = await startAdminHarness(db, { ORIGINS_SIGNING_KEY: pair.privateKey, ORIGINS_SIGNING_KID: 'o1' }, { jobs, realtime });
+    h = await startAdminHarness(db, { ORIGINS_SIGNING_KEY: pair.privateKey, ORIGINS_SIGNING_KID: 'o1' }, { jobs, realtime, store: { verifiers: { play, bazaar } } });
     superadmin = await adminAs(h, 'superadmin');
     await installTableDigest(db);
   }, 120_000);
@@ -116,6 +121,16 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     const user = await person();
     const ban = await seedAction(h, user.id, 3);
     return seedAppeal(h, user.id, ban);
+  }
+
+  async function purchase(kind: 'subscription' | 'consumable' = 'subscription'): Promise<SeededPurchase> {
+    return seedPurchase(h, { user: await person(), kind, fakes: { play, bazaar } });
+  }
+
+  async function grant(): Promise<string> {
+    const res = await send('POST', '/v1/admin/grants', { requestId: randomUUID(), user: (await person()).publicUid, plan: 'plus', days: 3, reason: 'Guard' })();
+    if (res.statusCode !== 201) throw new Error(`grant ${res.statusCode}: ${res.body}`);
+    return adminGrantResultSchema.parse(res.json()).grant.id;
   }
 
   async function bannedTerm(): Promise<string> {
@@ -324,6 +339,21 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     // content
 
     // revenue
+    // A hit by order id links a purchase to a person: audited, and with its row refused nothing is answered.
+    'POST /v1/admin/purchases/search': { actions: ['purchase.search'], prepare: async () => send('POST', '/v1/admin/purchases/search', { q: (await purchase()).orderId }) },
+    'POST /v1/admin/purchases/{id}/recheck': { actions: ['purchase.recheck'], prepare: async () => send('POST', `/v1/admin/purchases/${(await purchase()).id}/recheck`, { note: 'Guard' }) },
+    'POST /v1/admin/purchases/{id}/cancel': { actions: ['purchase.cancel'], prepare: async () => send('POST', `/v1/admin/purchases/${(await purchase()).id}/cancel`, { from: 'active', note: 'Guard' }) },
+    'POST /v1/admin/purchases/{id}/refund': { actions: ['purchase.refund'], prepare: async () => send('POST', `/v1/admin/purchases/${(await purchase('consumable')).id}/refund`, { from: 'purchased', note: 'Guard' }) },
+    'POST /v1/admin/purchases/{id}/revoke': { actions: ['purchase.revoke'], prepare: async () => send('POST', `/v1/admin/purchases/${(await purchase()).id}/revoke`, { from: 'active', note: 'Guard' }) },
+    'POST /v1/admin/grants': {
+      actions: ['grant.create'],
+      prepare: async () => send('POST', '/v1/admin/grants', { requestId: randomUUID(), user: (await person()).publicUid, plan: 'plus', days: 2, reason: 'Guard' }),
+    },
+    'DELETE /v1/admin/grants/{id}': { actions: ['grant.revoke'], prepare: async () => send('DELETE', `/v1/admin/grants/${await grant()}`, { reason: 'Guard' }) },
+    'POST /v1/admin/users/{id}/wallet-adjust': {
+      actions: ['wallet.gift'],
+      prepare: async () => send('POST', `/v1/admin/users/${(await person()).publicUid}/wallet-adjust`, { kind: 'gift', requestId: randomUUID(), item: 'boost', quantity: 2, note: 'Guard' }),
+    },
 
     // growth
 

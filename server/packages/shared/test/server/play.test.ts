@@ -320,6 +320,48 @@ describe('PlayStoreVerifier (fake Google)', () => {
     expect(await verifier.revoke(ref('tok-rf', 'consumable', 'cons.boost.1'))).toBe('already');
     expect(google.count('orders.refund')).toBe(1);
   });
+
+  it('offers an admin every action Google documents: stop renewal, refund in full or for the unused time, a one-time refund', () => {
+    expect(verifier.adminActions).toEqual({ subscription: ['cancel', 'refund', 'refund_prorated'], consumable: ['refund'] });
+  });
+
+  it('refunds for an admin: full or prorated (never retried), a one-time product in full only; a repeat reads the purchase', async () => {
+    google.putSubscription('tok-adm-full', { productId: 'sub.plus', expiryTimeMs: Date.now() + DAY });
+    expect(await verifier.refund(ref('tok-adm-full', 'subscription', 'sub.plus'), { prorated: false })).toBe('done');
+    google.putSubscription('tok-adm-pro', { productId: 'sub.plus', expiryTimeMs: Date.now() + DAY });
+    expect(await verifier.refund(ref('tok-adm-pro', 'subscription', 'sub.plus'), { prorated: true })).toBe('done');
+    expect(google.calls.filter((c) => c.route === 'subscriptionsv2.revoke').map((c) => [c.subject, c.body])).toEqual([
+      ['tok-adm-full', { revocationContext: { fullRefund: {} } }],
+      ['tok-adm-pro', { revocationContext: { proratedRefund: {} } }],
+    ]);
+    expect(await verifier.refund(ref('tok-adm-pro', 'subscription', 'sub.plus'), { prorated: true })).toBe('already');
+    // A lost answer is not sent again by the client: one revoke, then the caller decides.
+    google.putSubscription('tok-adm-drop', { productId: 'sub.plus', expiryTimeMs: Date.now() + DAY });
+    google.failNext('subscriptionsv2.revoke', 503);
+    expect(await verifier.refund(ref('tok-adm-drop', 'subscription', 'sub.plus'), { prorated: false }).catch((e: unknown) => e)).toMatchObject({ kind: 'unavailable' });
+    expect(google.calls.filter((c) => c.subject === 'tok-adm-drop' && c.route === 'subscriptionsv2.revoke')).toHaveLength(1);
+    google.putProduct('tok-adm-pack', { productId: 'cons.boost.1', orderId: 'GPA.5555-6666-7777-88888' });
+    expect(await verifier.refund(ref('tok-adm-pack', 'consumable', 'cons.boost.1'), { prorated: true }).catch((e: unknown) => e)).toMatchObject({ kind: 'invalid' });
+    expect(await verifier.refund(ref('tok-adm-pack', 'consumable', 'cons.boost.1', 'GPA.5555-6666-7777-88888'), { prorated: false })).toBe('done');
+    expect(google.calls.find((c) => c.route === 'orders.refund' && c.subject === 'GPA.5555-6666-7777-88888')).toMatchObject({ query: { revoke: 'true' } });
+  });
+
+  it('stops a renewal with subscriptionsv2.cancel (USER_REQUESTED_STOP_RENEWALS): canceled, renewal off, access to the expiry; a repeat is already', async () => {
+    const expiry = Date.now() + 10 * DAY;
+    google.putSubscription('tok-cancel', { productId: 'sub.plus', expiryTimeMs: expiry });
+    expect(await verifier.cancel(ref('tok-cancel', 'subscription', 'sub.plus'))).toBe('done');
+    expect(google.calls.find((c) => c.route === 'subscriptionsv2.cancel')).toMatchObject({
+      subject: 'tok-cancel',
+      body: { cancellationContext: { cancellationType: 'USER_REQUESTED_STOP_RENEWALS' } },
+    });
+    const after = await verifier.recheck(ref('tok-cancel', 'subscription', 'sub.plus'));
+    expect(after).toMatchObject({ state: 'canceled', autoRenew: false, expiresAtMs: expiry });
+    // Google refuses a second cancel: the subscription is read and is canceled already.
+    expect(await verifier.cancel(ref('tok-cancel', 'subscription', 'sub.plus'))).toBe('already');
+    google.putSubscription('tok-cancel-gone', { productId: 'sub.plus', state: 'SUBSCRIPTION_STATE_EXPIRED', expiryTimeMs: Date.now() - DAY });
+    expect(await verifier.cancel(ref('tok-cancel-gone', 'subscription', 'sub.plus'))).toBe('already');
+    expect(await verifier.cancel(ref('tok-cons', 'consumable', 'cons.superlike.5')).catch((e: unknown) => e)).toMatchObject({ kind: 'invalid' });
+  });
 });
 
 describe('Pub/Sub push authentication (OIDC)', () => {

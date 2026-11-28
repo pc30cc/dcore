@@ -271,3 +271,72 @@ describe('the user page: review fixes', () => {
     expect(await screen.findByText('۱۲۰')).toBeTruthy();
   });
 });
+
+describe('the user page’s purchases and wallet (revenue)', () => {
+  const FINANCE = [...READ, 'billing.read', 'billing.write', 'billing.grant', 'billing.refund'] as const;
+  const purchases = () => ({
+    subscriptions: [],
+    items: [{ id: '700', store: 'play', productId: 'sub.plus', basePlanId: 'm1', kind: 'subscription', state: 'active', quantity: 1, purchasedAt: '2026-11-20T10:00:00.000Z', expiresAt: '2026-12-20T10:00:00.000Z', orderId: 'GPA.1', isTest: false }],
+  });
+  const grants = () => ({
+    items: [
+      { id: '9', user: { id: SARA, name: 'Sara Ahmadi', status: 'active' }, plan: 'plus', startsAt: '2026-11-22T10:00:00.000Z', endsAt: '2026-12-22T10:00:00.000Z', state: 'active', reason: 'Outage', grantedBy: { id: '1', displayName: 'Leila' }, revokedAt: null, revokedBy: null, revokeReason: null },
+    ],
+    nextCursor: null,
+  });
+  const wallet = () => ({
+    balances: [{ item: 'superlike', store: null, balance: 5 }],
+    ledger: { items: [{ id: '3', at: '2026-11-25T10:00:00.000Z', item: 'superlike', store: null, delta: 5, balanceAfter: 5, reason: 'gift', admin: { id: '1', displayName: 'Leila' }, note: 'Bug report thanks' }], nextCursor: null },
+  });
+
+  it('links each purchase to its page, lists the plan days given and offers the gift buttons, by permission', async () => {
+    signInAs(adminWith([...FINANCE]));
+    const api = pageApi({
+      [`GET /v1/admin/users/${SARA}/purchases`]: purchases,
+      'GET /v1/admin/grants': grants,
+      'GET /v1/admin/plans': () => planList([plan('plus')]),
+    });
+    const user = userEvent.setup();
+    renderPanel(`/users/${SARA}?tab=purchases`, api);
+    const link = await screen.findByRole('link', { name: 'sub.plus' });
+    expect(link.getAttribute('href')).toBe('/revenue/purchases/700');
+    const given = (await screen.findByRole('heading', { name: 'Plan days given' })).closest('section')!;
+    expect((await within(given).findAllByText('Outage')).length).toBeGreaterThan(0);
+    expect(within(given).getByRole('button', { name: 'End now' })).toBeTruthy();
+    expect(api.of('GET /v1/admin/grants')[0]!.query).toMatchObject({ state: 'all', user: SARA });
+    await user.click(within(given).getByRole('button', { name: 'Give plan days' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Give plan days to Sara Ahmadi')).toBeTruthy();
+    expect(within(dialog).queryByRole('textbox', { name: 'Person ID' })).toBeNull();
+  });
+
+  it('shows plain purchases, no plan days and no buttons to a role without billing', async () => {
+    signInAs(readOnlyAdmin);
+    const api = pageApi({ [`GET /v1/admin/users/${SARA}/purchases`]: purchases });
+    renderPanel(`/users/${SARA}?tab=purchases`, api);
+    expect(await screen.findByText('sub.plus')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'sub.plus' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Plan days given' })).toBeNull();
+    expect(api.of('GET /v1/admin/grants')).toHaveLength(0);
+  });
+
+  it('shows the admin’s note in the ledger and the "Adjust wallet" button to a gift giver', async () => {
+    signInAs(adminWith([...READ, 'users.gift', 'billing.read']));
+    const api = pageApi({ [`GET /v1/admin/users/${SARA}/wallet`]: wallet });
+    const user = userEvent.setup();
+    renderPanel(`/users/${SARA}?tab=wallet`, api);
+    expect(await screen.findByText('Bug report thanks')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Adjust wallet' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Adjust the wallet of Sara Ahmadi')).toBeTruthy();
+    // users.gift alone: gifts only.
+    expect(within(dialog).queryByRole('radio', { name: 'Correction' })).toBeNull();
+  });
+
+  it('offers no wallet button to a reader', async () => {
+    signInAs(readOnlyAdmin);
+    renderPanel(`/users/${SARA}?tab=wallet`, pageApi({ [`GET /v1/admin/users/${SARA}/wallet`]: wallet }));
+    expect(await screen.findByText('Bug report thanks')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Adjust wallet' })).toBeNull();
+  });
+});

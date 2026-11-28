@@ -417,6 +417,8 @@ const walletRow = z.object({
       balanceAfter: z.number().int(),
       reason: z.number().int(),
       admin: adminRef.nullable(),
+      /** An admin's note on a gift or a correction. */
+      note: z.string().nullable(),
     }),
   ),
 });
@@ -436,7 +438,7 @@ export const adminUserWallet = defineQuery(
                              FROM (SELECT l.id, jsonb_build_object(
                                             'id', l.id::text, 'atMs', ${ms(sql`id_time(l.id)`)}, 'item', l.item, 'store', l.store,
                                             'delta', l.delta, 'balanceAfter', l.balance_after, 'reason', l.reason,
-                                            'admin', ${adminRefOf(sql`l.admin_id`)}) AS item
+                                            'admin', ${adminRefOf(sql`l.admin_id`)}, 'note', l.note) AS item
                                      FROM wallet_ledger l
                                     WHERE l.user_id = ${userId}::bigint${after}
                                     ORDER BY l.id DESC

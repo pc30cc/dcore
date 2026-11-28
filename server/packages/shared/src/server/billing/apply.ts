@@ -43,6 +43,11 @@ import type { VerifiedPurchase } from './verifier.js';
  *    the owner of a replaced linked token who is someone else, and the jobs
  *    the purchase needs next (acknowledge, consume, re-check, refund check,
  *    the subscription's end), each with retries.
+ *
+ * `apply()` runs the three in a row. A caller that writes more in the same
+ * transaction as the statement (an admin action and its audit row) runs
+ * `prepare()`, the statement in its transaction, then `complete()` once it
+ * committed.
  */
 
 /** What `store_purchase_apply()` takes; the same shape as `@app/db`'s `PurchaseApply`. */
@@ -180,6 +185,78 @@ export type AppliedPurchase =
   | { outcome: 'foreign_account' }
   | { outcome: 'unknown_product'; productId: string; basePlanId: string | null };
 
+/** A verified state made ready for its statement (see {@link PurchaseCore.prepare}). */
+export interface PreparedPurchase {
+  /** What `store_purchase_apply()` takes. */
+  input: PurchaseApplyInput;
+  verified: VerifiedPurchase;
+  ctx: ApplyContext;
+  product: StoreProductRow;
+  settings: BillingSettings;
+  hint: string | null;
+  before: EntitlementVersions | null;
+  hash: string;
+}
+
+export type PrepareOutcome = { status: 'ready'; prepared: PreparedPurchase } | { status: 'answered'; applied: Extract<AppliedPurchase, { outcome: 'foreign_account' | 'unknown_product' }> };
+
+export interface PrepareOptions {
+  /**
+   * A reference that names no account of ours is answered without its
+   * revoke queued: the caller records the outcome first (an admin's audit
+   * row) and then calls {@link PurchaseCore.queueForeignRevoke}.
+   */
+  deferForeign?: boolean | undefined;
+}
+
+/** What {@link verifiedFromRow} reads of a stored purchase (`@app/db`'s `KnownPurchase` has it). */
+export interface StoredPurchaseLike {
+  /** 1 subscription, 2 consumable. */
+  kind: number;
+  productId: string;
+  basePlanId: string | null;
+  purchasedAtMs: number;
+  expiresAtMs: number | null;
+  orderId: string | null;
+  quantity: number;
+  acknowledged: boolean;
+  consumed: boolean;
+}
+
+/**
+ * A stored purchase as a verified state, when the store's word is not read
+ * again: a refund the server learnt from a list, or an admin's refund or
+ * "mark refunded". Renewal off, no next check, the store's account
+ * reference left out (the row keeps its owner), `eventMs` as the state's
+ * time (later than the row's last event, or the statement ignores it).
+ */
+export function verifiedFromRow(row: StoredPurchaseLike, state: VerifiedPurchase['state'], eventMs: number): VerifiedPurchase {
+  const subscription = row.kind === 1;
+  return {
+    kind: subscription ? 'subscription' : 'consumable',
+    productId: row.productId,
+    basePlanId: row.basePlanId,
+    state,
+    purchasedAtMs: row.purchasedAtMs,
+    expiresAtMs: row.expiresAtMs,
+    autoRenew: subscription ? false : null,
+    accountRef: null,
+    orderId: row.orderId,
+    linkedPurchaseToken: null,
+    quantity: row.quantity,
+    isTest: false,
+    region: null,
+    acknowledged: row.acknowledged,
+    consumed: row.consumed,
+    eventMs,
+    amount: null,
+    nextCheckAtMs: null,
+    refundCheckAtMs: null,
+    needsAcknowledge: false,
+    needsConsume: false,
+  };
+}
+
 const STATE: Record<VerifiedPurchase['state'], number> = {
   pending: purchaseState.code('pending'),
   active: purchaseState.code('active'),
@@ -214,7 +291,15 @@ export class PurchaseCore {
     return this.deps.now?.() ?? Date.now();
   }
 
-  async apply(verified: VerifiedPurchase, ctx: ApplyContext): Promise<AppliedPurchase> {
+  /**
+   * The statement's input for a verified state, and what the steps after it
+   * need: the product looked up, the account reference decoded, the ids
+   * minted, the entitlement versions read before it. Nothing is written; a
+   * product the catalogue lacks, or a reference that names no account of
+   * ours (whose revoke is queued, unless `deferForeign`), is answered
+   * without one.
+   */
+  async prepare(verified: VerifiedPurchase, ctx: ApplyContext, options: PrepareOptions = {}): Promise<PrepareOutcome> {
     const { deps } = this;
     const settings = deps.settings();
     const store = storeCodes.code(ctx.store);
@@ -222,20 +307,23 @@ export class PurchaseCore {
     const kind = verified.kind === 'subscription' ? productKind.code('subscription') : productKind.code('consumable');
     if (product?.kind !== kind) {
       deps.log.error({ store: ctx.store, productId: verified.productId, basePlanId: verified.basePlanId }, 'store: a verified purchase names a product the catalogue does not have');
-      return { outcome: 'unknown_product', productId: verified.productId, basePlanId: verified.basePlanId };
+      return { status: 'answered', applied: { outcome: 'unknown_product', productId: verified.productId, basePlanId: verified.basePlanId } };
     }
     const hash = tokenHash(ctx.token);
     let accountUserId: string | null = null;
     if (verified.accountRef !== null) {
       accountUserId = deps.publicIds.billing.decodeId(verified.accountRef);
-      if (accountUserId === null) return this.foreign(ctx, verified, product, hash);
+      if (accountUserId === null) {
+        if (options.deferForeign) return { status: 'answered', applied: { outcome: 'foreign_account' } };
+        return { status: 'answered', applied: await this.foreign(ctx, verified, product, hash) };
+      }
     }
     const linked = verified.linkedPurchaseToken ? tokenHash(verified.linkedPurchaseToken) : null;
     // The versions before the statement: the base built from its rows may be cached only if this write is the one
     // move of both (see mayPrime).
     const hint = ctx.ownerHint ?? accountUserId ?? ctx.callerId;
     const before = hint ? await readEntitlementVersions(deps.redis, deps.keys, hint).catch(() => null) : null;
-    const out = await deps.apply({
+    const input: PurchaseApplyInput = {
       id: deps.ids.nextId(),
       eventId: deps.ids.nextId(),
       linkedEventId: deps.ids.nextId(),
@@ -263,7 +351,20 @@ export class PurchaseCore {
       source: ctx.source,
       amountMicros: verified.amount?.micros ?? null,
       currency: verified.amount?.currency ?? null,
-    });
+    };
+    return { status: 'ready', prepared: { input, verified, ctx, product, settings, hint, before, hash } };
+  }
+
+  /**
+   * Everything after the statement is durable: the entitlement versions,
+   * the token's record, the event, the replaced token's owner, the jobs.
+   * The caller ran `prepared.input` through `store_purchase_apply()` (on its
+   * own, or inside a transaction it committed) and passes what it answered.
+   */
+  async complete(prepared: PreparedPurchase, out: PurchaseApplyOutcome): Promise<AppliedPurchase> {
+    const { deps } = this;
+    const { verified, ctx, product, settings, hint, before, hash } = prepared;
+    const store = prepared.input.store;
     if (out.outcome === 'foreign_account') return this.foreign(ctx, verified, product, hash);
 
     const userId = out.userId;
@@ -312,6 +413,14 @@ export class PurchaseCore {
     };
   }
 
+  /** {@link prepare}, the statement on the process's pool, {@link complete}. */
+  async apply(verified: VerifiedPurchase, ctx: ApplyContext): Promise<AppliedPurchase> {
+    const prepared = await this.prepare(verified, ctx);
+    if (prepared.status === 'answered') return prepared.applied;
+    const out = await this.deps.apply(prepared.prepared.input);
+    return this.complete(prepared.prepared, out);
+  }
+
   /** New entitlement versions of a person after a durable change; null when kv-core could not be written (logged). */
   private async moveVersions(userId: string): Promise<EntitlementVersions | null> {
     const { deps } = this;
@@ -357,18 +466,30 @@ export class PurchaseCore {
     }
   }
 
-  private async foreign(ctx: ApplyContext, verified: VerifiedPurchase, product: StoreProductRow, hash: string): Promise<AppliedPurchase> {
+  private async foreign(ctx: ApplyContext, verified: VerifiedPurchase, product: StoreProductRow, hash: string): Promise<{ outcome: 'foreign_account' }> {
     const { deps } = this;
     deps.log.warn({ store: ctx.store, productId: product.productId }, 'store: a purchase bound to no account of ours is refused and revoked');
-    await deps.jobs
-      .add(
-        'revoke',
-        iapJobIds.revoke(ctx.store, hash),
-        { store: ctx.store, kind: verified.kind, productId: verified.productId, token: ctx.token, tokenHash: hash },
-        { attempts: 8, backoffMs: 60_000 },
-      )
-      .catch((error: unknown) => deps.log.error({ err: error }, 'store: revoke not queued'));
+    await this.queueRevoke(ctx, verified, hash).catch((error: unknown) => deps.log.error({ err: error }, 'store: revoke not queued'));
     return { outcome: 'foreign_account' };
+  }
+
+  /**
+   * The refund and revoke at the store of a purchase bound to no account of
+   * ours, after `prepare(…, { deferForeign: true })` answered it and the
+   * caller recorded that; throws when the job could not be queued.
+   */
+  async queueForeignRevoke(verified: VerifiedPurchase, ctx: ApplyContext): Promise<void> {
+    this.deps.log.warn({ store: ctx.store, productId: verified.productId }, 'store: a purchase bound to no account of ours is refused and revoked');
+    await this.queueRevoke(ctx, verified, tokenHash(ctx.token));
+  }
+
+  private async queueRevoke(ctx: ApplyContext, verified: VerifiedPurchase, hash: string): Promise<void> {
+    await this.deps.jobs.add(
+      'revoke',
+      iapJobIds.revoke(ctx.store, hash),
+      { store: ctx.store, kind: verified.kind, productId: verified.productId, token: ctx.token, tokenHash: hash },
+      { attempts: 8, backoffMs: 60_000 },
+    );
   }
 
   /** The jobs a purchase needs after this state: each id is deterministic, so a repeat adds nothing. */

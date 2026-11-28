@@ -21,6 +21,7 @@ import { asciiDigits, formatDateTime } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { useAudit, useAuditAdmins } from '@/lib/queries';
+import { can, sessionState } from '@/lib/session';
 import { showToast } from '@/lib/toast';
 import { EmptyLine } from '../moderation/QueueParts';
 
@@ -262,6 +263,7 @@ const targetLinks: Partial<Record<AuditTarget, (entry: AuditEntry) => string | n
   // content
 
   // revenue
+  purchase: (entry) => (entry.targetRef && can(sessionState().me, 'billing.read') ? `/revenue/purchases/${entry.targetRef}` : null),
 
   // growth
 

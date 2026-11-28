@@ -1,6 +1,7 @@
 import { PlayApiError, type PlayDeveloperApi, type ProductPurchaseV2, type SubscriptionPurchaseV2 } from '../clients/playDeveloper.js';
 import {
   StoreError,
+  type AdminStoreActions,
   type PurchaseClaim,
   type PurchaseRef,
   type PurchaseSubmission,
@@ -16,6 +17,12 @@ import { verifiedProduct, verifiedSubscription, type PlayReadOptions } from './s
  * one-time product (consumable) with `productsv2`; acknowledge, consume and
  * revoke (subscriptions: `subscriptionsv2.revoke` with a full refund;
  * one-time products: `orders.refund` with `revoke=true`).
+ *
+ * An admin may stop a subscription's renewal (`subscriptionsv2.cancel`,
+ * `USER_REQUESTED_STOP_RENEWALS`: the shape of Google's reference page for
+ * the method, read 2026-11-27), refund a subscription in full or for its
+ * unused time (`subscriptionsv2.revoke` with `fullRefund` / `proratedRefund`)
+ * and refund a one-time product (`orders.refund`, `revoke=true`).
  *
  * A Play token is opaque, so nothing is checked before the call; the
  * account reference (`obfuscatedExternalAccountId`) comes from Google's
@@ -63,8 +70,12 @@ function refused(error: unknown): boolean {
   return error instanceof PlayApiError && error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 403 && error.status !== 408 && error.status !== 429;
 }
 
+/** What an admin may ask Google Play to do (every request shape confirmed on Google's reference pages). */
+export const PLAY_ADMIN_ACTIONS: AdminStoreActions = { subscription: ['cancel', 'refund', 'refund_prorated'], consumable: ['refund'] };
+
 export class PlayStoreVerifier implements StoreVerifier {
   readonly store = 'play' as const;
+  readonly adminActions = PLAY_ADMIN_ACTIONS;
   readonly api: PlayDeveloperApi;
   private readonly now: () => number;
 
@@ -149,16 +160,44 @@ export class PlayStoreVerifier implements StoreVerifier {
 
   /** Refunds in full and ends access now: a purchase that may not be granted. */
   async revoke(purchase: PurchaseRef): Promise<StoreActionOutcome> {
-    if (purchase.kind === 'subscription') {
-      try {
-        await this.api.revokeSubscription(purchase.token, 'full');
-        return 'done';
-      } catch (error) {
-        if (!refused(error)) throw storeErrorOf(error);
-        if ((await this.subscription(purchase.token)).raw.subscriptionState === 'SUBSCRIPTION_STATE_EXPIRED') return 'already';
-        throw storeErrorOf(error);
-      }
+    return purchase.kind === 'subscription' ? this.revokeSubscription(purchase, 'full') : this.refundProduct(purchase);
+  }
+
+  /** An admin's refund: a subscription in full or for its unused time (access ends now), a one-time product's order. */
+  async refund(purchase: PurchaseRef, options: { prorated: boolean }): Promise<StoreActionOutcome> {
+    if (purchase.kind === 'subscription') return this.revokeSubscription(purchase, options.prorated ? 'prorated' : 'full');
+    if (options.prorated) throw new StoreError('invalid', 'a one-time product is refunded in full');
+    return this.refundProduct(purchase);
+  }
+
+  /** An admin's stop of the renewal: `already` when Google shows the subscription canceled or ended. */
+  async cancel(purchase: PurchaseRef): Promise<StoreActionOutcome> {
+    if (purchase.kind !== 'subscription') throw new StoreError('invalid', 'only a subscription renews');
+    try {
+      await this.api.cancelSubscription(purchase.token);
+      return 'done';
+    } catch (error) {
+      if (!refused(error)) throw storeErrorOf(error);
+      const state = (await this.subscription(purchase.token)).raw.subscriptionState;
+      if (state === 'SUBSCRIPTION_STATE_CANCELED' || state === 'SUBSCRIPTION_STATE_EXPIRED') return 'already';
+      throw storeErrorOf(error);
     }
+  }
+
+  /** `subscriptionsv2.revoke`: a 4xx answered by a read, `already` when the subscription has ended. */
+  private async revokeSubscription(purchase: PurchaseRef, refund: 'full' | 'prorated'): Promise<StoreActionOutcome> {
+    try {
+      await this.api.revokeSubscription(purchase.token, refund);
+      return 'done';
+    } catch (error) {
+      if (!refused(error)) throw storeErrorOf(error);
+      if ((await this.subscription(purchase.token)).raw.subscriptionState === 'SUBSCRIPTION_STATE_EXPIRED') return 'already';
+      throw storeErrorOf(error);
+    }
+  }
+
+  /** `orders.refund?revoke=true` of a one-time product: `already` when Google shows it refunded. */
+  private async refundProduct(purchase: PurchaseRef): Promise<StoreActionOutcome> {
     const read = purchase.orderId === null ? await this.product(purchase.token) : null;
     const orderId = purchase.orderId ?? read?.verified.orderId ?? null;
     if (orderId === null) throw new StoreError('invalid', 'the purchase has no order to refund');

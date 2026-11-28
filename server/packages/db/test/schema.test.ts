@@ -189,6 +189,7 @@ describe.skipIf(!hasDatabase)('schema: the real migrations', () => {
       // content
 
       // revenue
+      ['entitlement_grants', 'reason'], ['entitlement_grants', 'revoke_reason'], ['entitlement_grants', 'revoked_by'], ['wallet_ledger', 'note'],
 
       // growth
 

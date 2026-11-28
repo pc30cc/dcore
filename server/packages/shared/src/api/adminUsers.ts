@@ -270,6 +270,8 @@ export const adminLedgerEntrySchema = z.object({
   balanceAfter: z.number().int(),
   reason: ledgerReason.schema,
   admin: adminRefSchema.nullable(),
+  /** An admin's note on a gift or a correction (never shown to the person). */
+  note: z.string().nullable(),
 });
 export const adminUserWalletSchema = z.object({
   balances: z.array(z.object({ item: walletItem.schema, store: sourceSchema, balance: z.number().int() })),

@@ -175,6 +175,10 @@ export function createKeys(prefix: string) {
     // content
 
     // revenue
+    /** One admin action on a purchase at a time (the acting admin's id, kv-core, 120 s; released when it ends). */
+    adminPurchaseLock: (purchaseId: string | bigint) => k('iap', 'adm', purchaseId),
+    /** A grant or wallet write of one dialog (`requestId`) is done once (kv-core, 1 h; removed when its transaction fails). */
+    adminOnce: (adminId: string | number, requestId: string) => k('adm', 'once', adminId, requestId),
 
     // growth
 

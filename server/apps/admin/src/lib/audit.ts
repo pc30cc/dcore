@@ -38,6 +38,7 @@ export const auditTargetChoices: readonly AuditTarget[] = [
   // content
 
   // revenue
+  'purchase',
 
   // growth
 
@@ -72,6 +73,9 @@ export const auditActionGroups: readonly { area: string; label: MessageKey; acti
     // content
 
     // revenue
+    purchase: 'audit.area.purchase',
+    grant: 'audit.area.grant',
+    wallet: 'audit.area.wallet',
 
     // growth
 

@@ -280,7 +280,7 @@ describe.skipIf(!hasDatabase)('store purchases (migration 0022)', () => {
     expect((await entitlementRows(pool, user)).subs).toEqual([expect.objectContaining({ store: 0, status: 4, productId: null })]);
     expect(await recomputeSubscription(pool, user, 0)).toBe(false);
     const revoked = await withTransaction(pool, (tx) => revokePlanGrant(tx, grantId));
-    expect(revoked).toEqual({ userId: user, changed: true });
+    expect(revoked).toMatchObject({ outcome: 'revoked', userId: user, changed: true, planId: plus });
     expect((await entitlementRows(pool, user)).subs).toEqual([]);
   });
 

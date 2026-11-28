@@ -333,6 +333,8 @@ services:
       - BAZAAR_CLIENT_ID=${BAZAAR_CLIENT_ID:-}
       - BAZAAR_CLIENT_SECRET=${BAZAAR_CLIENT_SECRET:-}
       - BAZAAR_REFRESH_TOKEN=${BAZAAR_REFRESH_TOKEN:-}
+      # The panel's Cafe Bazaar actions (refund, cancel); empty offers neither. Read by the api only.
+      - BAZAAR_ADMIN_ACTIONS=${BAZAAR_ADMIN_ACTIONS:-}
       - ORIGINS_SIGNING_KEY=${ORIGINS_SIGNING_KEY:?ORIGINS_SIGNING_KEY is required (Ed25519 seed from origins:keygen; its public key goes into brand.json)}
       - ORIGINS_SIGNING_KID=${ORIGINS_SIGNING_KID:-o1}
       - ORIGINS_TTL_DAYS=${ORIGINS_TTL_DAYS:-30}

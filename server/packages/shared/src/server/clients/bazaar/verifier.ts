@@ -2,10 +2,13 @@ import type { KeyObject } from 'node:crypto';
 import { tokenHash } from '../../billing/tokens.js';
 import {
   StoreError,
+  offersAdminAction,
+  type AdminStoreActions,
   type PurchaseClaim,
   type PurchaseRef,
   type PurchaseSubmission,
   type StoreActionOutcome,
+  type StoreReadOptions,
   type StoreVerifier,
   type VerifiedPurchase,
 } from '../../billing/verifier.js';
@@ -50,7 +53,22 @@ import { bazaarPublicKey, parseBazaarPurchaseData, verifyBazaarSignature, type B
  * Bazaar has no acknowledgement; consume runs after the credit, and
  * `already_consumed` is success. Amounts are never reported, so the core
  * estimates them from the list price of the moment.
+ *
+ * An admin's actions: the API documents a refund of a one-time product and
+ * a cancel of a subscription's renewal (no refund of a subscription), both
+ * asked `urgent` (the admin waits). Neither request shape is confirmed yet
+ * (the refund is a POST, which the Pishkhan header may not authorise; the
+ * cancel page names no method), so the default ({@link BAZAAR_ADMIN_ACTIONS})
+ * offers neither. A deployment that confirmed them against a real Pishkhan
+ * app lists them in the API's BAZAAR_ADMIN_ACTIONS environment variable,
+ * which reaches this class as `adminActions`, filtered to
+ * {@link BAZAAR_DOCUMENTED_ADMIN_ACTIONS}.
  */
+
+/** The admin actions offered: none whose request shape is unconfirmed. */
+export const BAZAAR_ADMIN_ACTIONS: AdminStoreActions = { subscription: [], consumable: [] };
+/** What Bazaar's developer API documents for an admin: cancel a subscription's renewal, refund a one-time product. */
+export const BAZAAR_DOCUMENTED_ADMIN_ACTIONS: AdminStoreActions = { subscription: ['cancel'], consumable: ['refund'] };
 
 export const BAZAAR_RECHECK_DELAY_MS = 3_600_000;
 export const BAZAAR_CHECK_SPREAD_MS = 2 * 3_600_000;
@@ -67,6 +85,8 @@ export interface BazaarVerifierOptions {
   /** base64 X.509 SubjectPublicKeyInfo (Pishkhan → In-app billing). */
   rsaPublicKey: string;
   api: BazaarApi;
+  /** The admin actions to offer (default {@link BAZAAR_ADMIN_ACTIONS}); never beyond {@link BAZAAR_DOCUMENTED_ADMIN_ACTIONS}. */
+  adminActions?: AdminStoreActions | undefined;
   log?: BazaarVerifierLog | undefined;
   now?: (() => number) | undefined;
 }
@@ -94,6 +114,7 @@ function invalid(message: string): StoreError {
 
 export class BazaarVerifier implements StoreVerifier {
   readonly store = 'bazaar' as const;
+  readonly adminActions: AdminStoreActions;
   private readonly key: KeyObject;
   private readonly packageName: string;
   private readonly api: BazaarApi;
@@ -104,6 +125,11 @@ export class BazaarVerifier implements StoreVerifier {
     this.key = bazaarPublicKey(options.rsaPublicKey);
     this.packageName = options.packageName;
     this.api = options.api;
+    const wanted = options.adminActions ?? BAZAAR_ADMIN_ACTIONS;
+    this.adminActions = {
+      subscription: wanted.subscription.filter((a) => BAZAAR_DOCUMENTED_ADMIN_ACTIONS.subscription.includes(a)),
+      consumable: wanted.consumable.filter((a) => BAZAAR_DOCUMENTED_ADMIN_ACTIONS.consumable.includes(a)),
+    };
     this.log = options.log;
     this.now = options.now ?? Date.now;
   }
@@ -143,15 +169,16 @@ export class BazaarVerifier implements StoreVerifier {
     return this.recurring(sub, { productId: data.productId, token: data.purchaseToken, orderId: data.orderId, accountRef: data.developerPayload, purchasedAtMs }, now, true);
   }
 
-  async recheck(purchase: PurchaseRef): Promise<VerifiedPurchase> {
+  async recheck(purchase: PurchaseRef, options: StoreReadOptions = {}): Promise<VerifiedPurchase> {
     if (purchase.productId === null) throw invalid('a stored Bazaar purchase without its product');
     const now = this.now();
+    const priority: BazaarPriority = options.urgent ? 'urgent' : 'background';
     const base = { productId: purchase.productId, token: purchase.token, orderId: purchase.orderId, accountRef: null };
     if (purchase.kind === 'consumable') {
-      const p = await this.ask(() => this.api.inappPurchase(purchase.productId!, purchase.token, 'background'));
+      const p = await this.ask(() => this.api.inappPurchase(purchase.productId!, purchase.token, priority));
       return this.oneTime(p, { ...base, purchasedAtMs: purchase.purchasedAtMs ?? p.purchaseTimeMs ?? now }, now, false);
     }
-    const sub = await this.subscriptionOf(purchase.productId, purchase.token, 'background');
+    const sub = await this.subscriptionOf(purchase.productId, purchase.token, priority);
     const purchasedAtMs = purchase.purchasedAtMs ?? sub?.startedAtMs ?? now;
     if (!sub) {
       // Nothing of this product is live for the token any more: it ended (or was refunded) by now.
@@ -187,6 +214,19 @@ export class BazaarVerifier implements StoreVerifier {
     if (purchase.productId === null) throw invalid('a subscription to cancel without its product');
     // The API documents refunds of one-time products only; a subscription's renewal is stopped.
     return this.ask(() => this.api.cancelSubscription(purchase.productId!, purchase.token, 'background'));
+  }
+
+  /** An admin's refund of a one-time product (asked `urgent`); refused (`invalid`) unless offered. */
+  async refund(purchase: PurchaseRef, options: { prorated: boolean }): Promise<StoreActionOutcome> {
+    if (!offersAdminAction(this, purchase.kind, options.prorated ? 'refund_prorated' : 'refund')) throw invalid(`no admin refund of a ${purchase.kind} is offered`);
+    return this.ask(() => this.api.refund(purchase.token, 'urgent'));
+  }
+
+  /** An admin's stop of a subscription's renewal (asked `urgent`); refused (`invalid`) unless offered. */
+  async cancel(purchase: PurchaseRef): Promise<StoreActionOutcome> {
+    if (!offersAdminAction(this, purchase.kind, 'cancel')) throw invalid(`no admin cancel of a ${purchase.kind} is offered`);
+    if (purchase.productId === null) throw invalid('a subscription to cancel without its product');
+    return this.ask(() => this.api.cancelSubscription(purchase.productId!, purchase.token, 'urgent'));
   }
 
   /**

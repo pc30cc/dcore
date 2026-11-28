@@ -9,6 +9,7 @@ import { defaultFetch, fetchWithTimeout, isRetryableStatus, type Fetch } from '.
  * - `purchases.productsv2.getproductpurchasev2` (a one-time product's state)
  * - `purchases.subscriptions.acknowledge` (still the v1 path), `purchases.products.acknowledge`, `.consume`
  * - `purchases.subscriptionsv2.revoke` (`revocationContext.fullRefund` / `proratedRefund`)
+ * - `purchases.subscriptionsv2.cancel` (`cancellationContext.cancellationType`: the renewal stops, access runs to the expiry)
  * - `orders.refund` (`revoke=true`), for one-time products
  * - `purchases.voidedpurchases.list` (refunds and chargebacks, 30 days back, 1000 a page)
  *
@@ -384,6 +385,23 @@ export class PlayDeveloperApi {
       body: { revocationContext: refund === 'full' ? { fullRefund: {} } : { proratedRefund: {} } },
       idempotent: false,
       what: 'subscriptionsv2.revoke',
+    });
+  }
+
+  /**
+   * `POST purchases/subscriptionsv2/tokens/{token}:cancel`: the next renewal
+   * does not happen, access runs to the expiry, nothing is refunded.
+   * `USER_REQUESTED_STOP_RENEWALS` leaves the subscription restorable by the
+   * buyer; the answer has an empty body. Stopping a renewal twice changes
+   * nothing, so the call is retried like a read.
+   */
+  async cancelSubscription(token: string): Promise<void> {
+    await this.call({
+      method: 'POST',
+      path: this.app(`/purchases/subscriptionsv2/tokens/${segment(token)}:cancel`),
+      body: { cancellationContext: { cancellationType: 'USER_REQUESTED_STOP_RENEWALS' } },
+      idempotent: true,
+      what: 'subscriptionsv2.cancel',
     });
   }
 

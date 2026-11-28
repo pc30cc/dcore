@@ -16,7 +16,7 @@ import {
   type StorageConfig,
   type StoreConfig,
 } from '@app/config';
-import { parseKeyRing } from '@app/shared/server';
+import { parseKeyRing, type AdminStoreActions } from '@app/shared/server';
 import { z } from 'zod';
 
 /**
@@ -179,6 +179,12 @@ const envSchema = z
     ORIGINS_SIGNING_KID: z.string().regex(/^[A-Za-z0-9._-]{1,32}$/).default('o1'),
     /** How long a signed origins document stays valid. */
     ORIGINS_TTL_DAYS: envInt(30, { min: 2, max: 365 }),
+    /**
+     * The panel's Cafe Bazaar actions, once a sandbox call confirmed their
+     * request shapes: `refund` (a consumable's refund) and `cancel` (a
+     * subscription's stop of renewal). Empty (the default): neither is offered.
+     */
+    BAZAAR_ADMIN_ACTIONS: envList().pipe(z.array(z.enum(['refund', 'cancel']))),
   })
   .superRefine((env, ctx) => {
     const need = (key: keyof typeof env, why: string): void => {
@@ -328,6 +334,8 @@ export interface ApiConfig {
   origins: { signingKey: string | undefined; kid: string; ttlSeconds: number };
   /** Store credentials; a store left undefined answers 503 store_unavailable on its purchase routes. */
   store: StoreConfig;
+  /** The admin actions offered for Cafe Bazaar (BAZAAR_ADMIN_ACTIONS); never beyond the documented ones. */
+  bazaarAdminActions: AdminStoreActions;
 }
 
 function parseTrustProxy(value: string): TrustProxy {
@@ -437,5 +445,9 @@ export function loadConfig(source: Env = process.env): ApiConfig {
         : undefined,
     origins: { signingKey: env.ORIGINS_SIGNING_KEY, kid: env.ORIGINS_SIGNING_KID, ttlSeconds: env.ORIGINS_TTL_DAYS * 86_400 },
     store: storeConfigOf(env),
+    bazaarAdminActions: {
+      subscription: env.BAZAAR_ADMIN_ACTIONS.includes('cancel') ? ['cancel'] : [],
+      consumable: env.BAZAAR_ADMIN_ACTIONS.includes('refund') ? ['refund'] : [],
+    },
   };
 }

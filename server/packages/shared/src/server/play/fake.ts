@@ -8,7 +8,7 @@ import { ANDROID_PUBLISHER_SCOPE, PlayDeveloperApi, type GoogleServiceAccountKey
  * Google Play on a local port (tests): the OAuth token endpoint (it checks
  * the service account's signed assertion), the Developer API calls the
  * server makes (subscriptionsv2, productsv2, acknowledge, consume, revoke,
- * orders.refund, voidedpurchases) over purchases held in memory, and the
+ * cancel, orders.refund, voidedpurchases) over purchases held in memory, and the
  * key set and signer of Pub/Sub push tokens. Resources are built in the
  * shape of Google's reference pages; failures can be injected per call.
  * Nothing here talks to Google.
@@ -131,6 +131,7 @@ export type FakePlayRoute =
   | 'products.acknowledge'
   | 'products.consume'
   | 'subscriptionsv2.revoke'
+  | 'subscriptionsv2.cancel'
   | 'orders.refund'
   | 'voidedpurchases.list';
 
@@ -411,6 +412,24 @@ export class FakeGooglePlay {
       const item = (resource['lineItems'] as Record<string, unknown>[])[0]!;
       item['expiryTime'] = iso(Date.now());
       this.addVoided({ purchaseToken: token, orderId: typeof item['latestSuccessfulOrderId'] === 'string' ? item['latestSuccessfulOrderId'] : 'none', voidedSource: 1, voidedReason: 0, subscription: true });
+      return json(200, undefined);
+    }
+    if ((m = /^\/purchases\/subscriptionsv2\/tokens\/([^/:]+):cancel$/.exec(rest)) && request.method === 'POST') {
+      const token = decodeURIComponent(m[1]!);
+      if (!route('subscriptionsv2.cancel', token)) return;
+      const resource = own ? this.subscriptions.get(token) : undefined;
+      const context = (text ? (JSON.parse(text) as { cancellationContext?: { cancellationType?: unknown } }) : {}).cancellationContext;
+      const types = ['USER_REQUESTED_STOP_RENEWALS', 'DEVELOPER_REQUESTED_STOP_PAYMENTS'];
+      if (!resource || !context || !types.includes(String(context.cancellationType))) return invalid();
+      const state = resource['subscriptionState'];
+      if (state !== 'SUBSCRIPTION_STATE_ACTIVE' && state !== 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' && state !== 'SUBSCRIPTION_STATE_ON_HOLD' && state !== 'SUBSCRIPTION_STATE_PAUSED') {
+        return json(400, GOOGLE_ERROR(400, 'FAILED_PRECONDITION', 'invalidPurchaseState', 'The subscription cannot be canceled.'));
+      }
+      resource['subscriptionState'] = 'SUBSCRIPTION_STATE_CANCELED';
+      resource['canceledStateContext'] = { developerInitiatedCancellation: {} };
+      const item = (resource['lineItems'] as Record<string, unknown>[])[0]!;
+      const plan = item['autoRenewingPlan'] as Record<string, unknown> | undefined;
+      if (plan) plan['autoRenewEnabled'] = false;
       return json(200, undefined);
     }
     if ((m = /^\/orders\/([^/:]+):refund$/.exec(rest)) && request.method === 'POST') {

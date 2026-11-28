@@ -33,6 +33,7 @@ export * from './stats.js';
 // content
 
 // revenue
+export * from './adminRevenue.js';
 
 // growth
 

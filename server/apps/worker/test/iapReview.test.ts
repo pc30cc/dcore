@@ -447,6 +447,50 @@ describe.skipIf(!hasDatabase || !hasRedis)('the iap queue after review (PostgreS
       expect(await (await sweepQueue.getJob(`recheck.${lost}.${atMs}`))?.getState()).toBe('waiting');
     });
 
+    it('queues again the start of a later grant whose delayed job was lost, so the store-0 plan comes; a job that ran is left alone', async () => {
+      const user = await newUser();
+      const plus = (await db.admin.query<{ id: number }>(`SELECT id FROM plans WHERE key = 'plus'`)).rows[0]!.id;
+      const now = Date.now();
+      const startsAtMs = now - 30 * 60_000;
+      // Given a day ago to start half an hour ago; the queue lost its start job (flushed or restored) and nothing recomputed.
+      await db.admin.query(
+        `INSERT INTO entitlement_grants (id, user_id, starts_at, ends_at, plan_id, reason) VALUES (id_floor(now() - interval '1 day') + 11, $1, $2, $3, $4, 'later')`,
+        [user, new Date(startsAtMs), new Date(startsAtMs + 30 * DAY), plus],
+      );
+      const storeZero = async () => (await db.admin.query(`SELECT 1 FROM subscriptions WHERE user_id = $1 AND store = 0`, [user])).rowCount;
+      expect(await storeZero()).toBe(0);
+      const out = await run();
+      expect(out).toMatchObject({ outcome: 'swept' });
+      expect(Number((out as Record<string, unknown>)['grants'])).toBeGreaterThanOrEqual(1);
+      const id = `sub-end.${user}.0.${startsAtMs}`;
+      const job = await sweepQueue.getJob(id);
+      expect(job?.data).toEqual({ userId: user, store: 0, atMs: startsAtMs });
+      expect(await subEndJob({ data: job!.data as unknown }, sweep)).toMatchObject({ outcome: 'changed' });
+      expect(await storeZero()).toBe(1);
+      // Once it ran, the next sweep leaves it alone (a recompute costs a statement; it is done).
+      const worker = new Worker('iap', null, { connection: connect(), prefix: sweep.config.queuePrefix, autorun: false });
+      try {
+        let taken = await worker.getNextJob('sweep-test');
+        while (taken && taken.id !== id) {
+          await taken.moveToCompleted({ outcome: 'skipped' }, 'sweep-test', false);
+          taken = await worker.getNextJob('sweep-test');
+        }
+        expect(taken?.id).toBe(id);
+        await taken?.moveToCompleted({ outcome: 'changed' }, 'sweep-test', false);
+      } finally {
+        await worker.close();
+      }
+      await run();
+      expect(await (await sweepQueue.getJob(id))?.getState()).toBe('completed');
+      // A grant given "from now" was applied when it was given: its start is not queued again.
+      const nowGrant = await db.admin.query<{ ms: string }>(
+        `INSERT INTO entitlement_grants (id, user_id, starts_at, ends_at, plan_id, reason) VALUES (id_next(), $1, now() - interval '10 minutes', now() + interval '3 days', $2, 'now') RETURNING (extract(epoch FROM starts_at) * 1000)::bigint::text AS ms`,
+        [user, plus],
+      );
+      await run();
+      expect(await sweepQueue.getJob(`sub-end.${user}.0.${nowGrant.rows[0]!.ms}`)).toBeUndefined();
+    });
+
     it('queues a live subscription whose expiry passed without a check, and acknowledgements and consumes still owed', async () => {
       await db.admin.query(`UPDATE store_purchases SET next_check_at = NULL, acknowledged_at = coalesce(acknowledged_at, now()), consumed_at = coalesce(consumed_at, now())`);
       await db.admin.query(`UPDATE store_purchases SET state = 7 WHERE kind = 1 AND state IN (2, 3, 4) AND expires_at < now()`);

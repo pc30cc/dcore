@@ -304,6 +304,27 @@ describe.skipIf(!hasDatabase || !hasRedis)('the iap queue (PostgreSQL, Valkey)',
     expect(await iapQueue().process(fakeJob('sub-end', { userId: user, store: 0, atMs: Date.now() }), context)).toMatchObject({ outcome: 'unchanged' });
   });
 
+  it('applies an admin’s refund the store made from the stored row: state 8, one refund event, no store call', async () => {
+    const user = await newUser();
+    const token = `adm-refunded-${user}`;
+    const purchaseId = await stored({ token, store: 1, productRef: product(1, 'sub.plus', 'm1'), kind: 1, state: 2, callerId: user, acknowledged: true });
+    // Google would show the refunded subscription as EXPIRED: the job does not ask it.
+    play.put(token, { kind: 'subscription', productId: 'sub.plus', basePlanId: 'm1', state: 'expired', eventMs: Date.now() });
+    const calls = play.count('recheck');
+    const bare: JobContext = { ...context, services: { ...context.services, iap: { verifiers: {} } } };
+    const out = await iapQueue().process(fakeJob('recheck', { purchaseId, store: 'play', atMs: Date.now(), refunded: true }), bare);
+    expect(out).toMatchObject({ outcome: 'applied', state: 8, changed: true });
+    expect(play.count('recheck')).toBe(calls);
+    const { rows } = await db.admin.query<{ event: number; source: number; state_to: number }>(
+      `SELECT event, source, state_to FROM store_events WHERE purchase_id = $1 AND event = 10`,
+      [purchaseId],
+    );
+    expect(rows).toEqual([{ event: 10, source: 5, state_to: 8 }]);
+    expect((await db.admin.query(`SELECT 1 FROM subscriptions WHERE user_id = $1 AND store = 1`, [user])).rowCount).toBe(0);
+    // Run again (a retry): the server's own end, nothing more.
+    expect(await iapQueue().process(fakeJob('recheck', { purchaseId, store: 'play', atMs: Date.now(), refunded: true }), bare)).toMatchObject({ outcome: 'final', state: 8 });
+  });
+
   it('revokes at the store a purchase bound to no account of ours', async () => {
     const token = `revoke-${randomBytes(4).toString('hex')}`;
     play.put(token, { kind: 'subscription', productId: 'sub.plus', basePlanId: 'm1' });

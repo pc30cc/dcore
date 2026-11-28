@@ -145,6 +145,8 @@ export interface KnownPurchase {
   orderId: string | null;
   lastEventMs: number | null;
   nextCheckAtMs: number | null;
+  /** Subscriptions: whether the store renews it; null for consumables. */
+  autoRenew: boolean | null;
 }
 
 const knownSchema = z.object({
@@ -167,6 +169,7 @@ const knownSchema = z.object({
   order_id: z.string().nullable(),
   last_event_ms: z.string().nullable(),
   next_check_ms: z.string().nullable(),
+  auto_renew: z.boolean().nullable(),
 });
 
 function known(row: unknown): KnownPurchase {
@@ -191,6 +194,7 @@ function known(row: unknown): KnownPurchase {
     orderId: r.order_id,
     lastEventMs: r.last_event_ms === null ? null : Number(r.last_event_ms),
     nextCheckAtMs: r.next_check_ms === null ? null : Number(r.next_check_ms),
+    autoRenew: r.auto_renew,
   };
 }
 
@@ -200,7 +204,8 @@ const KNOWN_COLUMNS = sql`p.id::text AS id, p.user_id::text AS user_id, p.store:
        (extract(epoch FROM p.purchased_at) * 1000)::bigint::text AS purchased_ms,
        (extract(epoch FROM p.expires_at) * 1000)::bigint::text AS expires_ms,
        p.acknowledged_at IS NOT NULL AS acknowledged, p.consumed_at IS NOT NULL AS consumed, p.credited_at IS NOT NULL AS credited,
-       p.order_id, p.last_event_ms::text AS last_event_ms, (extract(epoch FROM p.next_check_at) * 1000)::bigint::text AS next_check_ms`;
+       p.order_id, p.last_event_ms::text AS last_event_ms, (extract(epoch FROM p.next_check_at) * 1000)::bigint::text AS next_check_ms,
+       p.auto_renew`;
 
 /** A purchase by its token (restore of a token whose record left the cache; jobs). */
 export const purchaseByToken = defineQuery(
@@ -348,6 +353,8 @@ export interface WalletCredit {
   ledgerId: string;
   refId: string | null;
   adminId: number | null;
+  /** An admin's note on a gift or a correction (never shown to the person). */
+  note?: string | null | undefined;
 }
 
 /** Credits the wallet (not a purchase: those go through `applyStorePurchase`), with its ledger row, in one statement. */
@@ -361,9 +368,9 @@ export const creditWallet = defineQuery({ name: 'billing.creditWallet', statemen
           ON CONFLICT (user_id, item, store) DO UPDATE SET balance = b.balance + EXCLUDED.balance, updated_at = now()
           RETURNING b.balance
         ), led AS (
-          INSERT INTO wallet_ledger (id, user_id, ref_id, delta, balance_after, admin_id, item, store, reason)
+          INSERT INTO wallet_ledger (id, user_id, ref_id, delta, balance_after, admin_id, item, store, reason, note)
           SELECT ${c.ledgerId}::bigint, ${c.userId}::bigint, ${c.refId}::bigint, ${c.quantity}::integer, up.balance,
-                 ${c.adminId}::integer, ${c.item}::smallint, ${c.store}::smallint, ${c.reason}::smallint
+                 ${c.adminId}::integer, ${c.item}::smallint, ${c.store}::smallint, ${c.reason}::smallint, ${c.note ?? null}::text
             FROM up
           RETURNING balance_after
         )
@@ -398,18 +405,77 @@ export const grantPlan = defineQuery({ name: 'billing.grantPlan', statements: 2 
   return row.changed;
 });
 
-/** Revokes a grant and recomputes the store-0 subscription (two statements; in a transaction). */
+export interface WalletDebit {
+  userId: string;
+  item: number;
+  /** The balance taken from: 0 gifts, 1 Play, 2 Bazaar. */
+  store: number;
+  quantity: number;
+  /** wallet_ledger.reason: 8 admin correction. */
+  reason: 8;
+  ledgerId: string;
+  adminId: number | null;
+  note?: string | null | undefined;
+}
+
+/**
+ * Takes `quantity` from one balance with its ledger row, in one statement,
+ * only when the balance holds that much (never below zero). The balance
+ * after it; null when it does not hold enough (nothing written).
+ */
+export const debitWallet = defineQuery({ name: 'billing.debitWallet', statements: 1 }, async (db, d: WalletDebit): Promise<number | null> => {
+  if (!Number.isInteger(d.quantity) || d.quantity < 1 || d.quantity > 10_000) throw new RangeError('quantity must be 1-10000');
+  const row = await maybeOne<{ balance: number }>(
+    db,
+    sql`WITH down AS (
+          UPDATE wallet_balances b SET balance = b.balance - ${d.quantity}::integer, updated_at = now()
+           WHERE b.user_id = ${d.userId}::bigint AND b.item = ${d.item}::smallint AND b.store = ${d.store}::smallint
+             AND b.balance >= ${d.quantity}::integer
+          RETURNING b.balance
+        ), led AS (
+          INSERT INTO wallet_ledger (id, user_id, ref_id, delta, balance_after, admin_id, item, store, reason, note)
+          SELECT ${d.ledgerId}::bigint, ${d.userId}::bigint, NULL, -${d.quantity}::integer, down.balance,
+                 ${d.adminId}::integer, ${d.item}::smallint, ${d.store}::smallint, ${d.reason}::smallint, ${d.note ?? null}::text
+            FROM down
+          RETURNING balance_after
+        )
+        SELECT balance_after AS balance FROM led`,
+  );
+  return row ? Number(row.balance) : null;
+});
+
+export type GrantRevokeOutcome =
+  | { outcome: 'revoked'; userId: string; changed: boolean; planId: number; startsAtMs: number; endsAtMs: number }
+  /** The grant had ended already (revoked before, or its end passed). */
+  | { outcome: 'ended' }
+  | { outcome: 'not_found' };
+
+/**
+ * Ends a grant now (who and why kept with it) and recomputes the store-0
+ * subscription: two statements when it ends one (one otherwise), in a
+ * transaction. Only a grant that is not ended yet (not revoked, its end
+ * after now) is ended.
+ */
 export const revokePlanGrant = defineQuery(
   { name: 'billing.revokePlanGrant', statements: 2 },
-  async (tx, grantId: string): Promise<{ userId: string; changed: boolean } | null> => {
-    const rows = await many<{ user_id: string }>(
+  async (tx, grantId: string, by: { adminId: number | null; reason: string | null } = { adminId: null, reason: null }): Promise<GrantRevokeOutcome> => {
+    const row = await one<{ found: boolean; user_id: string | null; plan_id: number | null; starts_ms: string | null; ends_ms: string | null }>(
       tx,
-      sql`UPDATE entitlement_grants SET revoked_at = now() WHERE id = ${grantId}::bigint AND revoked_at IS NULL RETURNING user_id::text`,
+      sql`WITH ended AS (
+            UPDATE entitlement_grants g
+               SET revoked_at = now(), revoked_by = ${by.adminId}::integer, revoke_reason = ${by.reason}::text
+             WHERE g.id = ${grantId}::bigint AND g.revoked_at IS NULL AND g.ends_at > now()
+            RETURNING g.user_id, g.plan_id, g.starts_at, g.ends_at
+          )
+          SELECT EXISTS (SELECT 1 FROM entitlement_grants g WHERE g.id = ${grantId}::bigint) AS found,
+                 e.user_id::text AS user_id, e.plan_id::integer AS plan_id,
+                 (extract(epoch FROM e.starts_at) * 1000)::bigint::text AS starts_ms,
+                 (extract(epoch FROM e.ends_at) * 1000)::bigint::text AS ends_ms
+            FROM (SELECT 1) AS one LEFT JOIN ended e ON true`,
     );
-    const first = rows[0];
-    if (!first) return null;
-    const row = await one<{ changed: boolean }>(tx, sql`SELECT subscription_recompute(${first.user_id}::bigint, 0::smallint) AS changed`);
-    return { userId: first.user_id, changed: row.changed };
+    if (row.user_id === null) return { outcome: row.found ? 'ended' : 'not_found' };
+    const changed = await one<{ changed: boolean }>(tx, sql`SELECT subscription_recompute(${row.user_id}::bigint, 0::smallint) AS changed`);
+    return { outcome: 'revoked', userId: row.user_id, changed: changed.changed, planId: Number(row.plan_id), startsAtMs: Number(row.starts_ms), endsAtMs: Number(row.ends_ms) };
   },
 );
 
@@ -433,6 +499,47 @@ function due(rows: unknown[]): DuePurchase[] {
 }
 
 const toTime = (ms: number) => sql`to_timestamp(${ms}::double precision / 1000)`;
+
+/** A grant's start (a later one) or end: the time of its `sub-end` job of store 0. */
+export interface GrantTime {
+  userId: string;
+  /** The start, or the end + 1 s (the job times the grant route queues). */
+  atMs: number;
+}
+
+const grantTimeSchema = z.object({ user_id: id, at_ms: z.string() });
+
+/**
+ * Grant starts (only those set later than the grant was given: a grant
+ * "from now" was applied when it was given) and ends in [`fromMs`,
+ * `beforeMs`), of grants not ended early: each one's store-0 subscription
+ * is recomputed by a delayed job, which a lost queue never runs. Starts by
+ * `entitlement_grants_open_start_idx`, ends by `entitlement_grants_open_idx`.
+ */
+export const grantTimesDue = defineQuery(
+  { name: 'billing.grantTimesDue', statements: 1 },
+  async (db, q: { fromMs: number; beforeMs: number; limit: number }): Promise<GrantTime[]> => {
+    const rows = await many(
+      db,
+      sql`(SELECT g.user_id::text AS user_id, (extract(epoch FROM g.starts_at) * 1000)::bigint::text AS at_ms
+             FROM entitlement_grants g
+            WHERE g.revoked_at IS NULL AND g.starts_at >= ${toTime(q.fromMs)} AND g.starts_at < ${toTime(q.beforeMs)}
+              AND g.starts_at > id_time(g.id) + interval '1 minute'
+            ORDER BY g.starts_at
+            LIMIT ${q.limit})
+          UNION ALL
+          (SELECT g.user_id::text, ((extract(epoch FROM g.ends_at) * 1000)::bigint + 1000)::text
+             FROM entitlement_grants g
+            WHERE g.revoked_at IS NULL AND g.ends_at >= ${toTime(q.fromMs)} AND g.ends_at < ${toTime(q.beforeMs)}
+            ORDER BY g.ends_at, g.id
+            LIMIT ${q.limit})`,
+    );
+    return rows.map((row) => {
+      const r = grantTimeSchema.parse(row);
+      return { userId: r.user_id, atMs: Number(r.at_ms) };
+    });
+  },
+);
 
 export interface DuePage {
   /** Rows due before this time (epoch ms). */

@@ -220,6 +220,19 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   // content
 
   // revenue
+  ['GET', '/v1/admin/purchases', '200', true],
+  ['POST', '/v1/admin/purchases/search', '200', true],
+  ['GET', '/v1/admin/purchases/{id}', '200', true],
+  ['GET', '/v1/admin/purchases/{id}/events', '200', true],
+  ['POST', '/v1/admin/purchases/{id}/recheck', '200', true],
+  ['POST', '/v1/admin/purchases/{id}/cancel', '200', true],
+  ['POST', '/v1/admin/purchases/{id}/refund', '200', true],
+  ['POST', '/v1/admin/purchases/{id}/revoke', '200', true],
+  ['GET', '/v1/admin/grants', '200', true],
+  ['POST', '/v1/admin/grants', '201', true],
+  ['DELETE', '/v1/admin/grants/{id}', '200', true],
+  ['POST', '/v1/admin/users/{id}/wallet-adjust', '201', true],
+  ['GET', '/v1/admin/wallet-adjustments', '200', true],
 
   // growth
 

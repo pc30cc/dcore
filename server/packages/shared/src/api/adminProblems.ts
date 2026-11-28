@@ -46,6 +46,20 @@ export const adminConflictReasons = [
   // content
 
   // revenue
+  /** The purchase is in another state than the admin saw (`from`). */
+  'purchase_changed',
+  /** Another admin action on the purchase is running. */
+  'purchase_busy',
+  /** The store, the kind or the state does not allow the action. */
+  'action_not_available',
+  /** The store refused the action (or names a product the catalogue lacks). */
+  'store_refused',
+  /** A re-check found the store naming an account that is not ours: recorded, and its refund and revoke at the store queued. */
+  'foreign_account',
+  /** The grant had ended (or was ended early) already. */
+  'grant_ended',
+  /** The `requestId` of a grant or wallet write was used before: that write was done. */
+  'duplicate_request',
 
   // growth
 
@@ -158,6 +172,10 @@ export const adminFieldCodes = [
   // content
 
   // revenue
+  'archived_plan',
+  'starts_in_past',
+  'starts_too_far',
+  'insufficient_balance',
 
   // growth
 

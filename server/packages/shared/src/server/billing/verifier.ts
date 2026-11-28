@@ -88,20 +88,55 @@ export interface VerifiedPurchase {
 
 export type StoreActionOutcome = 'done' | 'already';
 
+/**
+ * What an admin may ask a store to do with a purchase, beyond reading it:
+ * stop the renewal of a subscription (access runs to its expiry), refund it
+ * (access ends now), or refund a subscription for its unused time only.
+ */
+export type AdminStoreAction = 'cancel' | 'refund' | 'refund_prorated';
+
+/** The admin actions a store integration offers, per kind of purchase: only what its API documents and this build has confirmed. */
+export type AdminStoreActions = Readonly<Record<PurchaseKindName, readonly AdminStoreAction[]>>;
+
+export interface StoreReadOptions {
+  /** Someone waits for the answer (an admin's re-check): stores that pace their calls let it go first. */
+  urgent?: boolean | undefined;
+}
+
 export interface StoreVerifier {
   readonly store: AppStore;
+  /** The admin actions this integration offers (the panel shows no other). */
+  readonly adminActions: AdminStoreActions;
   /** Checks that need no network (Bazaar's SHA1withRSA signature over originalJson, the package); throws `invalid`. */
   inspect(submission: PurchaseSubmission): PurchaseClaim;
   /** The purchase's state from the store: one call. */
   verify(submission: PurchaseSubmission): Promise<VerifiedPurchase>;
   /** A stored purchase (or a notified token) asked again. */
-  recheck(purchase: PurchaseRef): Promise<VerifiedPurchase>;
+  recheck(purchase: PurchaseRef, options?: StoreReadOptions): Promise<VerifiedPurchase>;
   acknowledge(purchase: PurchaseRef): Promise<StoreActionOutcome>;
   /** `already` when the store says it was consumed before (Bazaar's `already_consumed`). */
   consume(purchase: PurchaseRef): Promise<StoreActionOutcome>;
   /** Refunds and revokes a purchase that may not be granted (bound to no account of ours). */
   revoke(purchase: PurchaseRef): Promise<StoreActionOutcome>;
+  /**
+   * An admin's refund: the money back and access ended now; a subscription
+   * refunded for its unused time with `prorated`. Throws `invalid` for an
+   * action not in {@link adminActions} (nothing is asked). Never retried by
+   * the integration: a lost answer may have taken effect, so the caller
+   * reads the purchase again, and a repeat of a done refund is `already`.
+   */
+  refund(purchase: PurchaseRef, options: { prorated: boolean }): Promise<StoreActionOutcome>;
+  /** An admin's stop of a subscription's renewal (access runs to its expiry); `already` when it had stopped or ended. */
+  cancel(purchase: PurchaseRef): Promise<StoreActionOutcome>;
 }
+
+/** Whether `verifier` offers `action` for purchases of `kind`. */
+export function offersAdminAction(verifier: Pick<StoreVerifier, 'adminActions'>, kind: PurchaseKindName, action: AdminStoreAction): boolean {
+  return verifier.adminActions[kind].includes(action);
+}
+
+/** Every admin action, for stores that offer all of them (the fake). */
+export const ALL_ADMIN_STORE_ACTIONS: AdminStoreActions = { subscription: ['cancel', 'refund', 'refund_prorated'], consumable: ['refund'] };
 
 export type StoreErrorKind = 'invalid' | 'unavailable' | 'not_configured';
 
@@ -129,8 +164,11 @@ export interface FakeStorePurchase extends Partial<Omit<VerifiedPurchase, 'kind'
 }
 
 export interface FakeStoreCall {
-  method: 'verify' | 'recheck' | 'acknowledge' | 'consume' | 'revoke';
+  method: 'verify' | 'recheck' | 'acknowledge' | 'consume' | 'revoke' | 'refund' | 'cancel';
   token: string;
+  /** `recheck`: asked urgently; `refund`: for the unused time only. */
+  urgent?: boolean | undefined;
+  prorated?: boolean | undefined;
 }
 
 /**
@@ -141,6 +179,8 @@ export interface FakeStoreCall {
  */
 export class FakeStoreVerifier implements StoreVerifier {
   readonly store: AppStore;
+  /** Every admin action by default; a test narrows it to a store's own. */
+  adminActions: AdminStoreActions = ALL_ADMIN_STORE_ACTIONS;
   readonly purchases = new Map<string, FakeStorePurchase>();
   readonly calls: FakeStoreCall[] = [];
   /** The next calls fail with these errors, in order. */
@@ -149,6 +189,9 @@ export class FakeStoreVerifier implements StoreVerifier {
   readonly acknowledged = new Set<string>();
   readonly consumed = new Set<string>();
   readonly revoked = new Set<string>();
+  /** Tokens an admin refunded or stopped the renewal of. */
+  readonly refunded = new Set<string>();
+  readonly canceled = new Set<string>();
   now: () => number = () => Date.now();
 
   constructor(store: AppStore) {
@@ -175,8 +218,8 @@ export class FakeStoreVerifier implements StoreVerifier {
     return { productId: submission.productId, accountRef: null };
   }
 
-  private take(method: FakeStoreCall['method'], token: string): void {
-    this.calls.push({ method, token });
+  private take(method: FakeStoreCall['method'], token: string, extra: Pick<FakeStoreCall, 'urgent' | 'prorated'> = {}): void {
+    this.calls.push({ method, token, ...extra });
     const failure = this.failures.shift();
     if (failure) throw failure;
   }
@@ -215,8 +258,8 @@ export class FakeStoreVerifier implements StoreVerifier {
     return this.state(submission.purchaseToken);
   }
 
-  async recheck(purchase: PurchaseRef): Promise<VerifiedPurchase> {
-    this.take('recheck', purchase.token);
+  async recheck(purchase: PurchaseRef, options: StoreReadOptions = {}): Promise<VerifiedPurchase> {
+    this.take('recheck', purchase.token, options.urgent === undefined ? {} : { urgent: options.urgent });
     return this.state(purchase.token);
   }
 
@@ -241,6 +284,37 @@ export class FakeStoreVerifier implements StoreVerifier {
     this.revoked.add(purchase.token);
     const p = this.purchases.get(purchase.token);
     if (p) p.state = 'revoked';
+    return 'done';
+  }
+
+  async refund(purchase: PurchaseRef, options: { prorated: boolean }): Promise<StoreActionOutcome> {
+    const action: AdminStoreAction = options.prorated ? 'refund_prorated' : 'refund';
+    if (!offersAdminAction(this, purchase.kind, action)) throw new StoreError('invalid', `the store offers no ${action} of a ${purchase.kind}`);
+    this.take('refund', purchase.token, { prorated: options.prorated });
+    if (this.refunded.has(purchase.token)) return 'already';
+    this.refunded.add(purchase.token);
+    const p = this.purchases.get(purchase.token);
+    if (p) {
+      // As Google shows it: a refunded subscription reads EXPIRED (only a notification or the voided list says refunded).
+      p.state = p.kind === 'subscription' ? 'expired' : 'revoked';
+      p.autoRenew = p.kind === 'subscription' ? false : null;
+      p.eventMs = this.now();
+    }
+    return 'done';
+  }
+
+  async cancel(purchase: PurchaseRef): Promise<StoreActionOutcome> {
+    if (!offersAdminAction(this, purchase.kind, 'cancel')) throw new StoreError('invalid', `the store offers no cancel of a ${purchase.kind}`);
+    this.take('cancel', purchase.token);
+    const p = this.purchases.get(purchase.token);
+    const state = p?.state;
+    if (this.canceled.has(purchase.token) || (state !== undefined && state !== 'active' && state !== 'grace')) return 'already';
+    this.canceled.add(purchase.token);
+    if (p) {
+      p.state = 'canceled';
+      p.autoRenew = false;
+      p.eventMs = this.now();
+    }
     return 'done';
   }
 }

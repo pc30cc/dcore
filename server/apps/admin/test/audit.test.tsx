@@ -256,6 +256,28 @@ describe('the audit log page', () => {
     }
   });
 
+  it('links a purchase target to its page for a reader of billing', async () => {
+    const rows = () => page([entry('9', { action: 'purchase.refund', targetType: 'purchase', targetRef: '105424043695398946', user: undefined, detail: { note: 'Charged twice' } })]);
+    signInAs(adminWith(['audit.read', 'billing.read'], ['finance']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    const link = await screen.findByRole('link', { name: '105424043695398946' });
+    expect(link.getAttribute('href')).toBe('/revenue/purchases/105424043695398946');
+    expect(within(link.closest('tr')!).getByText('Purchase refunded')).toBeTruthy();
+  });
+
+  it('shows a purchase target as its id alone to a role that does not read billing', async () => {
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': () => page([entry('9', { action: 'purchase.refund', targetType: 'purchase', targetRef: '105424043695398946', user: undefined, detail: null })]) }));
+    expect(await screen.findByText('105424043695398946')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '105424043695398946' })).toBeNull();
+  });
+
+  it('filters by a purchase', async () => {
+    const api = auditApi();
+    renderPanel('/system/audit?targetType=purchase&target=105424043695398946', api);
+    await screen.findByRole('heading', { name: 'Audit log' });
+    await waitFor(() => expect(api.of('GET /v1/admin/audit')[0]?.query).toMatchObject({ targetType: 'purchase', target: '105424043695398946' }));
+  });
+
   it('is for audit.read: without it, no request and no access', async () => {
     signInAs(adminWith(['users.read', 'moderation.read'], ['moderator']));
     const api = auditApi();

@@ -54,6 +54,13 @@ export const CONFLICT_TEXT: Readonly<Record<AdminConflictReason, MessageKey>> = 
   // content
 
   // revenue
+  purchase_changed: 'purchase.error.changed',
+  purchase_busy: 'purchase.error.busy',
+  action_not_available: 'purchase.error.notAvailable',
+  store_refused: 'purchase.error.storeRefused',
+  foreign_account: 'purchase.error.foreignAccount',
+  grant_ended: 'grant.error.ended',
+  duplicate_request: 'revenue.error.duplicate',
 
   // growth
 
@@ -161,6 +168,10 @@ export const FIELD_TEXT: Readonly<Record<AdminFieldCode, MessageKey>> = {
   // content
 
   // revenue
+  archived_plan: 'grant.error.archivedPlan',
+  starts_in_past: 'grant.error.startsInPast',
+  starts_too_far: 'grant.error.startsTooFar',
+  insufficient_balance: 'walletAdjust.insufficient',
 
   // growth
 
@@ -194,6 +205,7 @@ export const WORDED_CODES: readonly ErrorCode[] = [
   'appeal_open',
   'not_appealable',
   'field_invalid',
+  'store_unavailable',
 ];
 
 function isFieldCode(code: string): code is AdminFieldCode {
@@ -295,6 +307,8 @@ function mainText(error: ApiError, t: Translate, locale: Locale): { text: string
       );
     case 'service_unavailable':
       return say(t('common.error.unavailable'));
+    case 'store_unavailable':
+      return say(t('purchase.error.storeUnavailable'));
     case 'validation_failed':
     case 'field_invalid': {
       const texts = issueTexts(error, t);

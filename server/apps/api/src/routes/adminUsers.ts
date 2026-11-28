@@ -307,6 +307,8 @@ export const adminUserRoutes: FastifyPluginAsyncZod = async (app) => {
       const { limit, cursor } = request.query;
       const { found, value } = await adminUserWallet(app.pg, userId, { beforeId: readCursor(cursor), limit: limit + 1 });
       if (!found) throw noSuchUser();
+      // An admin's note on a gift or a correction is the team's: not for a reader who answers the person (support).
+      const notes = userReadScope(app, request).notes || callerMay(app, request, 'billing.read');
       return {
         balances: value.balances.map((b) => ({ item: walletItem.name(b.item), store: storeName(b.store), balance: b.balance })),
         ledger: paged(value.ledger, limit, (l) => ({
@@ -318,6 +320,7 @@ export const adminUserRoutes: FastifyPluginAsyncZod = async (app) => {
           balanceAfter: l.balanceAfter,
           reason: ledgerReason.name(l.reason),
           admin: adminRefOf(l.admin),
+          note: notes ? l.note : null,
         })),
       };
     },

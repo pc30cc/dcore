@@ -23,6 +23,7 @@ import {
   evidenceRoleSchema,
   filingAuthority,
   gender,
+  grantStateSchema,
   integrity,
   intention,
   ledgerReason,
@@ -41,6 +42,8 @@ import {
   planQuotaKeys,
   platform,
   productKind,
+  purchaseMatchSchema,
+  purchaseOutcomeSchema,
   purchaseState,
   reportContext,
   reportReason,
@@ -49,6 +52,8 @@ import {
   requestStatus,
   revokeReason,
   store,
+  storeEventKind,
+  storeEventSource,
   subscriptionStatus,
   textRejectReason,
   textState,
@@ -218,6 +223,11 @@ describe('server values the panel shows have words in every language', () => {
       // content
 
       // revenue
+      ['storeEvent.', storeEventKind.names],
+      ['storeEventSource.', storeEventSource.names],
+      ['grants.state.', grantStateSchema.options],
+      ['purchases.matched.', purchaseMatchSchema.options],
+      ['purchase.done.', purchaseOutcomeSchema.options],
 
       // growth
 

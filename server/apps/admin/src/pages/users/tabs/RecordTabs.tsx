@@ -1,7 +1,8 @@
 import type { AdminReportSummary, AdminUserConsent, AdminUserDetail, AdminUserDevice, AdminUserPurchases, AdminUserSession, AdminUserWallet, AuditEntry } from '@app/shared';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, Smartphone } from 'lucide-react';
+import { ChevronDown, ChevronUp, Gift, Smartphone, Wallet } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import { DetailJson } from '@/components/DetailJson';
 import { LoadError, TableSkeleton } from '@/components/QueryState';
 import { Badge, StatusDot } from '@/components/ui/badge';
@@ -13,11 +14,16 @@ import type { MessageKey } from '@/i18n/messages';
 import { useI18n } from '@/i18n/useI18n';
 import { auditActionLabel } from '@/lib/audit';
 import { apiRequest } from '@/lib/api';
-import { formatDate, formatDateTime, formatNumber, formatPlain, languageName, localized } from '@/lib/format';
-import { queryKeys, usePlans, useUserPages, useUserTab } from '@/lib/queries';
+import { formatDate, formatDateTime, formatNumber, formatPlain, languageName } from '@/lib/format';
+import { mayCorrect, mayGift, useGrants } from '@/lib/grants';
+import { queryKeys, useUserPages, useUserTab } from '@/lib/queries';
 import { can } from '@/lib/session';
 import { useSession } from '@/lib/useSession';
 import { cn } from '@/lib/utils';
+import { GrantDialog } from '@/pages/revenue/GrantDialog';
+import { GrantTable } from '@/pages/revenue/GrantTable';
+import { PlanName } from '@/pages/revenue/parts';
+import { WalletAdjustDialog } from '@/pages/revenue/WalletAdjustDialog';
 import { SectionCard } from '../SectionCard';
 
 const reportTone: Readonly<Record<AdminReportSummary['status'], 'green' | 'amber' | 'blue' | 'gray'>> = {
@@ -50,10 +56,15 @@ export function More({ show, busy, onMore }: { show: boolean; busy: boolean; onM
   );
 }
 
-export function Panel({ title, children, className }: { title?: string; children: ReactNode; className?: string }) {
+export function Panel({ title, actions, children, className }: { title?: string; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={cn('overflow-hidden rounded-xl border bg-card text-card-foreground shadow-xs', className)}>
-      {title && <h2 className="border-b px-4 py-3 text-base font-semibold sm:px-5">{title}</h2>}
+      {title && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5">
+          <h2 className="py-0.5 text-base font-semibold">{title}</h2>
+          {actions}
+        </div>
+      )}
       {children}
     </section>
   );
@@ -142,32 +153,10 @@ function ReportList({ user, side }: { user: AdminUserDetail; side: 'received' | 
 
 const sourceKey = (store: string | null): MessageKey => (store === null ? 'store.admin' : (`store.${store}` as MessageKey));
 
-/** A plan by its name in the panel's language with its key under it (as the plans page shows it); the key alone without billing.read. */
-function PlanName({ planKey }: { planKey: string }) {
-  const { locale } = useI18n();
-  const { me } = useSession();
-  const readable = can(me, 'billing.read');
-  const plans = usePlans(readable);
-  const plan = plans.data?.items.find((item) => item.key === planKey);
-  if (!plan) {
-    return (
-      <span dir="ltr" className="font-mono text-xs">
-        {planKey}
-      </span>
-    );
-  }
-  return (
-    <span className="grid justify-items-start gap-0.5">
-      <span className="text-sm font-medium">{localized(plan.names, locale, plan.key)}</span>
-      <span dir="ltr" className="font-mono text-xs text-muted-foreground">
-        {plan.key}
-      </span>
-    </span>
-  );
-}
-
 export function PurchasesTab({ user }: { user: AdminUserDetail }) {
   const { t, locale } = useI18n();
+  const { me } = useSession();
+  const billing = can(me, 'billing.read');
   const tab = useUserTab<AdminUserPurchases>(user.id, 'purchases', `/v1/admin/users/${user.id}/purchases`);
   if (tab.isPending) return <TableSkeleton rows={3} />;
   if (tab.isError) return <LoadError error={tab.error} onRetry={() => void tab.refetch()} />;
@@ -197,7 +186,7 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
                   <TableCell className="text-sm">{t(sourceKey(s.store))}</TableCell>
                   <TableCell className="text-sm">{t(`subscriptionStatus.${s.status}` as MessageKey)}</TableCell>
                   <TableCell className="hidden text-sm whitespace-nowrap text-muted-foreground sm:table-cell">{formatDate(s.startedAt, locale)}</TableCell>
-                  <TableCell className="text-sm whitespace-nowrap text-muted-foreground">{formatDate(s.expiresAt, locale)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground sm:whitespace-nowrap">{formatDate(s.expiresAt, locale)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -223,10 +212,17 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
                 <TableRow key={p.id}>
                   <TableCell>
                     <span className="grid justify-items-start gap-0.5">
-                      <span dir="ltr" className="font-mono text-xs">
-                        {p.productId}
-                        {p.quantity > 1 && <span> {t('purchases.quantity', { count: p.quantity })}</span>}
-                      </span>
+                      {billing ? (
+                        <Link to={`/revenue/purchases/${p.id}`} dir="ltr" className="rounded-sm font-mono text-xs text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                          {p.productId}
+                          {p.quantity > 1 && <span> {t('purchases.quantity', { count: p.quantity })}</span>}
+                        </Link>
+                      ) : (
+                        <span dir="ltr" className="font-mono text-xs">
+                          {p.productId}
+                          {p.quantity > 1 && <span> {t('purchases.quantity', { count: p.quantity })}</span>}
+                        </span>
+                      )}
                       <span className="flex gap-1">
                         <Badge variant="outline">{t(`productKind.${p.kind}` as MessageKey)}</Badge>
                         {p.isTest && <Badge variant="secondary">{t('purchases.test')}</Badge>}
@@ -247,7 +243,45 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
           </Table>
         )}
       </Panel>
+      {billing && <GivenPlanDays user={user} />}
     </div>
+  );
+}
+
+/** The plan days admins gave this person, newest first; "Give plan days" and "End now" by permission. */
+function GivenPlanDays({ user }: { user: AdminUserDetail }) {
+  const { t } = useI18n();
+  const { me } = useSession();
+  const grants = useGrants('all', user.id);
+  const [giving, setGiving] = useState(false);
+  const rows = grants.data?.pages.flatMap((page) => page.items) ?? [];
+  return (
+    <Panel
+      title={t('user.purchases.grants')}
+      actions={
+        mayGift(me) &&
+        user.status !== 'purged' && (
+          <Button variant="outline" size="sm" onClick={() => setGiving(true)}>
+            <Gift aria-hidden="true" />
+            {t('grants.new')}
+          </Button>
+        )
+      }
+    >
+      {grants.isPending ? (
+        <TableSkeleton rows={2} />
+      ) : grants.isError ? (
+        <div className="p-4">
+          <LoadError error={grants.error} onRetry={() => void grants.refetch()} />
+        </div>
+      ) : rows.length === 0 ? (
+        <Empty text={t('grants.empty')} />
+      ) : (
+        <GrantTable rows={rows} showPerson={false} canEnd={mayCorrect(me)} />
+      )}
+      <More show={grants.hasNextPage} busy={grants.isFetchingNextPage} onMore={() => void grants.fetchNextPage()} />
+      {giving && <GrantDialog person={user} onClose={() => setGiving(false)} />}
+    </Panel>
   );
 }
 
@@ -255,6 +289,8 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
 
 export function WalletTab({ user }: { user: AdminUserDetail }) {
   const { t, locale } = useI18n();
+  const { me } = useSession();
+  const [adjusting, setAdjusting] = useState(false);
   const pages = useInfiniteQuery({
     queryKey: queryKeys.userTab(user.id, 'wallet'),
     initialPageParam: null as string | null,
@@ -267,7 +303,18 @@ export function WalletTab({ user }: { user: AdminUserDetail }) {
   const ledger = pages.data.pages.flatMap((page) => page.ledger.items);
   return (
     <div className="grid gap-6">
-      <SectionCard title={t('wallet.balances')}>
+      <SectionCard
+        title={t('wallet.balances')}
+        actions={
+          mayGift(me) &&
+          user.status !== 'purged' && (
+            <Button variant="outline" size="sm" onClick={() => setAdjusting(true)}>
+              <Wallet aria-hidden="true" />
+              {t('walletAdjust.new')}
+            </Button>
+          )
+        }
+      >
         {balances.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('wallet.noBalance')}</p>
         ) : (
@@ -300,7 +347,7 @@ export function WalletTab({ user }: { user: AdminUserDetail }) {
             <TableBody>
               {ledger.map((l) => (
                 <TableRow key={l.id}>
-                  <TableCell className="text-sm whitespace-nowrap text-muted-foreground">{formatDateTime(l.at, locale)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground sm:whitespace-nowrap">{formatDateTime(l.at, locale)}</TableCell>
                   <TableCell className="text-sm">{t(`walletItem.${l.item}` as MessageKey)}</TableCell>
                   <TableCell className={cn('text-sm tabular-nums', l.delta > 0 ? 'text-emerald-700 dark:text-emerald-300' : '')}>
                     <span dir="ltr">{l.delta > 0 ? `+${formatNumber(l.delta, locale)}` : formatNumber(l.delta, locale)}</span>
@@ -311,6 +358,11 @@ export function WalletTab({ user }: { user: AdminUserDetail }) {
                       <span>{t(`ledgerReason.${l.reason}` as MessageKey)}</span>
                       {l.admin && <bdi className="text-muted-foreground">{l.admin.displayName}</bdi>}
                     </span>
+                    {l.note && (
+                      <p dir="auto" className="mt-0.5 line-clamp-2 max-w-56 text-xs break-words text-muted-foreground" title={l.note}>
+                        {l.note}
+                      </p>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -319,6 +371,7 @@ export function WalletTab({ user }: { user: AdminUserDetail }) {
         )}
         <More show={pages.hasNextPage} busy={pages.isFetchingNextPage} onMore={() => void pages.fetchNextPage()} />
       </Panel>
+      {adjusting && <WalletAdjustDialog person={user} onClose={() => setAdjusting(false)} />}
     </div>
   );
 }

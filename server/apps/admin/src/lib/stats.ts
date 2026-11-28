@@ -328,12 +328,34 @@ export function subMicros(a: string, b: string): string {
   return (BigInt(a) - BigInt(b)).toString();
 }
 
-/** An amount in its currency in the panel's language (Persian digits in Persian); never converted. */
+/** A word currency ("ریال", a code), as against a symbol ($, €). */
+const WORD_CURRENCY = /\p{L}{2,}/u;
+
+/**
+ * An amount in its currency in the panel's language (Persian digits in
+ * Persian); never converted. Persian writes a currency named by a word
+ * after the amount («۱٬۹۹۰٬۰۰۰ ریال»), where Intl puts it first; a symbol
+ * keeps Intl's place. The amount is an isolate, so its sign stays with it
+ * in a right-to-left line.
+ */
 export function formatMoney(micros: string, currency: string, locale: Locale): string {
   try {
     const format = new Intl.NumberFormat(locale, { style: 'currency', currency });
     // A decimal string keeps every digit (Intl reads it exactly); rounding to the currency's own digits is Intl's.
-    return format.format(microsToUnits(micros) as `${number}`);
+    const value = microsToUnits(micros) as `${number}`;
+    if (locale === 'fa') {
+      const parts = format.formatToParts(value);
+      const unit = parts.find((part) => part.type === 'currency')?.value ?? '';
+      if (WORD_CURRENCY.test(unit)) {
+        const amount = parts
+          .filter((part) => part.type !== 'currency' && !(part.type === 'literal' && part.value.trim() === ''))
+          .map((part) => part.value)
+          .join('')
+          .replace(/[\u200e\u200f]/g, '');
+        return `\u2066${amount}\u2069 ${unit}`;
+      }
+    }
+    return format.format(value);
   } catch {
     return `${microsToUnits(micros)} ${currency}`;
   }

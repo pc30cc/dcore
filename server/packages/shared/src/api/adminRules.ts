@@ -186,6 +186,16 @@ export const auditActions = [
   // content
 
   // revenue
+  'purchase.search',
+  'purchase.recheck',
+  'purchase.cancel',
+  'purchase.refund',
+  'purchase.revoke',
+  'purchase.action_failed',
+  'grant.create',
+  'grant.revoke',
+  'wallet.gift',
+  'wallet.correct',
 
   // growth
 

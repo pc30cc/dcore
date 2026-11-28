@@ -1,6 +1,7 @@
 import {
   deferPurchaseCheck,
   entitlementRows,
+  grantTimesDue,
   overduePurchaseChecks,
   owedPurchaseActions,
   purchaseById,
@@ -23,6 +24,7 @@ import {
   revokeJobSchema,
   rtdnJobSchema,
   subEndJobSchema,
+  verifiedFromRow,
   ACK_DEADLINE_MS,
   FOLLOW_UP_ATTEMPTS,
   FOLLOW_UP_BACKOFF_MS,
@@ -47,7 +49,8 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   three days); each try waits without spending an attempt. Every failure,
  *   the database's included, goes through the same retry.
  * - `recheck` / `refund-check`: the store asked again, its answer applied
- *   (source `scheduled re-check`); a store that cannot be reached is asked
+ *   (source `scheduled re-check`; a `refunded` re-check applies an admin's
+ *   refund from the stored row, source admin); a store that cannot be reached is asked
  *   again the same way for up to a day after the check was due (a refund
  *   check's due time, not when it was queued a week before). A purchase the
  *   server ended itself (revoked, replaced) is not asked again; one the
@@ -62,7 +65,10 @@ import type { JobContext, QueueDefinition } from './types.js';
  *   notifications), live subscriptions whose expiry passed without a check,
  *   and acknowledgements and consumes still owed in the last 60 hours. A job
  *   of the same id that still waits is left alone; one that finished (given
- *   up, failed) is replaced. The re-checks are spread over the hour.
+ *   up, failed) is replaced. The re-checks are spread over the hour. Grant
+ *   starts and ends of the last two hours get their `sub-end` job again
+ *   when it is lost or failed (never one that completed): a later start is
+ *   applied by that job alone.
  *
  * The follow-up jobs carry BullMQ attempts too (a crash, a Valkey error), so
  * nothing ends on a single failure. A store without an integration in this
@@ -84,6 +90,8 @@ export const CHECKS_SPREAD_MS = 50 * 60_000;
 /** A re-check the sweep queued keeps trying for at least this long after it is due. */
 const CHECKS_RETRY_WINDOW_MS = 45 * 60_000;
 const CHECKS_PAGE = 500;
+/** The sweep: grant starts and ends this recent get their sub-end job again when it is missing (two runs see each). */
+export const CHECKS_GRANT_WINDOW_MS = 2 * HOUR;
 /** At most this many rows of each kind per run; the rest waits for the next hour. */
 const CHECKS_MAX = 5_000;
 
@@ -165,14 +173,17 @@ async function recheck(job: Job, context: JobContext, now: number): Promise<Outc
     const purchase = await purchaseById(services.pg, data.purchaseId);
     if (!purchase) return { outcome: 'missing' };
     if (SERVER_FINAL.has(purchase.state)) return { outcome: 'final', state: purchase.state };
-    const verifier = integrationOf(context, data.store);
-    const verified = await verifier.recheck(purchaseRefOf(purchase, data.store));
+    // An admin's refund the store made: its state from the stored row, as the admin's (no store call).
+    const refunded = scheduled?.refunded === true;
+    const verified = refunded
+      ? verifiedFromRow(purchase, 'revoked', Math.max(now, (purchase.lastEventMs ?? 0) + 1))
+      : await integrationOf(context, data.store).recheck(purchaseRefOf(purchase, data.store));
     const settings = await billingSettingsOf(services, context.redis, log).get();
     const applied = await purchaseCoreOf(context, settings).apply(verified, {
       store: data.store,
       token: purchase.token,
       callerId: null,
-      source: storeEventSource.code('recheck'),
+      source: storeEventSource.code(refunded ? 'admin' : 'recheck'),
       ownerHint: purchase.userId,
     });
     return { outcome: applied.outcome, ...('state' in applied ? { state: applied.state, changed: applied.changed } : {}) };
@@ -210,7 +221,7 @@ async function pages(read: (after: { atMs: number; id: string } | null) => Promi
 export async function checksJob(context: JobContext, now: number): Promise<Outcome> {
   const { services, redis, config, log } = context;
   if (!(await takeLease(redis, services.keys.jobLease('iap-checks'), HOUR - 60_000, config.workerId))) return { outcome: 'leased_elsewhere' };
-  const counts = { rechecks: 0, actions: 0, queued: 0, pending: 0, noIntegration: 0 };
+  const counts = { rechecks: 0, actions: 0, queued: 0, pending: 0, noIntegration: 0, grants: 0 };
   const storeOf = (row: DuePurchase): AppStore | null => {
     const name = storeCodes.nameOrUndefined(row.store);
     if (name !== 'play' && name !== 'bazaar') return null;
@@ -258,7 +269,27 @@ export async function checksJob(context: JobContext, now: number): Promise<Outco
     else await requeue('consume', iapJobIds.consume(row.id), data, 0);
     counts.actions += 1;
   }
-  if (counts.queued > 0) log.warn(counts, 'iap: the hourly sweep queued store jobs again that no job was waiting for');
+  // A grant's later start is applied only by its delayed sub-end job (and an end by its own): one lost with the queue
+  // is queued again by its deterministic id (a job that waits, runs or completed is left alone).
+  const grants = await grantTimesDue(services.pg, { fromMs: now - CHECKS_GRANT_WINDOW_MS, beforeMs: now, limit: CHECKS_MAX });
+  for (const g of grants) {
+    const out = await requeueJob(
+      redis,
+      config.queuePrefix,
+      {
+        queue: 'iap',
+        name: 'sub-end',
+        id: iapJobIds.subEnd(g.userId, 0, g.atMs),
+        data: { userId: g.userId, store: 0, atMs: g.atMs },
+        delayMs: Math.max(0, g.atMs - now),
+        attempts: FOLLOW_UP_ATTEMPTS,
+        backoffMs: FOLLOW_UP_BACKOFF_MS,
+      },
+      { rerunCompleted: false },
+    );
+    if (out === 'queued') counts.grants += 1;
+  }
+  if (counts.queued > 0 || counts.grants > 0) log.warn(counts, 'iap: the hourly sweep queued store jobs again that no job was waiting for');
   return { outcome: 'swept', ...counts };
 }
 

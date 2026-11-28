@@ -53,12 +53,19 @@ export async function queueJob<Q extends ActiveQueueName>(redis: Redis, prefix: 
  * A sweep's re-queue: nothing while a job of that id waits, is delayed or
  * runs; one that finished (kept by retention, so a plain add would be a
  * no-op) is removed first and added again, so a job that gave up or failed
- * for good runs once more.
+ * for good runs once more. With `rerunCompleted: false` a completed one is
+ * left alone too (its work is done; only a failed or lost one runs again).
  */
-export async function requeueJob<Q extends ActiveQueueName>(redis: Redis, prefix: string, job: LaterJob<Q>): Promise<'queued' | 'pending'> {
+export async function requeueJob<Q extends ActiveQueueName>(
+  redis: Redis,
+  prefix: string,
+  job: LaterJob<Q>,
+  options: { rerunCompleted?: boolean } = {},
+): Promise<'queued' | 'pending'> {
   const existing = await queueOf(redis, prefix, job.queue).getJob(job.id);
   if (existing) {
     const state = await existing.getState();
+    if (state === 'completed' && options.rerunCompleted === false) return 'pending';
     if (state !== 'completed' && state !== 'failed' && state !== 'unknown') return 'pending';
     if (state !== 'unknown') await existing.remove();
   }
