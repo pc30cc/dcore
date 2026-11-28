@@ -3,10 +3,12 @@ import { csvText } from '../src/lib/csv';
 import { factsOf } from '../src/lib/format';
 import {
   addMicros,
+  axisTicks,
   bucketDays,
   cohortLines,
   cohortTable,
   csvName,
+  formatCount,
   formatDayCount,
   formatMoney,
   formatPercent,
@@ -14,6 +16,9 @@ import {
   formatSpan,
   formatStatsDay,
   formatStatsSpan,
+  formatShareTick,
+  formatUnitsShort,
+  formatUnitsTick,
   mergeLines,
   microsToUnits,
   monthlyChurn,
@@ -190,6 +195,60 @@ describe('words', () => {
     expect(niceTicks(9)).toEqual([0, 2.5, 5, 7.5, 10]);
     expect(niceTicks(1873)).toEqual([0, 500, 1000, 1500, 2000]);
     expect(niceTicks(0)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+  });
+
+  it('give a count axis whole steps only, each label once', () => {
+    const count = (value: number) => formatCount(value, 'en');
+    // The fractional steps a top of 1 had: their labels read 0, 0, 1, 1, 1.
+    expect(niceTicks(1).map(count)).toEqual(['0', '0', '1', '1', '1']);
+    expect(niceTicks(1, true)).toEqual([0, 1]);
+    expect(niceTicks(0, true)).toEqual([0, 1]);
+    expect(niceTicks(0.4, true)).toEqual([0, 1]);
+    expect(niceTicks(2, true)).toEqual([0, 1, 2]);
+    expect(niceTicks(3, true)).toEqual([0, 1, 2, 3]);
+    expect(niceTicks(4, true)).toEqual([0, 1, 2, 3, 4]);
+    expect(niceTicks(7, true)).toEqual([0, 2, 4, 6, 8]);
+    // No step of 2.5: 9 reads 0, 5, 10 (not 0, 2.5, 5, 7.5, 10).
+    expect(niceTicks(9, true)).toEqual([0, 5, 10]);
+    expect(niceTicks(100, true)).toEqual([0, 25, 50, 75, 100]);
+    expect(niceTicks(1873, true)).toEqual([0, 500, 1000, 1500, 2000]);
+    expect(niceTicks(48_000, true)).toEqual([0, 20_000, 40_000, 60_000]);
+    for (let max = 0; max <= 5000; max += 1) {
+      const ticks = niceTicks(max, true);
+      expect(ticks.every((tick) => Number.isInteger(tick)), `${max}`).toBe(true);
+      expect(ticks.length, `${max}`).toBeGreaterThanOrEqual(2);
+      expect(ticks.length, `${max}`).toBeLessThanOrEqual(5);
+      expect(ticks.at(-1)!, `${max}`).toBeGreaterThanOrEqual(max);
+      for (const locale of ['en', 'fa', 'tr'] as const) {
+        const texts = ticks.map((tick) => formatCount(tick, locale));
+        expect(new Set(texts).size, `${locale} ${max}: ${texts.join(' ')}`).toBe(texts.length);
+      }
+    }
+    expect(axisTicks(1, count, true)).toEqual({ ticks: [0, 1], texts: ['0', '1'] });
+    expect(axisTicks(3, (value) => formatCount(value, 'fa'), true).texts).toEqual(['۰', '۱', '۲', '۳']);
+  });
+
+  it('keep fractional steps for money and shares, each label as exact as its tick', () => {
+    const usd = (value: number) => formatUnitsTick(value, 'USD', 'en');
+    expect(axisTicks(9, usd)).toEqual({ ticks: [0, 2.5, 5, 7.5, 10], texts: ['$0', '$2.5', '$5', '$7.5', '$10'] });
+    expect(axisTicks(1.75, usd)).toEqual({ ticks: [0, 0.5, 1, 1.5, 2], texts: ['$0', '$0.5', '$1', '$1.5', '$2'] });
+    // The readout's short amount rounds 0.25 to "$0.3"; the axis keeps the tick's digits.
+    expect(formatUnitsShort(0.25, 'USD', 'en')).toBe('$0.3');
+    expect(axisTicks(1, usd).texts).toEqual(['$0', '$0.25', '$0.5', '$0.75', '$1']);
+    expect(axisTicks(41_000, usd).texts).toEqual(['$0', '$20K', '$40K', '$60K', '$80K']);
+    expect(axisTicks(0.0004, (value) => formatShareTick(value, 'en')).texts).toEqual(['0%', '0.01%', '0.02%', '0.03%', '0.04%']);
+    expect(axisTicks(0.009, (value) => formatShareTick(value, 'fa')).texts).toEqual(['۰٪', '۰٫۲۵٪', '۰٫۵٪', '۰٫۷۵٪', '۱٪']);
+  });
+
+  it('thin an axis whose formatter would show a label twice: every other tick, then the ends', () => {
+    // A failure rate of 0.2 % at one place: steps of 0.05 % read 0.1 % and 0.2 % twice.
+    const share = (value: number) => formatPercent(value, 'en');
+    expect(niceTicks(0.002).map(share)).toEqual(['0%', '0.1%', '0.1%', '0.2%', '0.2%']);
+    expect(axisTicks(0.002, share).texts).toEqual(['0%', '0.1%', '0.2%']);
+    expect(axisTicks(0.002, share).ticks.at(-1)).toBeCloseTo(0.002, 12);
+    const tenths = (value: number) => new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(value);
+    // 0, 0.0025, 0.005, 0.0075, 0.01 at one place: 0, 0, 0, 0, 0 → the ends 0 and 0 (the top kept for the scale).
+    expect(axisTicks(0.01, tenths).ticks).toEqual([0, 0.01]);
   });
 });
 

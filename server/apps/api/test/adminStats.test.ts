@@ -10,10 +10,10 @@ import {
   statsAddDays,
   statsDay,
 } from '@app/shared';
-import { callKeys, utcDay } from '@app/shared/server';
+import { STATS_TEST_IDS_NONE, callKeys, utcDay } from '@app/shared/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { weightedMedian } from '../src/routes/adminStats.js';
-import { migratedDatabase, row, statements, type TestDatabase } from './accountSupport.js';
+import { migratedDatabase, row, seedUser, statements, type TestDatabase } from './accountSupport.js';
 import { admin, adminAs, startAdminHarness, type AdminHarness, type AdminSession } from './adminSupport.js';
 import { hasInfrastructure } from './support.js';
 
@@ -21,7 +21,8 @@ import { hasInfrastructure } from './support.js';
  * The dashboard and statistics routes: the live read costs no statement
  * (the worker's snapshot, the day counters, live calls and the heartbeat
  * from Valkey; a stale snapshot or a stopped worker shows none; test accounts
- * left out of today's active people at once) and every chart read one (W7
+ * left out of today's active people at once, a flip of the flag too) and
+ * every chart read one (W7
  * AC4); money only with dashboard.revenue; ranges checked (no day before
  * 2020); daily series with 0 for a rolled-up day without a row; retention,
  * funnel, places (withheld cells null, Other's too), revenue (one currency,
@@ -215,6 +216,29 @@ describe.skipIf(!hasInfrastructure)('admin: dashboard and statistics', () => {
       expect(adminStatsLiveSchema.parse((await get(superAdmin, '/v1/admin/stats/live')).json()).activeToday).toBe(3);
     } finally {
       await h.redis.srem(k.activeDay(day), '14', '15');
+      await h.redis.del(k.statsTestIds());
+    }
+  });
+
+  it('follows a flip of the test flag at once: the person leaves today’s active people and comes back', async () => {
+    const k = h.app.keys;
+    const day = utcDay(now);
+    const person = await seedUser(h, { name: 'Flip Person' });
+    // As stats/live keeps the set with no test account.
+    await h.redis.sadd(k.statsTestIds(), STATS_TEST_IDS_NONE);
+    await h.redis.sadd(k.activeDay(day), person.id);
+    const flipTo = (test: boolean) => admin(h, `/v1/admin/users/${person.publicUid}/test-account`, { test }, { token: superAdmin.accessToken, method: 'POST' });
+    const activeToday = async () => adminStatsLiveSchema.parse((await get(superAdmin, '/v1/admin/stats/live')).json()).activeToday;
+    try {
+      const before = await activeToday();
+      expect((await flipTo(true)).statusCode).toBe(200);
+      expect(await activeToday()).toBe(before - 1);
+      expect((await flipTo(false)).statusCode).toBe(200);
+      // The set outlives its last test account, so the read never falls back to the snapshot's older count.
+      expect(await h.redis.smembers(k.statsTestIds())).toEqual([STATS_TEST_IDS_NONE]);
+      expect(await activeToday()).toBe(before);
+    } finally {
+      await h.redis.srem(k.activeDay(day), person.id);
       await h.redis.del(k.statsTestIds());
     }
   });

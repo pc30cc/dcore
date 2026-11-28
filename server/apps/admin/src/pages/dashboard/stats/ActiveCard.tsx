@@ -39,6 +39,7 @@ export function ActiveCard({ range, className }: { range: StatsRange; className?
         series={series}
         label={t('stats.chart.label', { title, from: formatStatsDay(range.from, locale), to: formatStatsDay(range.to, locale) })}
         formatValue={(value) => formatCount(value, locale)}
+        whole
       />
     </StatsCard>
   );

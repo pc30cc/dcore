@@ -66,6 +66,7 @@ export function ModerationCard({ range, className }: { range: StatsRange; classN
         series={[{ key: 'decisions', label: t('stats.moderation.col.decisions'), slot: 1, values: days.map((day) => byDay.get(day) ?? null) }]}
         label={t('stats.chart.label', { title, from: formatStatsDay(range.from, locale), to: formatStatsDay(range.to, locale) })}
         formatValue={(value) => formatCount(value, locale)}
+        whole
         height={140}
       />
       <div className="overflow-x-auto rounded-lg border">

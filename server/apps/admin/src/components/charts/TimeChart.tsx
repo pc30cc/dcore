@@ -1,6 +1,6 @@
 import { useId, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { useI18n } from '@/i18n/useI18n';
-import { bucketDays, formatDayCount, formatStatsDay, formatStatsSpan, niceTicks } from '@/lib/stats';
+import { axisTicks, bucketDays, formatDayCount, formatStatsDay, formatStatsSpan } from '@/lib/stats';
 import { cn } from '@/lib/utils';
 import { slotColor, type ChartSlot } from './slots';
 import { useWidth } from './useWidth';
@@ -85,7 +85,9 @@ export function TimeChart({
   label,
   bars = false,
   formatValue,
+  formatTick = formatValue,
   weeks = false,
+  whole = false,
   height = 200,
   className,
 }: {
@@ -96,8 +98,12 @@ export function TimeChart({
   /** Columns instead of lines. */
   bars?: boolean;
   formatValue: (value: number) => string;
+  /** An axis label (default: as a value). */
+  formatTick?: (value: number) => string;
   /** Columns of values that add up (counts, money): their days may be summed into weeks. */
   weeks?: boolean;
+  /** Counts: the axis steps by whole numbers. */
+  whole?: boolean;
   height?: number;
   className?: string | undefined;
 }) {
@@ -121,9 +127,8 @@ export function TimeChart({
   };
 
   const known = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  const ticks = niceTicks(Math.max(0, ...known));
+  const { ticks, texts: tickTexts } = axisTicks(Math.max(0, ...known), formatTick, whole);
   const top = Math.max(1e-9, ticks.at(-1) ?? 1);
-  const tickTexts = ticks.map(formatValue);
   const start = Math.max(28, Math.max(...tickTexts.map((text) => text.length)) * 6.5 + 10);
   const end = mark === 'line' ? 8 : 2;
   const plotW = Math.max(40, width - start - end);

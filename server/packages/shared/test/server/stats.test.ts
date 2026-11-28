@@ -10,7 +10,10 @@ import {
   SmsRouter,
   SmsRoutingError,
   STATS_COUNTER_TTL_SECONDS,
+  STATS_TEST_IDS_NONE,
+  STATS_TEST_IDS_TTL_SECONDS,
   TestAccounts,
+  announceTestAccount,
   WATERMARK_MARGIN_MS,
   bucketActive,
   centrifugoOnlineUsers,
@@ -72,6 +75,7 @@ describe('TestAccounts', () => {
         return ['7', '8'];
       },
       maxAgeMs: 1_000,
+      checkMs: 500,
       now: () => now,
       onError: (e) => errors.push(e),
     });
@@ -87,6 +91,114 @@ describe('TestAccounts', () => {
     expect(calls).toBe(before + 1);
     expect(errors).toHaveLength(1);
     expect(set.has('8')).toBe(true);
+    // A failed reload is tried again only after checkMs.
+    expect(await set.ids()).toEqual(['7', '8']);
+    expect(calls).toBe(before + 1);
+    now = 2_500;
+    fail = false;
+    await set.ids();
+    expect(calls).toBe(before + 2);
+  });
+
+  it('reloads when the version moved, looking at it at most every checkMs; an unreadable version keeps the set', async () => {
+    let now = 0;
+    let version: string | null = null;
+    let versionFails = false;
+    let reads = 0;
+    let ids = ['7'];
+    let loads = 0;
+    const set = new TestAccounts({
+      load: async () => {
+        loads += 1;
+        return ids;
+      },
+      version: async () => {
+        reads += 1;
+        if (versionFails) throw new Error('valkey down');
+        return version;
+      },
+      checkMs: 1_000,
+      now: () => now,
+    });
+    expect(await set.ids()).toEqual(['7']);
+    expect(set.version).toBeNull();
+    expect([reads, loads]).toEqual([1, 1]);
+    // Within checkMs nothing is read; after it, one GET and no reload while the version stands.
+    now = 500;
+    await set.ids();
+    expect([reads, loads]).toEqual([1, 1]);
+    now = 1_000;
+    await set.ids();
+    expect([reads, loads]).toEqual([2, 1]);
+    // A flip: the next look reloads.
+    ids = ['7', '9'];
+    version = '1';
+    expect(set.has('9')).toBe(false);
+    now = 2_000;
+    expect(await set.ids()).toEqual(['7', '9']);
+    expect(set.has('9')).toBe(true);
+    expect(set.version).toBe('1');
+    expect([reads, loads]).toEqual([3, 2]);
+    // Valkey down: the set stays and the database is not read.
+    versionFails = true;
+    now = 3_000;
+    expect(await set.ids()).toEqual(['7', '9']);
+    expect([reads, loads]).toEqual([4, 2]);
+    // has() starts the look itself when one is due.
+    versionFails = false;
+    version = '2';
+    ids = ['9'];
+    now = 4_000;
+    expect(set.has('7')).toBe(true);
+    for (let i = 0; i < 20 && set.has('7'); i += 1) await new Promise((r) => setTimeout(r, 1));
+    expect(set.has('7')).toBe(false);
+    expect([reads, loads]).toEqual([5, 3]);
+  });
+
+  it('a reload with the version unreadable keeps the value read last; with none read the version stays unknown', async () => {
+    let now = 0;
+    let version: string | null = 'a1';
+    let versionFails = false;
+    let loads = 0;
+    const set = new TestAccounts({
+      load: async () => {
+        loads += 1;
+        return ['7'];
+      },
+      version: async () => {
+        if (versionFails) throw new Error('valkey down');
+        return version;
+      },
+      maxAgeMs: 10_000,
+      checkMs: 1_000,
+      now: () => now,
+    });
+    expect(set.followsFlips).toBe(true);
+    await set.ids();
+    expect(set.version).toBe('a1');
+    // Stale and Valkey down: reloaded, still under the value read before (a later flip can never match it).
+    versionFails = true;
+    now = 10_000;
+    await set.ids();
+    expect(loads).toBe(2);
+    expect(set.version).toBe('a1');
+    // Readable again and moved meanwhile: reloaded.
+    versionFails = false;
+    version = 'b2';
+    now = 11_000;
+    await set.ids();
+    expect([loads, set.version]).toEqual([3, 'b2']);
+
+    const first = new TestAccounts({
+      load: async () => ['7'],
+      version: async () => {
+        throw new Error('valkey down');
+      },
+    });
+    await first.ids();
+    expect(first.loaded).toBe(true);
+    expect(first.version).toBeUndefined();
+    expect(new TestAccounts({ load: async () => [] }).followsFlips).toBe(false);
   });
 });
 
@@ -201,6 +313,59 @@ describe.skipIf(!hasRedis)('day counters and stream health (Valkey)', () => {
   afterAll(async () => {
     await dropPrefix(redis, prefix);
     await redis.quit();
+  });
+
+  it('moves stats:testids and stats:testv at once on a flip; the set outlives its last test account', async () => {
+    const ids = keys.statsTestIds();
+    const versions: (string | null)[] = [];
+    await announceTestAccount(redis, keys, '41', true);
+    versions.push(await redis.get(keys.statsTestVersion()));
+    expect((await redis.smembers(ids)).sort()).toEqual(['41', STATS_TEST_IDS_NONE].sort());
+    expect(await redis.ttl(ids)).toBeGreaterThan(STATS_TEST_IDS_TTL_SECONDS - 10);
+    await redis.expire(ids, 100);
+    await announceTestAccount(redis, keys, '42', true);
+    versions.push(await redis.get(keys.statsTestVersion()));
+    // An existing set keeps its life (stats/live renews it).
+    expect(await redis.ttl(ids)).toBeLessThanOrEqual(100);
+    await announceTestAccount(redis, keys, '41', false);
+    versions.push(await redis.get(keys.statsTestVersion()));
+    await announceTestAccount(redis, keys, '42', false);
+    versions.push(await redis.get(keys.statsTestVersion()));
+    expect(await redis.smembers(ids)).toEqual([STATS_TEST_IDS_NONE]);
+    // A new value on every flip, never one written before.
+    for (const version of versions) expect(version).toMatch(/^[0-9a-f]{16}$/);
+    expect(new Set(versions).size).toBe(4);
+    // Taking someone out of a set that is not there makes none.
+    await redis.del(ids);
+    await announceTestAccount(redis, keys, '41', false);
+    expect(await redis.exists(ids)).toBe(0);
+  });
+
+  it('a flip after stats:testv was lost never repeats the value a set loaded under: the set reloads', async () => {
+    const version = keys.statsTestVersion();
+    await redis.del(version);
+    let loads = 0;
+    let now = 0;
+    const set = new TestAccounts({
+      load: async () => {
+        loads += 1;
+        return [];
+      },
+      version: () => redis.get(version),
+      checkMs: 1_000,
+      now: () => now,
+    });
+    await announceTestAccount(redis, keys, '43', true);
+    await set.ids();
+    const loadedUnder = set.version;
+    // The key is lost (FLUSHALL, an older copy restored), then as many flips as before it: a counter would read the same value again.
+    await redis.del(version);
+    await announceTestAccount(redis, keys, '43', false);
+    now = 1_000;
+    await set.ids();
+    expect(set.version).not.toBe(loadedUnder);
+    expect(loads).toBe(2);
+    await redis.del(keys.statsTestIds());
   });
 
   it('adds counts to today’s counters with a 45-day life, per day for writers whose entries span midnight', async () => {

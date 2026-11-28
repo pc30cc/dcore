@@ -203,11 +203,20 @@ describe.skipIf(!hasInfrastructure)('admin: actions on people', () => {
       expect(await h.app.cache.exists(h.app.keys.deckQueue(u.id))).toBe(0);
       expect(await h.redis.zscore(h.app.keys.accountsHidden(), u.id)).not.toBeNull();
       expect((await row<{ flags: number }>(db, `SELECT flags FROM users WHERE id = $1`, [u.id])).flags).toBe(1);
+      // The dashboard's figures follow at once: today's active people and the worker's set (stats:testv moved).
+      expect(await h.redis.sismember(h.app.keys.statsTestIds(), u.id)).toBe(1);
+      const versions = [await h.redis.get(h.app.keys.statsTestVersion())];
       const again = await send('POST', `/v1/admin/users/${u.publicUid}/test-account`, { test: true }, 'superadmin');
       expect(statements(again)).toBe(1);
       expect(await auditRows(db, { action: 'user.test_account', targetId: u.id })).toHaveLength(1);
+      versions.push(await h.redis.get(h.app.keys.statsTestVersion()));
       const back = await send('POST', `/v1/admin/users/${u.publicUid}/test-account`, { test: false }, 'superadmin');
       expect(adminUserChangeSchema.parse(back.json()).user.test).toBe(false);
+      expect(await h.redis.sismember(h.app.keys.statsTestIds(), u.id)).toBe(0);
+      versions.push(await h.redis.get(h.app.keys.statsTestVersion()));
+      // A new value per click (the repeated one repairs), never a repeat.
+      for (const version of versions) expect(version).toMatch(/^[0-9a-f]{16}$/);
+      expect(new Set(versions).size).toBe(3);
     });
 
     it('rolls back with a refused audit row, and answers 404 for no one', async () => {

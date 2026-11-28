@@ -1,12 +1,13 @@
 import { expandGrants, providerHealthNames, signupStageKeys } from '@app/shared';
-import { screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Table, TableBody, TableCell, TableRow } from '../src/components/ui/table';
 import { hasMessage } from '../src/i18n/translate';
 import { messages } from '../src/i18n/messages';
 import { saveBlob } from '../src/lib/download';
 import { adminWith, fakeApi, owner, problem, renderPanel, resetPanel, signInAs } from './panel';
-import { LAST_DAY, NOW, revenue, statsHandlers } from './statsFixtures';
+import { LAST_DAY, NOW, revenue, series, statsHandlers } from './statsFixtures';
 
 /**
  * `/stats`: closed UTC days to yesterday, the range in the address; every
@@ -38,6 +39,17 @@ function columnBox(path: Element) {
   if (!match) throw new Error(`not a column: ${path.getAttribute('d')}`);
   const [x0, bottom, top, x1] = match.slice(1).map(Number) as [number, number, number, number];
   return { x0, width: x1 - x0, height: bottom - top, opacity: path.getAttribute('fill-opacity') };
+}
+
+/** A chart's axis labels, bottom to top, without their direction isolates. */
+const axisLabels = (chart: Element) => [...chart.querySelectorAll('svg text.tabular-nums')].map((text) => (text.textContent ?? '').replace(/[\u2066-\u2069]/g, ''));
+
+/** The nearest box around `element` that scrolls (an overflow class): where a sticky header sticks. */
+function scrollBoxOf(element: Element): HTMLElement {
+  let at = element.parentElement;
+  while (at && !/(^|\s)overflow-(auto|scroll|hidden|x-auto|y-auto)(\s|$)/.test(at.className)) at = at.parentElement;
+  if (!at) throw new Error('no box scrolls');
+  return at;
 }
 
 /** The card whose title is `title`, once its reads have answered. */
@@ -268,6 +280,75 @@ describe('the statistics page', () => {
     await userEvent.setup().keyboard('{End}');
     const spoken = active.parentElement!.querySelector('[aria-live="polite"]') ?? active.querySelector('[aria-live="polite"]');
     expect(spoken?.textContent).toContain(messages.fa['stats.metric.dau']);
+  });
+
+  it('steps a count axis by whole numbers: a top of 1 reads 0 and 1, never a label twice', async () => {
+    renderPanel('/stats?days=7', statsApi({ 'GET /v1/admin/stats/daily': (call) => series(call, { dau: (i) => i % 2, wau: () => 1, mau: () => 1 }) }));
+    const active = await card('Active people');
+    expect(axisLabels(within(active).getByRole('img'))).toEqual(['0', '1']);
+  });
+
+  it('steps a count axis of up to 3 by one, in the panel’s digits', async () => {
+    renderPanel('/stats?days=7', statsApi({ 'GET /v1/admin/stats/daily': (call) => series(call, { dau: (i) => i % 4, wau: () => 3, mau: () => 3 }) }), { locale: 'fa' });
+    const active = await card(messages.fa['stats.active.title']);
+    expect(axisLabels(within(active).getByRole('img'))).toEqual(['۰', '۱', '۲', '۳']);
+    // The moderators' decisions and the subscriptions are counts too: whole steps, each label once.
+    for (const title of [messages.fa['stats.moderation.title'], messages.fa['stats.revenue.title']]) {
+      for (const chart of within(await card(title)).getAllByRole('img')) {
+        const labels = axisLabels(chart);
+        expect(new Set(labels).size, labels.join(' ')).toBe(labels.length);
+      }
+    }
+  });
+
+  it('keeps a money axis’s fractional steps, each label as exact as its tick', async () => {
+    // A quarter dollar a day, summed into weeks on the narrow chart: 1.75 at most, steps of 0.5.
+    const quarters = (call: Parameters<typeof revenue>[0]) => {
+      const answer = revenue({ ...call, query: { ...call.query, currency: 'USD' } });
+      return { ...answer, days: answer.days.map((d) => ({ ...d, grossMicros: '250000', refundMicros: '0', refunds: 0 })) };
+    };
+    renderPanel('/stats', statsApi({ 'GET /v1/admin/stats/revenue': quarters }));
+    const chart = within(await card('Revenue')).getAllByRole('img')[0]!;
+    expect(axisLabels(chart)).toEqual(['$0', '$0.5', '$1', '$1.5', '$2']);
+  });
+
+  it('keeps a table’s header in view while its box scrolls: the box with the capped height is the one that scrolls', async () => {
+    renderPanel('/stats?days=90', statsApi());
+    const active = await card('Active people');
+    await userEvent.setup().click(within(active).getByRole('button', { name: 'Show table' }));
+    const tables = [
+      within(active).getByRole('table', { name: 'Active people' }),
+      ...within(await card('Revenue')).getAllByRole('table'),
+      within(await card('Retention by sign-up day')).getByRole('table'),
+      within(await card('Paying sign-ups')).getByRole('table'),
+    ];
+    expect(tables.length).toBeGreaterThanOrEqual(6);
+    for (const table of tables) {
+      const head = table.querySelector('thead')!;
+      expect(head.className).toMatch(/(^|\s)sticky(\s|$)/);
+      expect(head.className).toMatch(/(^|\s)top-0(\s|$)/);
+      // The header sticks to the nearest box that scrolls: it must be the capped one, right around the table.
+      const box = scrollBoxOf(head);
+      expect(box).toBe(table.parentElement);
+      expect(box.className).toMatch(/(^|\s)max-h-/);
+      expect(box.className).toMatch(/(^|\s)overflow-auto(\s|$)/);
+      expect(box.className).not.toMatch(/overflow-x-auto/);
+      // The line under the header is the cells' own (a collapsed border would scroll away).
+      expect(head.className).toContain('[&_th]:shadow-');
+    }
+  });
+
+  it('leaves every other table in its sideways-scrolling box', () => {
+    const { container } = render(
+      <Table>
+        <TableBody>
+          <TableRow>
+            <TableCell>1</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>,
+    );
+    expect(container.querySelector('[data-slot="table-container"]')!.className).toBe('relative w-full overflow-x-auto');
   });
 
   it('sums a narrow chart’s days into whole weeks back from the last day: the newest column is never a stub', async () => {

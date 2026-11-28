@@ -12,7 +12,7 @@ import {
   type SignInIdentity,
 } from '@app/db';
 import { accountStatus, revokeReason, wireTime, type AuthResult, type ErrorCode, type TokenPair } from '@app/shared';
-import { IdGeneratorUnavailableError, hashDomains, type KeyedHash } from '@app/shared/server';
+import { IdGeneratorUnavailableError, announceTestAccount, hashDomains, type KeyedHash } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { HttpProblem } from '../lib/problem.js';
 import { endRealtime } from '../realtime/end.js';
@@ -236,6 +236,10 @@ export async function signIn(app: FastifyInstance, request: FastifyRequest, subj
   // The sign-in wrote the device row (version, locale, enabled again): the next device report must reach the database.
   const deviceId = created.deviceId;
   await app.redis.del(app.keys.device(deviceId)).catch((error: unknown) => request.log.warn({ err: error }, 'device: fingerprint not cleared'));
+  // A review account made just now: the dashboard's figures leave it out at once.
+  if (isNew && subject.testAccount) {
+    await announceTestAccount(app.redis, app.keys, identity.userId, true).catch((error: unknown) => request.log.warn({ err: error }, 'test account: not announced'));
+  }
 
   const scope = scopeOf(identity.state.status);
   if (scope === null) throw new HttpProblem('internal');

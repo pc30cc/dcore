@@ -15,7 +15,8 @@ import { createTempDatabase, hasDatabase, requireSetup, type TempDatabase } from
  * country minus its cities, nor Other minus ZZ, counts 1 to 4 people), the
  * statistics that keep the test-account filter hashed, moderator decisions,
  * conversion, the live counts, the grants, discovery_sync's sign-up-day
- * fallback and the one-time backfill of users.last_active_on.
+ * fallback and the one-time backfill of users.last_active_on. Migration
+ * 0037: a match or a call is out when either side is a test account.
  */
 
 const MIGRATIONS = fileURLToPath(new URL('../migrations', import.meta.url));
@@ -503,7 +504,8 @@ describe.skipIf(!hasDatabase)('migration 0035: statistics', () => {
     expect(rowCount).toBe(1);
     const plan = async () => {
       const { rows } = await client.query<{ 'QUERY PLAN': string }>(
-        `EXPLAIN SELECT count(*) FROM matches m WHERE m.id >= 0 AND m.user_lo NOT IN (SELECT t.id FROM users t WHERE (t.flags & 1) <> 0)`,
+        `EXPLAIN SELECT count(*) FROM matches m WHERE m.id >= 0 AND m.user_lo NOT IN (SELECT t.id FROM users t WHERE (t.flags & 1) <> 0)
+                                                               AND m.user_hi NOT IN (SELECT t.id FROM users t WHERE (t.flags & 1) <> 0)`,
       );
       return rows.map((r) => r['QUERY PLAN']).join('\n');
     };
@@ -518,7 +520,8 @@ describe.skipIf(!hasDatabase)('migration 0035: statistics', () => {
       await client.query(`SET LOCAL hash_mem_multiplier = 1`);
       await client.query('ANALYZE users');
       const kept = await plan();
-      expect(kept).toMatch(/hashed SubPlan/);
+      // Both sides of a pair (0037), each its own hashed SubPlan.
+      expect(kept.match(/hashed SubPlan/g)).toHaveLength(2);
       // Without the statistics the same filter runs once per outer row: the reason they exist.
       await client.query('DROP STATISTICS users_test_flag_stats');
       await client.query('ANALYZE users');
@@ -593,6 +596,55 @@ describe.skipIf(!hasDatabase)('migration 0035: statistics', () => {
     expect(live).toMatchObject({ day: dayBack(0), signups: 2, photos: 2, reportsOpen: 2, reportsUrgent: 2, reports: 1, tickets: 1, revenue: [] });
     const roomy = await json<Record<string, unknown>>(client, `SELECT stats_live(10000) AS v`);
     expect(roomy).toMatchObject({ photos: 2, tickets: 1 });
+  });
+
+  it('leaves out a match or a call when either side is a test account, live and in the rollup (0037)', async (ctx) => {
+    if (!ready) ctx.skip();
+    const old = `${plusDays(D, -10)}T08:00:00Z`;
+    // Ids grow with the counter: the ordinary person is each pair's user_lo and the caller, the test account user_hi
+    // and the callee (a pair only a flip of the flag can make).
+    const [a, b, c, d] = [await user(f, old), await user(f, old), await user(f, old), await user(f, old)];
+    const [t, u] = [await user(f, old, { flags: 1 }), await user(f, old, { flags: 1 })];
+    const day = dayBack(3);
+    const match = async (x: string, y: string, time: string) => {
+      const id = await idAt(f, time);
+      await client.query(`INSERT INTO matches (id, user_lo, user_hi, source) VALUES ($1, $2, $3, 1)`, [id, x, y]);
+      return id;
+    };
+    const missedCall = async (matchId: string, caller: string, callee: string, time: string) => {
+      await client.query(
+        `INSERT INTO calls (id, match_id, caller_id, callee_id, ended_at, duration_s, kind, outcome, ended_by, end_reason)
+         VALUES ($1, $2, $3, $4, $5::timestamptz + interval '30 seconds', 0, 1, 4, 3, 4)`,
+        [await idAt(f, time), matchId, caller, callee, time],
+      );
+    };
+    const live = () => json<Record<string, number>>(client, `SELECT stats_live(10000) AS v`);
+    const social = async () => {
+      await client.query(`SELECT stats_rollup_social($1::date)`, [day]);
+      const sums: Record<string, number> = { matches: 0, conversations: 0, calls: 0 };
+      for (const [key, value] of Object.entries(await rowsOf(client, Object.keys(sums), day))) sums[key.split('|')[0]!]! += value;
+      return sums;
+    };
+    const liveBefore = await live();
+    const socialBefore = await social();
+
+    const now = new Date().toISOString();
+    for (const other of [t, b]) await missedCall(await match(a, other, now), a, other, now);
+    for (const other of [u, d]) {
+      const id = await match(c, other, `${day}T09:00:00Z`);
+      await client.query(`INSERT INTO messages (match_id, id, sender_id, kind, body) VALUES ($1, $2, $3, 1, 'x')`, [id, await idAt(f, `${day}T09:05:00Z`), c]);
+      await missedCall(id, c, other, `${day}T10:00:00Z`);
+    }
+
+    // Only the pair of two ordinary people counts.
+    const liveAfter = await live();
+    expect([liveAfter.matches! - liveBefore.matches!, liveAfter.calls! - liveBefore.calls!]).toEqual([1, 1]);
+    const socialAfter = await social();
+    expect({
+      matches: socialAfter.matches! - socialBefore.matches!,
+      conversations: socialAfter.conversations! - socialBefore.conversations!,
+      calls: socialAfter.calls! - socialBefore.calls!,
+    }).toEqual({ matches: 1, conversations: 1, calls: 1 });
   });
 
   it('upserts rows, writing only changed values; converts store periods to months', async (ctx) => {

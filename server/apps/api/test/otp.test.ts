@@ -281,6 +281,9 @@ describe.skipIf(!hasInfrastructure)('OTP sign-in (PostgreSQL and Valkey)', () =>
     expect(verify.statusCode).toBe(200);
     const userId = h.app.publicIds.user.decodeId(verify.json<{ user: { id: string } }>().user.id);
     expect((await row<{ flags: number }>(db, 'SELECT flags FROM users WHERE id = $1', [userId])).flags).toBe(1);
+    // The dashboard leaves the new review account out at once (stats:testids, and stats:testv for the worker).
+    expect(await h.app.redis.sismember(h.app.keys.statsTestIds(), String(userId))).toBe(1);
+    expect(await h.app.redis.get(h.app.keys.statsTestVersion())).toMatch(/^[0-9a-f]{16}$/);
   });
 
   it('locks a review number for the day after its daily wrong codes, however many challenges were started', async () => {

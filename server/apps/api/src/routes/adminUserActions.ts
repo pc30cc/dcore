@@ -35,7 +35,7 @@ import {
   type ModerationReason,
   type AuditAction,
 } from '@app/shared';
-import { dropConversationVisibility, markHiddenFromDecks, recheckConversationLists } from '@app/shared/server';
+import { announceTestAccount, dropConversationVisibility, markHiddenFromDecks, recheckConversationLists } from '@app/shared/server';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -161,6 +161,8 @@ export const adminUserActionRoutes: FastifyPluginAsyncZod = async (app) => {
           'test account',
           async () => {
             await accountChanged(app, userId);
+            // The dashboard's figures follow at once (stats:testids, and stats:testv for the worker's set).
+            await announceTestAccount(app.redis, app.keys, userId, test);
             // A test account sees and is seen by test accounts only: out of every prepared deck, its own deck built again.
             if (test) await markHiddenFromDecks(app.redis, app.keys, [userId], Date.now());
             await app.cache.del(app.keys.deckQueue(userId), app.keys.deckMeta(userId));

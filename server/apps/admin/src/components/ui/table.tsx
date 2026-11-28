@@ -1,9 +1,15 @@
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
-export function Table({ className, ...props }: ComponentProps<'table'>) {
+/**
+ * A table in its own box, which scrolls it sideways when it is wider.
+ * `containerClassName` styles that box: a capped height there (with
+ * `overflow-auto`) makes it the one box that scrolls both ways, so a
+ * `sticky` header stays at its top.
+ */
+export function Table({ className, containerClassName, ...props }: ComponentProps<'table'> & { containerClassName?: string | undefined }) {
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div data-slot="table-container" className={cn('relative w-full overflow-x-auto', containerClassName)}>
       <table data-slot="table" className={cn('w-full caption-bottom text-sm', className)} {...props} />
     </div>
   );

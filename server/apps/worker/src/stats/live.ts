@@ -2,11 +2,14 @@ import { statsLive } from '@app/db';
 import { STATS_QUEUE_CAP } from '@app/shared';
 import {
   STATS_LIVE_TTL_SECONDS,
+  STATS_TEST_IDS_NONE,
   STATS_TEST_IDS_TTL_SECONDS,
   centrifugoOnlineUsers,
   streamHealth,
   utcDay,
+  type KeyBuilder,
   type StatsLiveSnapshot,
+  type TestAccounts,
 } from '@app/shared/server';
 import type { Redis } from 'ioredis';
 import { takeLease } from '../lease.js';
@@ -21,7 +24,8 @@ import { queueCounts } from './queueCounts.js';
  * of today's active set are test accounts, the write-behind streams and the
  * job queues. The API adds its real-time counters to it on each read. It
  * also keeps the test-account ids in `stats:testids`, so the API leaves them
- * out of today's active people the moment they open the app.
+ * out of today's active people the moment they open the app (a flip moves
+ * that set itself, at once; see `announceTestAccount`).
  */
 
 export const STATS_LIVE_LEASE_MS = 50_000;
@@ -30,21 +34,39 @@ let lastOnlineWarnMs = 0;
 const writtenIds = new WeakMap<Redis, readonly string[]>();
 
 /**
- * `stats:testids` from the loaded list: rewritten (under a temporary name,
- * then renamed) when the list was reloaded or the key is about to expire;
- * no test account: no key.
+ * KEYS: `stats:testids`, `stats:testv`; ARGV: the version the list was
+ * loaded under ('' no key, '*' any), the life in seconds, then the members.
+ * One step: the set is replaced only while no flip has moved the version
+ * since; a flip has already changed `stats:testids` itself, and an older
+ * list must not undo it.
  */
-async function keepTestIds(redis: Redis, key: string, ids: readonly string[]): Promise<void> {
-  if (writtenIds.get(redis) === ids && (await redis.ttl(key)) > STATS_TEST_IDS_TTL_SECONDS / 3) return;
-  if (ids.length === 0) {
-    await redis.del(key);
-  } else {
-    const temporary = `${key}:next`;
-    const multi = redis.multi().del(temporary);
-    for (let i = 0; i < ids.length; i += SMISMEMBER_CHUNK) multi.sadd(temporary, ...ids.slice(i, i + SMISMEMBER_CHUNK));
-    await multi.expire(temporary, STATS_TEST_IDS_TTL_SECONDS).rename(temporary, key).exec();
-  }
+const WRITE_TEST_IDS = `if ARGV[1] ~= '*' and (redis.call('GET', KEYS[2]) or '') ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+for i = 3, #ARGV, ${SMISMEMBER_CHUNK} do redis.call('SADD', KEYS[1], unpack(ARGV, i, math.min(i + ${SMISMEMBER_CHUNK - 1}, #ARGV))) end
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return 1`;
+
+/**
+ * `stats:testids` from the loaded list (and STATS_TEST_IDS_NONE, so it
+ * exists with no test account), when the list was reloaded or the key is
+ * about to expire. `version`: what `stats:testv` must still read ('*' any,
+ * null no key); undefined (not known): nothing is written, as if it moved.
+ * Answers whether the set was written.
+ */
+export async function keepTestIds(redis: Redis, keys: KeyBuilder, ids: readonly string[], version: string | null | undefined): Promise<boolean> {
+  if (version === undefined) return false;
+  const key = keys.statsTestIds();
+  if (writtenIds.get(redis) === ids && (await redis.ttl(key)) > STATS_TEST_IDS_TTL_SECONDS / 3) return false;
+  const written = await redis.eval(WRITE_TEST_IDS, 2, key, keys.statsTestVersion(), version ?? '', STATS_TEST_IDS_TTL_SECONDS, STATS_TEST_IDS_NONE, ...ids);
+  if (written !== 1) return false;
   writtenIds.set(redis, ids);
+  return true;
+}
+
+/** The version a write of this set's list must find: '*' with no version source; undefined when none was read, or before a load. */
+function writeGuard(tests: TestAccounts): string | null | undefined {
+  if (!tests.loaded) return undefined;
+  return tests.followsFlips ? tests.version : '*';
 }
 
 export interface StatsLiveResult {
@@ -57,9 +79,11 @@ export async function statsLiveJob(context: JobContext, now: number = Date.now()
   const { services, redis, config, log } = context;
   const { keys } = services;
   if (!(await takeLease(redis, keys.jobLease('stats-live'), STATS_LIVE_LEASE_MS, config.workerId))) return { leased: false };
-  const testIds = await testAccountsOf(services, log).ids();
+  const tests = testAccountsOf(services, log);
+  const testIds = await tests.ids();
+  const guard = writeGuard(tests);
   const db = await statsLive(services.pg, STATS_QUEUE_CAP);
-  await keepTestIds(redis, keys.statsTestIds(), testIds);
+  await keepTestIds(redis, keys, testIds, guard);
 
   let online: number | null = null;
   if (config.realtime) {

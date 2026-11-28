@@ -1,3 +1,4 @@
+import { SCROLL_BOX, STICKY_HEADER } from '@/components/charts/StatsCard';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/i18n/useI18n';
 import { formatNumber } from '@/lib/format';
@@ -55,25 +56,23 @@ export function CohortTable({ caption, measures, lines, average, weekly }: { cap
     </TableRow>
   );
   return (
-    <div className="max-h-[26rem] overflow-auto rounded-lg border">
-      <Table>
-        <caption className="sr-only">{caption}</caption>
-        <TableHeader className="sticky top-0 z-[1] bg-card">
-          <TableRow className="hover:bg-transparent">
-            <TableHead className={cn('bg-muted/50 normal-case', pad)}>{weekly ? t('stats.col.week') : t('stats.col.day')}</TableHead>
-            <TableHead className={cn('bg-muted/50 text-end normal-case', pad)}>{t('stats.cohort.signups')}</TableHead>
-            {shown.map((i) => (
-              <TableHead key={measures[i]} className={cn('bg-muted/50 text-end whitespace-normal normal-case', pad)}>
-                {measures[i]}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {row(average, t('stats.cohort.average'), true)}
-          {lines.map((line) => row(line, formatStatsDay(line.day, locale, long ? 'numeric' : 'short')))}
-        </TableBody>
-      </Table>
-    </div>
+    <Table containerClassName={cn(SCROLL_BOX, 'max-h-[26rem]')}>
+      <caption className="sr-only">{caption}</caption>
+      <TableHeader className={STICKY_HEADER}>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className={cn('bg-muted/50 normal-case', pad)}>{weekly ? t('stats.col.week') : t('stats.col.day')}</TableHead>
+          <TableHead className={cn('bg-muted/50 text-end normal-case', pad)}>{t('stats.cohort.signups')}</TableHead>
+          {shown.map((i) => (
+            <TableHead key={measures[i]} className={cn('bg-muted/50 text-end whitespace-normal normal-case', pad)}>
+              {measures[i]}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {row(average, t('stats.cohort.average'), true)}
+        {lines.map((line) => row(line, formatStatsDay(line.day, locale, long ? 'numeric' : 'short')))}
+      </TableBody>
+    </Table>
   );
 }

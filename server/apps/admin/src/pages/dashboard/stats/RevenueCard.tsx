@@ -19,6 +19,7 @@ import {
   formatPercent,
   formatStatsDay,
   formatUnitsShort,
+  formatUnitsTick,
   monthlyChurn,
   subMicros,
   unitsOf,
@@ -142,6 +143,7 @@ function Revenue({ data, currency, range }: { data: AdminStatsRevenue; currency:
   ];
   const chartLabel = (title: string) => t('stats.chart.label', { title, from: formatStatsDay(range.from, locale), to: formatStatsDay(range.to, locale) });
   const units = (value: number) => formatUnitsShort(value, currency, locale);
+  const unitsTick = (value: number) => formatUnitsTick(value, currency, locale);
   const period = (code: string | undefined) => {
     if (!code) return null;
     const key = `period.${code}`;
@@ -164,19 +166,19 @@ function Revenue({ data, currency, range }: { data: AdminStatsRevenue; currency:
       />
       <div className="grid min-w-0 grid-cols-1 gap-2">
         <ChartLegend series={barSeries} bars />
-        <TimeChart bars weeks days={days} series={barSeries} label={chartLabel(t('stats.revenue.title'))} formatValue={units} />
+        <TimeChart bars weeks days={days} series={barSeries} label={chartLabel(t('stats.revenue.title'))} formatValue={units} formatTick={unitsTick} />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="grid min-w-0 content-start gap-2">
           <h3 className="text-sm font-medium">{t('stats.revenue.mrr')}</h3>
-          <TimeChart days={days} series={mrrSeries} label={chartLabel(t('stats.revenue.mrr'))} formatValue={units} height={160} />
+          <TimeChart days={days} series={mrrSeries} label={chartLabel(t('stats.revenue.mrr'))} formatValue={units} formatTick={unitsTick} height={160} />
         </div>
         <div className="grid min-w-0 content-start gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-medium">{t('stats.revenue.subscriptions')}</h3>
             <ChartLegend series={subsSeries} />
           </div>
-          <TimeChart days={days} series={subsSeries} label={chartLabel(t('stats.revenue.subscriptions'))} formatValue={(v) => formatCount(v, locale)} height={160} />
+          <TimeChart days={days} series={subsSeries} label={chartLabel(t('stats.revenue.subscriptions'))} formatValue={(v) => formatCount(v, locale)} whole height={160} />
         </div>
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createPool, instrumentPool, statementCounter, statsPut, type Pool } from '@app/db';
+import { createPool, instrumentPool, statementCounter, statsPut, testAccountIds, type Pool } from '@app/db';
 import { idFloor, statsAddDays, statsDay } from '@app/shared';
 import {
   FakeRealtimePublisher,
   IdGenerator,
+  STATS_TEST_IDS_NONE,
   TestAccounts,
+  announceTestAccount,
   createKeys,
   createPublicIds,
   messageEntryFields,
@@ -22,8 +24,8 @@ import { heartbeatKey, loadConfig, messageBatchHandler, type JobContext } from '
 import { FakePhotoModerator } from '../src/photos/moderation.js';
 import { activityRows, rollupDayOf, statsRollupJob } from '../src/stats/rollup.js';
 import { closeStatsQueues } from '../src/stats/queueCounts.js';
-import { statsLiveJob } from '../src/stats/live.js';
-import type { WorkerServices } from '../src/services.js';
+import { keepTestIds, statsLiveJob } from '../src/stats/live.js';
+import { testAccountsFrom, type WorkerServices } from '../src/services.js';
 import { ensureGroupRoles, hasDatabase, loginRole, migratedDatabase, type TestDatabase } from './db.js';
 import { TEST_REDIS_URL, baseEnv, connect, hasRedis } from './support.js';
 
@@ -34,7 +36,9 @@ import { TEST_REDIS_URL, baseEnv, connect, hasRedis } from './support.js';
  * snapshot and places for yesterday only; today and later refused), the live
  * snapshot (schema, test accounts in today's set and their ids for the API,
  * Centrifugo's online count), the message counter (waiting for the
- * test-account set after a start), and the heartbeat's name.
+ * test-account set after a start), a flip of the test flag reaching the
+ * counter, the worker's set and `stats:testids` at once (an older list never
+ * undoing it), and the heartbeat's name.
  */
 
 function untouchable<T extends object>(what: string): T {
@@ -256,8 +260,8 @@ describe.skipIf(!hasDatabase || !hasRedis)('stats jobs (PostgreSQL, Valkey)', ()
     centrifugoAnswer = () => ({ status: 200, body: { result: { nodes: [{ num_users: 3 }, { num_users: 2 }] } } });
     const first = await statsLiveJob(context);
     expect(first).toEqual({ leased: true, online: 5, testActive: 1 });
-    // The test-account ids for the API's exact subtraction.
-    expect(await redis.smembers(keys.statsTestIds())).toEqual([testId]);
+    // The test-account ids for the API's exact subtraction (and the member that keeps the set when it has none).
+    expect((await redis.smembers(keys.statsTestIds())).sort()).toEqual([STATS_TEST_IDS_NONE, testId].sort());
     expect(await redis.ttl(keys.statsTestIds())).toBeGreaterThan(600);
     const snapshot = statsLiveSnapshotSchema.parse(JSON.parse((await redis.get(keys.statsLive()))!));
     expect(snapshot.day).toBe(today);
@@ -332,6 +336,121 @@ describe.skipIf(!hasDatabase || !hasRedis)('stats jobs (PostgreSQL, Valkey)', ()
     for (let i = 0; i < 50 && Number((await redis.get(counter)) ?? 0) === before; i += 1) await new Promise((r) => setTimeout(r, 10));
     await new Promise((r) => setTimeout(r, 30));
     expect(Number(await redis.get(counter))).toBe(before + 1);
+  });
+
+  /** One message each from `senders` in a fresh batch; resolves with how much `ev:msg:<today>` moved. */
+  async function counted(handlerContext: JobContext, senders: string[]): Promise<number> {
+    const handler = messageBatchHandler(handlerContext);
+    const matchId = idOn(today, 50);
+    const counter = keys.statsCounter('msg', utcDay(Date.now()));
+    const before = Number((await redis.get(counter)) ?? 0);
+    await handler(
+      senders.map((from, i) => {
+        const pairs = messageEntryFields({ id: ids.nextId(), matchId, senderId: from, refId: null, kind: 1, flags: 0, body: 'x' });
+        const fields: Record<string, string> = {};
+        for (let j = 0; j + 1 < pairs.length; j += 2) fields[pairs[j]!] = pairs[j + 1]!;
+        return { id: `${Date.now()}-${i}`, fields, source: 'new' as const };
+      }),
+    );
+    // One INCRBY per batch and day: the counter moves once, by everything counted.
+    for (let i = 0; i < 200 && Number((await redis.get(counter)) ?? 0) === before; i += 1) await new Promise((r) => setTimeout(r, 10));
+    return Number((await redis.get(counter)) ?? 0) - before;
+  }
+
+  async function flip(uid: string, test: boolean): Promise<void> {
+    await db.admin.query(`UPDATE users SET flags = (CASE WHEN $2 THEN flags | 1 ELSE flags & ~1 END)::smallint WHERE id = $1`, [uid, test]);
+    await announceTestAccount(redis, keys, uid, test);
+  }
+
+  it('follows a flip of the test flag at once: the message counter, the worker’s set and stats:testids', async () => {
+    const person = idOn(today, 51);
+    const other = idOn(today, 52);
+    await db.admin.query(`INSERT INTO users (id, status, onboarding_step, flags) VALUES ($1, 1, 0, 0), ($2, 1, 0, 0)`, [person, other]);
+    // The set as the worker makes it, looking at stats:testv on every use (5 s in a running worker).
+    const tests = testAccountsFrom(pool, context.log, { redis, keys, checkMs: 0 });
+    const running: JobContext = { ...context, services: { ...services, testAccounts: tests } };
+    await tests.ids();
+    expect(await counted(running, [person, other])).toBe(2);
+
+    await flip(person, true);
+    expect(await counted(running, [person, other])).toBe(1);
+    expect(tests.has(person)).toBe(true);
+    // stats:testids already holds the person (the flip wrote it); stats/live writes the same from the reloaded set.
+    expect(await redis.sismember(keys.statsTestIds(), person)).toBe(1);
+    await redis.del(keys.jobLease('stats-live'));
+    await statsLiveJob(running);
+    expect((await redis.smembers(keys.statsTestIds())).sort()).toEqual([STATS_TEST_IDS_NONE, person].sort());
+
+    await flip(person, false);
+    expect(await redis.smembers(keys.statsTestIds())).toEqual([STATS_TEST_IDS_NONE]);
+    expect(await counted(running, [person, other])).toBe(2);
+    expect(tests.has(person)).toBe(false);
+  });
+
+  it('never lets a list loaded before a flip undo it in stats:testids; the next look writes the new list', async () => {
+    const person = idOn(today, 53);
+    await db.admin.query(`INSERT INTO users (id, status, onboarding_step, flags) VALUES ($1, 1, 0, 0)`, [person]);
+    let clock = 0;
+    const tests = new TestAccounts({ load: () => testAccountIds(pool, 10_001), version: () => redis.get(keys.statsTestVersion()), checkMs: 5_000, now: () => clock });
+    const running: JobContext = { ...context, services: { ...services, testAccounts: tests } };
+    expect(await tests.ids()).not.toContain(person);
+
+    // The flip lands after the worker's load: its list (without the person) is older than stats:testv.
+    await flip(person, true);
+    await redis.del(keys.jobLease('stats-live'));
+    await statsLiveJob(running);
+    expect(await redis.sismember(keys.statsTestIds(), person)).toBe(1);
+    expect(await redis.exists(`${keys.statsTestIds()}:next`)).toBe(0);
+
+    clock = 5_000;
+    await redis.del(keys.jobLease('stats-live'));
+    await statsLiveJob(running);
+    expect(tests.has(person)).toBe(true);
+    expect((await redis.smembers(keys.statsTestIds())).sort()).toEqual([STATS_TEST_IDS_NONE, person].sort());
+    await flip(person, false);
+  });
+
+  it('writes stats:testids in one step: overlapping writes never mix lists, a stale one writes nothing, an unknown version none', async () => {
+    const key = keys.statsTestIds();
+    const versionKey = keys.statsTestVersion();
+    await redis.set(versionKey, 'v-current');
+    await redis.del(key);
+    const current = Array.from({ length: 2_500 }, (_, i) => idOn(today, 1_000 + i));
+    const stale = [idOn(today, 900)];
+    // Two runs at once (a run past its lease, a stalled job run again): the one loaded before the last flip leaves the set alone.
+    const [wrote, held] = await Promise.all([keepTestIds(redis, keys, current, 'v-current'), keepTestIds(redis, keys, stale, 'v-before')]);
+    expect([wrote, held]).toEqual([true, false]);
+    expect(await redis.scard(key)).toBe(current.length + 1);
+    expect(await redis.sismember(key, stale[0]!)).toBe(0);
+    expect(await redis.ttl(key)).toBeGreaterThan(800);
+    expect((await redis.keys(`${key}:*`)).length).toBe(0);
+    // The version unknown (unreadable when the list was loaded): as if moved, nothing written.
+    expect(await keepTestIds(redis, keys, stale, undefined)).toBe(false);
+    expect(await redis.scard(key)).toBe(current.length + 1);
+    // No key: only a list loaded with no key written.
+    await redis.del(versionKey);
+    expect(await keepTestIds(redis, keys, stale, 'v-current')).toBe(false);
+    expect(await keepTestIds(redis, keys, stale, null)).toBe(true);
+    expect((await redis.smembers(key)).sort()).toEqual([STATS_TEST_IDS_NONE, stale[0]!].sort());
+    await redis.del(key);
+  });
+
+  it('writes no stats:testids from a set whose version was never read', async () => {
+    const person = idOn(today, 54);
+    await db.admin.query(`INSERT INTO users (id, status, onboarding_step, flags) VALUES ($1, 1, 0, 1)`, [person]);
+    await redis.del(keys.statsTestIds());
+    const tests = new TestAccounts({
+      load: () => testAccountIds(pool, 10_001),
+      version: async () => {
+        throw new Error('valkey down');
+      },
+    });
+    const running: JobContext = { ...context, services: { ...services, testAccounts: tests } };
+    await redis.del(keys.jobLease('stats-live'));
+    await statsLiveJob(running);
+    expect(tests.has(person)).toBe(true);
+    expect(await redis.exists(keys.statsTestIds())).toBe(0);
+    await db.admin.query(`UPDATE users SET flags = 0 WHERE id = $1`, [person]);
   });
 
   it('reads the worker heartbeat under the name the worker writes', () => {

@@ -370,6 +370,15 @@ export function formatUnitsShort(units: number, currency: string, locale: Locale
   }
 }
 
+/** An axis label of units: two significant digits, as many as any tick has ("$0.25", never "$0.3"). */
+export function formatUnitsTick(units: number, currency: string, locale: Locale): string {
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency, notation: 'compact', maximumSignificantDigits: 2 }).format(units);
+  } catch {
+    return `${formatCount(units, locale)} ${currency}`;
+  }
+}
+
 /** Decimal micros as a number of units, for drawing (exact enough for a chart, never for a sum). */
 export const unitsOf = (micros: string) => Number(microsToUnits(micros));
 
@@ -421,6 +430,11 @@ export function formatPercent(value: number, locale: Locale, fractionDigits = 1)
   return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: fractionDigits }).format(value);
 }
 
+/** An axis label of a share: two significant digits, as many as any tick has ("0.05%", never "0.1%" twice). */
+export function formatShareTick(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale, { style: 'percent', maximumSignificantDigits: 2 }).format(value);
+}
+
 /** A count for an axis or a tile: in full under 10,000, then compact ("12K", «۱۲ هزار»). */
 export function formatCount(value: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, Math.abs(value) < 10_000 ? { maximumFractionDigits: 0 } : { notation: 'compact', maximumFractionDigits: 1 }).format(value);
@@ -436,13 +450,43 @@ export function formatSpan(seconds: number, locale: Locale): string {
   return unit(seconds / 86_400, 'day', 1);
 }
 
-/** A clean upper bound and four ticks for an axis from 0. */
-export function niceTicks(max: number): number[] {
+/**
+ * A clean upper bound and the ticks of an axis from 0: four steps of 1, 2,
+ * 2.5 or 5 times a power of ten. `whole` (counts): every step a whole
+ * number and only as many as reach the top (a top of 1 reads 0 and 1).
+ */
+export function niceTicks(max: number, whole = false): number[] {
+  if (whole) {
+    const top = max > 0 ? Math.ceil(max) : 1;
+    if (top <= 4) return Array.from({ length: top + 1 }, (_, i) => i);
+    const raw = top / 4;
+    const power = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * power).find((s) => s >= raw && Number.isInteger(s)) ?? Math.ceil(raw);
+    return Array.from({ length: Math.ceil(top / step) + 1 }, (_, i) => i * step);
+  }
   if (!(max > 0)) return [0, 1, 2, 3, 4].map((n) => n / 4);
   const raw = max / 4;
   const power = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * power).find((s) => s >= raw) ?? raw;
   return [0, 1, 2, 3, 4].map((n) => n * step);
+}
+
+/**
+ * An axis's ticks and their labels. Where the formatter would round a
+ * label onto another (a share of 0.05 % shown to one place), only every
+ * other tick is kept, then only the ends: no label is shown twice.
+ */
+export function axisTicks(max: number, format: (value: number) => string, whole = false): { ticks: number[]; texts: string[] } {
+  const all = niceTicks(max, whole);
+  const steps = all.length - 1;
+  let ticks = all;
+  let texts = all.map(format);
+  for (let every = 2; every <= steps && new Set(texts).size < texts.length; every += 1) {
+    if (steps % every !== 0) continue;
+    ticks = all.filter((_, i) => i % every === 0);
+    texts = ticks.map(format);
+  }
+  return { ticks, texts };
 }
 
 // ─── Tables (a card's "Show table" and its CSV) ──────────────────────────

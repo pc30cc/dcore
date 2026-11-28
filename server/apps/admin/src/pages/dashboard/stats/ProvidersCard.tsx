@@ -3,7 +3,7 @@ import { Figures, StatsCard } from '@/components/charts/StatsCard';
 import { ChartLegend, TimeChart, type ChartSeries } from '@/components/charts/TimeChart';
 import { useI18n } from '@/i18n/useI18n';
 import { formatNumber } from '@/lib/format';
-import { cardState, csvName, daysOf, formatPercent, formatStatsDay, ratio, seriesValues, sumOf, useStatsSeries, type StatsRange } from '@/lib/stats';
+import { cardState, csvName, daysOf, formatPercent, formatShareTick, formatStatsDay, ratio, seriesValues, sumOf, useStatsSeries, type StatsRange } from '@/lib/stats';
 
 /** The card's name in its CSV file's name. */
 const CSV = 'providers';
@@ -66,6 +66,7 @@ export function ProvidersCard({ range, className }: { range: StatsRange; classNa
         series={series}
         label={t('stats.chart.label', { title, from: formatStatsDay(range.from, locale), to: formatStatsDay(range.to, locale) })}
         formatValue={(value) => formatPercent(value, locale)}
+        formatTick={(value) => formatShareTick(value, locale)}
         height={160}
       />
     </StatsCard>

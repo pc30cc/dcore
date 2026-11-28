@@ -154,7 +154,7 @@ async function live(app: FastifyInstance, request: FastifyRequest, now: number):
   if (snapshot && (lastBeatAt === null || !Number.isFinite(snapshotMs) || now - snapshotMs > STATS_SNAPSHOT_FRESH_MS)) snapshot = null;
   // A snapshot written before midnight still tells the queues, not today's counts.
   const sameDay = snapshot?.day === today ? snapshot : null;
-  // The test accounts of today's set, exact at this moment (the worker keeps their ids); else the snapshot's count.
+  // The test accounts of today's set, exact at this moment (the worker keeps their ids, a flip moves one at once); else the snapshot's count.
   const testActive = Number(testIdsKept ?? 0) > 0 ? Math.max(0, Number(testActiveNow ?? 0)) : (sameDay?.testActive ?? 0);
   const answer: AdminStatsLive = {
     at: wireTime(now),

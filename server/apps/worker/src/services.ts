@@ -49,7 +49,7 @@ export interface WorkerServices {
   brand?: Brand | undefined;
 
   // dashboard
-  /** The raw ids of test accounts, kept 10 minutes (absent in tests: made from `pg` when a stats job needs it). */
+  /** The raw ids of test accounts, kept 10 minutes or until a flip moves `stats:testv` (absent in tests: made from `pg` when a stats job needs it). */
   testAccounts?: TestAccounts | undefined;
 
   // content
@@ -68,14 +68,24 @@ export interface WorkerServices {
 /** More test accounts than this: the set is cut (logged), and the statistics count the rest as people. */
 export const TEST_ACCOUNTS_MAX = 10_000;
 
-/** The test-account set of a pool: users_test_idx, at most {@link TEST_ACCOUNTS_MAX} ids. */
-export function testAccountsFrom(pg: Pool, logger: Pick<Logger, 'error' | 'warn'>): TestAccounts {
+/**
+ * The test-account set of a pool: users_test_idx, at most
+ * {@link TEST_ACCOUNTS_MAX} ids; with `flips` (kv-core) it also reloads
+ * within seconds of a flip (`stats:testv`, one GET at most every 5 s).
+ */
+export function testAccountsFrom(
+  pg: Pool,
+  logger: Pick<Logger, 'error' | 'warn'>,
+  flips?: { redis: Redis; keys: KeyBuilder; checkMs?: number },
+): TestAccounts {
   return new TestAccounts({
     load: async () => {
       const ids = await testAccountIds(pg, TEST_ACCOUNTS_MAX + 1);
       if (ids.length > TEST_ACCOUNTS_MAX) logger.error({ max: TEST_ACCOUNTS_MAX }, 'test accounts: more than the statistics can leave out');
       return ids.slice(0, TEST_ACCOUNTS_MAX);
     },
+    version: flips ? () => flips.redis.get(flips.keys.statsTestVersion()) : undefined,
+    checkMs: flips?.checkMs,
     onError: (error) => logger.warn({ err: error }, 'test accounts: not reloaded; the last set stays'),
   });
 }
@@ -128,21 +138,22 @@ export function createWorkerServices(config: WorkerConfig, redis: Redis, logger:
   if (!config.realtime) logger.warn('CENTRIFUGO_API_URL is not set: realtime events are not published');
   if (!config.storage) logger.warn('S3_* is not set: photo jobs wait until storage is configured');
   if (!config.push) logger.warn('FCM_SERVICE_ACCOUNT_JSON is not set: pushes are not sent');
+  const keys = createKeys(config.redis.keyPrefix);
   const services: WorkerServices = {
     pg,
     cache,
     ids,
-    keys: createKeys(config.redis.keyPrefix),
+    keys,
     publicIds: createPublicIds(config.ids.publicKey, config.ids.billingKey),
     realtime: config.realtime ? new CentrifugoPublisher(config.realtime) : null,
     media: config.storage ? createMediaStore(config.storage, { timeoutMs: config.storage.timeoutMs }) : null,
     photoModerator: new FakePhotoModerator({ autoApprove: config.photos.autoApprove }),
     push: config.push ? new FcmSender({ account: config.push.account }) : null,
-    iap: iapServicesFrom(config, logger, { redis, keys: createKeys(config.redis.keyPrefix) }),
+    iap: iapServicesFrom(config, logger, { redis, keys }),
     brand,
 
     // dashboard
-    testAccounts: testAccountsFrom(pg, logger),
+    testAccounts: testAccountsFrom(pg, logger, { redis, keys }),
 
     // content
 

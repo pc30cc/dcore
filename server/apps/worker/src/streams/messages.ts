@@ -68,14 +68,15 @@ export function messageBatchHandler(context: JobContext, stats?: MessageBatchSta
 
 /**
  * People's messages (text, image, voice, GIF) of a fresh batch per UTC day,
- * test senders left out; never awaited. Until the test-account set has
- * loaded once (after a start) nothing is known about senders, so the count
- * waits for that load and is skipped when it fails.
+ * test senders left out; never awaited. The test-account set is brought up
+ * to date first (a flip moved `stats:testv`: reloaded). Until it has loaded
+ * once (after a start) nothing is known about senders, so the count waits
+ * for that load and is skipped when it fails.
  */
 function countMessages(context: JobContext, messages: readonly StoredMessage[]): void {
   const { services, redis, log } = context;
   const tests = services.testAccounts;
-  const ready = tests && !tests.loaded ? tests.ids().then(() => tests.loaded) : Promise.resolve(true);
+  const ready = tests ? tests.ids().then(() => tests.loaded) : Promise.resolve(true);
   ready
     .then(async (known) => {
       if (!known) {

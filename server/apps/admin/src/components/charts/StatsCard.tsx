@@ -114,6 +114,15 @@ export function StatsCard({
 /** A figure that may wrap between an amount and its currency (Intl joins them with a no-break space). */
 const breakable = (text: string) => text.replace(/\u00a0/g, ' ');
 
+/**
+ * A table's box with a capped height (`max-h-*`): the one box that scrolls
+ * the table both ways, with the header (STICKY_HEADER) kept at its top.
+ * The header's line under it is a shadow, which stays with it (a
+ * collapsed border scrolls away).
+ */
+export const SCROLL_BOX = 'overflow-auto rounded-lg border';
+export const STICKY_HEADER = 'sticky top-0 z-[1] bg-card [&_tr]:border-b-0 [&_th]:shadow-[inset_0_-1px_0_var(--border)]';
+
 const NARROW_HIDDEN = { sm: 'hidden sm:table-cell', md: 'hidden md:table-cell' } as const;
 const NARROW_SHOWN = { sm: 'sm:hidden', md: 'md:hidden' } as const;
 
@@ -128,52 +137,50 @@ export function StatsTableView({ table, caption, className }: { table: StatsTabl
   const numeric = (column: StatsColumn) => column.kind !== 'day' && column.kind !== 'text';
   const tucked = table.columns.map((column, i) => ({ column, i })).filter(({ column, i }) => i > 0 && column.narrow);
   return (
-    <div className={cn('max-h-96 overflow-auto rounded-lg border', className)}>
-      <Table>
-        <caption className="sr-only">{caption}</caption>
-        <TableHeader className="sticky top-0 z-[1] bg-card">
-          <TableRow className="hover:bg-transparent">
-            {table.columns.map((column, i) => (
-              <TableHead key={i} className={cn('bg-muted/50 normal-case', numeric(column) && 'text-end', i > 0 && column.narrow && NARROW_HIDDEN[column.narrow])}>
-                {column.label}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {table.rows.map((row, r) => (
-            <TableRow key={r}>
-              {row.map((value, i) => {
-                const column = table.columns[i]!;
-                const text = statsCellText(value, column, locale);
-                if (i === 0 && tucked.length > 0) {
-                  return (
-                    <TableCell key={i} className="py-2 whitespace-normal">
-                      <span className="block break-words">{text}</span>
-                      {tucked.map(({ column: extra, i: j }) => (
-                        <span key={j} className={cn('block text-xs break-words text-muted-foreground', NARROW_SHOWN[extra.narrow!])}>
-                          {extra.label} {breakable(statsCellText(row[j] ?? null, extra, locale))}
-                        </span>
-                      ))}
-                    </TableCell>
-                  );
-                }
-                // An amount may wrap between its currency and its digits, never inside the digits.
-                const money = column.kind === 'money';
+    <Table containerClassName={cn(SCROLL_BOX, 'max-h-96', className)}>
+      <caption className="sr-only">{caption}</caption>
+      <TableHeader className={STICKY_HEADER}>
+        <TableRow className="hover:bg-transparent">
+          {table.columns.map((column, i) => (
+            <TableHead key={i} className={cn('bg-muted/50 normal-case', numeric(column) && 'text-end', i > 0 && column.narrow && NARROW_HIDDEN[column.narrow])}>
+              {column.label}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {table.rows.map((row, r) => (
+          <TableRow key={r}>
+            {row.map((value, i) => {
+              const column = table.columns[i]!;
+              const text = statsCellText(value, column, locale);
+              if (i === 0 && tucked.length > 0) {
                 return (
-                  <TableCell
-                    key={i}
-                    className={cn('py-2', money ? 'whitespace-normal' : 'whitespace-nowrap', numeric(column) && 'text-end tabular-nums', i > 0 && column.narrow && NARROW_HIDDEN[column.narrow])}
-                  >
-                    {money ? breakable(text) : text}
+                  <TableCell key={i} className="py-2 whitespace-normal">
+                    <span className="block break-words">{text}</span>
+                    {tucked.map(({ column: extra, i: j }) => (
+                      <span key={j} className={cn('block text-xs break-words text-muted-foreground', NARROW_SHOWN[extra.narrow!])}>
+                        {extra.label} {breakable(statsCellText(row[j] ?? null, extra, locale))}
+                      </span>
+                    ))}
                   </TableCell>
                 );
-              })}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+              }
+              // An amount may wrap between its currency and its digits, never inside the digits.
+              const money = column.kind === 'money';
+              return (
+                <TableCell
+                  key={i}
+                  className={cn('py-2', money ? 'whitespace-normal' : 'whitespace-nowrap', numeric(column) && 'text-end tabular-nums', i > 0 && column.narrow && NARROW_HIDDEN[column.narrow])}
+                >
+                  {money ? breakable(text) : text}
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 

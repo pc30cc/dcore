@@ -119,12 +119,39 @@ describe('the dashboard', () => {
     expect(within(msg).getByText('1').className).toContain('text-destructive');
     expect(within(msg).getByText('2 min').className).toContain('text-destructive');
     const jobs = within(card).getByRole('table', { name: 'Jobs' });
-    expect(within(jobs).getByText('photo')).toBeTruthy();
-    expect(within(jobs).getByText('push')).toBeTruthy();
+    expect(within(jobs).getByRole('rowheader', { name: 'Photos' })).toBeTruthy();
+    expect(within(jobs).getByRole('rowheader', { name: 'Push notifications' })).toBeTruthy();
     // An idle queue is left out.
-    expect(within(jobs).queryByText('maint')).toBeNull();
+    expect(within(jobs).queryByRole('rowheader', { name: 'Maintenance' })).toBeNull();
     // Jobs and health is not built yet: no link to it.
     expect(within(card).queryByRole('link')).toBeNull();
+  });
+
+  it('names each job queue in the panel’s language, and one this build has no words for by its code', async () => {
+    const queues = ['system', 'account', 'safety', 'chat', 'maint', 'iap', 'stats', 'reels'];
+    const answer = () => live({ jobs: queues.map((queue) => ({ queue, waiting: 1, active: 0, delayed: 0, failed: 0 })) });
+    const expected = {
+      en: ['System', 'Accounts', 'Safety', 'Chats', 'Maintenance', 'Store purchases', 'Statistics'],
+      fa: ['سیستم', 'حساب‌ها', 'ایمنی', 'گفتگوها', 'نگه‌داشت', 'خریدها', 'آمار'],
+      tr: ['Sistem', 'Hesaplar', 'Güvenlik', 'Sohbetler', 'Bakım', 'Mağaza satın almaları', 'İstatistikler'],
+    } as const;
+    for (const locale of ['en', 'fa', 'tr'] as const) {
+      const view = renderPanel('/', liveApi(answer), { locale });
+      const card = (await screen.findByRole('heading', { name: messages[locale]['dashboard.health.title'] })).closest('section')!;
+      const jobs = within(card).getByRole('table', { name: messages[locale]['dashboard.health.jobs'] });
+      const names = within(jobs).getAllByRole('rowheader');
+      expect(names.map((name) => name.textContent)).toEqual([...expected[locale], 'reels']);
+      // Words read as words; only the unknown code keeps the code's type.
+      expect(names.slice(0, -1).every((name) => !name.className.includes('font-mono'))).toBe(true);
+      expect(names.at(-1)!.className).toContain('font-mono');
+      // On a phone the names give way (a long word may break), never the figures: the table stays inside the card.
+      for (const name of names) expect(name.className.split(' ')).toEqual(expect.arrayContaining(['wrap-anywhere', 'hyphens-auto']));
+      const figures = [...within(jobs).getAllByRole('columnheader'), ...within(jobs).getAllByRole('cell')].filter((cell) => cell.textContent !== '');
+      for (const figure of figures) expect(figure.className.split(' ')).toEqual(expect.arrayContaining(['ps-2', 'sm:ps-3', 'whitespace-nowrap']));
+      view.unmount();
+      resetPanel();
+      signInAs(theOwner);
+    }
   });
 
   it('shows the providers’ calls today with their failure rate', async () => {

@@ -163,8 +163,10 @@ export function createKeys(prefix: string) {
     statsDau: (day: string) => k('hll', 'dau', day),
     /** The stats/live snapshot (JSON, kv-core, 10 min). */
     statsLive: () => k('stats', 'live'),
-    /** The raw ids of test accounts (set, kv-core, 15 min), kept by stats/live; the live read intersects it with `la:<today>`. */
+    /** The raw ids of test accounts (set, kv-core, 15 min), kept by stats/live and moved at once by a flip; the live read intersects it with `la:<today>`. */
     statsTestIds: () => k('stats', 'testids'),
+    /** A new random value on every flip of a test flag (kv-core, no TTL; never a repeat, even after the key was lost): a TestAccounts set that loaded under another value reloads. */
+    statsTestVersion: () => k('stats', 'testv'),
     /** The newest day stats/rollup finished (`YYYY-MM-DD`, kv-core, 45 days). */
     statsLastDay: () => k('stats', 'last'),
     /** A revenue read for its parameters and the newest rolled-up day (JSON, kv-cache, 5 min). */

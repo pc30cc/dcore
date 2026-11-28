@@ -8,6 +8,7 @@ import { LoadError } from '@/components/QueryState';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MessageKey } from '@/i18n/messages';
+import { hasMessage, type Translate } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
 import { formatNumber, formatTime } from '@/lib/format';
 import { sectionGroups } from '@/lib/sections';
@@ -231,6 +232,12 @@ function ReviewCard({ data }: { data: AdminStatsLive }) {
   );
 }
 
+/** A job queue's words; a queue this build has none for (a newer worker) keeps its code. */
+function queueName(queue: string, t: Translate): { name: string; mono?: boolean } {
+  const key = `dashboard.queue.${queue}`;
+  return hasMessage(key) ? { name: t(key) } : { name: queue, mono: true };
+}
+
 function HealthCard({ data }: { data: AdminStatsLive }) {
   const { t, locale } = useI18n();
   const { me } = useSession();
@@ -285,8 +292,7 @@ function HealthCard({ data }: { data: AdminStatsLive }) {
               columns={[t('dashboard.health.col.waiting'), t('dashboard.health.col.running'), t('dashboard.health.col.scheduled'), t('dashboard.health.col.failed')]}
               rows={jobs.map((job) => ({
                 key: job.queue,
-                name: job.queue,
-                mono: true,
+                ...queueName(job.queue, t),
                 cells: [
                   { text: formatNumber(job.waiting, locale) },
                   { text: formatNumber(job.active, locale) },
@@ -302,7 +308,7 @@ function HealthCard({ data }: { data: AdminStatsLive }) {
   );
 }
 
-/** A small table of a card: a name per row and a few figures, red where something is wrong. */
+/** A small table of a card: a name per row and a few figures, red where something is wrong; the names give way, never the figures, so it fits a phone's card. */
 function MiniTable({
   title,
   hideTitle = false,
@@ -322,7 +328,7 @@ function MiniTable({
         <tr className="text-xs text-muted-foreground">
           <td />
           {columns.map((column) => (
-            <th key={column} className="py-1 ps-3 text-end font-normal whitespace-nowrap">
+            <th key={column} className="py-1 ps-2 text-end font-normal whitespace-nowrap sm:ps-3">
               {column}
             </th>
           ))}
@@ -331,11 +337,11 @@ function MiniTable({
       <tbody className="divide-y">
         {rows.map((row) => (
           <tr key={row.key}>
-            <th scope={ROW} className={cn('py-1.5 text-start font-normal', row.mono && 'font-mono text-xs')}>
+            <th scope={ROW} className={cn('py-1.5 text-start font-normal hyphens-auto wrap-anywhere', row.mono && 'font-mono text-xs')}>
               {row.name}
             </th>
             {row.cells.map((cell, i) => (
-              <td key={i} className={cn('py-1.5 ps-3 text-end tabular-nums whitespace-nowrap', cell.alert && 'font-medium text-destructive')}>
+              <td key={i} className={cn('py-1.5 ps-2 text-end tabular-nums whitespace-nowrap sm:ps-3', cell.alert && 'font-medium text-destructive')}>
                 {cell.text}
               </td>
             ))}

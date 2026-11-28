@@ -145,6 +145,17 @@ function seededRoleKeys(sql: string, file: string): string[] {
   return keys;
 }
 
+/**
+ * The job queues of the shared catalogue (`queueNames`, in its Node-only
+ * part, which the panel never imports), read from their source.
+ */
+function sharedQueueNames(): string[] {
+  const source = readFileSync(join(ROOT, 'packages/shared/src/server/queues.ts'), 'utf8');
+  const list = /export const queueNames = \[([^\]]*)\] as const/.exec(source)?.[1];
+  if (!list) throw new Error('queues.ts: no queueNames list to read');
+  return [...list.matchAll(/'([a-z][a-z0-9_-]*)'/g)].map((match) => match[1]!);
+}
+
 describe('server values the panel shows have words in every language', () => {
   it('every permission, with its sentence', () => {
     expectWords('permission.', permissions);
@@ -219,6 +230,7 @@ describe('server values the panel shows have words in every language', () => {
       ['deviceBans.reason.', automaticBanReasons],
 
       // dashboard
+      ['dashboard.queue.', sharedQueueNames()],
 
       // content
 
@@ -357,6 +369,8 @@ describe('the glossary', () => {
     expect(messages.fa['auditAction.product.activate']).toContain('روشن');
     expect(messages.fa['auditAction.product.deactivate']).toContain('خاموش');
     expect(messages.fa['permission.billing.refund']).toBe(messages.fa['ledgerReason.refund']);
+    // «نگه‌داری» is the legal hold and nothing else (the maint job queue is «نگه‌داشت»).
+    expect(keys.filter((key) => messages.fa[key].includes('نگه‌داری') && !/hold|held/i.test(`${key} ${messages.en[key]}`))).toEqual([]);
   });
 
   it('says the server, not the API, but where the API itself is meant', () => {
