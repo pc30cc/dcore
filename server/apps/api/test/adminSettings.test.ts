@@ -283,7 +283,19 @@ describe.skipIf(!hasInfrastructure)('admin: app settings', () => {
       h.app.adminAuth.totpRequired = true;
     }
     expect(h.app.routesRequiringMfa().sort()).toEqual(
-      ['GET /v1/admin/providers', 'PUT /v1/admin/providers/:kind', 'DELETE /v1/admin/providers/:kind', 'GET /v1/admin/providers/rtc', 'PUT /v1/admin/providers/rtc'].sort(),
+      [
+        'GET /v1/admin/providers',
+        'PUT /v1/admin/providers/:kind',
+        'DELETE /v1/admin/providers/:kind',
+        'GET /v1/admin/providers/rtc',
+        'PUT /v1/admin/providers/rtc',
+        // system: the role editor and the jobs page's actions
+        'PUT /v1/admin/roles/:key/permissions',
+        'POST /v1/admin/system/dead-letters/delete',
+        'POST /v1/admin/system/jobs/retry',
+        'POST /v1/admin/system/jobs/remove',
+        'POST /v1/admin/system/tasks/run',
+      ].sort(),
     );
   });
 });

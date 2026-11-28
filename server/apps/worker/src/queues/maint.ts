@@ -42,6 +42,17 @@ export class PartitionsDeferredError extends Error {
 export interface PartitionsResult {
   leased: boolean;
   parents: Record<string, PartitionAction[]>;
+  /** Totals over every parent (the run recorder keeps a result's numbers): periods ensured, partitions dropped, actions deferred by a lock, partitions kept for a legal hold. */
+  ensured: number;
+  dropped: number;
+  deferred: number;
+  held: number;
+}
+
+function partitionTotals(parents: Record<string, PartitionAction[]>): Pick<PartitionsResult, 'ensured' | 'dropped' | 'deferred' | 'held'> {
+  const all = Object.values(parents).flat();
+  const count = (...actions: string[]) => all.filter((a) => actions.includes(a.action)).length;
+  return { ensured: count('ensure'), dropped: count('dropped'), deferred: count('ensure_deferred', 'drop_deferred'), held: count('drop_held') };
 }
 
 async function leased(context: JobContext, name: string, ttlMs: number): Promise<boolean> {
@@ -50,7 +61,7 @@ async function leased(context: JobContext, name: string, ttlMs: number): Promise
 
 export async function partitionsJob(context: JobContext): Promise<PartitionsResult> {
   const { services, log } = context;
-  if (!(await leased(context, 'maint-partitions', 15 * 60_000))) return { leased: false, parents: {} };
+  if (!(await leased(context, 'maint-partitions', 15 * 60_000))) return { leased: false, parents: {}, ensured: 0, dropped: 0, deferred: 0, held: 0 };
   const parents: Record<string, PartitionAction[]> = {};
   const deferred: string[] = [];
   for (const parent of await partitionParents(services.pg)) {
@@ -71,7 +82,7 @@ export async function partitionsJob(context: JobContext): Promise<PartitionsResu
     log.info({ parent, ...counts }, 'partitions: maintained');
   }
   if (deferred.length > 0) throw new PartitionsDeferredError(deferred);
-  return { leased: true, parents };
+  return { leased: true, parents, ...partitionTotals(parents) };
 }
 
 export interface ActiveDrainResult {

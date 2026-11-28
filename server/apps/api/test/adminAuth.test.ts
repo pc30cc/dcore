@@ -20,6 +20,7 @@ import {
 } from './adminSupport.js';
 import { statements } from './authSupport.js';
 import { ADMIN_ORIGIN, hasInfrastructure } from './support.js';
+import { grantPastRules } from './systemSupport.js';
 
 /**
  * Admin sign-in against PostgreSQL and Valkey (docs/17 §3.17, W7
@@ -622,7 +623,8 @@ describe.skipIf(!hasInfrastructure)('admin sign-in', () => {
     const a = await signIn(h, ownerA, freshIp());
     // A role that is not the owner role but grants everything (every permission, the restricted ones too) may manage
     // owners: the last enabled one stays all the same.
-    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) SELECT id, '*' FROM admin_roles WHERE key = 'support' ON CONFLICT DO NOTHING`);
+    // Written past the role rules (they keep '*' with the owner role): a row made by hand.
+    await grantPastRules(db, 4, ['*']);
     await h.app.adminAuth.roles.reload();
     try {
       const helper = await seedAdmin(h, { roles: ['support'] });

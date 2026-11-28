@@ -194,6 +194,14 @@ export function createKeys(prefix: string) {
     // support
 
     // system
+    /**
+     * The last outcome of each scheduled or hand-started job (kv-core hash; field `<queue>/<job>`, value JSON
+     * `{ atMs, ok, ms, attempt, attempts, willRetry, error, manual, summary }`: an error class and SQLSTATE only, numeric
+     * summary only; one field per scheduled or runnable job, no TTL).
+     */
+    opsRuns: () => k('ops', 'runs'),
+    /** The time of each such job's last success (kv-core hash; field `<queue>/<job>`, value epoch ms). */
+    opsRunsOk: () => k('ops', 'runs', 'ok'),
   };
 }
 

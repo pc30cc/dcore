@@ -268,7 +268,7 @@ const targetLinks: Partial<Record<AuditTarget, (entry: AuditEntry) => string | n
   // growth
 
   // app
-  config: (entry) => configLink(configKeyOf(entry)),
+  config: (entry) => (roleKeyOf(entry) ? roleLink() : configLink(configKeyOf(entry))),
 
   // support
 
@@ -293,6 +293,19 @@ function configLink(key: string | null): string | null {
   return isAdminConfigKey(key) ? '/app/config' : null;
 }
 
+// system
+
+/** A role change (target config) names its role in `detail.role`. */
+function roleKeyOf(entry: AuditEntry): string | null {
+  const role = entry.detail?.['role'];
+  return entry.action === 'role.update' && typeof role === 'string' ? role : null;
+}
+
+/** The roles page, for the reader who may open it. */
+function roleLink(): string | null {
+  return can(sessionState().me, 'admins.read') ? '/system/roles' : null;
+}
+
 function TargetCell({ entry }: { entry: AuditEntry }) {
   const { t } = useI18n();
   const admins = useAuditAdmins(entry.targetType === 'admin');
@@ -310,7 +323,7 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
       </span>
     );
   }
-  const id = entry.user ?? entry.targetRef ?? configKeyOf(entry);
+  const id = entry.user ?? entry.targetRef ?? configKeyOf(entry) ?? roleKeyOf(entry);
   const href = entry.user ? `/users/${entry.user}` : (targetLinks[entry.targetType]?.(entry) ?? null);
   return (
     <span className="grid min-w-0">

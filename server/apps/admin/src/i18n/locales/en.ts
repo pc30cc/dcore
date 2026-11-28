@@ -1355,8 +1355,6 @@ export const en = {
   'permission.admins.manage.hint': 'Add admins, change roles, reset and disable.',
   'permission.audit.read': 'Read the audit log',
   'permission.audit.read.hint': 'Read and export the audit log.',
-  'permission.system.read': 'Jobs and health',
-  'permission.system.read.hint': 'Jobs and the health of the servers.',
   'permission.restricted': 'Restricted',
   'role.superadmin': 'Owner',
   'role.admin': 'Admin',

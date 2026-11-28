@@ -1,7 +1,7 @@
 import { effectiveProviders, providerConfigKey, type EffectiveProviders, type EnvProviders } from '@app/config';
 import { providerRows } from '@app/db';
 import type { ProviderKind } from '@app/shared';
-import { DataSealer, FcmSender, parseKeyRing, type KeyBuilder, type PushSender } from '@app/shared/server';
+import { DataSealer, FcmSender, PROCESS_REPORT_EVERY_MS, parseKeyRing, type KeyBuilder, type ProcessInfo, type PushSender } from '@app/shared/server';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { WorkerConfig } from './config.js';
@@ -18,8 +18,11 @@ import type { WorkerServices } from './services.js';
  * `services.iap`), which every job reads when it starts; a running job keeps
  * the client it began with. The first read happens before the queue workers
  * start. What the process applied is reported to `prov:applied` (field
- * `worker:<id>`, fingerprints only), with the photo moderation state, after
- * every rebuild and every minute.
+ * `worker:<id>`, fingerprints only), with the photo moderation state and the
+ * process's own state (`proc`: start time, the settings version read, the
+ * queues and streams it runs; the jobs page lists workers from it), after
+ * every rebuild, every new settings version and every 30 seconds; `stop()`
+ * removes the field.
  */
 
 const WORKER_KINDS = ['play', 'bazaar', 'fcm'] as const satisfies readonly ProviderKind[];
@@ -33,9 +36,11 @@ export interface WorkerProvidersOptions {
   log: Logger;
   /** The sealer of the panel's secrets; default from PROVIDER_KEYS (none: panel entries read `unreadable`). */
   sealer?: DataSealer | null | undefined;
-  /** How often `cfg:v` is looked at (5 s) and the report written again (60 s). */
+  /** How often `cfg:v` is looked at (5 s) and the report written again (30 s). */
   checkMs?: number | undefined;
   reportMs?: number | undefined;
+  /** What this process runs, for the report's `proc` (none: no process state is reported). */
+  process?: { startedAtMs: number; queues: readonly string[]; streams: readonly ('like' | 'match' | 'msg')[]; maint: boolean } | undefined;
   /** FCM's sender from an account (tests). */
   pushSender?: ((account: NonNullable<EnvProviders['fcm']>) => PushSender) | undefined;
   /** Store integration factories (tests). */
@@ -93,9 +98,14 @@ export class WorkerProviders {
     this.timer.unref();
   }
 
-  stop(): void {
+  /** Stops the checks and removes this process's report (best effort). */
+  async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.running?.catch(() => undefined);
+    const { redis, keys, config, log } = this.options;
+    if (redis.status !== 'ready') return;
+    await redis.hdel(keys.providersApplied(), `worker:${config.workerId}`).catch((error: unknown) => log.debug({ err: error }, 'providers: report not removed'));
   }
 
   /** One check: `cfg:v`, and the entries when it moved. Never throws. */
@@ -117,14 +127,15 @@ export class WorkerProviders {
         if (next.hash !== this.hash) {
           this.apply(next);
           this.hash = next.hash;
-          await this.report();
-          return;
         }
+        // A new settings version shows on the jobs page at once.
+        await this.report();
+        return;
       }
     } catch (error) {
       log.warn({ err: error }, 'providers: not checked; the clients stay as they are');
     }
-    if (Date.now() - this.lastReport >= (this.options.reportMs ?? 60_000)) await this.report();
+    if (Date.now() - this.lastReport >= (this.options.reportMs ?? PROCESS_REPORT_EVERY_MS)) await this.report();
   }
 
   private apply(next: EffectiveProviders): void {
@@ -178,6 +189,18 @@ export class WorkerProviders {
     log.info({ sources: next.sources }, 'providers: applied');
   }
 
+  private processState(process: NonNullable<WorkerProvidersOptions['process']>): ProcessInfo {
+    const version = this.version === null ? null : Number(this.version);
+    return {
+      kind: 'worker',
+      startedAtMs: process.startedAtMs,
+      cfgVersion: version !== null && Number.isSafeInteger(version) && version >= 0 ? version : null,
+      queues: [...process.queues],
+      streams: [...process.streams],
+      maint: process.maint,
+    };
+  }
+
   private async report(): Promise<void> {
     const { redis, keys, config, log } = this.options;
     const body = {
@@ -185,6 +208,7 @@ export class WorkerProviders {
       hash: this.effective.hash,
       kinds: Object.fromEntries(WORKER_KINDS.map((kind) => [kind, { source: this.effective.sources[kind], fp: this.effective.fingerprints[kind] }])),
       moderation: { provider: config.photos.provider, autoApprove: config.photos.autoApprove },
+      ...(this.options.process ? { proc: this.processState(this.options.process) } : {}),
     };
     try {
       await redis.hset(keys.providersApplied(), `worker:${config.workerId}`, JSON.stringify(body));

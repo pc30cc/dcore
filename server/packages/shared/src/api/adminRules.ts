@@ -207,6 +207,11 @@ export const auditActions = [
   // support
 
   // system
+  'role.update',
+  'system.dead_letters_delete',
+  'system.jobs_retry',
+  'system.jobs_remove',
+  'system.task_run',
 ] as const;
 export type AuditAction = (typeof auditActions)[number];
 export const auditActionSchema = z.enum(auditActions);

@@ -87,7 +87,22 @@ describe.skipIf(!hasDatabase || !hasRedis)('worker: provider credentials from th
     await remove('providers.fcm');
     await providers.refresh();
     expect(own.push).toBe(envPush);
-    providers.stop();
+    await providers.stop();
+  });
+
+  it('reports the process state with the providers, after a new settings version, and removes it on stop', async () => {
+    const config = loadConfig({ ...baseEnv(), REDIS_URL: 'redis://localhost:6379', PROVIDER_KEYS: providerKeys, WORKER_ID: 'wproc1' });
+    const providers = new WorkerProviders({ config, services: services(), redis, keys, log, checkMs: 60_000, process: { startedAtMs: 1_000, queues: ['photo', 'maint'], streams: ['like'], maint: true } });
+    await providers.start();
+    const read = async () => JSON.parse((await redis.hget(keys.providersApplied(), 'worker:wproc1')) ?? 'null') as { atMs: number; proc: Record<string, unknown> } | null;
+    const version = Number((await redis.get(keys.configVersion())) ?? '0');
+    expect((await read())?.proc).toEqual({ kind: 'worker', startedAtMs: 1_000, cfgVersion: version, queues: ['photo', 'maint'], streams: ['like'], maint: true });
+    // A settings change with no provider change still shows the new version at once.
+    await save('app.maintenance', { enabled: false });
+    await providers.refresh();
+    expect((await read())?.proc['cfgVersion']).toBe(version + 1);
+    await providers.stop();
+    expect(await read()).toBeNull();
   });
 
   it('builds a store client from the panel\'s entry, and reads an entry as unreadable without PROVIDER_KEYS', async () => {
@@ -98,13 +113,13 @@ describe.skipIf(!hasDatabase || !hasRedis)('worker: provider credentials from th
     await providers.start();
     expect(withKeys.iap?.verifiers.play).toBeDefined();
     expect(providers.current().sources.play).toBe('panel');
-    providers.stop();
+    await providers.stop();
     const without = services();
     const blind = new WorkerProviders({ config: loadConfig({ ...baseEnv(), REDIS_URL: 'redis://localhost:6379', WORKER_ID: 'wtest3' }), services: without, redis, keys, log, checkMs: 60_000 });
     await blind.start();
     expect(blind.current().sources.play).toBe('unreadable');
     expect(without.iap?.verifiers.play).toBeUndefined();
-    blind.stop();
+    await blind.stop();
     await remove('providers.play');
   });
 

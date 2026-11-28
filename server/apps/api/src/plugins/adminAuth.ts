@@ -155,7 +155,10 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
       void app.adminAuth.passwords.prime().catch((error: unknown) => app.log.warn({ err: error }, 'admin: the dummy password hash was not made; the first unknown e-mail makes it'));
       // After every configuration load (cfg:changed covers a change of the roles' grants); once now.
       if (!app.cfg.peek()) void roles.reload();
-      app.cfg.onLoad(() => void roles.reload());
+      app.cfg.onLoad((snapshot) => void roles.reload(snapshot.version));
+    });
+    app.addHook('onClose', async () => {
+      roles.stop();
     });
   },
   { name: 'admin-auth', fastify: '5.x', dependencies: ['auth', 'account-services'] },

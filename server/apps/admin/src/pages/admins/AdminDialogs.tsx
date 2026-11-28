@@ -2,15 +2,15 @@ import { ADMIN_PASSWORD_MAX, ADMIN_PASSWORD_MIN, OWNER_ROLE, type AdminAccount }
 import { Check, Copy, KeyRound, TriangleAlert } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import { Field } from '@/components/form/Field';
+import { RolePermissions } from '@/components/RolePermissions';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
 import { useWording } from '@/i18n/useWording';
 import { Worded } from '@/i18n/Worded';
-import { permissionHint, permissionLabel, permissionRestricted, roleName, validateNewAdmin, type NewAdminErrors, type NewAdminForm } from '@/lib/admins';
+import { roleName, validateNewAdmin, type NewAdminErrors, type NewAdminForm } from '@/lib/admins';
 import { apiRequest } from '@/lib/api';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
@@ -44,31 +44,6 @@ function RolePicker({ roles, value, onChange, invalid }: { roles: readonly Admin
         );
       })}
     </div>
-  );
-}
-
-/** What a role grants, by the panel's names, folded (restricted ones marked). */
-function RolePermissions({ permissions }: { permissions: readonly string[] }) {
-  const { t } = useI18n();
-  return (
-    <details className="ps-7 text-xs text-muted-foreground">
-      <summary className="cursor-pointer select-none">{t('admins.role.permissions', { count: permissions.length })}</summary>
-      <ul className="mt-2 grid gap-1.5">
-        {permissions.map((permission) => (
-          <li key={permission} className="grid gap-0.5">
-            <span className="flex flex-wrap items-center gap-1.5 text-foreground">
-              {permissionLabel(permission, t)}
-              {permissionRestricted(permission) && (
-                <Badge variant="outline" className="px-1.5 py-0 text-[0.65rem]">
-                  {t('permission.restricted')}
-                </Badge>
-              )}
-            </span>
-            {permissionHint(permission, t) && <span>{permissionHint(permission, t)}</span>}
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }
 

@@ -4,10 +4,12 @@ import { providerKinds, type AppStore, type ProviderKind, type ProviderSource } 
 import {
   DataSealer,
   KavenegarSender,
+  PROCESS_REPORT_EVERY_MS,
   PubSubOidcVerifier,
   parseKeyRing,
   SmsIrSender,
   TelnyxSender,
+  type ProcessInfo,
   type PubSubPushAuthenticator,
   type SmsSender,
   type StoreVerifier,
@@ -33,9 +35,13 @@ import type { ConfigSnapshot } from './cfg.js';
  * seals them, so the worker never needs it.
  *
  * Each process reports what it applied to `prov:applied` (field
- * `api:<hostname>`, now and every minute; each container has its own
- * hostname), so the panel can show which processes use which key, by
- * fingerprint only. A failure there never changes what is applied.
+ * `api:<hostname>`; each container has its own hostname), so the panel can
+ * show which processes use which key, by fingerprint only. The report also
+ * carries the process's own state (`proc`: when it started, the settings
+ * version it loaded, the roles version and whether their load fails), which
+ * the jobs page lists. It is written at start, after every configuration
+ * load and every roles load, and every 30 seconds; the field is removed
+ * when the app closes. A failure there never changes what is applied.
  */
 
 type Fetch = typeof fetch;
@@ -45,8 +51,10 @@ export interface ProvidersOptions {
   fetch?: Fetch | undefined;
   /** Store verifier factories (tests); otherwise the store integrations'. */
   storeFactories?: Partial<Record<AppStore, StoreVerifierFactory>> | undefined;
-  /** How often the report is written again (60 s). */
+  /** How often the report is written again (30 s). */
   reportEveryMs?: number | undefined;
+  /** The report's field name (tests running two apps on one Valkey); otherwise `api:<hostname>`. */
+  processName?: string | undefined;
   /** Builds Play's RTDN authenticator from an audience and push e-mail (tests); otherwise Google's OIDC check. */
   rtdnAuthenticator?: ((rtdn: { audience: string; pushServiceAccountEmail: string }) => PubSubPushAuthenticator) | undefined;
 }
@@ -101,6 +109,8 @@ export interface AppliedReport {
   hash: string;
   kinds: Partial<Record<ProviderKind, { source: ProviderSource; fp: string | null }>>;
   moderation?: { provider: string; autoApprove: boolean } | undefined;
+  /** The process's own state (shared `ops/processes.ts`). */
+  proc?: ProcessInfo | undefined;
 }
 
 export function reportOf(effective: EffectiveProviders, kinds: readonly ProviderKind[], atMs: number): AppliedReport {
@@ -114,7 +124,8 @@ export function reportOf(effective: EffectiveProviders, kinds: readonly Provider
 export const providersPlugin = fp<ProvidersOptions>(
   async (app, options) => {
     const env = apiEnvProviders(app.config);
-    const processName = `api:${hostname()}`;
+    const processName = options.processName ?? `api:${hostname().slice(0, 48)}`;
+    const startedAtMs = Date.now();
     const providerKeys = app.config.secrets.providerKeys;
     const sealer = providerKeys !== undefined ? new DataSealer(parseKeyRing(providerKeys, 'PROVIDER_KEYS'), app.config.secrets.providerKeyId) : null;
     const log = app.log.child({ component: 'providers' });
@@ -198,12 +209,17 @@ export const providersPlugin = fp<ProvidersOptions>(
       effective = next;
       appliedHash = snapshot.providersHash;
       log.info({ sources: next.sources }, 'providers: applied');
-      void report();
     };
 
+    const processState = (): ProcessInfo => {
+      const roles = app.adminAuth.roles.state();
+      return { kind: 'api', startedAtMs, cfgVersion: app.cfg.peek()?.version ?? null, rolesVersion: roles.version, rolesFailing: roles.failing };
+    };
+
+    let closing = false;
     const report = async (): Promise<void> => {
-      if (app.redis.status !== 'ready') return;
-      const body = reportOf(effective, providerKinds.filter((kind) => kind !== 'fcm'), Date.now());
+      if (closing || app.redis.status !== 'ready') return;
+      const body: AppliedReport = { ...reportOf(effective, providerKinds.filter((kind) => kind !== 'fcm'), Date.now()), proc: processState() };
       await app.redis.hset(app.keys.providersApplied(), processName, JSON.stringify(body)).catch((error: unknown) => log.debug({ err: error }, 'providers: report not written'));
     };
 
@@ -217,14 +233,29 @@ export const providersPlugin = fp<ProvidersOptions>(
 
     let timer: NodeJS.Timeout | null = null;
     app.addHook('onReady', async () => {
-      app.cfg.onLoad((snapshot) => apply(snapshot));
-      timer = setInterval(() => void report(), options.reportEveryMs ?? 60_000);
+      // Every load reports: the providers it applied and the settings version it now holds.
+      app.cfg.onLoad((snapshot) => {
+        apply(snapshot);
+        void report();
+      });
+      app.adminAuth.roles.onLoaded(() => void report());
+      timer = setInterval(() => void report(), options.reportEveryMs ?? PROCESS_REPORT_EVERY_MS);
       timer.unref();
+      if (app.redis.status !== 'ready') app.redis.once('ready', () => void report());
+    });
+    // Before the connections close: a process that stops takes its report with it.
+    app.addHook('preClose', async () => {
+      closing = true;
+      if (timer) clearInterval(timer);
+      timer = null;
+      if (app.redis.status === 'ready') {
+        await app.redis.hdel(app.keys.providersApplied(), processName).catch((error: unknown) => log.debug({ err: error }, 'providers: report not removed'));
+      }
     });
     app.addHook('onClose', async () => {
       if (timer) clearInterval(timer);
     });
   },
-  { name: 'providers', fastify: '5.x', dependencies: ['store', 'auth-services'] },
+  { name: 'providers', fastify: '5.x', dependencies: ['store', 'auth-services', 'admin-auth'] },
 );
 

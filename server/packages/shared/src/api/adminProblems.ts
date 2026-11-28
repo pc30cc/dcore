@@ -72,6 +72,10 @@ export const adminConflictReasons = [
   // support
 
   // system
+  /** The caller holds the role it tries to change (another admin with enough access must change it). */
+  'own_role',
+  /** The role's grants changed since the panel read them (`base`). */
+  'role_changed',
 ] as const;
 export type AdminConflictReason = (typeof adminConflictReasons)[number];
 
@@ -106,6 +110,14 @@ export const adminForbiddenReasons = [
   // support
 
   // system
+  /** The owner role (and a role holding `*`) never changes. */
+  'owner_role',
+  /** The role holds access the caller's roles do not grant. */
+  'beyond_role',
+  /** A restricted permission is given or taken by the owner only (`*`). */
+  'restricted_permission',
+  /** Access is taken from a role one of whose holders has access the caller's roles do not grant. */
+  'beyond_holders',
 ] as const;
 export type AdminForbiddenReason = (typeof adminForbiddenReasons)[number];
 
@@ -208,6 +220,20 @@ export const adminFieldCodes = [
   // support
 
   // system
+  /** A grant this build does not know (a permission, or the wildcard of an area). */
+  'unknown_permission',
+  /** `*` belongs to the owner role only. */
+  'owner_grant',
+  /** users.chats is held by the admin role only. */
+  'chats_admin_only',
+  /** The analyst role holds dashboard permissions only. */
+  'analyst_dashboards_only',
+  /** Failed jobs of this name are never run again (a late run would repeat what people see). */
+  'not_retryable',
+  /** This task is not started by hand. */
+  'not_runnable',
+  /** No such queue (or job name) in this build. */
+  'unknown_job',
 ] as const;
 export type AdminFieldCode = (typeof adminFieldCodes)[number];
 

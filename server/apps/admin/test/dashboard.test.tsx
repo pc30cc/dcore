@@ -123,7 +123,14 @@ describe('the dashboard', () => {
     expect(within(jobs).getByRole('rowheader', { name: 'Push notifications' })).toBeTruthy();
     // An idle queue is left out.
     expect(within(jobs).queryByRole('rowheader', { name: 'Maintenance' })).toBeNull();
-    // Jobs and health is not built yet: no link to it.
+    // The owner reads the jobs page: the card links to it.
+    expect(within(card).getByRole('link', { name: 'Jobs and health' }).getAttribute('href')).toBe('/system/jobs');
+  });
+
+  it('links the health card to the jobs page only for an admin who may read it', async () => {
+    signInAs(adminWith(['dashboard.read']));
+    renderPanel('/', liveApi());
+    const card = (await screen.findByRole('heading', { name: 'System health' })).closest('section')!;
     expect(within(card).queryByRole('link')).toBeNull();
   });
 

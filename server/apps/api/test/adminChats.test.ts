@@ -26,6 +26,7 @@ import { admin, installTableDigest, seedAdmin, signIn, startAdminHarness, tableD
 import { matchOf, startChatPipeline, until, type ChatPipeline } from './chatSupport.js';
 import { seedAction, seedMatch } from './moderationSupport.js';
 import { hasInfrastructure, TEST_REDIS_URL } from './support.js';
+import { grantPastRules } from './systemSupport.js';
 
 /**
  * The admin user page's chats on PostgreSQL and Valkey, with the `wb:msg`
@@ -164,7 +165,8 @@ describe.skipIf(!hasInfrastructure)("admin: a person's conversations (users.chat
 
   async function customRole(id: number, key: string, grants: readonly string[]): Promise<string> {
     await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES ($1, $2, '{"en": "Custom"}') ON CONFLICT (key) DO NOTHING`, [id, key]);
-    for (const grant of grants) await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [id, grant]);
+    // Past the role rules (which keep users.chats on the admin role): a role made by hand, to test the reads alone.
+    await grantPastRules(db, id, grants);
     await h.app.adminAuth.roles.reload();
     signIns += 1;
     return (await signIn(h, await seedAdmin(h, { roles: [key] }), `10.78.0.${signIns % 250}`)).accessToken;

@@ -82,6 +82,8 @@ describe.skipIf(!hasDatabase || !hasRedis)('maintenance jobs (PostgreSQL, Valkey
     expect(Object.keys(result.parents).sort()).toEqual(['audit_log', 'likes', 'messages']);
     expect(result.parents['likes']!.filter((a) => a.action === 'dropped').map((a) => a.partition)).toEqual([expired]);
     expect(result.parents['messages']!.every((a) => a.action === 'ensure')).toBe(true);
+    // The totals the run recorder keeps: every parent's current period and the ones ahead, the one expired week.
+    expect(result).toMatchObject({ ensured: 5 + 4 + 4, dropped: 1, deferred: 0, held: 0 });
     expect(await partitionsOf('likes')).not.toContain(expired);
     // 1 (registry) + per parent 1 maintain + drops until nothing is due: likes 2, the others 1.
     expect(tally.statements).toBe(1 + 3 + 2 + 1 + 1);

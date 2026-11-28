@@ -1352,8 +1352,6 @@ export const tr: Readonly<Record<keyof typeof en, string>> = {
   'permission.admins.manage.hint': 'Yönetici ekleme, rol değiştirme, sıfırlama ve devre dışı bırakma.',
   'permission.audit.read': 'Denetim kaydını okuma',
   'permission.audit.read.hint': 'Denetim kaydını okuma ve dışa aktarma.',
-  'permission.system.read': 'İşler ve sistem durumu',
-  'permission.system.read.hint': 'Arka plan işleri ve sunucuların durumu.',
   'permission.restricted': 'Kısıtlı',
   'role.superadmin': 'Sahip',
   'role.admin': 'Yönetici',

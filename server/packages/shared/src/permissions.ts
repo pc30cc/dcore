@@ -90,6 +90,8 @@ export const permissionCatalog = {
 
   'audit.read': {},
   'system.read': {},
+  /** Acting on the jobs and health page: failed jobs retried or removed, failed stream entries deleted, maintenance started. */
+  'system.write': {},
 } as const satisfies Record<string, PermissionInfo>;
 
 export type Permission = keyof typeof permissionCatalog;
@@ -122,6 +124,21 @@ export function grantCovers(grant: string, permission: Permission): boolean {
 export function grantsAllow(grants: Iterable<string>, permission: Permission): boolean {
   for (const grant of grants) if (grantCovers(grant, permission)) return true;
   return false;
+}
+
+/** The areas of the catalogue (`users` of `users.read`), in catalogue order. */
+export const permissionAreas: readonly string[] = [...new Set(permissions.map((permission) => permission.slice(0, permission.indexOf('.'))))];
+
+/** Whether `permission` is restricted (only `*` or the exact grant gives it). */
+export function isRestrictedPermission(permission: Permission): boolean {
+  return isRestricted(permission);
+}
+
+/** A grant this build can read: `*`, a catalogue permission, or `area.*` of an area that has permissions. */
+export function isKnownGrant(grant: string): boolean {
+  if (grant === '*') return true;
+  if (grant.endsWith('.*')) return permissionAreas.includes(grant.slice(0, -2));
+  return isPermission(grant);
 }
 
 /** Every catalogue permission `grants` cover, in catalogue order. */

@@ -1,10 +1,11 @@
-import { queueNames, queueRetention, type QueueName, type QueueRetention } from '@app/shared/server';
+import { queueNames, queueRetention, writeBehindStreams, type QueueName, type QueueRetention } from '@app/shared/server';
 import { Queue, Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import type { WorkerConfig } from './config.js';
 import { defaultQueues, type JobContext, type QueueDefinition } from './queues/index.js';
 import { createWorkerRedis } from './redis.js';
+import { attachRunRecorder } from './ops/runs.js';
 import { WorkerProviders, type WorkerProvidersOptions } from './providers.js';
 import { createWorkerServices, type WorkerServices } from './services.js';
 import { closeSocialQueues } from './social/jobs.js';
@@ -70,7 +71,21 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
   // app: the panel's provider credentials (FCM, stores), read once before any queue worker takes a job.
   const providers =
     !options.services || options.providers
-      ? new WorkerProviders({ config, services, redis: shared, keys: services.keys, log: logger.child({ component: 'providers' }), ...options.providers })
+      ? new WorkerProviders({
+          config,
+          services,
+          redis: shared,
+          keys: services.keys,
+          log: logger.child({ component: 'providers' }),
+          // system: the process's own state in its report (the jobs page's worker list).
+          process: {
+            startedAtMs: Date.now(),
+            queues: definitions.map((d) => d.name),
+            streams: writeBehindStreams.filter((name) => consumerDefinitions.some((c) => c.stream === services.keys.stream(name))),
+            maint: config.maint.enabled,
+          },
+          ...options.providers,
+        })
       : null;
   await providers?.start();
 
@@ -160,6 +175,8 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
   // support
 
   // system
+  // The outcome of each scheduled or hand-started job, for the jobs page.
+  for (const worker of workers) attachRunRecorder(worker, { redis: shared, keys: services.keys, log: logger.child({ component: 'run-recorder' }) });
 
   logger.info(
     { queues: definitions.map((q) => q.name), streams: consumerDefinitions.map((c) => c.stream) },
@@ -185,7 +202,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
         // growth
 
         // app
-        providers?.stop();
+        await providers?.stop();
 
         // support
 

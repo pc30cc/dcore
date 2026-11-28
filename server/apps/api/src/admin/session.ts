@@ -230,12 +230,17 @@ export async function issueAdminAccess(app: FastifyInstance, adminId: number, se
  * admin token is refused anyway (the deny list fails closed for admins).
  */
 export async function denyAdminSessions(app: FastifyInstance, request: FastifyRequest, sessionIds: readonly string[]): Promise<void> {
-  if (sessionIds.length === 0) return;
   try {
-    await Promise.all([...sessionIds.map((sid) => app.denyList.revokeSession(sid)), app.refreshGrace.forget(sessionIds)]);
+    await denyAdminSessionsOrThrow(app, sessionIds);
   } catch (error) {
     request.log.error({ err: error, sessions: sessionIds.length }, 'admin: revoked sessions not written to the deny list');
   }
+}
+
+/** {@link denyAdminSessions}, throwing when a deny marker (or the grace drop) was not written, for a caller that reports it. */
+export async function denyAdminSessionsOrThrow(app: FastifyInstance, sessionIds: readonly string[]): Promise<void> {
+  if (sessionIds.length === 0) return;
+  await Promise.all([...sessionIds.map((sid) => app.denyList.revokeSession(sid)), app.refreshGrace.forget(sessionIds)]);
 }
 
 // ─── 1. E-mail and password ────────────────────────────────────────────────

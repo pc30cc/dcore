@@ -85,6 +85,8 @@ export const auditActionGroups: readonly { area: string; label: MessageKey; acti
     // support
 
     // system
+    role: 'audit.area.role',
+    system: 'audit.area.system',
   };
   const groups: { area: string; label: MessageKey; actions: AuditAction[] }[] = [];
   for (const action of auditActions) {

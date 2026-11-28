@@ -67,6 +67,7 @@ import { growthAreaRoutes } from './routes/areas/growth.js';
 import { appAreaRoutes } from './routes/areas/app.js';
 import { supportAreaRoutes } from './routes/areas/support.js';
 import { systemAreaRoutes } from './routes/areas/system.js';
+import type { AdminSystemRoutesOptions } from './routes/adminSystem.js';
 import { callRoutes } from './routes/calls.js';
 import { livekitWebhookRoutes } from './routes/livekitWebhook.js';
 import { originsRoutes } from './routes/origins.js';
@@ -159,6 +160,8 @@ export interface AppDependencies {
   activity?: Omit<ActivityPluginOptions, 'userIdOf'> | undefined;
   /** The provider runtime's SMS fetch, store factories and report interval (tests). */
   providers?: ProvidersOptions | undefined;
+  /** The system routes' hourly write count (tests). */
+  adminSystem?: AdminSystemRoutesOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -372,7 +375,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(growthAreaRoutes);
   await app.register(appAreaRoutes);
   await app.register(supportAreaRoutes);
-  await app.register(systemAreaRoutes);
+  await app.register(systemAreaRoutes, deps.adminSystem ?? {});
   await app.register(originsRoutes);
   await app.register(adminOriginsRoutes);
   await app.register(storeRoutes);

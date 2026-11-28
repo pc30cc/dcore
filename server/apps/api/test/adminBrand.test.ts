@@ -26,8 +26,9 @@ describe.skipIf(!hasInfrastructure)('admin: the run-time brand', () => {
     h = await startAdminHarness(db);
     superadmin = await adminAs(h, 'superadmin');
     adminRole = await adminAs(h, 'admin');
-    reader = await adminAs(h, 'analyst');
-    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) SELECT id, 'config.read' FROM admin_roles WHERE key = 'analyst' ON CONFLICT DO NOTHING`);
+    // A reader of the settings without config.write (the analyst role holds dashboards only).
+    reader = await adminAs(h, 'support');
+    await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) SELECT id, 'config.read' FROM admin_roles WHERE key = 'support' ON CONFLICT DO NOTHING`);
     await h.app.adminAuth.roles.reload();
     const view = await get();
     media = view.mediaOrigin!;

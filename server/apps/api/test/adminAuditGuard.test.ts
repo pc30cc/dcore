@@ -22,6 +22,7 @@ import {
 import { profileVersion, seedAction, seedAppeal, seedEvidenceReport, seedMatch, seedPhone, seedPhoto, seedTexts } from './moderationSupport.js';
 import { seedPurchase, type SeededPurchase } from './revenueSupport.js';
 import { hasInfrastructure } from './support.js';
+import { deadLetter, failJobs, failedKey } from './systemSupport.js';
 
 /**
  * AC2, the guard: every admin route that writes (POST, PUT, PATCH, DELETE
@@ -38,6 +39,12 @@ interface AuditedWrite {
   actions: readonly AuditAction[];
   /** Sets the case up (with audit rows allowed) and gives the call to make. */
   prepare: () => Promise<Send>;
+  /**
+   * What the write changes outside the tables, the realtime side, the job
+   * producer and the deny list (a Valkey stream, BullMQ's sets): read before
+   * and after the refused call, which must leave it as it was.
+   */
+  unchanged?: () => Promise<unknown>;
 }
 
 const SIGN_IN_PREFIX = '/v1/admin/auth/';
@@ -417,6 +424,45 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     // support
 
     // system
+    'PUT /v1/admin/roles/{key}/permissions': {
+      actions: ['role.update'],
+      prepare: async () => {
+        // A role of the guard's own with a signed-in holder: taking a permission away signs the holder out.
+        await db.sql.query(`INSERT INTO admin_roles (id, key, names) VALUES (46, 'guard_role', '{"en": "Guard"}') ON CONFLICT (key) DO NOTHING`);
+        await db.sql.query(`INSERT INTO admin_role_permissions (role_id, permission) VALUES (46, 'users.read'), (46, 'reports.read') ON CONFLICT DO NOTHING`);
+        await h.app.adminAuth.roles.reload();
+        await signIn(h, await seedAdmin(h, { roles: ['guard_role'] }));
+        return send('PUT', '/v1/admin/roles/guard_role/permissions', { grants: ['users.read'], base: ['reports.read', 'users.read'] });
+      },
+    },
+    'POST /v1/admin/system/dead-letters/delete': {
+      actions: ['system.dead_letters_delete'],
+      prepare: async () => {
+        const id = await deadLetter(h, 'like', { id: `${Date.now()}-0`, fields: { id: '1', a: '2', t: '3', k: '1' } });
+        return send('POST', '/v1/admin/system/dead-letters/delete', { stream: 'like', ids: [id] });
+      },
+      unchanged: () => h.redis.xlen(`${h.prefix}wb:like:dead`),
+    },
+    'POST /v1/admin/system/jobs/retry': {
+      actions: ['system.jobs_retry'],
+      prepare: async () => {
+        await failJobs(h, 'photo', 'process', [unique('process.9')]);
+        return send('POST', '/v1/admin/system/jobs/retry', { queue: 'photo', name: 'process' });
+      },
+      unchanged: async () => ({ failed: await h.redis.zrange(failedKey(h, 'photo'), '0', '-1'), waiting: await h.redis.lrange(`${h.prefix}bull:photo:wait`, '0', '-1') }),
+    },
+    'POST /v1/admin/system/jobs/remove': {
+      actions: ['system.jobs_remove'],
+      prepare: async () => {
+        await failJobs(h, 'push', 'send', [unique('send.guard.')]);
+        return send('POST', '/v1/admin/system/jobs/remove', { queue: 'push', name: 'send' });
+      },
+      unchanged: () => h.redis.zrange(failedKey(h, 'push'), '0', '-1'),
+    },
+    'POST /v1/admin/system/tasks/run': {
+      actions: ['system.task_run'],
+      prepare: async () => send('POST', '/v1/admin/system/tasks/run', { queue: 'maint', name: 'partitions' }),
+    },
   };
 
   /**
@@ -472,6 +518,7 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     const disconnected = realtime.disconnected.length;
     const queued = jobs.jobs.length;
     const denied = await denyKeys();
+    const outside = await entry.unchanged?.();
     const refused = await call();
     expect(refused.statusCode, refused.body).toBe(500);
     expect(await digest()).toEqual(before);
@@ -479,6 +526,7 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     expect(realtime.disconnected.length).toBe(disconnected);
     expect(jobs.jobs.length).toBe(queued);
     expect(await denyKeys()).toBe(denied);
+    if (entry.unchanged) expect(await entry.unchanged()).toEqual(outside);
 
     await refuseAudit(db);
     const since = (await row<{ id: string | null }>(db, 'SELECT max(id)::text AS id FROM audit_log')).id ?? '0';

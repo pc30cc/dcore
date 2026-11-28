@@ -253,6 +253,17 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   // support
 
   // system
+  ['GET', '/v1/admin/system/health', '200', true],
+  ['GET', '/v1/admin/system/queues', '200', true],
+  ['GET', '/v1/admin/system/streams', '200', true],
+  ['GET', '/v1/admin/system/streams/{stream}/dead-letters', '200', true],
+  ['GET', '/v1/admin/system/partitions', '200', true],
+  ['POST', '/v1/admin/system/dead-letters/delete', '200', true],
+  ['POST', '/v1/admin/system/jobs/retry', '200', true],
+  ['POST', '/v1/admin/system/jobs/remove', '200', true],
+  ['POST', '/v1/admin/system/tasks/run', '200', true],
+  ['GET', '/v1/admin/roles/holders', '200', true],
+  ['PUT', '/v1/admin/roles/{key}/permissions', '200', true],
 ];
 
 describe('the route registry', () => {

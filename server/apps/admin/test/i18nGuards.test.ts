@@ -60,6 +60,11 @@ import {
   textState,
   walletItem,
   accountStatus,
+  adminPartitionParentSchema,
+  deadLetterReasons,
+  likeKind,
+  permissionAreas,
+  streamNameSchema,
   type Locale,
 } from '@app/shared';
 import ts from 'typescript';
@@ -157,6 +162,19 @@ function sharedQueueNames(): string[] {
   return [...list.matchAll(/'([a-z][a-z0-9_-]*)'/g)].map((match) => match[1]!);
 }
 
+/**
+ * The tasks the jobs page starts by hand (`runnableTasks`, in the shared
+ * catalogue's Node-only part), as `queue.name`, read from their source.
+ */
+function sharedRunnableTasks(): string[] {
+  const source = readFileSync(join(ROOT, 'packages/shared/src/server/ops/policy.ts'), 'utf8');
+  const list = /export const runnableTasks = \[([\s\S]*?)\] as const/.exec(source)?.[1];
+  if (!list) throw new Error('policy.ts: no runnableTasks list to read');
+  const tasks = [...list.matchAll(/\{\s*queue:\s*'([a-z][a-z0-9-]*)',\s*name:\s*'([a-z][a-z0-9-]*)'\s*\}/g)].map((match) => `${match[1]}.${match[2]}`);
+  if (tasks.length === 0) throw new Error('policy.ts: runnableTasks holds no task the guard can read');
+  return tasks;
+}
+
 describe('server values the panel shows have words in every language', () => {
   it('every permission, with its sentence', () => {
     expectWords('permission.', permissions);
@@ -250,6 +268,12 @@ describe('server values the panel shows have words in every language', () => {
       // support
 
       // system
+      ['permissionArea.', permissionAreas],
+      ['dashboard.stream.', streamNameSchema.options],
+      ['jobs.dead.reason.', deadLetterReasons],
+      ['jobs.dead.kind.', likeKind.names],
+      ['jobs.partitions.period.', adminPartitionParentSchema.shape.period.options],
+      ['jobs.task.', sharedRunnableTasks()],
     ];
     for (const [prefix, codes] of tables) expectWords(prefix, codes);
   });

@@ -71,6 +71,8 @@ export const CONFLICT_TEXT: Readonly<Record<AdminConflictReason, MessageKey>> = 
   // support
 
   // system
+  own_role: 'roles.error.own',
+  role_changed: 'roles.error.changed',
 };
 
 /** Every reason a 403 of the admin API names (`beyond_grants` lists the permissions too). */
@@ -97,6 +99,10 @@ export const FORBIDDEN_TEXT: Readonly<Record<AdminForbiddenReason, MessageKey>> 
   // support
 
   // system
+  owner_role: 'roles.error.ownerRole',
+  beyond_role: 'roles.error.beyondRole',
+  restricted_permission: 'roles.error.restricted',
+  beyond_holders: 'roles.error.beyondHolders',
 };
 
 /** Every field code the admin API writes, in general words (a form may say more at its field). */
@@ -192,6 +198,13 @@ export const FIELD_TEXT: Readonly<Record<AdminFieldCode, MessageKey>> = {
   // support
 
   // system
+  unknown_permission: 'roles.error.unknownPermission',
+  owner_grant: 'roles.error.ownerGrant',
+  chats_admin_only: 'roles.error.chatsAdminOnly',
+  analyst_dashboards_only: 'roles.error.analystDashboards',
+  not_retryable: 'jobs.failed.notRetryable',
+  not_runnable: 'jobs.task.notRunnable',
+  unknown_job: 'jobs.error.unknownJob',
 };
 
 /** The problem codes worded here; any other the panel treats by its HTTP status. */

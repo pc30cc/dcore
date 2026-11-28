@@ -1351,8 +1351,6 @@ export const fa: Readonly<Record<keyof typeof en, string>> = {
   'permission.admins.manage.hint': 'افزودن مدیر، تغییر نقش، بازنشانی و غیرفعال کردن.',
   'permission.audit.read': 'خواندن لاگ ممیزی',
   'permission.audit.read.hint': 'خواندن لاگ ممیزی و گرفتن خروجی از آن.',
-  'permission.system.read': 'کارها و سلامت سیستم',
-  'permission.system.read.hint': 'کارهای پس‌زمینه و سلامت سرورها.',
   'permission.restricted': 'محدود',
   'role.superadmin': 'مالک',
   'role.admin': 'مدیر',

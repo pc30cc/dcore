@@ -291,6 +291,19 @@ describe('the audit log page', () => {
     expect(screen.queryByRole('link', { name: 'auth.sms_routing' })).toBeNull();
   });
 
+  it('names a role change by its role and links it to the roles page for a reader of admins', async () => {
+    const rows = () => page([entry('16', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'support', before: [], after: [] } })]);
+    signInAs(adminWith(['audit.read', 'admins.read'], ['superadmin']));
+    const view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    expect((await screen.findByRole('link', { name: 'support' })).getAttribute('href')).toBe('/system/roles');
+    view.unmount();
+    // Without admins.read: the role's key, no link.
+    signInAs(adminWith(['audit.read'], ['auditor']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    expect(await screen.findByText('support')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'support' })).toBeNull();
+  });
+
   it('links a provider row to the providers page for the owner', async () => {
     signInAs(adminWith(['audit.read', 'config.read', 'config.providers'], ['superadmin']));
     renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': () => page([entry('13', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'providers.kavenegar' } })]) }));
