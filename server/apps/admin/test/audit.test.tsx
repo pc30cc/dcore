@@ -271,6 +271,32 @@ describe('the audit log page', () => {
     expect(screen.queryByRole('link', { name: '105424043695398946' })).toBeNull();
   });
 
+  it('names a settings row by its key and links it to the page it is edited on', async () => {
+    const rows = () =>
+      page([
+        entry('11', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'limits.rates', before: {}, after: {} } }),
+        entry('12', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'brand', changed: ['appName'] } }),
+        entry('13', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'providers.kavenegar', changed: [] } }),
+        entry('14', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'auth.sms_routing' } }),
+        entry('15', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'ui.templates' } }),
+      ]);
+    signInAs(adminWith(['audit.read', 'config.read'], ['admin']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    expect((await screen.findByRole('link', { name: 'limits.rates' })).getAttribute('href')).toBe('/app/config');
+    expect(screen.getByRole('link', { name: 'brand' }).getAttribute('href')).toBe('/app/brand');
+    expect(screen.getByRole('link', { name: 'ui.templates' }).getAttribute('href')).toBe('/app/appearance');
+    // The providers page needs config.providers: without it the key is shown with no link.
+    expect(screen.getByText('providers.kavenegar')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'providers.kavenegar' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'auth.sms_routing' })).toBeNull();
+  });
+
+  it('links a provider row to the providers page for the owner', async () => {
+    signInAs(adminWith(['audit.read', 'config.read', 'config.providers'], ['superadmin']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': () => page([entry('13', { action: 'config.update', targetType: 'config', targetRef: null, user: undefined, detail: { key: 'providers.kavenegar' } })]) }));
+    expect((await screen.findByRole('link', { name: 'providers.kavenegar' })).getAttribute('href')).toBe('/app/providers');
+  });
+
   it('filters by a purchase', async () => {
     const api = auditApi();
     renderPanel('/system/audit?targetType=purchase&target=105424043695398946', api);

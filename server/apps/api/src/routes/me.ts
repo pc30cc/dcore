@@ -1,6 +1,7 @@
 import {
   acceptConsent,
   afterProfileWrite,
+  profileReviewResubmit,
   clearSignUpAnswers,
   listConsents,
   noChange,
@@ -15,6 +16,9 @@ import {
   type ProfileWrite,
 } from '@app/db';
 import {
+  signupAllowed,
+  profileReviewState,
+  reviewResubmitSchema,
   accountStatus,
   basicsRequestSchema,
   codesToMask,
@@ -375,6 +379,9 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           if (finishing && after.status === accountStatus.code('onboarding')) {
             const due = consentsDueOf(after, cfg);
             if (due.length > 0) throw new HttpProblem('consent_required', { extensions: { kinds: due } });
+            if (!signupAllowed(cfg.app['signup.countries'], after.location?.country ?? after.country)) {
+              throw new HttpProblem('country_not_supported', { detail: 'Sign-up is not open in this country.' });
+            }
             const missing = missingForSignUp(after, cfg);
             if (missing.length > 0) {
               throw new HttpProblem('field_invalid', { detail: `Sign-up is not complete: ${missing.map((m) => m.code).join(', ')}.`, errors: missing });
@@ -652,6 +659,27 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       );
       await app.account.changed(session.userId);
       return consentList(rows);
+    },
+  );
+
+  // ─── POST /v1/me/review/resubmit ────────────────────────────────────────
+  // After the team asked for changes (review `needs_changes`), the person sends the profile again: it waits for a
+  // decision once more. A profile already waiting answers the same; a rejected one, or an account not waiting, 409.
+  app.post(
+    '/v1/me/review/resubmit',
+    {
+      preHandler: requireScope(app, app.account, ['full']),
+      config: { pgBudget: 1 },
+      schema: { tags: ['me'], summary: 'Send the profile for review again after changes', response: { 200: reviewResubmitSchema } },
+    },
+    async (request) => {
+      const session = sessionOf(app, request);
+      const outcome = await writing(() => profileReviewResubmit(app.pg, session.userId));
+      if (outcome.status !== accountStatus.code('pending_review') || outcome.state === null || outcome.state === profileReviewState.code('rejected')) {
+        throw new HttpProblem('conflict', { detail: 'The profile is not waiting for changes.' });
+      }
+      if (outcome.resubmitted) await app.account.changed(session.userId);
+      return { review: { state: 'waiting' as const } };
     },
   );
 };

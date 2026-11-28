@@ -9,6 +9,11 @@
       "status": "rejected",
       "rejectReason": "A face must be visible."
     },
-    "textState": "approved"
+    "textState": "approved",
+    "review": {
+      "state": "needs_changes",
+      "message": "Add a photo where your face is clearly visible.",
+      "decidedAt": "2026-11-27T09:30:00.000Z"
+    }
   }
 }

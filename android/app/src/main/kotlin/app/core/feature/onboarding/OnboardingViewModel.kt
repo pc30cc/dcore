@@ -59,6 +59,9 @@ sealed interface StepError {
 
     /** The server says something required is still missing. */
     data object Incomplete : StepError
+
+    /** Sign-up is not open in the person's country (where their location puts them). */
+    data object CountryClosed : StepError
     data object Failed : StepError
 }
 
@@ -330,6 +333,7 @@ class OnboardingViewModel(
                 return
             }
             e is ApiError.Http && e.code == ProblemCodes.TEXT_REFUSED -> StepError.TextRefused
+            e is ApiError.Http && e.code == ProblemCodes.COUNTRY_NOT_SUPPORTED -> StepError.CountryClosed
             e is ApiError.Http && e.code == ProblemCodes.RATE_LIMITED -> StepError.RateLimited(e.problem.retryAfterSeconds)
             e is ApiError.Http && (e.code == ProblemCodes.ALREADY_SET || e.code == ProblemCodes.CONSENT_REQUIRED) -> {
                 // Another phone moved on, or the texts changed: read the account again and resume from there.
@@ -578,10 +582,12 @@ class OnboardingViewModel(
                     submitLocation()
                 }
                 .onFailure { e ->
-                    // A refusal puts the step back where it was (a device fix that failed: the city list).
+                    // A refusal puts the step back where it was (a device fix that failed: the city list). A fix the
+                    // server placed in a country closed to sign-up was found: the step says so, no city list opens.
+                    val closed = e is ApiError.Http && e.code == ProblemCodes.COUNTRY_NOT_SUPPORTED
                     val back = when (before) {
                         is LocationPhase.Set -> before
-                        LocationPhase.Locating -> LocationPhase.Unavailable
+                        LocationPhase.Locating -> if (closed) LocationPhase.Idle else LocationPhase.Unavailable
                         else -> before
                     }
                     _state.update { it.copy(busy = false, location = back) }

@@ -44,6 +44,7 @@ import {
   productKind,
   purchaseMatchSchema,
   purchaseOutcomeSchema,
+  profileReviewState,
   purchaseState,
   reportContext,
   reportReason,
@@ -244,6 +245,7 @@ describe('server values the panel shows have words in every language', () => {
       // growth
 
       // app
+      ['review.state.', profileReviewState.names],
 
       // support
 
@@ -290,7 +292,7 @@ describe('server values the panel shows have words in every language', () => {
  * text someone forgot to translate.
  */
 const SAME_AS_ENGLISH: Readonly<Record<'fa' | 'tr', readonly MessageKey[]>> = {
-  fa: ['hosts.role.api', 'hosts.role.cdn', 'devices.ios', 'authority.ncmec', 'messageKind.gif', 'audit.col.ip'],
+  fa: ['hosts.role.api', 'hosts.role.cdn', 'devices.ios', 'authority.ncmec', 'messageKind.gif', 'audit.col.ip', 'provider.smsir', 'providers.storage.cdn'],
   tr: [
     'hosts.role.api',
     'hosts.role.cdn',
@@ -311,6 +313,12 @@ const SAME_AS_ENGLISH: Readonly<Record<'fa' | 'tr', readonly MessageKey[]>> = {
     'purchases.test',
     'reportReason.spam',
     'reason.moderation.spam',
+    'provider.kavenegar',
+    'provider.smsir',
+    'provider.telnyx',
+    'provider.fcm',
+    'provider.livekit',
+    'providers.storage.cdn',
   ],
 };
 
@@ -357,6 +365,8 @@ const NAMES_THE_API: readonly MessageKey[] = [
   'hosts.form.help',
   'hosts.role.api',
   'hosts.issue.api_required',
+  'providers.field.apiKey',
+  'providers.field.apiSecret',
 ];
 
 describe('the glossary', () => {

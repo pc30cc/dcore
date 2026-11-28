@@ -51,6 +51,7 @@ import app.core.model.PlayPurchaseRequest
 import app.core.model.PreferencesPatch
 import app.core.model.ProfileCard
 import app.core.model.ProfilePatch
+import app.core.model.ProfileReview
 import app.core.model.PublicDeletionChallenge
 import app.core.model.PublicUid
 import app.core.model.PurchaseResult
@@ -402,6 +403,12 @@ interface ServerApi {
     // growth
 
     // app
+    /**
+     * `POST /v1/me/review/resubmit`: after the team asked for changes, the
+     * profile waits for a decision again (one already waiting answers the
+     * same); 409 `conflict` when it is not waiting for changes.
+     */
+    suspend fun resubmitReview(): ProfileReview
 
     // support
 }

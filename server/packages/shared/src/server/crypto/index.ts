@@ -44,9 +44,28 @@ export function parseKeyRing(json: string, name: string): Map<KeyId, Buffer> {
   return ring;
 }
 
+/** Whether two key rings hold the same key under any ids (rings that must stay apart, such as DATA_KEYS and PROVIDER_KEYS). */
+export function sharesKey(a: ReadonlyMap<KeyId, Buffer>, b: ReadonlyMap<KeyId, Buffer>): boolean {
+  for (const left of a.values()) {
+    for (const right of b.values()) {
+      if (left.equals(right)) return true;
+    }
+  }
+  return false;
+}
+
 /** A short name for a secret that logs and the admin panel can show: never the secret. */
 export function fingerprint(secret: Uint8Array | string): string {
   return createHash('sha256').update('fingerprint:').update(secret).digest('hex').slice(0, 16);
+}
+
+/**
+ * The admin panel's fingerprint of a provider secret: the first 12 hex
+ * digits of its SHA-256, so an owner can compare it with
+ * `printf %s "$KEY" | sha256sum | cut -c1-12`. Never the secret.
+ */
+export function secretFingerprint(secret: string): string {
+  return createHash('sha256').update(secret, 'utf8').digest('hex').slice(0, 12);
 }
 
 export function sha256(value: Uint8Array | string): Buffer {

@@ -213,7 +213,7 @@ function userAgentOf(request: FastifyRequest): string | null {
 }
 
 /** The name authenticator apps show: the active brand's (the panel's override, else brand.json). */
-export function totpIssuer(app: FastifyInstance): string {
+export function totpIssuer(app: Pick<FastifyInstance, 'cfg' | 'brand'>): string {
   return app.cfg.peek()?.brand.appName ?? app.brand.appName;
 }
 

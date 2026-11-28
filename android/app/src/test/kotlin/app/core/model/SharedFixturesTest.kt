@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -97,6 +98,8 @@ class SharedFixturesTest {
         // growth
 
         // app
+        "me-review" to Me.serializer(),
+        "review-resubmit" to ReviewResubmitted.serializer(),
 
         // support
     )
@@ -258,6 +261,63 @@ class SharedFixturesTest {
         assertNull(read.history.single { it.id == "1287390234923455000" }.revokedAt)
     }
 
+    /**
+     * The unit distances are shown in: each account fixture names it, `mi`
+     * reads as miles, and an answer without it (a server before it, a deleted
+     * account) reads as kilometres.
+     */
+    @Test
+    fun theDistanceUnitReadsAsTheServerMeantIt() {
+        fun read(json: JsonObject): Me = Wire.json.decodeFromString(Me.serializer(), json.toString())
+        for (name in listOf("me", "me-onboarding", "me-review")) {
+            val sent = Wire.json.parseToJsonElement(text("v1", name)).jsonObject
+            assertNotNull("$name names the unit", sent["distanceUnit"])
+            assertEquals(name, sent["distanceUnit"]?.stringOrNull, read(sent).distanceUnit.wire)
+            assertEquals(name, DistanceUnit.Mi, read(JsonObject(sent + ("distanceUnit" to JsonPrimitive("mi")))).distanceUnit)
+            assertEquals(name, DistanceUnit.Km, read(JsonObject(sent - "distanceUnit")).distanceUnit)
+        }
+        assertEquals(DistanceUnit.Km, read(Wire.json.parseToJsonElement(text("v1", "me-deleted")).jsonObject).distanceUnit)
+    }
+
+    /**
+     * A profile waiting for its review: `GET /v1/me` names the state, the
+     * team's message and when it was decided; the resubmit's answer and the
+     * `profile` event carry the same review, field by field from the JSON
+     * (the event's own fixture carries one, as the server sends it after a
+     * decision).
+     */
+    @Test
+    fun theReviewReadsAsTheServerMeantIt() {
+        val sent = Wire.json.parseToJsonElement(text("v1", "me-review")).jsonObject
+        val review = sent["review"]!!.jsonObject
+        val me = Wire.json.decodeFromString(Me.serializer(), sent.toString())
+        assertEquals(AccountStatus.PendingReview, me.status)
+        assertEquals(review["state"]?.stringOrNull, me.review?.state?.wire)
+        assertEquals(ReviewState.NeedsChanges, me.review?.state)
+        assertEquals(review["message"]?.stringOrNull, me.review?.message)
+        assertEquals(review["decidedAt"]?.stringOrNull?.let(Instant::parse), me.review?.decidedAt)
+        assertNull("an account in the app reads no review", Wire.json.decodeFromString(Me.serializer(), text("v1", "me")).review)
+
+        val resubmitted = Wire.json.decodeFromString(ReviewResubmitted.serializer(), text("v1", "review-resubmit"))
+        assertEquals(ReviewState.Waiting, resubmitted.review.state)
+        assertNull(resubmitted.review.message)
+
+        val event = Wire.json.parseToJsonElement(text("realtime", RealtimeTypes.PROFILE)).jsonObject
+        val payload = event["d"]!!.jsonObject
+        val sentReview = payload["review"]?.jsonObject
+        assertNotNull("the profile event's fixture carries a review decision", sentReview)
+        val read = Wire.json.decodeFromString(ProfileEvent.serializer(), payload.toString())
+        assertEquals(sentReview!!["state"]?.stringOrNull, read.review?.state?.wire)
+        assertEquals(sentReview["message"]?.stringOrNull, read.review?.message)
+        assertEquals(sentReview["decidedAt"]?.stringOrNull?.let(Instant::parse), read.review?.decidedAt)
+        val decoded = RealtimeEvents.decode(event) as RealtimeEvent.ProfileModerated
+        assertEquals(ReviewState.NeedsChanges, decoded.profile.review?.state)
+        assertEquals(review["message"]?.stringOrNull, decoded.profile.review?.message)
+        // A photo decision alone carries no review.
+        val photoOnly = Wire.json.decodeFromString(ProfileEvent.serializer(), JsonObject(payload - "review").toString())
+        assertNull(photoOnly.review)
+    }
+
     @Test
     fun problemsCarryTheirMembers() {
         val expected = mapOf(
@@ -270,6 +330,7 @@ class SharedFixturesTest {
             "problem-quota" to ProblemCodes.QUOTA_EXCEEDED,
             "problem-validation" to ProblemCodes.VALIDATION_FAILED,
             "problem-rate-limited" to ProblemCodes.RATE_LIMITED,
+            "problem-country-not-supported" to ProblemCodes.COUNTRY_NOT_SUPPORTED,
         )
         assertEquals(expected.keys.sorted(), names("v1").filter { it.startsWith("problem-") })
         for ((name, code) in expected) {

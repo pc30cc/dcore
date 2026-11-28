@@ -16,7 +16,7 @@ import {
   type StorageConfig,
   type StoreConfig,
 } from '@app/config';
-import { parseKeyRing, type AdminStoreActions } from '@app/shared/server';
+import { parseKeyRing, sharesKey, type AdminStoreActions } from '@app/shared/server';
 import { z } from 'zod';
 
 /**
@@ -49,6 +49,15 @@ const keyRing = (name: string) =>
       ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'not a key ring' });
     }
   });
+
+/** A ring parsed (null: it does not parse, which its own check reports). */
+function ringOf(value: string, name: string): Map<number, Buffer> | null {
+  try {
+    return parseKeyRing(value, name);
+  } catch {
+    return null;
+  }
+}
 
 const pem = (label: 'PUBLIC KEY' | 'PRIVATE KEY') =>
   z
@@ -119,9 +128,17 @@ const envSchema = z
     /** Peppers of the keyed hashes (phones, Google subs, device keys), by id; HASH_PEPPER_KID hashes new values. */
     HASH_PEPPERS: keyRing('HASH_PEPPERS'),
     HASH_PEPPER_KID: envInt(1, { min: 1, max: 255 }),
-    /** Master keys of sealed values (phone numbers, TOTP and provider secrets), by id; DATA_KEY_ID seals new ones. */
+    /** Master keys of sealed values (phone numbers, TOTP secrets, session answers), by id; DATA_KEY_ID seals new ones. Never given to the worker. */
     DATA_KEYS: keyRing('DATA_KEYS'),
     DATA_KEY_ID: envInt(1, { min: 1, max: 255 }),
+    /**
+     * Keys of the provider credentials saved in the admin panel (purposes `providers.<kind>.secrets` only), by id;
+     * PROVIDER_KEY_ID seals new ones. The worker holds these and not DATA_KEYS, so none of its keys opens another
+     * sealed value; no key may appear in both rings. Required in production; unset elsewhere, panel entries read
+     * `unreadable` and provider saves are refused (403 `read_only`), as the worker reads them without it.
+     */
+    PROVIDER_KEYS: keyRing('PROVIDER_KEYS').optional(),
+    PROVIDER_KEY_ID: envInt(1, { min: 1, max: 255 }),
     /** Which edges are Cloudflare's: empty for the published ranges, `off`, a list, or `file:<path>`. */
     CF_EDGE_TRUST: z.string().default(''),
     /** Statement budgets: `enforce` in tests, `count` to see them, `off` in production. */
@@ -201,6 +218,12 @@ const envSchema = z
     if (env.ID_PUBLIC_KEY === env.ID_BILLING_KEY) {
       ctx.addIssue({ code: 'custom', path: ['ID_BILLING_KEY'], message: 'must differ from ID_PUBLIC_KEY' });
     }
+    const dataRing = ringOf(env.DATA_KEYS, 'DATA_KEYS');
+    const providerRing = env.PROVIDER_KEYS !== undefined ? ringOf(env.PROVIDER_KEYS, 'PROVIDER_KEYS') : null;
+    if (dataRing && !dataRing.has(env.DATA_KEY_ID)) ctx.addIssue({ code: 'custom', path: ['DATA_KEY_ID'], message: 'is not a key of DATA_KEYS' });
+    if (providerRing && !providerRing.has(env.PROVIDER_KEY_ID)) ctx.addIssue({ code: 'custom', path: ['PROVIDER_KEY_ID'], message: 'is not a key of PROVIDER_KEYS' });
+    if (dataRing && providerRing && sharesKey(dataRing, providerRing)) ctx.addIssue({ code: 'custom', path: ['PROVIDER_KEYS'], message: 'must not hold a key of DATA_KEYS' });
+    if (env.NODE_ENV === 'production') need('PROVIDER_KEYS', 'in production (the panel\'s provider credentials; a ring of its own, not one of DATA_KEYS)');
     if (env.PG_BUDGET === 'enforce' && env.NODE_ENV === 'production') {
       ctx.addIssue({ code: 'custom', path: ['PG_BUDGET'], message: 'enforce refuses statements: tests only' });
     }
@@ -301,7 +324,8 @@ export interface ApiConfig {
   /** Admin sign-in: the access token's lifetime, the session's idle and absolute limits, and whether a TOTP code is required. */
   admin: { accessTokenTtlSeconds: number; sessionIdleSeconds: number; sessionMaxSeconds: number; totpRequired: boolean };
   ids: { publicKey: string; billingKey: string };
-  secrets: { hashPeppers: string; hashPepperKid: number; dataKeys: string; dataKeyId: number };
+  /** `providerKeys` is always set in production; undefined elsewhere when PROVIDER_KEYS is unset (panel provider entries unreadable, saves refused). */
+  secrets: { hashPeppers: string; hashPepperKid: number; dataKeys: string; dataKeyId: number; providerKeys: string | undefined; providerKeyId: number };
   edgeTrust: string;
   pgBudget: 'off' | 'count' | 'enforce';
   brand: { id: string; dir: string | undefined };
@@ -408,6 +432,8 @@ export function loadConfig(source: Env = process.env): ApiConfig {
       hashPepperKid: env.HASH_PEPPER_KID,
       dataKeys: env.DATA_KEYS,
       dataKeyId: env.DATA_KEY_ID,
+      providerKeys: env.PROVIDER_KEYS,
+      providerKeyId: env.PROVIDER_KEY_ID,
     },
     edgeTrust: env.CF_EDGE_TRUST,
     pgBudget: env.PG_BUDGET ?? (env.NODE_ENV === 'test' ? 'enforce' : 'off'),

@@ -30,6 +30,7 @@ import {
   meSchema,
   moderationHistorySchema,
   restoredAccountSchema,
+  reviewResubmitSchema,
 } from './me.js';
 import { photoCompletedSchema, photoUploadTicketSchema } from './photos.js';
 import { realtimeTokenSchema } from './realtime.js';
@@ -53,6 +54,8 @@ export const responseSchemas = {
   me: meSchema,
   'me-onboarding': meSchema,
   'me-deleted': meSchema,
+  'me-review': meSchema,
+  'review-resubmit': reviewResubmitSchema,
   'own-profile': ownProfileSchema,
   settings: settingsSchema,
   preferences: preferencesSchema,

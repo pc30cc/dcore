@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.core.R
 import app.core.feature.card.LikeTarget
+import app.core.feature.card.LocalDistanceUnit
+import app.core.feature.card.filterDistanceLabel
 import app.core.feature.card.intentionLabel
 import app.core.feature.card.isolate
 import app.core.feature.card.rememberNumbers
@@ -336,7 +338,7 @@ fun FiltersSheet(
         Spacer(Modifier.height(SheetLayout.titleToFilters))
 
         val distanceLabel = brandString(R.string.filters_distance)
-        val distanceValue = brandString(R.string.filters_distance_value, number(distance.roundToInt()))
+        val distanceValue = filterDistanceLabel(distance.roundToInt(), LocalDistanceUnit.current, number)
         SliderHeader(distanceLabel, distanceValue)
         AppSlider(
             value = distance,

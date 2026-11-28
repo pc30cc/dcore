@@ -4,6 +4,8 @@ import { RTC_SETTINGS_KEY, RtcSettingsError, mergeRtcSettings, rtcSettingsOf, tu
 import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { nextId } from '../auth/sessions.js';
+import { settingsVersion } from '../admin/configRules.js';
+import { adminConflict } from '../admin/problems.js';
 import { HttpProblem } from '../lib/problem.js';
 
 /**
@@ -55,7 +57,12 @@ function auditDetail(app: FastifyInstance, stored: unknown, merged: Record<strin
   };
 }
 
-function viewOf(app: FastifyInstance, settings: RtcSettings): RtcSettingsView {
+/** A hash of the stored row: the view's `version`, which a change may name (`baseVersion`). */
+function versionOf(stored: unknown): string {
+  return settingsVersion(stored ?? undefined, RTC_SETTINGS_KEY);
+}
+
+function viewOf(app: FastifyInstance, settings: RtcSettings, version: string): RtcSettingsView {
   const secret = settings.relay.secret;
   return rtcSettingsViewSchema.parse({
     wsUrl: settings.wsUrl,
@@ -65,29 +72,31 @@ function viewOf(app: FastifyInstance, settings: RtcSettings): RtcSettingsView {
     credentialTtlSeconds: settings.relay.credentialTtlSeconds,
     maxLiveCalls: settings.maxLiveCalls,
     sharedSecret: { stored: settings.relay.secretStored, fingerprint: secret ? turnSecretFingerprint(secret) : null },
+    version,
   });
 }
 
 export const adminRtcRoutes: FastifyPluginAsyncZod = async (app) => {
-  const superadmin = app.requireAdmin('superadmin');
+  // config.providers is restricted (superadmin), with a second factor while one is required.
+  const guard = [app.requirePermission('config.providers'), app.requireMfa];
 
   app.get(
     '/v1/admin/providers/rtc',
     {
-      preHandler: superadmin,
+      preHandler: guard,
       config: { pgBudget: 1 },
       schema: { tags: ['admin'], summary: 'The call network settings', response: { 200: rtcSettingsViewSchema } },
     },
     async () => {
       const value = await rtcSettingsValue(app.pg, RTC_SETTINGS_KEY);
-      return viewOf(app, rtcSettingsOf(value, app.secrets.sealer));
+      return viewOf(app, rtcSettingsOf(value, app.secrets.sealer), versionOf(value));
     },
   );
 
   app.put(
     '/v1/admin/providers/rtc',
     {
-      preHandler: superadmin,
+      preHandler: guard,
       config: { pgBudget: 2 },
       schema: { tags: ['admin'], summary: 'Change the call network settings', body: rtcSettingsPatchSchema, response: { 200: rtcSettingsViewSchema } },
     },
@@ -98,9 +107,13 @@ export const adminRtcRoutes: FastifyPluginAsyncZod = async (app) => {
       const auditId = nextId(app);
       const saved = await withTransaction(app.pg, async (tx) => {
         const stored = await rtcSettingsForUpdate(tx, RTC_SETTINGS_KEY);
+        if (request.body.baseVersion !== undefined && versionOf(stored) !== request.body.baseVersion) {
+          throw adminConflict('settings_changed', 'The call settings were changed meanwhile; load them again and save from there.');
+        }
         let merged;
         try {
-          merged = mergeRtcSettings(stored, request.body, app.secrets.sealer);
+          const { baseVersion: _version, ...patch } = request.body;
+          merged = mergeRtcSettings(stored, patch, app.secrets.sealer);
         } catch (error) {
           if (error instanceof RtcSettingsError) {
             throw new HttpProblem('field_invalid', { detail: error.message, errors: [{ in: 'body', pointer: error.pointer, code: 'invalid', message: error.message }] });
@@ -119,7 +132,7 @@ export const adminRtcRoutes: FastifyPluginAsyncZod = async (app) => {
       const settings = app.calls.rtc.set(saved.value);
       if (!(await app.cfg.announce())) request.log.warn('rtc: saved; the announcement to the other processes is retried in the background');
       request.log.info({ changed: saved.changed }, 'rtc settings saved');
-      return viewOf(app, settings);
+      return viewOf(app, settings, versionOf(saved.value));
     },
   );
 };

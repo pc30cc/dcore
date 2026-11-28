@@ -21,6 +21,10 @@ const versionPair = z.strictObject({ required: nonNegativeInt, recommended: nonN
   'recommended must not be below required',
 );
 
+/** Distance units a country may default to. */
+export const distanceUnits = ['km', 'mi'] as const;
+export type DistanceUnit = (typeof distanceUnits)[number];
+
 /** SMS providers the API can route a number to. */
 export const smsProviders = ['kavenegar', 'smsir', 'telnyx', 'fake'] as const;
 export type SmsProviderName = (typeof smsProviders)[number];
@@ -113,6 +117,38 @@ export const appConfigSchemas = {
   // growth
 
   // app
+  /**
+   * Sign-up per country (the account's country, from its location): a
+   * country listed with `allowed: false` cannot finish sign-up; one not
+   * listed follows `default`. `unit` is the distance unit the app shows to
+   * accounts there (`GET /v1/me` `distanceUnit`; kilometres when not
+   * listed). `language` is stored and kept on save; nothing reads it yet.
+   * The sign-up switch never affects accounts that finished sign-up.
+   */
+  'signup.countries': z.strictObject({
+    default: z.strictObject({ allowed: z.boolean() }),
+    countries: z
+      .array(
+        z.strictObject({
+          code: z.string().regex(/^[A-Z]{2}$/, 'must be an ISO 3166-1 alpha-2 code'),
+          allowed: z.boolean(),
+          unit: z.enum(distanceUnits),
+          language: localeSchema.nullable(),
+        }),
+      )
+      .max(300)
+      .refine((list) => new Set(list.map((c) => c.code)).size === list.length, 'a country is listed twice'),
+  }),
+  /**
+   * Per-person abuse limits (plan quotas are apart): swipes an hour,
+   * message sends a minute and per conversation in 10 seconds, reports a day.
+   */
+  'limits.rates': z.strictObject({
+    swipes_per_hour: positiveInt,
+    messages_per_minute: positiveInt,
+    messages_per_conversation: positiveInt,
+    reports_per_day: positiveInt,
+  }),
 
   // support
 
@@ -161,6 +197,18 @@ export function smsProvidersFor(routing: AppConfig['auth.sms_routing'], e164: st
     if (e164.startsWith(route.prefix) && (best === undefined || route.prefix.length > best.prefix.length)) best = route;
   }
   return best?.providers ?? routing.default;
+}
+
+/** Whether sign-up is open in `country` (an ISO code; unknown: the default). */
+export function signupAllowed(setting: AppConfig['signup.countries'], country: string | null | undefined): boolean {
+  if (!country) return setting.default.allowed;
+  return setting.countries.find((c) => c.code === country)?.allowed ?? setting.default.allowed;
+}
+
+/** The distance unit shown to an account in `country`: the listed country's, else kilometres. */
+export function distanceUnitOf(setting: AppConfig['signup.countries'], country: string | null | undefined): DistanceUnit {
+  if (!country) return 'km';
+  return setting.countries.find((c) => c.code === country)?.unit ?? 'km';
 }
 
 /** The hourly OTP cap of a number's prefix: the longest listed prefix, else `default`. */

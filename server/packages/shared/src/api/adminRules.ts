@@ -200,6 +200,9 @@ export const auditActions = [
   // growth
 
   // app
+  'profile.approve',
+  'profile.reject',
+  'profile.needs_changes',
 
   // support
 

@@ -164,9 +164,20 @@ class ChatSync(
      * only then.
      */
     fun setAccount(publicUid: PublicUid?, active: Boolean) {
+        val wasActive = this.active.value
         this.active.value = publicUid != null && active
         val previous = _account.value
-        if (previous == publicUid) return
+        if (previous == publicUid) {
+            // The same account may chat now (approved after review, a lift): the reads it could not make
+            // while it waited are made now, as a fresh connection would.
+            if (publicUid != null && !wasActive && this.active.value) {
+                scope.launch {
+                    reconcile("now active")
+                    if (foreground.value) resumeOutbox(publicUid)
+                }
+            }
+            return
+        }
         _account.value = publicUid
         cancelAll()
         requests.clear()

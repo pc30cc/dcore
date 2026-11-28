@@ -92,6 +92,7 @@ import app.core.i18n.JalaliDates
 import app.core.i18n.LocalAppName
 import app.core.media.LocalRemoteImages
 import app.core.model.AccountStatus
+import app.core.model.ReviewState
 import app.core.model.CallKind
 import app.core.model.SettingsPatch
 import app.core.model.WalletItem
@@ -521,6 +522,12 @@ class ScreenTourTest {
     @Test @Config(qualifiers = "+fa") fun restrictedPersian() = restricted()
     @Test @Config(qualifiers = "+en") fun restrictedEnglish() = restricted()
     @Test @Config(qualifiers = "+fa") fun restorePersian() = restore()
+    @Test @Config(qualifiers = "+fa") fun reviewPersian() = review()
+    @Test @Config(qualifiers = "+fa-night") fun reviewPersianDark() = review()
+    @Test @Config(qualifiers = "+en") fun reviewEnglish() = review()
+    @Test @Config(qualifiers = "+fa") fun maintenancePersian() = maintenance()
+    @Test @Config(qualifiers = "+en") fun maintenanceEnglish() = maintenance()
+    @Test @Config(qualifiers = "+fa") fun updateRequiredPersian() = updateRequired()
 
     /** The design's own photos for the staged profile ([SampleApi.stageOwnProfile]). */
     private val ownPhotos = mapOf(
@@ -655,6 +662,74 @@ class ScreenTourTest {
         compose.waitForIdle()
         capture("restore")
         compose.onNodeWithText(str(R.string.restore_action)).performClick()
+        waitFor(hasContentDescription(str(R.string.deck_action_like)) and isEnabled(), timeoutMs = 20_000)
+    }
+
+    /**
+     * A new profile waiting for its review: the team asks for changes (their
+     * message, the editor and back, sent again), then does not accept it (the
+     * reason); signing out and deleting stay at the bottom throughout.
+     */
+    private fun review() {
+        flow = "v"
+        TourPhotos.photoAliases = ownPhotos
+        val changes = if (language == "fa") "عکس اولت صورتت رو واضح نشون نمی‌ده. یه عکس بذار که صورتت پیدا باشه." else "Your first photo doesn’t show your face clearly. Add one where your face is visible."
+        val reason = if (language == "fa") "پروفایل باید عکس خود آدم رو نشون بده." else "A profile must show the person’s own photos."
+        lateinit var server: SampleApi
+        start(signedIn = true) { sample ->
+            server = sample
+            runBlocking {
+                sample.stageOwnProfile()
+                sample.setAccountStatus(AccountStatus.PendingReview)
+            }
+        }
+        waitFor(hasText(str(R.string.review_body)), timeoutMs = 20_000)
+        capture("review-waiting")
+        runBlocking { server.decideReview(ReviewState.NeedsChanges, changes) }
+        compose.onNodeWithText(str(R.string.review_check)).performClick()
+        waitFor(hasText(changes), timeoutMs = 20_000)
+        capture("review-changes")
+        compose.onNodeWithText(str(R.string.me_edit)).performClick()
+        waitFor(hasText(str(R.string.me_preview)), timeoutMs = 20_000)
+        compose.onNode(hasContentDescription(str(R.string.action_back)) and hasClickAction()).performClick()
+        waitFor(hasText(str(R.string.review_resubmit)), timeoutMs = 20_000)
+        compose.onNodeWithText(str(R.string.review_resubmit)).performClick()
+        waitFor(hasText(str(R.string.review_body)), timeoutMs = 20_000)
+        runBlocking { server.decideReview(ReviewState.Rejected, reason) }
+        compose.onNodeWithText(str(R.string.review_check)).performClick()
+        waitFor(hasText(reason), timeoutMs = 20_000)
+        capture("review-rejected")
+    }
+
+    /** Maintenance with the panel's message: «حذف حساب» beside «دوباره امتحان کن», and back in once it is over. */
+    private fun maintenance() {
+        flow = "w"
+        val message = if (language == "fa") "داریم چند چیز رو بهتر می‌کنیم. تا نیم ساعت دیگه برمی‌گردیم." else "We’re making a few things better. Back within half an hour."
+        lateinit var server: SampleApi
+        start(signedIn = true) { sample ->
+            server = sample
+            runBlocking { sample.setMaintenance(message) }
+        }
+        waitFor(hasText(message), timeoutMs = 20_000)
+        compose.onNodeWithText(str(R.string.settings_delete)).assertExists()
+        capture("maintenance")
+        runBlocking { server.setMaintenance(null) }
+        compose.onNodeWithText(str(R.string.action_try_again)).performClick()
+        waitFor(hasContentDescription(str(R.string.deck_action_like)) and isEnabled(), timeoutMs = 20_000)
+    }
+
+    /** Below the store's minimum: «به‌روزرسانی», and «دوباره امتحان کن» lets the build back in once the minimum is lowered. */
+    private fun updateRequired() {
+        flow = "u"
+        lateinit var server: SampleApi
+        start(signedIn = true) { sample ->
+            server = sample
+            runBlocking { sample.setRequiredVersion(BuildConfig.VERSION_CODE + 1) }
+        }
+        waitFor(hasText(str(R.string.update_required_body)), timeoutMs = 20_000)
+        capture("update-required")
+        runBlocking { server.setRequiredVersion(1) }
+        compose.onNodeWithText(str(R.string.action_try_again)).performClick()
         waitFor(hasContentDescription(str(R.string.deck_action_like)) and isEnabled(), timeoutMs = 20_000)
     }
 

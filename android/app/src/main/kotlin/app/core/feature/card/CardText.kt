@@ -58,10 +58,17 @@ fun isolate(text: String): String = "\u2068$text\u2069"
 fun nameAndAge(card: ProfileCard, number: (Int) -> String): String =
     card.age?.let { brandString(R.string.deck_name_age, isolate(card.name), number(it)) } ?: card.name
 
-/** «۴ کیلومتر», «کمتر از ۲ کیلومتر», or null when the person hides their distance. */
+/** «۴ کیلومتر», «کمتر از ۲ کیلومتر» (or in miles, as the account's country shows them), or null when the person hides their distance. */
 @Composable
 fun distanceText(distance: Distance?, number: (Int) -> String): String? = distance?.let {
-    if (it.lessThan) brandString(R.string.deck_distance_less, number(it.km)) else brandString(R.string.deck_distance_km, number(it.km))
+    val unit = LocalDistanceUnit.current
+    val miles = Distances.miles(unit)
+    when {
+        it.lessThan && miles -> brandString(R.string.deck_distance_less_mi, number(Distances.shownBound(it.km, unit)))
+        it.lessThan -> brandString(R.string.deck_distance_less, number(it.km))
+        miles -> brandString(R.string.deck_distance_mi, number(Distances.shown(it.km, unit)))
+        else -> brandString(R.string.deck_distance_km, number(it.km))
+    }
 }
 
 /** The card's one line, «تهران، ۴ کیلومتر», either part alone, or null. */

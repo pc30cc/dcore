@@ -6,6 +6,7 @@ import {
   WALLET_CORRECTION_MAX,
   WALLET_GIFT_MAX,
   walletItem,
+  type AdminGrant,
   type AdminGrantList,
   type AdminMe,
   type AdminPlan,
@@ -84,6 +85,15 @@ export const grantTone: Readonly<Record<GrantState, 'green' | 'blue' | 'gray' | 
   ended: 'gray',
   revoked: 'red',
 };
+
+/**
+ * The last day a grant's period shows: when it ended early, the end; when it
+ * was ended before it began, its planned end (the state says it never ran).
+ */
+export function grantShownEnd(grant: Pick<AdminGrant, 'startsAt' | 'endsAt' | 'revokedAt'>): string {
+  if (grant.revokedAt === null || Date.parse(grant.revokedAt) <= Date.parse(grant.startsAt)) return grant.endsAt;
+  return grant.revokedAt;
+}
 
 /** A grant that can still end early: running or to come. */
 export const grantEndable = (state: GrantState): boolean => state === 'active' || state === 'scheduled';

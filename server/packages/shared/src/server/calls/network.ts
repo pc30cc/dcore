@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { checkOrigin } from '../../api/origins.js';
-import type { DataSealer } from '../crypto/index.js';
+import { secretFingerprint, type DataSealer } from '../crypto/index.js';
 import { mintTurnCredential, turnPassword } from './turnAuth.js';
 
 /**
@@ -133,7 +132,7 @@ export function turnUrlHost(url: string): string | null {
  * SHA-256. Never the secret.
  */
 export function turnSecretFingerprint(secret: string): string {
-  return createHash('sha256').update(secret, 'utf8').digest('hex').slice(0, 12);
+  return secretFingerprint(secret);
 }
 
 /** The stored row (lenient: a hand-edited value must not take calls down; the admin route refuses bad values). */

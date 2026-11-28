@@ -12,6 +12,8 @@
     <string name="deck_photo_position">Fotoğraf %1$s / %2$s</string>
     <string name="deck_distance_km">%1$s km</string>
     <string name="deck_distance_less">%1$s km’den az</string>
+    <string name="deck_distance_mi">%1$s mil</string>
+    <string name="deck_distance_less_mi">%1$s milden az</string>
     <string name="deck_city_distance">%1$s, %2$s</string>
     <string name="deck_likes_you">Seni beğendi</string>
     <string name="deck_superliked_you">Seni süper beğendi</string>
@@ -22,6 +24,7 @@
     <!-- The end of the deck: one fix at a time -->
     <string name="deck_exhausted_title">Şimdilik herkesi gördün</string>
     <string name="deck_widen_distance">%1$s km’ye kadar ara</string>
+    <string name="deck_widen_distance_mi">%1$s mile kadar ara</string>
     <string name="deck_widen_distance_generic">Daha uzakta ara</string>
     <string name="deck_widen_country">Tüm ülkede ara</string>
     <string name="deck_widen_age">Yaşı %1$s–%2$s yap</string>
@@ -124,6 +127,7 @@
     <string name="filters_reset">Sıfırla</string>
     <string name="filters_distance">Mesafe</string>
     <string name="filters_distance_value">%1$s km’ye kadar</string>
+    <string name="filters_distance_value_mi">%1$s mile kadar</string>
     <!-- %1$s: the account's country, named in the app's language. -->
     <!-- %1$s: the country in the genitive with its apostrophe («İran’ın»); the suffix follows the name's
          last vowel, so the code builds it (DeckSheets countryName). -->

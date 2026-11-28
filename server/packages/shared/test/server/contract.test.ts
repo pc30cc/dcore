@@ -53,6 +53,7 @@ const PROBLEM_FIXTURES: Record<string, ErrorCode> = {
   'problem-quota': 'quota_exceeded',
   'problem-validation': 'validation_failed',
   'problem-rate-limited': 'rate_limited',
+  'problem-country-not-supported': 'country_not_supported',
 };
 
 describe('response fixtures', () => {

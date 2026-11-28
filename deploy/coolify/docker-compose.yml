@@ -311,6 +311,8 @@ services:
       - HASH_PEPPER_KID=${HASH_PEPPER_KID:-1}
       - DATA_KEYS=${DATA_KEYS:?DATA_KEYS is required}
       - DATA_KEY_ID=${DATA_KEY_ID:-1}
+      - PROVIDER_KEYS=${PROVIDER_KEYS:?PROVIDER_KEYS is required}
+      - PROVIDER_KEY_ID=${PROVIDER_KEY_ID:-1}
       - CENTRIFUGO_TOKEN_HMAC_SECRET=${SERVICE_PASSWORD_64_CENTRIFUGOTOKEN}
       # Centrifugo's subscribe checks, on an internal listener of their own (no domain, no port published).
       - CENTRIFUGO_PROXY_KEY=${SERVICE_PASSWORD_64_CENTRIFUGOPROXY}
@@ -410,6 +412,9 @@ services:
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-4}
       - PHOTO_CONCURRENCY=${PHOTO_CONCURRENCY:-2}
       - MODERATION_PROVIDER=fake
+      # The panel's provider credentials only; never DATA_KEYS (check.sh fails if the worker gets it).
+      - PROVIDER_KEYS=${PROVIDER_KEYS:?PROVIDER_KEYS is required}
+      - PROVIDER_KEY_ID=${PROVIDER_KEY_ID:-1}
       - FCM_SERVICE_ACCOUNT_JSON=${FCM_SERVICE_ACCOUNT_JSON:?FCM_SERVICE_ACCOUNT_JSON is required (base64 of the service account JSON)}
       - FCM_PROJECT_ID=${FCM_PROJECT_ID:-}
       - PLAY_PACKAGE_NAME=${PLAY_PACKAGE_NAME:-}

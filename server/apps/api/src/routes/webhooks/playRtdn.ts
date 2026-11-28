@@ -1,6 +1,5 @@
 import {
   PubSubAuthError,
-  PubSubOidcVerifier,
   decodeRtdn,
   iapJobIds,
   pubsubPushSchema,
@@ -43,17 +42,17 @@ const SEEN_SECONDS = 7 * 86_400;
 
 export const playRtdnRoutes: FastifyPluginAsync<PlayRtdnOptions> = async (app, options) => {
   const play = app.config.store.play;
-  const authenticator =
-    options.authenticator !== undefined
-      ? options.authenticator
-      : play?.rtdn
-        ? new PubSubOidcVerifier({ audience: play.rtdn.audience, serviceAccountEmail: play.rtdn.pushServiceAccountEmail })
-        : null;
-  const packageName = play?.packageName;
   if (play && !play.rtdn) app.log.warn('store: PLAY_RTDN_AUDIENCE and PLAY_RTDN_PUSH_SA_EMAIL are not set; Play notifications are refused (503)');
+  // Per request: the admin panel may set Play's credentials (and its RTDN audience) at run time. A test's authenticator wins.
+  const current = (): { authenticator: PubSubPushAuthenticator | null; packageName: string | undefined } => {
+    if (options.authenticator !== undefined) return { authenticator: options.authenticator, packageName: app.providers.playRtdn()?.packageName ?? play?.packageName };
+    const now = app.providers.playRtdn();
+    return { authenticator: now?.authenticator ?? null, packageName: now?.packageName };
+  };
 
   // Authentication before the body is parsed: an unauthenticated sender never gets its JSON read.
   const authenticate = async (request: FastifyRequest, _reply: FastifyReply) => {
+    const { authenticator, packageName } = current();
     if (!authenticator || !packageName) throw new HttpProblem('store_unavailable', { detail: 'Google Play notifications are not configured.', headers: { 'retry-after': '600' } });
     try {
       await authenticator.verify(request.headers.authorization);
@@ -89,7 +88,7 @@ export const playRtdnRoutes: FastifyPluginAsync<PlayRtdnOptions> = async (app, o
         request.log.warn('play rtdn: the message is not a developer notification; dropped');
         return reply.code(204).send();
       }
-      if (decoded.packageName !== packageName) {
+      if (decoded.packageName !== current().packageName) {
         request.log.warn('play rtdn: a notification of another package; dropped');
         return reply.code(204).send();
       }

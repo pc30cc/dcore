@@ -29,9 +29,9 @@ export const ME_VIEW_TTL_SECONDS = 24 * 3_600;
  * loses a key this build reads: during a rolling deploy the old and the new
  * build share `mev`, and a view one of them parsed (dropping what it does
  * not know) must never be served by the other. 2: `profile.uiTemplate`;
- * 3: `profile.textRejectReason` and `prompts[].rejectReason`.
+ * 3: `profile.textRejectReason` and `prompts[].rejectReason`; 4: `review` (0038).
  */
-export const ME_VIEW_SHAPE = 3;
+export const ME_VIEW_SHAPE = 4;
 
 const cachedSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('account'), view: accountViewSchema }),

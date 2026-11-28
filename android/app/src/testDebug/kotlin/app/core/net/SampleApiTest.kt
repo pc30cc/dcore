@@ -510,4 +510,62 @@ class SampleApiTest {
         clock.advance(24L * 3600 * 1000)
         assertEquals("the link ran out", app.core.model.ExportState.None, api.exportStatus().status)
     }
+
+    @Test
+    fun maintenanceAndTheMinimumRefuseTheAppButNotTheConfigDeletionOrSignOut() = runTest {
+        val api = SampleApi(clock = clock)
+        api.setMaintenance("Back in a few minutes.")
+        val config = api.config("en").value
+        assertTrue(config.maintenance.enabled)
+        assertEquals("Back in a few minutes.", config.maintenance.message)
+        val refused = expectProblem(503, ProblemCodes.MAINTENANCE) { api.me() }
+        assertEquals("Back in a few minutes.", refused.problem.message)
+        // Deleting never waits for the service to come back.
+        api.deletionPreflight()
+        api.setMaintenance(null)
+        assertFalse(api.config("en").value.maintenance.enabled)
+
+        api.setRequiredVersion(app.core.BuildConfig.VERSION_CODE + 1)
+        assertEquals(app.core.BuildConfig.VERSION_CODE + 1, api.config("en").value.minVersion.required)
+        val old = expectProblem(426, ProblemCodes.UPGRADE_REQUIRED) { api.deck() }
+        assertEquals(app.core.BuildConfig.VERSION_CODE + 1, old.problem.minVersionCode)
+        api.deletionPreflight()
+        api.setRequiredVersion(1)
+        api.deck()
+        api.logout(false)
+    }
+
+    @Test
+    fun aProfileSentBackGoesForReviewAgainOnceAndARefusedOneDoesNot() = runTest {
+        val api = SampleApi(clock = clock)
+        api.setAccountStatus(AccountStatus.PendingReview)
+        assertEquals(app.core.model.ReviewState.Waiting, api.me().value.review?.state)
+        api.decideReview(app.core.model.ReviewState.NeedsChanges, "Add a photo where your face is clearly visible.")
+        val asked = api.me().value.review!!
+        assertEquals(app.core.model.ReviewState.NeedsChanges, asked.state)
+        assertEquals("Add a photo where your face is clearly visible.", asked.message)
+        assertEquals(app.core.model.ReviewState.Waiting, api.resubmitReview().state)
+        assertEquals("a second send answers the same", app.core.model.ReviewState.Waiting, api.resubmitReview().state)
+        assertNull(api.me().value.review?.message)
+
+        api.decideReview(app.core.model.ReviewState.Rejected, "Profiles must show the person's own face.")
+        expectProblem(409, ProblemCodes.CONFLICT) { api.resubmitReview() }
+        api.approveReview()
+        val me = api.me().value
+        assertEquals(AccountStatus.Active, me.status)
+        assertNull("an account in the app has no review", me.review)
+    }
+
+    @Test
+    fun signUpClosedInACountryRefusesALocationThereOnlyWhileSigningUp() = runTest {
+        val api = SampleApi(clock = clock)
+        api.closeSignUp("TR")
+        // An account already in the app is never held back.
+        api.updateLocation(LocationUpdate(source = LocationSource.City, cityId = 745044))
+        val challenge = api.startOtp(OtpStartRequest("+989127654321", "en"))
+        api.verifyOtp(challenge.challengeId, SampleData.CODE, device)
+        expectProblem(403, ProblemCodes.COUNTRY_NOT_SUPPORTED) { api.updateLocation(LocationUpdate(source = LocationSource.City, cityId = 745044)) }
+        // A refusal starts no wait: the next place goes through at once.
+        api.updateLocation(LocationUpdate(source = LocationSource.City, cityId = 112931))
+    }
 }

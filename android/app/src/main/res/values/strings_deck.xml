@@ -17,6 +17,8 @@
     <string name="deck_photo_position">Photo %1$s of %2$s</string>
     <string name="deck_distance_km">%1$s km</string>
     <string name="deck_distance_less">Under %1$s km</string>
+    <string name="deck_distance_mi">%1$s mi</string>
+    <string name="deck_distance_less_mi">Under %1$s mi</string>
     <string name="deck_city_distance">%1$s, %2$s</string>
     <string name="deck_likes_you">Likes you</string>
     <string name="deck_superliked_you">Super liked you</string>
@@ -27,6 +29,7 @@
     <!-- The end of the deck: one fix at a time -->
     <string name="deck_exhausted_title">You’ve seen everyone for now</string>
     <string name="deck_widen_distance">Search up to %1$s km</string>
+    <string name="deck_widen_distance_mi">Search up to %1$s mi</string>
     <string name="deck_widen_distance_generic">Search further away</string>
     <string name="deck_widen_country">Search the whole country</string>
     <string name="deck_widen_age">Widen ages to %1$s–%2$s</string>
@@ -129,6 +132,7 @@
     <string name="filters_reset">Reset</string>
     <string name="filters_distance">Distance</string>
     <string name="filters_distance_value">Up to %1$s km</string>
+    <string name="filters_distance_value_mi">Up to %1$s mi</string>
     <!-- %1$s: the account's country, named in the app's language. -->
     <string name="filters_anywhere_in">Anywhere in %1$s</string>
     <string name="filters_anywhere">Anywhere in the country</string>

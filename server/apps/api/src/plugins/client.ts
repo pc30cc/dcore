@@ -15,9 +15,10 @@ import { HttpProblem } from '../lib/problem.js';
  * Exempt from all three: the probes and anything outside `/v1`, webhooks,
  * admin routes and the website's public routes (none of them is the app).
  * `GET /v1/config` needs the header but answers during maintenance and to
- * old builds, so an old app can still learn what to show. Logout and
- * in-app deletion answer old builds too (deletion always works). A route
- * changes any of this with `config: { client: { … } }`.
+ * old builds, so an old app can still learn what to show. Logout, the
+ * session refresh and in-app deletion answer old builds and during
+ * maintenance too: in-app deletion always works, and it needs a fresh
+ * access token. A route changes any of this with `config: { client: { … } }`.
  *
  * The request's language comes from `Accept-Language` (fa, en, tr).
  */
@@ -125,7 +126,7 @@ export function pickLocale(header: string | string[] | undefined, fallback: Loca
 
 const NOT_APP = [/^\/v1\/webhooks\//, /^\/v1\/admin\//, /^\/v1\/public\//];
 const CONFIG = /^\/v1\/config$/;
-const ALWAYS_ANSWERED = [/^\/v1\/auth\/logout$/, /^\/v1\/me\/deletion(\/|$)/];
+const ALWAYS_ANSWERED = [/^\/v1\/auth\/logout$/, /^\/v1\/auth\/refresh$/, /^\/v1\/me\/deletion(\/|$)/];
 
 function routeRules(request: FastifyRequest): Required<ClientRouteConfig> {
   const path = request.routeOptions.url ?? request.url.split('?')[0] ?? '';
@@ -142,6 +143,7 @@ function routeRules(request: FastifyRequest): Required<ClientRouteConfig> {
     maintenance = false;
   } else if (ALWAYS_ANSWERED.some((re) => re.test(path))) {
     minVersion = false;
+    maintenance = false;
   }
   return { header: own.header ?? header, minVersion: own.minVersion ?? minVersion, maintenance: own.maintenance ?? maintenance };
 }

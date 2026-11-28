@@ -28,7 +28,10 @@
 #      leaves it unset gets true and .env.example sets true; otherwise the
 #      check fails. An env file named on the command line (a stack's own
 #      variables) that turns it off is a WARNING line only: test stacks may
-#      turn the second factor off. A value the API refuses fails.
+#      turn the second factor off. So is the API's own example
+#      (server/apps/api/.env.example) turning it off. A value the API
+#      refuses fails. Off, the owner-only writes (providers, SMS routing,
+#      legal values) need no second factor either.
 #   8. ADMIN_DEFAULT_LOCALE, as compose hands it to the admin service (the
 #      same renders as step 7) and the admin container reads it (trimmed;
 #      empty is fa): the file passes it as ${ADMIN_DEFAULT_LOCALE:-fa}, and
@@ -37,6 +40,9 @@
 #      or tr), and one of the brand's languages when that env file's BRAND
 #      is a brand of the repository (brands/<BRAND>/brand.json); otherwise
 #      the admin container does not start, and the check fails.
+#   9. The worker is never handed the API's master keys (DATA_KEYS,
+#      HASH_PEPPERS, the token signing keys): it decodes untrusted images,
+#      and holds only PROVIDER_KEYS for the panel's provider credentials.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -120,6 +126,26 @@ else
   status=1
 fi
 
+# The worker's variables, from the rendered file: none of the API's master keys.
+worker_masters=$(awk '
+  /^services:/ { in_services = 1; next }
+  in_services && /^[^ ]/ { in_services = 0 }
+  in_services && /^  [a-z0-9_-]+:$/ { svc = $1; sub(":", "", svc) }
+  in_services && svc == "worker" && /^      [A-Z0-9_]+:/ { name = $1; sub(":", "", name); print name }
+' "$work/rendered.yml" | grep -xE 'DATA_KEYS|DATA_KEY_ID|HASH_PEPPERS|HASH_PEPPER_KID|AUTH_JWT_PRIVATE_KEY|AUTH_JWT_SECRET' | tr '\n' ' ' || true)
+worker_vars=$(awk '
+  /^services:/ { in_services = 1; next }
+  in_services && /^[^ ]/ { in_services = 0 }
+  in_services && /^  [a-z0-9_-]+:$/ { svc = $1; sub(":", "", svc) }
+  in_services && svc == "worker" && /^      PROVIDER_KEYS:/ { print "yes" }
+' "$work/rendered.yml")
+if [ -z "$worker_masters" ] && [ "$worker_vars" = "yes" ]; then
+  echo "check: the worker holds PROVIDER_KEYS and none of the API's master keys"
+else
+  echo "check: the worker's keys: ${worker_masters:+master keys handed to it: $worker_masters}${worker_vars:-PROVIDER_KEYS missing}" >&2
+  status=1
+fi
+
 # The start scripts in their "write the file and stop" mode, with sample values.
 sample_secret=sample0123456789abcdefghijklmnopqrstuvwxyz
 if CENTRIFUGO_TOKEN_HMAC_SECRET="$sample_secret" CENTRIFUGO_API_KEY=sample-api-key-0123456789 KV_RT_PASSWORD=sample \
@@ -200,7 +226,7 @@ for env_file in "$work/totp-unset.env" "$example" "$@"; do
         echo "check: $name gives the api ADMIN_TOTP_REQUIRED${value}: the shared files must keep the second factor on (set it off in a test stack's own variables)" >&2
         totp_failed=1
       else
-        echo "check: WARNING: $name gives the api ADMIN_TOTP_REQUIRED${value}: every admin signs in with the password alone (no TOTP); test stacks only" >&2
+        echo "check: WARNING: $name gives the api ADMIN_TOTP_REQUIRED${value}: every admin signs in with the password alone (no TOTP), and the provider, SMS routing and legal writes need no second factor; test stacks only" >&2
         totp_warned=1
       fi
       ;;
@@ -210,6 +236,23 @@ for env_file in "$work/totp-unset.env" "$example" "$@"; do
       ;;
   esac
 done
+# The API's own example (local and native runs): off there is a WARNING too.
+api_example="$root/server/apps/api/.env.example"
+if [ -f "$api_example" ]; then
+  api_value=$(sed -n 's/^[[:space:]]*ADMIN_TOTP_REQUIRED=//p' "$api_example" | tail -n 1)
+  if [ -n "$api_value" ]; then
+    case $(totp_state "=$api_value") in
+      off)
+        echo "check: WARNING: server/apps/api/.env.example sets ADMIN_TOTP_REQUIRED=$api_value: admins sign in with the password alone and the owner-only writes need no second factor" >&2
+        totp_warned=1
+        ;;
+      invalid)
+        echo "check: server/apps/api/.env.example sets ADMIN_TOTP_REQUIRED=$api_value, which is not true or false" >&2
+        totp_failed=1
+        ;;
+    esac
+  fi
+fi
 if [ "$totp_failed" -eq 1 ]; then
   status=1
 elif [ "$totp_warned" -eq 0 ]; then

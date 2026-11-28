@@ -5,6 +5,7 @@ import type { Logger } from 'pino';
 import type { WorkerConfig } from './config.js';
 import { defaultQueues, type JobContext, type QueueDefinition } from './queues/index.js';
 import { createWorkerRedis } from './redis.js';
+import { WorkerProviders, type WorkerProvidersOptions } from './providers.js';
 import { createWorkerServices, type WorkerServices } from './services.js';
 import { closeSocialQueues } from './social/jobs.js';
 import { closeStatsQueues } from './stats/queueCounts.js';
@@ -38,6 +39,8 @@ export interface WorkerRuntimeOptions {
   consumers?: readonly ConsumerDefinition[] | undefined;
   /** Clients owned by the caller (tests); otherwise made from the configuration and closed on stop. */
   services?: WorkerServices | undefined;
+  /** The panel's provider credentials: always with the process's own services; with a caller's, only when given (tests). */
+  providers?: Omit<WorkerProvidersOptions, 'config' | 'services' | 'redis' | 'keys' | 'log'> | undefined;
 }
 
 /** A known queue keeps finished jobs as the shared table says; another (a test's) as the default queues do. */
@@ -64,6 +67,12 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
   const owned = options.services ? undefined : createWorkerServices(config, shared, logger);
   const services = options.services ?? owned!.services;
   const context: JobContext = { config, redis: shared, log: logger, services };
+  // app: the panel's provider credentials (FCM, stores), read once before any queue worker takes a job.
+  const providers =
+    !options.services || options.providers
+      ? new WorkerProviders({ config, services, redis: shared, keys: services.keys, log: logger.child({ component: 'providers' }), ...options.providers })
+      : null;
+  await providers?.start();
 
   const workers: Worker[] = [];
   const schedulerQueues: Queue[] = [];
@@ -176,6 +185,7 @@ export async function startWorker(config: WorkerConfig, options: WorkerRuntimeOp
         // growth
 
         // app
+        providers?.stop();
 
         // support
 

@@ -229,6 +229,54 @@ describe('configuration of ids and secrets', () => {
     expect(message).not.toContain('c2VjcmV0');
   });
 
+  it('takes PROVIDER_KEYS as a ring of its own: required in production, optional elsewhere, never sharing a key with DATA_KEYS', () => {
+    const production = {
+      NODE_ENV: 'production',
+      BRAND: 'live',
+      LOG_LEVEL: 'info',
+      PG_BUDGET: 'count',
+      CENTRIFUGO_TOKEN_HMAC_SECRET: 'c'.repeat(32),
+      CENTRIFUGO_API_URL: 'http://centrifugo:8000',
+      CENTRIFUGO_API_KEY: 'a'.repeat(32),
+      CENTRIFUGO_PROXY_KEY: 'p'.repeat(32),
+      S3_ENDPOINT: 'https://s3.example.com',
+      S3_BUCKET_PRIVATE: 'uploads',
+      S3_BUCKET_MEDIA: 'media',
+      S3_ACCESS_KEY_ID: 'id',
+      S3_SECRET_ACCESS_KEY: 'secret',
+      CDN_BASE_URL: 'https://cdn.example.com',
+      CDN_SIGNING_KEY: 'k'.repeat(32),
+      ORIGINS_SIGNING_KEY: 'A'.repeat(43),
+    };
+    // An empty value is an unset one (as an .env file copied from the example leaves it).
+    let message = '';
+    try {
+      testConfig({ ...production, PROVIDER_KEYS: '' });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/PROVIDER_KEYS/);
+    expect(message).toMatch(/required in production/);
+    expect(testConfig(production).secrets.providerKeys).toBeDefined();
+    // Development and tests start without it (panel provider entries then read `unreadable`, saves are refused).
+    for (const NODE_ENV of ['development', 'test']) expect(testConfig({ NODE_ENV, PROVIDER_KEYS: '' }).secrets.providerKeys, NODE_ENV).toBeUndefined();
+    // Wherever it is set, it is checked: its id names one of its keys, and no key is one of DATA_KEYS.
+    const shared = 'S'.repeat(43);
+    for (const NODE_ENV of ['production', 'development']) {
+      const env = NODE_ENV === 'production' ? production : { NODE_ENV };
+      let refused = '';
+      try {
+        testConfig({ ...env, DATA_KEYS: JSON.stringify({ 1: shared }), PROVIDER_KEYS: JSON.stringify({ 1: 'P'.repeat(43), 2: shared }) });
+      } catch (error) {
+        refused = String(error);
+      }
+      expect(refused, NODE_ENV).toMatch(/PROVIDER_KEYS.*must not hold a key of DATA_KEYS/s);
+      expect(refused, NODE_ENV).not.toContain(shared);
+      expect(() => testConfig({ ...env, PROVIDER_KEYS: JSON.stringify({ 1: 'P'.repeat(43) }), PROVIDER_KEY_ID: '2' }), NODE_ENV).toThrow(/PROVIDER_KEY_ID/);
+      expect(() => testConfig({ ...env, PROVIDER_KEYS: '{"1":"c2VjcmV0"}' }), NODE_ENV).toThrow(/PROVIDER_KEYS/);
+    }
+  });
+
   it('decorates the app with the codecs, secrets and key names', async () => {
     app = await testApp();
     const uid = app.publicIds.user.encode(112314686237569028n);

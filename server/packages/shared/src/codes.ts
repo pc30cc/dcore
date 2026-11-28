@@ -757,6 +757,13 @@ export const NOTIFY_FLAGS_DEFAULT = 15;
 // growth
 
 // app
+/** A new profile's review while the account waits (`pending_review`, 0038). */
+export const profileReviewState = codes('profile_reviews', 'state', {
+  waiting: [1, 'waiting'],
+  needs_changes: [2, 'needs_changes'],
+  rejected: [3, 'rejected'],
+});
+export type ProfileReviewState = (typeof profileReviewState.names)[number];
 
 // support
 
@@ -836,6 +843,7 @@ export const codeTables: readonly CodeTable<string>[] = [
   // growth
 
   // app
+  profileReviewState,
 
   // support
 

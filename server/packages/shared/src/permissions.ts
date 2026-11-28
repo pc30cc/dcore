@@ -75,6 +75,12 @@ export const permissionCatalog = {
   'config.read': {},
   'config.write': {},
   'config.providers': { restricted: true },
+  /**
+   * The values the published privacy policy and terms state: retention
+   * lengths, the legal text versions, the child-safety contact. Restricted:
+   * `config.*` does not cover it; superadmin holds it through `*`.
+   */
+  'config.legal': { restricted: true },
 
   'support.read': {},
   'support.write': {},

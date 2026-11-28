@@ -44,11 +44,16 @@ export const iapIntegrationFactories: Partial<Record<AppStore, IapIntegrationFac
   play: playIntegrationFactory,
 };
 
-export function iapServicesFrom(config: WorkerConfig, log: Logger, deps: IapIntegrationDeps): IapServices {
+export function iapServicesFrom(
+  config: WorkerConfig,
+  log: Logger,
+  deps: IapIntegrationDeps,
+  factories: Partial<Record<AppStore, IapIntegrationFactory>> = iapIntegrationFactories,
+): IapServices {
   const out: IapServices = { verifiers: {} };
   for (const store of ['play', 'bazaar'] as const) {
     if (config.store[store] === undefined) continue;
-    const factory = iapIntegrationFactories[store];
+    const factory = factories[store] ?? iapIntegrationFactories[store];
     if (!factory) {
       log.warn({ store }, 'store: credentials are set but this build has no integration for the store; its iap jobs wait');
       continue;

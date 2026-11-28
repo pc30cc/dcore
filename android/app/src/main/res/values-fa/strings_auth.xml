@@ -50,6 +50,12 @@
     <string name="review_title">پروفایلت در حال بررسیه</string>
     <string name="review_body">پروفایل‌های تازه قبل از نمایش بررسی می‌شن.</string>
     <string name="review_check">دوباره ببین</string>
+    <string name="review_changes_title">پروفایلت به چند تغییر نیاز داره</string>
+    <string name="review_changes_body">موارد زیر رو درست کن و دوباره برای بررسی بفرست.</string>
+    <string name="review_changes_label">چی رو تغییر بدی</string>
+    <string name="review_resubmit">برای بررسی بفرست</string>
+    <string name="review_rejected_title">پروفایلت تأیید نشد</string>
+    <string name="review_rejected_body">به کسی نشون داده نمی‌شه.</string>
     <string name="maintenance_title">به‌زودی برمی‌گردیم</string>
     <string name="maintenance_body">چند دقیقه در دسترس نیستیم. کمی بعد دوباره امتحان کن.</string>
     <plurals name="auth_code_wrong_left">

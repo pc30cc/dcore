@@ -22,7 +22,7 @@ import { useSession } from '@/lib/useSession';
 import { cn } from '@/lib/utils';
 import { GrantDialog } from '@/pages/revenue/GrantDialog';
 import { GrantTable } from '@/pages/revenue/GrantTable';
-import { PlanName } from '@/pages/revenue/parts';
+import { PlanName, PurchaseStateDot } from '@/pages/revenue/parts';
 import { WalletAdjustDialog } from '@/pages/revenue/WalletAdjustDialog';
 import { SectionCard } from '../SectionCard';
 
@@ -229,7 +229,9 @@ export function PurchasesTab({ user }: { user: AdminUserDetail }) {
                       </span>
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm whitespace-nowrap">{t(`purchaseState.${p.state}` as MessageKey)}</TableCell>
+                  <TableCell>
+                    <PurchaseStateDot state={p.state} />
+                  </TableCell>
                   <TableCell className="hidden text-sm sm:table-cell">{t(sourceKey(p.store))}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     <span dir="ltr" className="font-mono text-xs text-muted-foreground">

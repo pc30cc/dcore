@@ -31,7 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -86,7 +88,9 @@ internal object AuthInsets {
  * tile, no help button, no step count. Without [actions] the content ends
  * above the keyboard itself, so whatever is under the field can be scrolled
  * into sight while typing. A [snackbar] shows its notices just above the
- * docked actions (or the page's bottom), wherever they end up.
+ * docked actions (or the page's bottom), wherever they end up. A [liveTitle]
+ * is a polite live region: a screen reader announces it when it changes
+ * while the page is open (a decision that arrives over the socket).
  */
 @Composable
 internal fun AuthPage(
@@ -95,6 +99,7 @@ internal fun AuthPage(
     modifier: Modifier = Modifier,
     hero: Boolean = true,
     titleTop: Dp = PageLayout.titleTop,
+    liveTitle: Boolean = false,
     actions: (@Composable ColumnScope.() -> Unit)? = null,
     snackbar: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -120,7 +125,15 @@ internal fun AuthPage(
                         .padding(horizontal = Space.gutter)
                         .padding(top = titleTop, bottom = PageLayout.contentBottom),
                 ) {
-                    Text(title, style = t.type.h1, color = t.colors.text, modifier = Modifier.semantics { heading() })
+                    Text(
+                        title,
+                        style = t.type.h1,
+                        color = t.colors.text,
+                        modifier = Modifier.semantics {
+                            heading()
+                            if (liveTitle) liveRegion = LiveRegionMode.Polite
+                        },
+                    )
                     content()
                 }
                 // Content cut by the docked actions fades into the page above them, so the cut reads as "more below".

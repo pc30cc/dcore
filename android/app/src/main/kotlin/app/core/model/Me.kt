@@ -27,6 +27,22 @@ data class AccountLocation(
 data class PendingDeletion(val purgeAt: Instant)
 
 /**
+ * The review of a new profile while the account waits for it. [message] is
+ * the team's text, in the person's language: what to change, or why the
+ * profile was not accepted (never sent while it only waits).
+ */
+@Serializable
+data class ProfileReview(
+    val state: ReviewState = ReviewState.Unknown,
+    val message: String? = null,
+    val decidedAt: Instant? = null,
+)
+
+/** `POST /v1/me/review/resubmit`: the profile waits for a decision again. */
+@Serializable
+data class ReviewResubmitted(val review: ProfileReview)
+
+/**
  * `GET /v1/me`. A deleted account in its grace period gets a minimal answer
  * (no profile, no preferences), so everything below the status is optional.
  */
@@ -48,6 +64,10 @@ data class Me(
     val deletion: PendingDeletion? = null,
     /** Legal texts whose current version the person has not accepted yet. */
     val consentsDue: List<ConsentKind> = emptyList(),
+    /** While the account waits for its review (`pending_review`). */
+    val review: ProfileReview? = null,
+    /** The unit distances are shown in (the account's country's); kilometres from a server that does not send it. */
+    val distanceUnit: DistanceUnit = DistanceUnit.Km,
 )
 
 @Serializable

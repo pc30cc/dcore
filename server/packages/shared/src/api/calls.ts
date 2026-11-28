@@ -40,6 +40,8 @@ export const rtcSettingsViewSchema = z.object({
     /** 12 hex digits of the secret's SHA-256; null when none is stored or it cannot be opened. */
     fingerprint: z.string().regex(/^[0-9a-f]{12}$/).nullable(),
   }),
+  /** A hash of the stored row: a change names it (`baseVersion`) so it never reverts another admin's. */
+  version: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
 });
 export type RtcSettingsView = z.infer<typeof rtcSettingsViewSchema>;
 
@@ -51,5 +53,7 @@ export const rtcSettingsPatchSchema = z.strictObject({
   countries: z.array(z.string().max(8)).max(64).optional(),
   credentialTtlSeconds: z.number().int().optional(),
   maxLiveCalls: z.number().int().min(0).max(1_000_000).nullable().optional(),
+  /** The view's `version` the change was made on; another one stored now is a 409 `settings_changed`. Absent: not checked. */
+  baseVersion: z.string().regex(/^[A-Za-z0-9_-]{22}$/).optional(),
 });
 export type RtcSettingsPatchBody = z.infer<typeof rtcSettingsPatchSchema>;

@@ -300,6 +300,9 @@ describe('the user page’s purchases and wallet (revenue)', () => {
     renderPanel(`/users/${SARA}?tab=purchases`, api);
     const link = await screen.findByRole('link', { name: 'sub.plus' });
     expect(link.getAttribute('href')).toBe('/revenue/purchases/700');
+    // The state wears the purchases list's coloured dot.
+    const state = within(link.closest('tr')!).getByText('Active');
+    expect(state.closest('span')?.querySelector('.rounded-full')).toBeTruthy();
     const given = (await screen.findByRole('heading', { name: 'Plan days given' })).closest('section')!;
     expect((await within(given).findAllByText('Outage')).length).toBeGreaterThan(0);
     expect(within(given).getByRole('button', { name: 'End now' })).toBeTruthy();

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { providerConfigKeys, providersHash } from '@app/config';
 import { configSnapshot, statementCounter, type ConfigSnapshotRows, type Pool } from '@app/db';
 import {
   FREE_PLAN_KEY,
@@ -131,8 +132,12 @@ export interface ConfigSnapshot {
   /** The visual templates offered and the default (app_config `ui.templates`, ids this build knows). */
   ui: UiSettings;
   documents: ReadonlyMap<string, ConfigDocument>;
-  /** The keys of app_config this build does not know (a newer panel). */
+  /** The keys of app_config this build does not know (a newer panel); the provider entries are not among them. */
   unknownKeys: readonly string[];
+  /** The panel's provider entries (`providers.<kind>`, raw, secrets sealed), for the provider runtime. */
+  providers: Readonly<Record<string, unknown>>;
+  /** Moves only when a provider entry moved. */
+  providersHash: string;
 }
 
 /** The brand as the app sees it: brand.json with the panel's overrides from the active `brands` row. */
@@ -270,7 +275,10 @@ export interface BuiltSnapshotInput {
 
 /** Turns the loaded rows into a snapshot (pure; throws on an app_config value that does not parse). */
 export function buildSnapshot({ rows, version, brand, googleSignIn, log }: BuiltSnapshotInput): ConfigSnapshot {
-  const { config: app, unknown } = parseAppConfig(Object.entries(rows.appConfig).map(([key, value]) => ({ key, value })));
+  const { config: app, unknown: unknownAll } = parseAppConfig(Object.entries(rows.appConfig).map(([key, value]) => ({ key, value })));
+  // providers.<kind> (the panel's credentials) and providers.rtc are read by their own holders.
+  const unknown = unknownAll.filter((key) => !key.startsWith('providers.'));
+  const providers = Object.fromEntries(providerConfigKeys.filter((key) => rows.appConfig[key] !== undefined).map((key) => [key, rows.appConfig[key]]));
   const effective = effectiveBrand(brand, rows.brand, log);
   const strings = buildStrings(rows.strings, rows.brand?.id);
   const fields: FieldDefinition[] = rows.fields.map((f) => ({
@@ -385,6 +393,8 @@ export function buildSnapshot({ rows, version, brand, googleSignIn, log }: Built
     ui,
     documents,
     unknownKeys: unknown,
+    providers,
+    providersHash: providersHash(providers),
   };
 }
 

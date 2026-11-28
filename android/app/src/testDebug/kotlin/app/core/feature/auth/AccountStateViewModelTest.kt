@@ -10,6 +10,8 @@ import app.core.model.Me
 import app.core.model.ModerationHistory
 import app.core.model.ModerationKind
 import app.core.model.ProblemCodes
+import app.core.model.ProfileReview
+import app.core.model.ReviewState
 import app.core.net.ApiError
 import app.core.net.Fetched
 import app.core.net.SampleApi
@@ -312,6 +314,90 @@ class AccountStateViewModelTest {
         runCurrent()
         assertTrue(model.state.value.purgeAt != null)
         model.restore()
+        runCurrent()
+        assertEquals(Root.Main, gate.root.value)
+        model.viewModelScope.cancel()
+    }
+
+    // MARK: - A new profile waiting for its review
+
+    /** The sample account, finished with sign-up, waiting for its review, on the review screen. */
+    private suspend fun TestScope.waitingForReview(): Triple<SampleApi, AuthGate, AccountStateViewModel> {
+        val api = SampleApi(clock = clock)
+        val gate = AuthGate(api, ExternalSignIn.None, SmsCodeReceiver.None, backgroundScope, Diag.Silent)
+        api.setAccountStatus(AccountStatus.PendingReview)
+        gate.start()
+        runCurrent()
+        val model = AccountStateViewModel(api, gate)
+        runCurrent()
+        assertEquals(Root.Review, gate.root.value)
+        assertEquals(ReviewState.Waiting, model.state.value.review?.state)
+        return Triple(api, gate, model)
+    }
+
+    @Test
+    fun changesAskedForShowTheMessageAndTheProfileGoesBackForReview() = runTest(dispatcher) {
+        val (api, gate, model) = waitingForReview()
+        api.decideReview(ReviewState.NeedsChanges, "Add a photo where your face is clearly visible.")
+        model.refresh()
+        runCurrent()
+        val review = model.state.value.review
+        assertEquals(ReviewState.NeedsChanges, review?.state)
+        assertEquals("Add a photo where your face is clearly visible.", review?.message)
+        assertNotNull(review?.decidedAt)
+
+        model.resubmit()
+        runCurrent()
+        assertTrue(api.requestLog.contains("me.review.resubmit"))
+        assertEquals(ReviewState.Waiting, model.state.value.review?.state)
+        assertNull(model.state.value.review?.message)
+        assertFalse(model.state.value.busy)
+        assertNull(model.state.value.error)
+        // The server agrees on a read.
+        model.refresh()
+        runCurrent()
+        assertEquals(ReviewState.Waiting, model.state.value.review?.state)
+        assertEquals(Root.Review, gate.root.value)
+        model.viewModelScope.cancel()
+    }
+
+    @Test
+    fun aProfileNotAcceptedShowsWhyAndCannotBeSentAgain() = runTest(dispatcher) {
+        val (api, gate, model) = waitingForReview()
+        api.decideReview(ReviewState.Rejected, "Profiles must show the person's own face.")
+        model.refresh()
+        runCurrent()
+        assertEquals(ReviewState.Rejected, model.state.value.review?.state)
+        assertEquals("Profiles must show the person's own face.", model.state.value.review?.message)
+        // A send that no longer applies (the screen was behind) reads where it stands, with no error.
+        val reads = api.requestLog.count { it == "me" }
+        model.resubmit()
+        runCurrent()
+        assertEquals(reads + 1, api.requestLog.count { it == "me" })
+        assertEquals(ReviewState.Rejected, model.state.value.review?.state)
+        assertNull(model.state.value.error)
+        assertEquals(Root.Review, gate.root.value)
+        model.viewModelScope.cancel()
+    }
+
+    @Test
+    fun theTeamsDecisionMovesTheScreenAtOnceWithoutARead() = runTest(dispatcher) {
+        val (api, gate, model) = waitingForReview()
+        val before = api.requestLog.size
+        // As the realtime `profile` event brings it (ChatGraph hands it to the gate).
+        gate.reviewDecided(ProfileReview(ReviewState.NeedsChanges, "Write a few words about yourself."))
+        runCurrent()
+        assertEquals(ReviewState.NeedsChanges, model.state.value.review?.state)
+        assertEquals("Write a few words about yourself.", model.state.value.review?.message)
+        assertEquals("nothing was asked for it", before, api.requestLog.size)
+        model.viewModelScope.cancel()
+    }
+
+    @Test
+    fun anApprovalMovesTheAppIn() = runTest(dispatcher) {
+        val (api, gate, model) = waitingForReview()
+        api.approveReview()
+        model.refresh()
         runCurrent()
         assertEquals(Root.Main, gate.root.value)
         model.viewModelScope.cancel()

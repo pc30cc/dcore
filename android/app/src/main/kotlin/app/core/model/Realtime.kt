@@ -112,6 +112,8 @@ data class ProfileEvent(
     val textState: TextState? = null,
     val prompts: List<PromptModeration>? = null,
     val verification: VerificationStatus? = null,
+    /** The team decided on a profile waiting for review: what to change, or why it was not accepted. */
+    val review: ProfileReview? = null,
 )
 
 @Serializable

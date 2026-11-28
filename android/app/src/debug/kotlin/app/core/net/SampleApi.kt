@@ -10,6 +10,7 @@ import app.core.model.ConsentRecord
 import app.core.model.ConsentVersions
 import app.core.model.Intention
 import app.core.model.OnboardingCodes
+import app.core.BuildConfig
 import app.core.model.AccountLocation
 import app.core.model.AccountStatus
 import app.core.model.AppEvent
@@ -46,6 +47,7 @@ import app.core.model.DeletionScheduled
 import app.core.model.DeviceInfo
 import app.core.model.DeviceUpdate
 import app.core.model.DiscoveryPreferences
+import app.core.model.DistanceUnit
 import app.core.model.EntitlementSource
 import app.core.model.Entitlements
 import app.core.model.AccountEvent
@@ -97,6 +99,11 @@ import app.core.model.ProblemCodes
 import app.core.model.ProfileCard
 import app.core.model.ProfileFieldValue
 import app.core.model.ProfilePatch
+import app.core.model.ProfileEvent
+import app.core.model.ProfileReview
+import app.core.model.ReviewState
+import app.core.model.Maintenance
+import app.core.model.MinVersion
 import app.core.model.PublicDeletionChallenge
 import app.core.model.PublicUid
 import app.core.model.PurchaseKind
@@ -267,6 +274,12 @@ class SampleApi(
     )
     private var reviewSince: Long? = null
 
+    /** The new profile's review while the account waits for one (`pending_review`). */
+    private var review = ProfileReview(ReviewState.Waiting)
+
+    /** Countries where sign-up is closed (the panel's `signup.countries`). */
+    private val closedCountries = mutableSetOf<String>()
+
     private var verification = VerificationState(VerificationStatus.None)
     private var verificationSubmittedAt: Long? = null
 
@@ -298,7 +311,28 @@ class SampleApi(
 
     private suspend fun <T> route(name: String, block: suspend () -> T): T {
         synchronized(_requestLog) { _requestLog += name }
-        return lock.withLock { block() }
+        return lock.withLock {
+            clientPolicy(name)
+            block()
+        }
+    }
+
+    /**
+     * As the server's client plugin: maintenance (503) and the store's
+     * minimum version (426) refuse every app route but the config, the
+     * session's refresh and sign-out, and deletion; the funnel's events
+     * follow, as from [HttpServerApi].
+     */
+    private fun clientPolicy(name: String) {
+        if (name == "config" || name.startsWith("sample.") || name.startsWith("public.") || name.startsWith("me.deletion") || name == "auth.logout") return
+        maintenanceMessage?.let { message ->
+            _events.tryEmit(ApiEvent.Maintenance(message))
+            throw ApiError.Http(503, Problem.of(503, ProblemCodes.MAINTENANCE, "message" to message))
+        }
+        if (BuildConfig.VERSION_CODE < requiredVersion) {
+            _events.tryEmit(ApiEvent.UpgradeRequired(requiredVersion))
+            throw ApiError.Http(426, Problem.of(426, ProblemCodes.UPGRADE_REQUIRED, "minVersionCode" to requiredVersion))
+        }
     }
 
     private fun user(): AuthUser = session ?: throw ApiError.Unauthorized(null)
@@ -682,6 +716,7 @@ class SampleApi(
     suspend fun setAccountStatus(status: AccountStatus, reason: String = "Repeated reports of harassment.") = route("sample.status") {
         val me = user()
         session = me.copy(status = status)
+        if (status == AccountStatus.PendingReview) review = ProfileReview(ReviewState.Waiting)
         if (status == AccountStatus.Suspended || status == AccountStatus.Banned) {
             moderation += ModerationAction(
                 nextId(),
@@ -714,14 +749,39 @@ class SampleApi(
 
     // MARK: - Config
 
-    private val configVersion = 1L
+    private var configVersion = 1L
+
+    /** Maintenance from the panel: its message while it is on, null while it is off. */
+    private var maintenanceMessage: String? = null
+
+    /** The store's minimum version code (`minVersion.required`). */
+    private var requiredVersion = 1
+
+    private fun configNow(locale: String): Config = SampleData.config(store, locale, configVersion).let { config ->
+        config.copy(
+            minVersion = MinVersion(required = requiredVersion, recommended = maxOf(requiredVersion, config.minVersion.recommended)),
+            maintenance = Maintenance(enabled = maintenanceMessage != null, message = maintenanceMessage),
+        )
+    }
 
     override suspend fun config(locale: String): Fetched<Config> = route("config") {
-        fetched("config:$locale", configVersion, SampleData.config(store, locale, configVersion))
+        fetched("config:$locale", configVersion, configNow(locale))
     }
 
     override suspend fun cachedConfig(locale: String): Config? = lock.withLock {
-        if (served.containsKey("config:$locale")) SampleData.config(store, locale, configVersion) else null
+        if (served.containsKey("config:$locale")) configNow(locale) else null
+    }
+
+    /** Maintenance on with [message] (the server always has one, in the request's language), or off with null. */
+    suspend fun setMaintenance(message: String?) = route("sample.maintenance") {
+        maintenanceMessage = message
+        configVersion++
+    }
+
+    /** The store's minimum version code, as the panel sets it. */
+    suspend fun setRequiredVersion(code: Int) = route("sample.minversion") {
+        requiredVersion = code
+        configVersion++
     }
 
     // MARK: - Auth
@@ -887,7 +947,7 @@ class SampleApi(
         }
         val waiting = reviewSince
         val current = session
-        if (waiting != null && current?.status == AccountStatus.PendingReview && nowMs() - waiting >= REVIEW_MS) {
+        if (waiting != null && current?.status == AccountStatus.PendingReview && review.state == ReviewState.Waiting && nowMs() - waiting >= REVIEW_MS) {
             session = current.copy(status = AccountStatus.Active)
             reviewSince = null
             bumpMe()
@@ -920,6 +980,8 @@ class SampleApi(
             moderation = moderation.filter(::standing),
             deletion = deletion,
             consentsDue = LEGAL.filter { (consents[it] ?: 0) < 1 },
+            review = review.takeIf { me.status == AccountStatus.PendingReview },
+            distanceUnit = distanceUnit,
         )
     }
 
@@ -929,7 +991,10 @@ class SampleApi(
             advanceBackground()
             val me = meNow()
             fetched("me:${me.id}", meVersion, me)
-        }.also { fetched -> fetched.value.profile?.let { settingsTap.received(begun, it.settings) } }
+        }.also { fetched ->
+            fetched.value.profile?.let { settingsTap.received(begun, it.settings) }
+            settingsTap.distanceUnit(fetched.value.distanceUnit)
+        }
     }
 
     override suspend fun setBasics(birthDate: LocalDate, gender: Gender, consents: ConsentVersions): OwnProfile = route("me.basics") {
@@ -979,8 +1044,13 @@ class SampleApi(
             if ((consents[ConsentKind.Guidelines] ?: 0) < 1) add("guidelines")
         }
         if (missing.isNotEmpty()) fail(422, ProblemCodes.FIELD_INVALID, "missing" to missing.joinToString(","))
+        // The country is checked again at the finish: sign-up may have closed there since the location step.
+        if (location.country in closedCountries) fail(403, ProblemCodes.COUNTRY_NOT_SUPPORTED)
         val next = if (waitlist) AccountStatus.PendingReview else AccountStatus.Active
-        if (waitlist) reviewSince = nowMs()
+        if (waitlist) {
+            reviewSince = nowMs()
+            review = ProfileReview(ReviewState.Waiting)
+        }
         return me.copy(status = next, onboardingStep = OnboardingCodes.DONE)
     }
 
@@ -1092,10 +1162,12 @@ class SampleApi(
         val lat = update.lat
         val lng = update.lng
         if (update.cityId == null && (lat == null || lng == null)) fail(422, ProblemCodes.FIELD_INVALID)
-        lastLocationAt = nowMs()
         // Like the server: the position picks a city and is forgotten.
         val city = update.cityId?.let { id -> SampleData.cities(language()).firstOrNull { it.id == id } ?: fail(422, ProblemCodes.FIELD_INVALID) }
             ?: SampleData.cityCentres.minByOrNull { (_, c) -> sq(c.first - lat!!) + sq(c.second - lng!!) }?.key?.let { SampleData.city(it, language()) }
+        // An account still signing up cannot place itself where sign-up is closed; a finished one is never held back.
+        if (session?.status == AccountStatus.Onboarding && city?.country in closedCountries) fail(403, ProblemCodes.COUNTRY_NOT_SUPPORTED)
+        lastLocationAt = nowMs()
         location = location.copy(city = city, country = city?.country)
         bumpMe()
         LocationResult(city, city?.country)
@@ -1885,6 +1957,9 @@ class SampleApi(
     /** How long before a new code may be sent (screenshots of the code step once a new code is allowed). */
     @Volatile var otpResendAfterMs: Long = RESEND_AFTER_MS
 
+    /** The unit `GET /v1/me` names, as the panel sets it per country (tests and tours switch it). */
+    @Volatile var distanceUnit: DistanceUnit = DistanceUnit.Km
+
     /** No purchase gets an answer while set: the network lost between the store and the server. */
     @Volatile var purchasesUnreachable: Boolean = false
 
@@ -2151,6 +2226,47 @@ class SampleApi(
     // growth
 
     // app
+    override suspend fun resubmitReview(): ProfileReview = route("me.review.resubmit") {
+        val me = full()
+        if (me.status != AccountStatus.PendingReview || (review.state != ReviewState.NeedsChanges && review.state != ReviewState.Waiting)) {
+            fail(409, ProblemCodes.CONFLICT)
+        }
+        if (review.state == ReviewState.NeedsChanges) {
+            review = ProfileReview(ReviewState.Waiting)
+            bumpMe()
+        }
+        review
+    }
+
+    /**
+     * The team decides on the profile waiting for review: changes asked for
+     * or not accepted ([state], with the [message] the person reads), as the
+     * panel's queue does; the account's channel hears it (`profile`).
+     */
+    suspend fun decideReview(state: ReviewState, message: String) = route("sample.review") {
+        val me = user()
+        check(me.status == AccountStatus.PendingReview) { "the account is not waiting for a review" }
+        require(state == ReviewState.NeedsChanges || state == ReviewState.Rejected) { "approve with approveReview" }
+        review = ProfileReview(state, message, now())
+        reviewSince = null
+        bumpMe()
+        channel.publish(RealtimeTypes.PROFILE, nextId(), ProfileEvent.serializer(), ProfileEvent(review = review))
+    }
+
+    /** The team approves the profile: the account is shown, and its channel hears `account`. */
+    suspend fun approveReview() = route("sample.review") {
+        val me = user()
+        check(me.status == AccountStatus.PendingReview) { "the account is not waiting for a review" }
+        session = me.copy(status = AccountStatus.Active)
+        reviewSince = null
+        bumpMe()
+        channel.publish(RealtimeTypes.ACCOUNT, nextId(), AccountEvent.serializer(), AccountEvent(AccountStatus.Active))
+    }
+
+    /** Sign-up closes in [country] (ISO code), as the panel's countries setting. */
+    suspend fun closeSignUp(country: String) = route("sample.countries") {
+        closedCountries += country
+    }
 
     // support
 

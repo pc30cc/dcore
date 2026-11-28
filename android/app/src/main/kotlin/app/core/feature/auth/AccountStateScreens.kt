@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.core.LocalAppGraph
 import app.core.R
 import app.core.billing.storePlan
+import app.core.brand.AppBrand
 import app.core.common.runCatchingUnlessCancelled
 import app.core.feature.onboarding.Skeleton
 import app.core.feature.onboarding.StepError
@@ -47,12 +49,15 @@ import app.core.i18n.brandString
 import app.core.model.AccountStatus
 import app.core.model.AppealStatus
 import app.core.model.AuthUser
+import app.core.model.Config
 import app.core.model.Entitlements
 import app.core.model.ModerationAction
 import app.core.model.ModerationHistory
 import app.core.model.ModerationKind
 import app.core.model.Problem
 import app.core.model.ProblemCodes
+import app.core.model.ProfileReview
+import app.core.model.ReviewState
 import app.core.net.ApiError
 import app.core.net.ServerApi
 import app.core.store.Store
@@ -94,14 +99,17 @@ data class AccountStateUi(
     val purgeAt: Instant? = null,
     val busy: Boolean = false,
     val appealSent: Boolean = false,
+    /** While the profile waits for its review: where it stands, with the team's message once they decided. */
+    val review: ProfileReview? = null,
 )
 
 /**
  * The account's state when it is not "in": suspended or banned (the reason
  * the person sees and the in-app appeal), deleted inside its grace period
- * (restore), or waiting for a profile review. Only the routes such a
- * session may use are called (`GET /v1/me`, `GET /v1/me/moderation`,
- * `POST /v1/appeals`, `POST /v1/me/restore`, logout).
+ * (restore), or waiting for a profile review (and, once the team asked for
+ * changes, sending it again). Only the routes such a session may use are
+ * called (`GET /v1/me`, `GET /v1/me/moderation`, `POST /v1/appeals`,
+ * `POST /v1/me/restore`, `POST /v1/me/review/resubmit`, logout).
  */
 class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGate) : ViewModel() {
     private val _state = MutableStateFlow(AccountStateUi(problem = gate.accountProblem.value))
@@ -109,6 +117,8 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
 
     init {
         refresh()
+        // The team's decision, as it arrives while the screen is in front.
+        viewModelScope.launch { gate.reviews.collect { review -> _state.update { it.copy(review = review) } } }
     }
 
     fun refresh() {
@@ -132,7 +142,7 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
                 }
                 Triple(me, action, me.deletion?.purgeAt)
             }.onSuccess { (me, action, purgeAt) ->
-                _state.update { it.copy(loading = false, status = me.status, action = action, purgeAt = purgeAt) }
+                _state.update { it.copy(loading = false, status = me.status, action = action, purgeAt = purgeAt, review = me.review) }
                 gate.accountChanged(AuthUser(me.id, me.status, me.onboardingStep))
                 if (action?.revokedAt != null) recheckLifted() else stopLiftedRechecks()
             }.onFailure { e ->
@@ -162,6 +172,27 @@ class AccountStateViewModel(private val api: ServerApi, private val gate: AuthGa
                     _state.update {
                         it.copy(busy = false, appealSent = already, error = if (already) null else if (e is ApiError.Network) StepError.Offline else StepError.Failed)
                     }
+                }
+        }
+    }
+
+    /**
+     * The profile goes back for review after the changes the team asked for.
+     * Decided meanwhile (approved, or not accepted): read where it stands.
+     */
+    fun resubmit() {
+        if (_state.value.busy) return
+        _state.update { it.copy(busy = true, error = null) }
+        viewModelScope.launch {
+            runCatchingUnlessCancelled { api.resubmitReview() }
+                .onSuccess { review -> _state.update { it.copy(busy = false, review = review) } }
+                .onFailure { e ->
+                    if ((e as? ApiError.Http)?.code == ProblemCodes.CONFLICT) {
+                        _state.update { it.copy(busy = false) }
+                        refresh()
+                        return@onFailure
+                    }
+                    _state.update { it.copy(busy = false, error = if (e is ApiError.Network) StepError.Offline else StepError.Failed) }
                 }
         }
     }
@@ -544,48 +575,166 @@ fun RestoreRoute() {
     }
 }
 
-/** Sign-up is done; new profiles are looked at before they are shown. Checked again whenever the app comes back. */
+/**
+ * Sign-up is done; new profiles are looked at before they are shown. While
+ * it waits: one line and «دوباره ببین». When the team asked for changes:
+ * their message, «ویرایش پروفایل» and «برای بررسی بفرست». When it was not
+ * accepted: the reason. Read again whenever the app comes back, and moved
+ * at once by the team's decision while in front; signing out and deleting
+ * the account stay at the bottom in every state.
+ */
 @Composable
-fun ReviewRoute() {
+fun ReviewRoute(onEdit: () -> Unit = {}, onDelete: () -> Unit = {}) {
     val model = accountModel()
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.refresh() }
     val askSignOut = rememberSignOut(model::signOut)
+    ReviewPage(
+        review = state.review,
+        loading = state.loading,
+        busy = state.busy,
+        error = stepErrorTextLocal(state.error),
+        onCheck = model::refresh,
+        onEdit = onEdit,
+        onResubmit = model::resubmit,
+        onSignOut = askSignOut,
+        onDelete = onDelete,
+    )
+}
+
+/**
+ * The review screen drawn from its parts: see [ReviewRoute]. Before the
+ * first answer ([review] null while [loading]) it cannot tell which of the
+ * three it is, so its line waits as a shape; with no review in the answer
+ * (an older server) it reads as waiting.
+ */
+@Composable
+fun ReviewPage(
+    review: ProfileReview?,
+    loading: Boolean,
+    busy: Boolean,
+    error: String?,
+    onCheck: () -> Unit,
+    onEdit: () -> Unit,
+    onResubmit: () -> Unit,
+    onSignOut: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val state = review?.state
+    val message = review?.message?.takeIf { it.isNotBlank() }
+    val unread = review == null && loading
+    val title = when (state) {
+        ReviewState.NeedsChanges -> R.string.review_changes_title
+        ReviewState.Rejected -> R.string.review_rejected_title
+        else -> R.string.review_title
+    }
+    val body = when (state) {
+        ReviewState.NeedsChanges -> R.string.review_changes_body
+        ReviewState.Rejected -> R.string.review_rejected_body
+        else -> R.string.review_body
+    }
     AuthPage(
-        title = brandString(R.string.review_title),
+        title = brandString(title),
         onBack = null,
         hero = false,
         titleTop = 0.dp,
+        // The team's decision can arrive while the screen is open: its new title is announced.
+        liveTitle = true,
         actions = {
-            PrimaryButton(brandString(R.string.review_check), onClick = model::refresh, loading = state.loading)
-            TextAction(brandString(R.string.action_sign_out), askSignOut, kind = TextActionKind.Neutral, modifier = Modifier.padding(top = StateLayout.actionGap))
+            val primary = when {
+                state == ReviewState.NeedsChanges -> {
+                    PrimaryButton(brandString(R.string.review_resubmit), onClick = onResubmit, loading = busy)
+                    true
+                }
+                state == ReviewState.Rejected || unread -> false
+                else -> {
+                    PrimaryButton(brandString(R.string.review_check), onClick = onCheck, loading = loading)
+                    true
+                }
+            }
+            Row(
+                Modifier.padding(top = if (primary) StateLayout.actionGap else 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(StateLayout.footerGap),
+            ) {
+                TextAction(brandString(R.string.action_sign_out), onSignOut, kind = TextActionKind.Neutral)
+                TextAction(brandString(R.string.settings_delete), onDelete, kind = TextActionKind.Destructive)
+            }
         },
     ) {
-        Sub(brandString(R.string.review_body))
-        stepErrorTextLocal(state.error)?.let { HelperLine(it, Modifier.padding(top = StateLayout.errorTop), error = true) }
+        if (unread) {
+            Skeleton(Modifier.padding(top = StateLayout.subTop).fillMaxWidth().height(StateLayout.lineSkeleton))
+        } else {
+            Sub(brandString(body))
+        }
+        val label = when (state) {
+            ReviewState.NeedsChanges -> R.string.review_changes_label
+            ReviewState.Rejected -> R.string.restricted_reason
+            else -> null
+        }
+        if (label != null && message != null) {
+            SettingsGroup(Modifier.padding(top = StateLayout.cardTop)) { Fact(brandString(label), message, divider = false) }
+        }
+        if (state == ReviewState.NeedsChanges) {
+            // A link under the message, its touch target reaching over the space around it.
+            Text(
+                brandString(R.string.me_edit),
+                style = AppTheme.template.type.link,
+                color = AppTheme.template.colors.primary,
+                modifier = Modifier.padding(top = StateLayout.linkTop).overhangingTarget(onEdit),
+            )
+        }
+        if (error != null) HelperLine(error, Modifier.padding(top = StateLayout.errorTop), error = true)
     }
 }
 
-/** The service is down for maintenance: the server's message, and a retry. */
+/** Where the web deletion page is: the panel's (`/v1/config`), else the build's brand; null when neither names one. */
+internal fun deletionUrl(config: Config?): String? =
+    config?.legal?.deleteAccountUrl?.takeIf { it.isNotBlank() } ?: AppBrand.Legal.deleteAccountUrl.takeIf { it.isNotBlank() }
+
+/**
+ * The service is down for maintenance: the server's message, a retry, and
+ * «حذف حساب», which opens the web deletion page ([deleteUrl]: the panel's,
+ * else the brand's), so deleting never waits for the service to return.
+ */
 @Composable
-fun MaintenanceScreen(message: String?) {
+fun MaintenanceScreen(message: String?, deleteUrl: String?) {
     val graph = LocalAppGraph.current
     val scope = rememberCoroutineScope()
+    val uri = LocalUriHandler.current
     var checking by rememberSaveable { mutableStateOf(false) }
+    MaintenancePage(
+        message = message,
+        checking = checking,
+        onRetry = {
+            checking = true
+            scope.launch {
+                val fresh = graph.config.refresh()
+                if (fresh != null && !fresh.maintenance.enabled) graph.auth.maintenanceOver()
+                checking = false
+            }
+        },
+        onDelete = deleteUrl?.let { url -> { runCatching { uri.openUri(url) } } },
+    )
+}
+
+/** The maintenance screen drawn from its parts: see [MaintenanceScreen]. No [onDelete], no deletion link. */
+@Composable
+fun MaintenancePage(message: String?, checking: Boolean, onRetry: () -> Unit, onDelete: (() -> Unit)?) {
     AuthPage(
         title = brandString(R.string.maintenance_title),
         onBack = null,
         hero = false,
         titleTop = 0.dp,
         actions = {
-            PrimaryButton(brandString(R.string.action_try_again), loading = checking, onClick = {
-                checking = true
-                scope.launch {
-                    val fresh = graph.config.refresh()
-                    if (fresh != null && !fresh.maintenance.enabled) graph.auth.maintenanceOver()
-                    checking = false
-                }
-            })
+            PrimaryButton(brandString(R.string.action_try_again), loading = checking, onClick = onRetry)
+            if (onDelete != null) {
+                TextAction(
+                    brandString(R.string.settings_delete),
+                    onDelete,
+                    Modifier.padding(top = StateLayout.actionGap),
+                    kind = TextActionKind.Destructive,
+                )
+            }
         },
     ) {
         Sub(message?.takeIf { it.isNotBlank() } ?: brandString(R.string.maintenance_body))
@@ -605,6 +754,8 @@ private object StateLayout {
     val cardTop: Dp = 22.dp
     val factPad: Dp = 12.dp
     val skeleton: Dp = 120.dp
+    /** The line under the title while it is not known yet (`--type-body-sm`, two lines). */
+    val lineSkeleton: Dp = 36.dp
     val labelTop: Dp = 24.dp
     val labelBottom: Dp = 8.dp
     val buttonTop: Dp = 14.dp
@@ -616,4 +767,6 @@ private object StateLayout {
     val retryTop: Dp = 4.dp
     val liftedRetryTop: Dp = 14.dp
     val manageGap: Dp = 6.dp
+    /** A link under a card (its 48 dp target overhangs this gap). */
+    val linkTop: Dp = 18.dp
 }

@@ -2,8 +2,11 @@ import { createHash } from 'node:crypto';
 import type { AccountView, AccountViewResult } from '@app/db';
 import {
   accountStatus,
+  profileReviewState,
+  type ProfileReview,
   appealStatus,
   consentKind,
+  distanceUnitOf,
   gender,
   intention,
   legalConsentKinds,
@@ -285,6 +288,20 @@ export function meOf(result: AccountViewResult, userId: string, ctx: MeContext):
     flags: featureFlagsOf(view, userId, ctx),
     moderation: view.moderation.map(moderationActionOf).filter((a): a is ModerationAction => a !== undefined),
     consentsDue: consentsDueOf(view, ctx.cfg),
+    ...(view.status === accountStatus.code('pending_review') ? { review: reviewOf(view) } : {}),
+    distanceUnit: distanceUnitOf(ctx.cfg.app['signup.countries'], loc?.country ?? view.country),
+  };
+}
+
+/** The review of a profile waiting (no row: waiting, the first time). */
+export function reviewOf(view: Pick<AccountView, 'review'>): ProfileReview {
+  const review = view.review;
+  if (!review) return { state: 'waiting' };
+  const state = profileReviewState.nameOrUndefined(review.state) ?? 'waiting';
+  return {
+    state,
+    ...(state !== 'waiting' && review.message ? { message: review.message } : {}),
+    ...(state !== 'waiting' && review.decidedAtMs !== undefined ? { decidedAt: wireTime(review.decidedAtMs) } : {}),
   };
 }
 

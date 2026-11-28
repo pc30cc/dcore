@@ -38,6 +38,8 @@ export * from './adminRevenue.js';
 // growth
 
 // app
+export * from './settings.js';
+export * from './profileReviews.js';
 
 // support
 

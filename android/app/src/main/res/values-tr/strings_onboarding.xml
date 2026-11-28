@@ -7,6 +7,7 @@
     <string name="onboarding_error_text_refused">Buna izin verilmiyor. Başka bir şey yaz.</string>
     <string name="onboarding_error_invalid">Kabul edilmedi. Kontrol edip tekrar dene.</string>
     <string name="onboarding_error_incomplete">Hâlâ eksik bir şey var.</string>
+    <string name="onboarding_error_country">Ülkende şu an kayıt yapılamıyor.</string>
     <string name="dialog_sign_out_title">Çıkış yapılsın mı?</string>
     <string name="dialog_sign_out_confirm">Çıkış yap</string>
     <string name="dialog_sign_out_stay">Kal</string>

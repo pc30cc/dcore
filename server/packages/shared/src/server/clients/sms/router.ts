@@ -51,7 +51,7 @@ export interface SmsRouterOptions {
 }
 
 export class SmsRouter {
-  private readonly senders: ReadonlyMap<SmsProviderName, SmsSender>;
+  private senders: ReadonlyMap<SmsProviderName, SmsSender>;
   private readonly coolDownMs: number;
   private readonly now: () => number;
   private readonly downUntil = new Map<SmsProviderName, number>();
@@ -77,6 +77,22 @@ export class SmsRouter {
   /** The providers configured in this process. */
   get configured(): SmsProviderName[] {
     return [...this.senders.keys()];
+  }
+
+  /** The senders in use. */
+  senderList(): SmsSender[] {
+    return [...this.senders.values()];
+  }
+
+  /**
+   * Replaces the senders (credentials set in the admin panel, applied
+   * without a restart). A provider whose sender stays the same object keeps
+   * its cool-down; a new or removed one starts afresh.
+   */
+  setSenders(senders: Iterable<SmsSender>): void {
+    const next = new Map([...senders].map((sender) => [sender.name, sender]));
+    for (const name of [...this.downUntil.keys()]) if (next.get(name) !== this.senders.get(name)) this.downUntil.delete(name);
+    this.senders = next;
   }
 
   has(name: SmsProviderName): boolean {

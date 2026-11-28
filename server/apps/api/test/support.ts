@@ -53,6 +53,7 @@ export function testConfig(env: Record<string, string> = {}): ApiConfig {
     ID_BILLING_KEY: testSecret(),
     HASH_PEPPERS: JSON.stringify({ 1: testSecret() }),
     DATA_KEYS: JSON.stringify({ 1: testSecret() }),
+    PROVIDER_KEYS: JSON.stringify({ 1: testSecret() }),
     ...env,
   });
 }

@@ -74,6 +74,7 @@ import app.core.model.PlayPurchaseRequest
 import app.core.model.PreferencesPatch
 import app.core.model.ProfileCard
 import app.core.model.ProfilePatch
+import app.core.model.ProfileReview
 import app.core.model.PublicDeletionChallenge
 import app.core.model.PublicDeletionConfirm
 import app.core.model.PublicDeletionGoogle
@@ -89,6 +90,7 @@ import app.core.model.RestorePurchase
 import app.core.model.RestoreRequest
 import app.core.model.RestoreResult
 import app.core.model.RestoredAccount
+import app.core.model.ReviewResubmitted
 import app.core.model.SendMessageRequest
 import app.core.model.SentMessage
 import app.core.model.SentMessageBody
@@ -239,6 +241,7 @@ class HttpServerApi(
             session.updateAccount(AuthUser(me.id, me.status, me.onboardingStep))
         }
         fetched.value.profile?.let { settingsTap.received(begun, it.settings) }
+        settingsTap.distanceUnit(fetched.value.distanceUnit)
         return fetched
     }
 
@@ -629,6 +632,9 @@ class HttpServerApi(
     // growth
 
     // app
+    // A second send answers the same (the server keeps one waiting review), so a lost answer may be asked again.
+    override suspend fun resubmitReview(): ProfileReview =
+        client.post("me.review.resubmit", "v1/me/review/resubmit", ReviewResubmitted.serializer(), Idempotency.IDEMPOTENT).value.review
 
     // support
 

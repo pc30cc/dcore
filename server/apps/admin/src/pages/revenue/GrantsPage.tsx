@@ -11,7 +11,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useI18n } from '@/i18n/useI18n';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
 import { mayCorrect, mayGift, useGrants, useWalletAdjustments, type GrantFilter } from '@/lib/grants';
 import { useSession } from '@/lib/useSession';
 import { cn } from '@/lib/utils';
@@ -75,7 +75,7 @@ function GrantList({ filter, onFilter, canEnd }: { filter: GrantFilter; onFilter
   return (
     <Card className="gap-0 overflow-hidden py-0">
       <div className="flex items-center gap-3 border-b p-3">
-        <Segmented className="w-full sm:w-72" label={t('grants.filter.label')} value={filter} options={filters} text={(option) => t(`grants.filter.${option}`)} onChange={onFilter} />
+        <Segmented className="w-full sm:w-auto sm:min-w-72" label={t('grants.filter.label')} value={filter} options={filters} text={(option) => t(`grants.filter.${option}`)} onChange={onFilter} />
       </div>
       {grants.isError && !grants.data ? (
         <div className="p-4">
@@ -167,7 +167,7 @@ function AdjustmentTable({ rows }: { rows: readonly AdminWalletAdjustment[] }) {
                   {/* Below lg the kind sits here (its column is hidden), and on a phone the time. */}
                   <span className="lg:hidden"> · {t(row.reason === 'gift' ? 'walletAdjust.kind.gift' : 'walletAdjust.kind.correction')}</span>
                 </span>
-                <span className="text-xs text-muted-foreground sm:hidden">{formatDateTime(row.at, locale)}</span>
+                <span className="text-xs whitespace-nowrap text-muted-foreground sm:hidden">{formatDate(row.at, locale)}</span>
               </span>
             </TableCell>
             <TableCell className="max-w-40 text-sm">

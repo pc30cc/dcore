@@ -12,6 +12,8 @@
     <string name="deck_photo_position">عکس %1$s از %2$s</string>
     <string name="deck_distance_km">%1$s کیلومتر</string>
     <string name="deck_distance_less">کمتر از %1$s کیلومتر</string>
+    <string name="deck_distance_mi">%1$s مایل</string>
+    <string name="deck_distance_less_mi">کمتر از %1$s مایل</string>
     <string name="deck_city_distance">%1$s، %2$s</string>
     <string name="deck_likes_you">لایکت کرده</string>
     <string name="deck_superliked_you">سوپرلایکت کرده</string>
@@ -22,6 +24,7 @@
     <!-- The end of the deck: one fix at a time -->
     <string name="deck_exhausted_title">فعلاً همه رو دیدی</string>
     <string name="deck_widen_distance">تا %1$s کیلومتر بگرد</string>
+    <string name="deck_widen_distance_mi">تا %1$s مایل بگرد</string>
     <string name="deck_widen_distance_generic">دورتر بگرد</string>
     <string name="deck_widen_country">کل کشور رو بگرد</string>
     <string name="deck_widen_age">سن رو %1$s تا %2$s کن</string>
@@ -124,6 +127,7 @@
     <string name="filters_reset">پیش‌فرض</string>
     <string name="filters_distance">فاصله</string>
     <string name="filters_distance_value">تا %1$s کیلومتر</string>
+    <string name="filters_distance_value_mi">تا %1$s مایل</string>
     <!-- %1$s: the account's country, named in the app's language. -->
     <string name="filters_anywhere_in">هر جای %1$s</string>
     <string name="filters_anywhere">هر جای کشور</string>

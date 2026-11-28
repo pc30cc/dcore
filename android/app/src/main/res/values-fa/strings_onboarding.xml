@@ -7,6 +7,7 @@
     <string name="onboarding_error_text_refused">این متن مجاز نیست. یه چیز دیگه بنویس.</string>
     <string name="onboarding_error_invalid">قبول نشد. یه بار دیگه نگاهش کن.</string>
     <string name="onboarding_error_incomplete">هنوز یه چیزی کمه.</string>
+    <string name="onboarding_error_country">ثبت‌نام تو کشورت فعلاً ممکن نیست.</string>
     <string name="dialog_sign_out_title">از حسابت خارج می‌شی؟</string>
     <string name="dialog_sign_out_confirm">خروج</string>
     <string name="dialog_sign_out_stay">نه، بمونم</string>

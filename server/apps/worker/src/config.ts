@@ -17,7 +17,7 @@ import {
   type StoreConfig,
   TEMPLATE_BRAND_ID,
 } from '@app/config';
-import { parseServiceAccount, queuePrefix, type FcmServiceAccount } from '@app/shared/server';
+import { parseKeyRing, parseServiceAccount, queuePrefix, type FcmServiceAccount } from '@app/shared/server';
 import { z } from 'zod';
 import { parsePublishTargets, type PublishTargetConfig } from './origins/targets.js';
 
@@ -66,6 +66,24 @@ const envSchema = z
     PHOTO_MAX_PIXELS: envInt(50_000_000, { min: 1_000_000, max: 268_402_689 }),
     /** Runs the periodic maintenance jobs (partitions, active drain, sessions clean-up). */
     MAINT_ENABLED: envBoolean(true),
+    /**
+     * The keys of the provider credentials saved in the admin panel (the API's PROVIDER_KEYS and PROVIDER_KEY_ID):
+     * the worker opens FCM's and the stores' entries with them. Required in production. The worker is never given
+     * DATA_KEYS (the master ring of phone numbers, admin TOTP secrets and session answers) and ignores it.
+     */
+    PROVIDER_KEYS: z
+      .string()
+      .optional()
+      .superRefine((value, ctx) => {
+        if (value === undefined) return;
+        try {
+          parseKeyRing(value, 'PROVIDER_KEYS');
+        } catch (error) {
+          // The message names the problem, never a key.
+          ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'not a key ring' });
+        }
+      }),
+    PROVIDER_KEY_ID: envInt(1, { min: 1, max: 255 }),
     /** Firebase Cloud Messaging: the service account (its JSON or the base64 of it); unset: pushes are not sent. Required in production. */
     FCM_SERVICE_ACCOUNT_JSON: z.string().min(2).optional(),
     /** Overrides the service account's project. */
@@ -112,11 +130,21 @@ const envSchema = z
       }
       if (env.LOG_PRETTY) ctx.addIssue({ code: 'custom', path: ['LOG_PRETTY'], message: 'must be off in production (logs are JSON lines)' });
       if (env.FCM_SERVICE_ACCOUNT_JSON === undefined) ctx.addIssue({ code: 'custom', path: ['FCM_SERVICE_ACCOUNT_JSON'], message: 'required in production' });
+      if (env.PROVIDER_KEYS === undefined) ctx.addIssue({ code: 'custom', path: ['PROVIDER_KEYS'], message: 'required in production (the same as the API\'s)' });
       if (env.BRAND === TEMPLATE_BRAND_ID) ctx.addIssue({ code: 'custom', path: ['BRAND'], message: 'the template brand is not served in production' });
     }
     const livekit = [env.LIVEKIT_API_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, env.LIVEKIT_IDENTITY_SECRET];
     if (livekit.some((v) => v !== undefined) && livekit.some((v) => v === undefined)) {
       ctx.addIssue({ code: 'custom', path: ['LIVEKIT_API_URL'], message: 'LIVEKIT_API_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET and LIVEKIT_IDENTITY_SECRET come together' });
+    }
+    if (env.PROVIDER_KEYS !== undefined) {
+      try {
+        if (!parseKeyRing(env.PROVIDER_KEYS, 'PROVIDER_KEYS').has(env.PROVIDER_KEY_ID)) {
+          ctx.addIssue({ code: 'custom', path: ['PROVIDER_KEY_ID'], message: 'is not a key of PROVIDER_KEYS' });
+        }
+      } catch {
+        // Reported on PROVIDER_KEYS itself.
+      }
     }
     if (env.FCM_SERVICE_ACCOUNT_JSON !== undefined) {
       try {
@@ -170,6 +198,8 @@ export interface WorkerConfig {
   store: StoreConfig;
   /** The brand served (brands/<id>/brand.json under `dir`, else found above the working directory). */
   brand: { id: string; dir: string | undefined };
+  /** The keys of the provider credentials from the admin panel; undefined: such credentials read `unreadable` here. */
+  providerKeys: { keys: string; keyId: number } | undefined;
 }
 
 export function loadConfig(source: Env = process.env): WorkerConfig {
@@ -214,5 +244,6 @@ export function loadConfig(source: Env = process.env): WorkerConfig {
     origins: { media: env.ORIGINS_PUBLISH_MEDIA, targets: env.ORIGINS_PUBLISH_TARGETS === undefined ? [] : parsePublishTargets(env.ORIGINS_PUBLISH_TARGETS) },
     store: storeConfigOf(env),
     brand: { id: env.BRAND, dir: env.BRANDS_DIR },
+    providerKeys: env.PROVIDER_KEYS !== undefined ? { keys: env.PROVIDER_KEYS, keyId: env.PROVIDER_KEY_ID } : undefined,
   };
 }

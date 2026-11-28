@@ -14,6 +14,7 @@ import app.core.model.CallKind
 import app.core.model.ConversationPatch
 import app.core.model.DeviceInfo
 import app.core.model.DeviceUpdate
+import app.core.model.DistanceUnit
 import app.core.model.Gender
 import app.core.model.LocationSource
 import app.core.model.LocationUpdate
@@ -206,6 +207,7 @@ class HttpServerApiTest {
         Case("deletionPreflight", HttpMethod.Get, "/v1/me/deletion/preflight", "deletion-preflight") { deletionPreflight() },
         Case("deleteAccount", HttpMethod.Post, "/v1/me/deletion", "deletion", HttpStatusCode.Accepted) { deleteAccount("break") },
         Case("restoreAccount", HttpMethod.Post, "/v1/me/restore", "restore-account") { restoreAccount() },
+        Case("resubmitReview", HttpMethod.Post, "/v1/me/review/resubmit", "review-resubmit") { resubmitReview() },
         Case("publicDeletionStart", HttpMethod.Post, "/v1/public/account-deletion/start", "public-deletion-start", HttpStatusCode.Accepted, authenticated = false) {
             publicDeletionStart("+989121234567", "fa")
         },
@@ -305,6 +307,30 @@ class HttpServerApiTest {
             assertEquals(name, listOf("begin $token with 0 sent", "received $token with 1 sent"), tap.events)
             token++
         }
+    }
+
+    @Test
+    fun theAccountsDistanceUnitReachesTheTapFromEachAnswerOfMe() = runTest {
+        signIn()
+        val units = mutableListOf<DistanceUnit>()
+        val tap = object : SettingsTap {
+            override fun begin(): Long = 0
+
+            override fun received(begun: Long, settings: Settings) = Unit
+
+            override fun distanceUnit(unit: DistanceUnit) {
+                units += unit
+            }
+        }
+        val tapped = HttpServerApi(client, session, device, store = "play", clock = clock, settingsTap = tap)
+        // A server that does not send it yet: kilometres.
+        answer = Triple(HttpStatusCode.OK, Fixtures.text("me"), emptyMap())
+        tapped.me()
+        cache.clear()
+        val miles = Fixtures.text("me").trimEnd().removeSuffix("}") + ",\"distanceUnit\":\"mi\"}"
+        answer = Triple(HttpStatusCode.OK, miles, emptyMap())
+        assertEquals(DistanceUnit.Mi, tapped.me().value.distanceUnit)
+        assertEquals(listOf(DistanceUnit.Km, DistanceUnit.Mi), units)
     }
 
     @Test

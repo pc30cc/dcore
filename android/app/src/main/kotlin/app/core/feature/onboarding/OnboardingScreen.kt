@@ -245,6 +245,7 @@ fun stepErrorText(error: StepError?): String? = when (error) {
         if (s != null && s > 0) brandString(R.string.auth_error_rate_limited_wait, (s / 60).toInt(), (s % 60).toInt()) else brandString(R.string.auth_error_rate_limited)
     }
     StepError.Incomplete -> brandString(R.string.onboarding_error_incomplete)
+    StepError.CountryClosed -> brandString(R.string.onboarding_error_country)
     StepError.Failed -> brandString(R.string.error_generic)
 }
 

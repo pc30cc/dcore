@@ -35,6 +35,7 @@ export * from './adminRevenue.js';
 // growth
 
 // app
+export * from './adminSettings.js';
 
 // support
 

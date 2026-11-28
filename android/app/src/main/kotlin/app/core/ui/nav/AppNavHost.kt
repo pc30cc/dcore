@@ -23,9 +23,9 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
-import app.core.BuildConfig
 import app.core.LocalAppGraph
 import app.core.feature.auth.MaintenanceScreen
+import app.core.feature.auth.deletionUrl
 import app.core.feature.auth.RestoreRoute
 import app.core.feature.auth.RestrictedRoute
 import app.core.feature.auth.ReviewRoute
@@ -53,6 +53,7 @@ import app.core.feature.onboarding.OnboardingRoute
 import kotlinx.coroutines.flow.receiveAsFlow
 import app.core.feature.splash.SplashRoute
 import app.core.feature.splash.UpdateRequiredScreen
+import app.core.feature.splash.updateRequired
 import app.core.model.Config
 import app.core.ui.theme.LocalReducedMotion
 import app.core.ui.theme.Motion
@@ -88,10 +89,10 @@ import kotlinx.serialization.Serializable
 /** Settings, over the tabs. */
 @Serializable data object SettingsKey : NavKey
 
-/** The profile editor, over the tabs. */
+/** The profile editor, over the tabs, or over the review screen when the team asked for changes. */
 @Serializable data object EditProfileKey : NavKey
 
-/** Deleting the account: over Settings, or over the restricted screen. */
+/** Deleting the account: over Settings, the restricted screen or the review screen. */
 @Serializable data object DeleteAccountKey : NavKey
 
 /** The root key for each place [AuthGate] can put the app. */
@@ -113,7 +114,8 @@ private fun Root.key(): NavKey = when (this) {
  * Which root is shown (sign-in, sign-up, review, restricted, restore, the
  * app) is [AuthGate]'s decision; this follows it. A build below the server's
  * minimum for its store (`GET /v1/config`, or a 426 from any request) sees
- * only [UpdateRequiredScreen]; maintenance shows [MaintenanceScreen].
+ * only [UpdateRequiredScreen]; maintenance shows [MaintenanceScreen]. Both
+ * keep the way out: the web deletion page.
  */
 @Composable
 fun AppNavHost(config: Config?) {
@@ -124,13 +126,12 @@ fun AppNavHost(config: Config?) {
     val maintenance by gate.maintenance.collectAsStateWithLifecycle()
 
     // The config is asked for this build's store, so its minimum is this store's.
-    val minimum = maxOf(config?.minVersion?.required ?: 0, upgrade ?: 0)
-    if (BuildConfig.VERSION_CODE < minimum || (upgrade != null && upgrade == 0)) {
-        UpdateRequiredScreen()
+    if (updateRequired(config, upgrade)) {
+        UpdateRequiredScreen(deleteUrl = deletionUrl(config))
         return
     }
     if (config?.maintenance?.enabled == true || maintenance != null) {
-        MaintenanceScreen(maintenance ?: config?.maintenance?.message)
+        MaintenanceScreen(maintenance ?: config?.maintenance?.message, deleteUrl = deletionUrl(config))
         return
     }
 
@@ -192,7 +193,9 @@ fun AppNavHost(config: Config?) {
                         entry<SplashKey> { SplashRoute() }
                         entry<AuthKey> { AuthRoute() }
                         entry<OnboardingKey> { OnboardingRoute() }
-                        entry<ReviewKey> { ReviewRoute() }
+                        entry<ReviewKey> {
+                            ReviewRoute(onEdit = { backStack.push(EditProfileKey) }, onDelete = { backStack.push(DeleteAccountKey) })
+                        }
                         entry<RestrictedKey> { RestrictedRoute(onDelete = { backStack.push(DeleteAccountKey) }) }
                         entry<RestoreKey> { RestoreRoute() }
                         entry<MainKey> {

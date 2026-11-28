@@ -167,6 +167,9 @@ object ProblemCodes {
     const val ENTITLEMENT_REQUIRED = "entitlement_required"
     const val CALLS_NOT_ALLOWED = "calls_not_allowed"
     const val STORE_NOT_SUPPORTED = "store_not_supported"
+
+    /** Sign-up is not open in the account's country (its location, during sign-up). */
+    const val COUNTRY_NOT_SUPPORTED = "country_not_supported"
     const val CONSENT_REQUIRED = "consent_required"
 
     // 409

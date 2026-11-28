@@ -54,9 +54,11 @@ import app.core.R
 import app.core.feature.card.DetailsNotice
 import app.core.feature.card.DetailsSource
 import app.core.feature.card.LikeTarget
+import app.core.feature.card.LocalDistanceUnit
 import app.core.feature.card.ProfileDetailsDialog
 import app.core.feature.card.rememberNumbers
 import app.core.feature.card.rememberTimeOfDay
+import app.core.feature.card.widenDistanceLabel
 import app.core.feature.chat.ReportSheet
 import app.core.feature.match.MatchMomentDialog
 import app.core.feature.match.matchOpeners
@@ -622,7 +624,7 @@ private fun OutOfCards(state: DeckUiState, number: (Int) -> String, actions: Dec
         OutOfCardsFix.Distance -> when {
             prefs == null -> brandString(R.string.deck_widen_distance_generic)
             Widening.widensToCountry(prefs) -> brandString(R.string.deck_widen_country)
-            else -> brandString(R.string.deck_widen_distance, number(Widening.nextDistance(prefs.maxDistanceKm)))
+            else -> widenDistanceLabel(Widening.nextDistance(prefs.maxDistanceKm), LocalDistanceUnit.current, number)
         } to actions::widenDistance
         OutOfCardsFix.Age -> (
             prefs?.let {

@@ -358,6 +358,61 @@ describe.skipIf(!hasInfrastructure)('admin: every write is audited in its transa
     // growth
 
     // app
+    'PUT /v1/admin/config/{key}': {
+      actions: ['config.update'],
+      prepare: async () => {
+        const read = (await admin(h, '/v1/admin/config?keys=calls.enabled', undefined, { token: superadmin.accessToken })).json<{ items: { value: { audio: boolean; video: boolean }; version: string }[] }>();
+        const item = read.items[0]!;
+        return send('PUT', '/v1/admin/config/calls.enabled', { value: { ...item.value, audio: !item.value.audio }, baseVersion: item.version });
+      },
+    },
+    'PUT /v1/admin/brand': {
+      actions: ['config.update'],
+      prepare: async () => {
+        const read = (await admin(h, '/v1/admin/brand', undefined, { token: superadmin.accessToken })).json<{ version: string }>();
+        const name = unique('Guard ');
+        return send('PUT', '/v1/admin/brand', {
+          baseVersion: read.version,
+          appName: name,
+          supportEmail: null,
+          privacyUrl: null,
+          termsUrl: null,
+          guidelinesUrl: null,
+          childSafetyUrl: null,
+          deleteAccountUrl: null,
+          welcomeImages: [],
+        });
+      },
+    },
+    'PUT /v1/admin/providers/{kind}': {
+      actions: ['config.update'],
+      prepare: async () => {
+        const read = (await admin(h, '/v1/admin/providers', undefined, { token: superadmin.accessToken })).json<{ items: { kind: string; version: string }[] }>();
+        const version = read.items.find((item) => item.kind === 'kavenegar')!.version;
+        return send('PUT', '/v1/admin/providers/kavenegar', { kind: 'kavenegar', baseVersion: version, enabled: true, settings: { template: 'guard' }, secrets: { apiKey: unique('guard-key-') } });
+      },
+    },
+    'DELETE /v1/admin/providers/{kind}': {
+      actions: ['config.update'],
+      prepare: async () => {
+        const read = () => admin(h, '/v1/admin/providers', undefined, { token: superadmin.accessToken }).then((r) => r.json<{ items: { kind: string; version: string }[] }>().items.find((item) => item.kind === 'telnyx')!.version);
+        const put = await send('PUT', '/v1/admin/providers/telnyx', { kind: 'telnyx', baseVersion: await read(), enabled: true, settings: { verifyProfileId: 'guard-profile-1' }, secrets: { apiKey: unique('guard-telnyx-') } })();
+        if (put.statusCode !== 200) throw new Error(`telnyx ${put.statusCode}: ${put.body}`);
+        return send('DELETE', '/v1/admin/providers/telnyx', { baseVersion: await read() });
+      },
+    },
+    'POST /v1/admin/users/{id}/approve': {
+      actions: ['profile.approve'],
+      prepare: async () => send('POST', `/v1/admin/users/${(await person({ status: 2 })).publicUid}/approve`, { from: 'waiting' }),
+    },
+    'POST /v1/admin/users/{id}/needs-changes': {
+      actions: ['profile.needs_changes'],
+      prepare: async () => send('POST', `/v1/admin/users/${(await person({ status: 2 })).publicUid}/needs-changes`, { from: 'waiting', reasonText: 'Add a photo of your face.' }),
+    },
+    'POST /v1/admin/users/{id}/reject': {
+      actions: ['profile.reject'],
+      prepare: async () => send('POST', `/v1/admin/users/${(await person({ status: 2 })).publicUid}/reject`, { from: 'waiting', reasonText: 'Not a real person.' }),
+    },
 
     // support
 

@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/i18n/useI18n';
 import { apiRequest } from '@/lib/api';
 import { formatDate } from '@/lib/format';
-import { giftsChanged, grantEndable, grantTone } from '@/lib/grants';
+import { giftsChanged, grantEndable, grantShownEnd, grantTone } from '@/lib/grants';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { showToast } from '@/lib/toast';
@@ -45,7 +45,7 @@ export function GrantTable({ rows, showPerson = true, canEnd }: { rows: readonly
         </TableHeader>
         <TableBody>
           {rows.map((grant) => {
-            const period = t('grants.period', { from: formatDate(grant.startsAt, locale), to: formatDate(grant.revokedAt ?? grant.endsAt, locale) });
+            const period = t('grants.period', { from: formatDate(grant.startsAt, locale), to: formatDate(grantShownEnd(grant), locale) });
             const state = (
               <span className="grid justify-items-start gap-0.5">
                 <StatusDot tone={grantTone[grant.state]}>{t(`grants.state.${grant.state}`)}</StatusDot>

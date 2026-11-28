@@ -6,12 +6,17 @@ import app.core.model.AccountStatus
 import app.core.model.AuthUser
 import app.core.model.Problem
 import app.core.model.ProblemCodes
+import app.core.model.ProfileReview
 import app.core.net.ApiEvent
 import app.core.net.ServerApi
 import app.core.store.ExternalSignIn
 import app.core.store.SmsCodeReceiver
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -100,6 +105,16 @@ class AuthGate(
     /** The last `account_*` refusal, for the restricted and restore screens to show at once. */
     private val _accountProblem = MutableStateFlow<Problem?>(null)
     val accountProblem: StateFlow<Problem?> = _accountProblem.asStateFlow()
+
+    private val _reviews = MutableSharedFlow<ProfileReview>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /**
+     * The team's decisions on the profile waiting for review as they arrive
+     * (realtime `profile` with its review), for the review screen in front to
+     * show at once; news, not state: a screen that was not listening reads
+     * `GET /v1/me`.
+     */
+    val reviews: SharedFlow<ProfileReview> = _reviews.asSharedFlow()
 
     /**
      * Sign-in with an account on the phone. A debug build on the in-memory
@@ -222,9 +237,23 @@ class AuthGate(
         _notice.value = null
     }
 
+    /** The team decided on the profile waiting for review (asked for changes, or did not accept it). */
+    fun reviewDecided(review: ProfileReview) {
+        _reviews.tryEmit(review)
+    }
+
     /** The maintenance screen's "try again" got an answer. */
     fun maintenanceOver() {
         _maintenance.value = null
+    }
+
+    /**
+     * A fresh config no longer puts this build below its store's minimum
+     * (the minimum was lowered after a 426): the update screen lets go. The
+     * next 426 latches it again.
+     */
+    fun upgradeCleared() {
+        _upgrade.value = null
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { consentKind, legalConsentKinds } from '../codes.js';
+import { distanceUnits } from '../appConfig.js';
+import { consentKind, legalConsentKinds, profileReviewState } from '../codes.js';
 import {
   accountStatusSchema,
   appStoreNameSchema,
@@ -33,6 +34,20 @@ export const accountLocationSchema = z.object({
 });
 
 /**
+ * The review of a new profile while the account waits (`pending_review`):
+ * `waiting` (nothing to do), `needs_changes` (the team's message says what
+ * to change; the person edits and sends it again with
+ * `POST /v1/me/review/resubmit`) or `rejected` (the message says why).
+ * `message` is the team's text in the person's language.
+ */
+export const profileReviewSchema = z.object({
+  state: profileReviewState.schema,
+  message: z.string().min(1).optional(),
+  decidedAt: timeSchema.optional(),
+});
+export type ProfileReview = z.infer<typeof profileReviewSchema>;
+
+/**
  * `GET /v1/me` (restricted sessions included). A deleted account in its
  * grace period gets the minimal form: `id`, `status` and `deletion`.
  * `moderation` holds the suspensions and bans in effect now (never a
@@ -57,8 +72,15 @@ export const meSchema = z.object({
   deletion: z.object({ purgeAt: timeSchema }).optional(),
   /** Legal texts whose current version (`legal.versions`) the person has not accepted. */
   consentsDue: z.array(legalConsentKindSchema).optional(),
+  /** While the account waits for its review (`pending_review`). */
+  review: profileReviewSchema.optional(),
+  /** The unit distances are shown in: the account's country's (`signup.countries`), else `km`. Absent for a deleted account. */
+  distanceUnit: z.enum(distanceUnits).optional(),
 });
 export type Me = z.infer<typeof meSchema>;
+
+/** `POST /v1/me/review/resubmit`: the profile is sent for review again after `needs_changes`. */
+export const reviewResubmitSchema = z.object({ review: profileReviewSchema });
 
 /** `PUT /v1/me/basics`, once, during onboarding. */
 export const basicsRequestSchema = z.object({

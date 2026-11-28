@@ -1,5 +1,5 @@
 import { writeHomeLocation } from '@app/db';
-import { citiesQuerySchema, cityListSchema, locationResultSchema, locationSource, locationUpdateSchema } from '@app/shared';
+import { accountStatus, citiesQuerySchema, cityListSchema, locationResultSchema, locationSource, locationUpdateSchema, signupAllowed } from '@app/shared';
 import { cellCentre, homeCell } from '@app/shared/server';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { scrubbed } from '../lib/dbErrors.js';
@@ -29,7 +29,8 @@ export const locationRoutes: FastifyPluginAsyncZod = async (app) => {
     '/v1/me/location',
     {
       preHandler: fullOnly,
-      config: { pgBudget: 1 },
+      // The write (1); in a country closed to sign-up, the own view first (1).
+      config: { pgBudget: 2 },
       schema: { tags: ['me'], summary: 'Report the home location (kept as a coarse cell)', body: locationUpdateSchema, response: { 200: locationResultSchema } },
     },
     async (request) => {
@@ -57,6 +58,14 @@ export const locationRoutes: FastifyPluginAsyncZod = async (app) => {
         if (nearest.km <= CITY_RADIUS_KM) city = nearest.city;
       } else {
         country = (city!).country;
+      }
+      // Sign-up is closed in some countries (app_config signup.countries): an account still signing up cannot place
+      // itself there. An account that finished sign-up is never held back (the view is read only for a closed country).
+      if (!signupAllowed(app.cfg.get().app['signup.countries'], country)) {
+        const loaded = await scrubbed(() => app.account.load(session.userId));
+        if (loaded.result.kind === 'account' && loaded.result.view.status === accountStatus.code('onboarding')) {
+          throw new HttpProblem('country_not_supported', { detail: 'Sign-up is not open in this country.' });
+        }
       }
       const cityId = city?.id;
       const result = { ...(city ? { city: { id: city.id, name: cities.nameOf(city, request.locale) } } : {}), country };

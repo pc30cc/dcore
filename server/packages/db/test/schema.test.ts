@@ -194,6 +194,7 @@ describe.skipIf(!hasDatabase)('schema: the real migrations', () => {
       // growth
 
       // app
+      ['profile_reviews', 'reason_text'], ['profile_reviews', 'state'],
 
       // support
 

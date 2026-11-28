@@ -14,6 +14,7 @@ import {
   timeSchema,
 } from './api/common.js';
 import { accountStatusSchema } from './api/common.js';
+import { profileReviewSchema } from './api/me.js';
 
 /**
  * Realtime events on a user's personal channel (`user:#<publicUid>`).
@@ -74,6 +75,8 @@ export const realtimePayloads = {
       .array(z.object({ position: z.number().int().min(0).max(2), status: textStateSchema, rejectReason: z.string().optional() }))
       .optional(),
     verification: verificationStateSchema.optional(),
+    /** The team decided on a profile waiting for review: what to change, or why it was not accepted. */
+    review: profileReviewSchema.optional(),
   }),
   /**
    * The account's state moved: the client refreshes `GET /v1/me`. `moderation`

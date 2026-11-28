@@ -47,6 +47,7 @@ export interface SectionGroup {
 export const moderationSections: readonly Section[] = [
   { path: 'moderation/photos', label: 'nav.photos', icon: ImageIcon, permission: 'moderation.read' },
   { path: 'moderation/texts', label: 'nav.texts', icon: Type, permission: 'moderation.read' },
+  ...app.reviewSections,
   { path: 'moderation/reports', label: 'nav.reports', icon: Flag, permission: 'reports.read' },
   { path: 'moderation/appeals', label: 'nav.appeals', icon: Scale, permission: 'appeals.read' },
   { path: 'moderation/holds', label: 'nav.holds', icon: Lock, permission: 'reports.hold' },

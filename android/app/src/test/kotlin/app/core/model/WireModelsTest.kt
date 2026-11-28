@@ -72,6 +72,7 @@ class WireModelsTest {
         "requests" to MessageRequestsPage.serializer(),
         "restore" to RestoreResult.serializer(),
         "restore-account" to RestoredAccount.serializer(),
+        "review-resubmit" to ReviewResubmitted.serializer(),
         "settings" to Settings.serializer(),
         "settings-template" to Settings.serializer(),
         "support-message" to SupportMessageBody.serializer(),

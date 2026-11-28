@@ -185,6 +185,11 @@ export function createKeys(prefix: string) {
     // growth
 
     // app
+    /**
+     * What each process applied of the providers (kv-core hash; field `api:<hostname>` or `worker:<workerId>`, value JSON
+     * `{ atMs, hash, kinds, moderation? }`; written after every rebuild and every 60 s; fields older than an hour pruned).
+     */
+    providersApplied: () => k('prov', 'applied'),
 
     // support
 

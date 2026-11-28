@@ -113,7 +113,8 @@ export class SwipeService {
         throw new HttpProblem('text_refused', { detail: 'This comment cannot be sent.' });
       }
     }
-    const hourly = await useHourlySwipes(app.redis, app.keys, me, swipes.length, this.now);
+    // The hourly cap is the panel's (app_config limits.rates).
+    const hourly = await useHourlySwipes(app.redis, app.keys, me, swipes.length, this.now, cfg.app['limits.rates'].swipes_per_hour);
     if (!hourly.allowed) {
       const retryAfterSeconds = Math.max(1, Math.ceil((hourly.resetsAtMs - this.now) / 1_000));
       throw new HttpProblem('rate_limited', { retryAfterSeconds, headers: { 'retry-after': String(retryAfterSeconds) } });

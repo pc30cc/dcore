@@ -36,8 +36,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * [start] connects it to the app's life: the process coming to the front or
  * leaving it, the account signing in, out or changing state, the network
  * returning. Nothing here runs at a cold start until [start] is called, and
- * no socket exists until an account that may use the app is signed in and the
- * app is in front.
+ * no socket exists until an account that may use the app (or whose profile
+ * waits for its review) is signed in and the app is in front.
  */
 class ChatGraph(
     private val context: Context,
@@ -130,7 +130,9 @@ class ChatGraph(
         val user = if (root == Root.SignIn) null else runCatchingUnlessCancelled { api.sessionUser() }.getOrNull()
         val active = root == Root.Main && user != null
         sync.setAccount(user?.id, active)
-        realtime.setAccount(if (active) user.id else null)
+        // A profile waiting for its review hears the team's decision too (`profile` with the review, `account` once
+        // approved), so its screen moves while it is in front; the chat reads nothing until the app is in.
+        realtime.setAccount(if (user != null && (active || root == Root.Review)) user.id else null)
         if (user == null) {
             entitlements.clear()
             entitlementEvents.reset()
@@ -142,6 +144,7 @@ class ChatGraph(
         when (event) {
             is RealtimeEvent.EntitlementsChanged -> entitlementEvents.onEvent(event)
             is RealtimeEvent.ConfigChanged -> config.refresh()
+            is RealtimeEvent.ProfileModerated -> event.profile.review?.let(auth::reviewDecided)
             is RealtimeEvent.AccountChanged -> runCatchingUnlessCancelled { api.me().value }.getOrNull()?.let { me ->
                 auth.accountChanged(AuthUser(me.id, me.status, me.onboardingStep))
             }

@@ -64,6 +64,10 @@ export const adminConflictReasons = [
   // growth
 
   // app
+  /** The setting (or provider entry) was saved by someone else since it was read (`baseVersion`). */
+  'settings_changed',
+  /** The database's active brand row is another brand's, or brand.json's id cannot name a row. */
+  'brand_mismatch',
 
   // support
 
@@ -94,6 +98,10 @@ export const adminForbiddenReasons = [
   // growth
 
   // app
+  /** The write needs a session opened with the second factor (`amr` holds `otp`) while the deployment requires one. */
+  'mfa_required',
+  /** The setting is shown, never written from the panel. */
+  'read_only',
 
   // support
 
@@ -180,6 +188,22 @@ export const adminFieldCodes = [
   // growth
 
   // app
+  /** A number outside the panel's bounds (`ADMIN_CONFIG_BOUNDS`). */
+  'out_of_range',
+  /** A suggested version below the required one. */
+  'below_required',
+  /** A legal text version may only go up. */
+  'version_lowered',
+  /** The test SMS provider is never routed to in production. */
+  'fake_provider',
+  /** A provider needs this secret and none is stored. */
+  'secret_required',
+  /** A service account or key that does not load. */
+  'credentials_invalid',
+  /** A brand link off the brand's own domains, or a welcome picture off the deployment's media origin. */
+  'host_not_allowed',
+  /** The deployment's Play has notifications (RTDN): a panel Play entry must name its audience too. */
+  'rtdn_required',
 
   // support
 

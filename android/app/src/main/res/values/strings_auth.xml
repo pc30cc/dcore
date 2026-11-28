@@ -50,6 +50,12 @@
     <string name="review_title">Your profile is in review</string>
     <string name="review_body">New profiles are reviewed before they’re shown.</string>
     <string name="review_check">Check again</string>
+    <string name="review_changes_title">Your profile needs a few changes</string>
+    <string name="review_changes_body">Make the changes below, then send it for review again.</string>
+    <string name="review_changes_label">What to change</string>
+    <string name="review_resubmit">Send for review</string>
+    <string name="review_rejected_title">Your profile wasn’t approved</string>
+    <string name="review_rejected_body">It won’t be shown to anyone.</string>
     <string name="maintenance_title">Back soon</string>
     <string name="maintenance_body">We’re down for a few minutes. Try again shortly.</string>
     <plurals name="auth_code_wrong_left">

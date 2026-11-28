@@ -91,10 +91,15 @@ describe('the shell', () => {
     vi.resetModules();
     const probes = Object.fromEntries(AREAS.map((area) => [area, probe(area)]));
     const roles = probe('system-roles');
+    const reviews = probe('app-reviews');
     for (const area of AREAS) {
       const { section, route } = probes[area]!;
       vi.doMock(`../src/pages/${area}/area`, () =>
-        area === 'system' ? { roleSections: [roles.section], jobSections: [section], routes: [roles.route, route] } : { sections: [section], routes: [route] },
+        area === 'system'
+          ? { roleSections: [roles.section], jobSections: [section], routes: [roles.route, route] }
+          : area === 'app'
+            ? { sections: [section], reviewSections: [reviews.section], routes: [route, reviews.route] }
+            : { sections: [section], routes: [route] },
       );
     }
     const { sectionGroups } = await import('../src/lib/sections');
@@ -106,10 +111,12 @@ describe('the shell', () => {
     expect(paths('nav.group.revenue')).toEqual(['revenue/plans', 'revenue/products', 'probe/revenue']);
     expect(paths('nav.group.product')).toEqual(['app/appearance', 'probe/content', 'probe/growth', 'probe/app']);
     expect(paths('nav.group.system')).toEqual(['system/admins', 'probe/system-roles', 'hosts', 'system/audit', 'probe/system']);
+    // The app area's new-profile queue sits in Moderation, after the text queue.
+    expect(paths('nav.group.moderation')?.slice(0, 3)).toEqual(['moderation/photos', 'moderation/texts', 'probe/app-reviews']);
 
     const children = routes.find((route) => route.path === '/')?.children ?? [];
     const fallback = children.findIndex((child) => child.path === '*');
     expect(fallback).toBe(children.length - 1);
-    for (const route of [...Object.values(probes).map((p) => p.route), roles.route]) expect(children.indexOf(route), route.path).toBeGreaterThanOrEqual(0);
+    for (const route of [...Object.values(probes).map((p) => p.route), roles.route, reviews.route]) expect(children.indexOf(route), route.path).toBeGreaterThanOrEqual(0);
   });
 });

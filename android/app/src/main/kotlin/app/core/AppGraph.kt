@@ -25,6 +25,7 @@ import app.core.net.HttpServerApi
 import app.core.net.ResponseCache
 import app.core.net.RoomResponseCache
 import app.core.net.ServerApi
+import app.core.net.SettingsTap
 import app.core.net.origins.FileOriginsStore
 import app.core.net.origins.KtorOriginsTransport
 import app.core.net.origins.OriginsRepository
@@ -38,6 +39,7 @@ import app.core.billing.PurchaseSyncWorker
 import app.core.billing.Purchases
 import app.core.billing.ServerStoreApi
 import app.core.feature.paywall.PaywallController
+import app.core.model.DistanceUnit
 import app.core.model.SettingsPatch
 import app.core.model.SwipeOutcome
 import app.core.template.TemplateController
@@ -64,6 +66,9 @@ import kotlinx.coroutines.CoroutineScope
 import app.core.feature.profile.OwnPhotos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -146,15 +151,29 @@ class AppGraph(private val app: Application) {
      * in-memory sample backend ([Backend] decides; release builds cannot).
      */
     val api: ServerApi by lazy {
-        Backend.create(app, clock, settingsTap = templates, language = ::language) {
+        Backend.create(app, clock, settingsTap = accountTap, language = ::language) {
             HttpServerApi(
                 client = http,
                 session = session,
                 device = AndroidDeviceIdentity(app, preferences),
                 store = AppBrand.store.id,
                 clock = clock,
-                settingsTap = templates,
+                settingsTap = accountTap,
             )
+        }
+    }
+
+    private val unit = MutableStateFlow(DistanceUnit.Km)
+
+    /** The unit the account's distances are shown in (`GET /v1/me`); kilometres until the first answer. */
+    val distanceUnit: StateFlow<DistanceUnit> = unit.asStateFlow()
+
+    /** The template hears the settings; the unit comes along from the same answers. */
+    private val accountTap: SettingsTap by lazy {
+        object : SettingsTap by templates {
+            override fun distanceUnit(unit: DistanceUnit) {
+                this@AppGraph.unit.value = unit
+            }
         }
     }
 

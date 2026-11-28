@@ -1,0 +1,7 @@
+{
+  "type": "urn:problem-type:country-not-supported",
+  "title": "Not available in this country",
+  "status": 403,
+  "code": "country_not_supported",
+  "requestId": "req-1"
+}

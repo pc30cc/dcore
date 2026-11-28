@@ -237,6 +237,18 @@ const ROUTES: [method: string, path: string, success: string, body: boolean][] =
   // growth
 
   // app
+  ['GET', '/v1/admin/config', '200', true],
+  ['PUT', '/v1/admin/config/{key}', '200', true],
+  ['GET', '/v1/admin/brand', '200', true],
+  ['PUT', '/v1/admin/brand', '200', true],
+  ['GET', '/v1/admin/providers', '200', true],
+  ['PUT', '/v1/admin/providers/{kind}', '200', true],
+  ['DELETE', '/v1/admin/providers/{kind}', '200', true],
+  ['GET', '/v1/admin/moderation/profiles', '200', true],
+  ['POST', '/v1/admin/users/{id}/approve', '200', true],
+  ['POST', '/v1/admin/users/{id}/needs-changes', '200', true],
+  ['POST', '/v1/admin/users/{id}/reject', '200', true],
+  ['POST', '/v1/me/review/resubmit', '200', true],
 
   // support
 

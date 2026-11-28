@@ -7,6 +7,7 @@
     <string name="onboarding_error_text_refused">That isn’t allowed. Write something else.</string>
     <string name="onboarding_error_invalid">That wasn’t accepted. Check it and try again.</string>
     <string name="onboarding_error_incomplete">Something’s still missing.</string>
+    <string name="onboarding_error_country">Sign-up isn’t available in your country right now.</string>
     <string name="dialog_sign_out_title">Sign out?</string>
     <string name="dialog_sign_out_confirm">Sign out</string>
     <string name="dialog_sign_out_stay">Stay</string>

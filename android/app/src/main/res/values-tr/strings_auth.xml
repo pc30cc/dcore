@@ -50,6 +50,12 @@
     <string name="review_title">Profilin inceleniyor</string>
     <string name="review_body">Yeni profiller gösterilmeden önce incelenir.</string>
     <string name="review_check">Tekrar bak</string>
+    <string name="review_changes_title">Profilinde birkaç değişiklik gerekiyor</string>
+    <string name="review_changes_body">Aşağıdaki değişiklikleri yap, sonra yeniden incelemeye gönder.</string>
+    <string name="review_changes_label">Değiştirmen gerekenler</string>
+    <string name="review_resubmit">İncelemeye gönder</string>
+    <string name="review_rejected_title">Profilin onaylanmadı</string>
+    <string name="review_rejected_body">Kimseye gösterilmeyecek.</string>
     <string name="maintenance_title">Birazdan döneceğiz</string>
     <string name="maintenance_body">Birkaç dakikalığına kapalıyız. Biraz sonra tekrar dene.</string>
     <plurals name="auth_code_wrong_left">

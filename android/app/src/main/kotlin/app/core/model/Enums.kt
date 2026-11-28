@@ -327,3 +327,23 @@ enum class TicketAuthor(override val wire: String) : WireEnum {
 
     internal object Serializer : WireEnumSerializer<TicketAuthor>("TicketAuthor", TicketAuthor.entries.toTypedArray(), TicketAuthor.Unknown)
 }
+
+/**
+ * A new profile's review while the account waits (`pending_review`):
+ * nothing to do yet, changes asked for (the person edits and sends it
+ * again), or not accepted.
+ */
+@Serializable(with = ReviewState.Serializer::class)
+enum class ReviewState(override val wire: String) : WireEnum {
+    Waiting("waiting"), NeedsChanges("needs_changes"), Rejected("rejected"), Unknown("");
+
+    internal object Serializer : WireEnumSerializer<ReviewState>("ReviewState", ReviewState.entries.toTypedArray(), ReviewState.Unknown)
+}
+
+/** The unit distances are shown in: the account's country's, as the panel sets it. [Unknown] reads as kilometres. */
+@Serializable(with = DistanceUnit.Serializer::class)
+enum class DistanceUnit(override val wire: String) : WireEnum {
+    Km("km"), Mi("mi"), Unknown("");
+
+    internal object Serializer : WireEnumSerializer<DistanceUnit>("DistanceUnit", DistanceUnit.entries.toTypedArray(), DistanceUnit.Unknown)
+}

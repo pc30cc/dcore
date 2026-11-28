@@ -1,5 +1,6 @@
 package app.core.net
 
+import app.core.model.DistanceUnit
 import app.core.model.Settings
 
 /**
@@ -16,6 +17,9 @@ interface SettingsTap {
     fun begin(): Long
 
     fun received(begun: Long, settings: Settings)
+
+    /** The unit the account's distances are shown in, from each `GET /v1/me` answer. */
+    fun distanceUnit(unit: DistanceUnit) = Unit
 
     /** Hears nothing. */
     object None : SettingsTap {

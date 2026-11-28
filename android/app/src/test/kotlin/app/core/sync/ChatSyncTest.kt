@@ -84,6 +84,30 @@ class ChatSyncTest {
         return h
     }
 
+    @Test
+    fun anAccountThatMayChatNowReadsItsListOnceEvenOnAConnectionMadeBefore() = runTest(dispatcher) {
+        val h = Harness(this)
+        h.holder.get()
+        api.conversation(c)
+        // Waiting for review: the socket connects, nothing is read.
+        h.sync.setAccount(ME, active = false)
+        h.sync.setForeground(true)
+        runCurrent()
+        h.sync.onConnected(recovered = false, first = true)
+        runCurrent()
+        assertTrue(api.log.isEmpty())
+        assertFalse(h.sync.list.value.readOnce)
+        // Approved: the same account, the same socket; the list is read once now.
+        h.sync.setAccount(ME, active = true)
+        runCurrent()
+        assertEquals(listOf("conversations"), api.log)
+        assertTrue(h.sync.list.value.readOnce)
+        // Nothing more on a repeat of the same state.
+        h.sync.setAccount(ME, active = true)
+        runCurrent()
+        assertEquals(listOf("conversations"), api.log)
+    }
+
     private fun message(id: Long, from: String = PEER) = RealtimeEvent.MessageArrived(id.toString(), null, api.message(c, id, from = from))
 
     @Test

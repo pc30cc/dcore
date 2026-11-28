@@ -65,6 +65,8 @@ export const CONFLICT_TEXT: Readonly<Record<AdminConflictReason, MessageKey>> = 
   // growth
 
   // app
+  settings_changed: 'settings.conflict',
+  brand_mismatch: 'brand.mismatch',
 
   // support
 
@@ -89,6 +91,8 @@ export const FORBIDDEN_TEXT: Readonly<Record<AdminForbiddenReason, MessageKey>> 
   // growth
 
   // app
+  mfa_required: 'access.mfaRequired',
+  read_only: 'settings.readOnly',
 
   // support
 
@@ -176,6 +180,14 @@ export const FIELD_TEXT: Readonly<Record<AdminFieldCode, MessageKey>> = {
   // growth
 
   // app
+  out_of_range: 'appConfig.error.invalid',
+  below_required: 'appConfig.error.belowRequired',
+  version_lowered: 'appConfig.error.lowered',
+  fake_provider: 'providers.error.fake',
+  secret_required: 'providers.error.secretRequired',
+  credentials_invalid: 'providers.error.credentials',
+  host_not_allowed: 'brand.error.host',
+  rtdn_required: 'providers.error.rtdnRequired',
 
   // support
 

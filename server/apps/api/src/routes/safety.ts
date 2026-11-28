@@ -85,7 +85,8 @@ export const safetyRoutes: FastifyPluginAsyncZod = async (app) => {
     '/v1/reports',
     {
       preHandler: fullOnly,
-      config: { pgBudget: 1, rateLimit: { max: 10, timeWindow: DAY_MS } },
+      // The daily cap is the panel's (limits.rates; 10 shipped).
+      config: { pgBudget: 1, rateLimit: { max: () => app.cfg.peek()?.app['limits.rates'].reports_per_day ?? 10, timeWindow: DAY_MS } },
       schema: { tags: ['safety'], summary: 'Report a person', body: reportRequestSchema, response: { 202: reportReceiptSchema } },
     },
     async (request, reply) => {

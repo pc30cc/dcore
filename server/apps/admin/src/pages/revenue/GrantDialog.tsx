@@ -160,7 +160,7 @@ export function GrantDialog({ person, onClose }: { person: AdminUserRef | null; 
           <Field id={`${id}-days`} label={t('grantDialog.days')} error={errors.days}>
             {(control) => (
               <div className="flex flex-wrap items-center gap-2">
-                <Input {...control} inputMode="numeric" className="w-28 tabular-nums" value={form.days} onChange={(event) => set('days', event.target.value, 'days')} />
+                <Input {...control} inputMode="numeric" className="w-20 tabular-nums sm:w-28" value={form.days} onChange={(event) => set('days', event.target.value, 'days')} />
                 {GRANT_QUICK_DAYS.map((count) => (
                   <Button key={count} type="button" variant={days === count ? 'secondary' : 'outline'} size="sm" onClick={() => set('days', formatPlain(count, locale), 'days')}>
                     {t('grantDialog.daysQuick', { count })}

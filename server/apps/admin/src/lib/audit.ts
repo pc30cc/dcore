@@ -80,6 +80,7 @@ export const auditActionGroups: readonly { area: string; label: MessageKey; acti
     // growth
 
     // app
+    profile: 'audit.area.profile',
 
     // support
 

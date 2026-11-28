@@ -47,6 +47,8 @@ const catalogue = {
   entitlement_required: [403, 'Subscription required'],
   calls_not_allowed: [403, 'Calls not allowed'],
   store_not_supported: [403, 'Not available in this store'],
+  /** Sign-up is not open in the account's country (app_config `signup.countries`). */
+  country_not_supported: [403, 'Not available in this country'],
   // 409
   already_set: [409, 'Already set'],
   position_taken: [409, 'Position taken'],

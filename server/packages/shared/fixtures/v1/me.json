@@ -165,5 +165,6 @@
   ],
   "consentsDue": [
     "terms"
-  ]
+  ],
+  "distanceUnit": "km"
 }

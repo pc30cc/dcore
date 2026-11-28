@@ -8,6 +8,7 @@ import {
   sendMessageSchema,
   sentMessageSchema,
 } from '@app/shared';
+import type { FastifyInstance } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { HttpProblem } from '../lib/problem.js';
 import { ChatService } from '../services/chat.js';
@@ -33,12 +34,18 @@ import { requireScope, sessionOf } from '../services/session.js';
  */
 
 export const WRITE_LAG_HEADER = 'x-write-lag-ms';
-const PER_CONVERSATION = { max: 20, windowMs: 10_000 };
+/** Sends per person and conversation in one window; the cap is the panel's (limits.rates). */
+const PER_CONVERSATION = { windowMs: 10_000 };
+
+/** The panel's per-person limits, the shipped ones until the configuration is loaded. */
+function rates(app: FastifyInstance): { messages_per_minute: number; messages_per_conversation: number } {
+  return app.cfg.peek()?.app['limits.rates'] ?? { messages_per_minute: 60, messages_per_conversation: 20 };
+}
 
 export const chatRoutes: FastifyPluginAsyncZod = async (app) => {
   const fullOnly = requireScope(app, app.account, ['full']);
 
-  /** 20 messages per 10 s per person and conversation, counted in Valkey. */
+  /** Messages per 10 s per person and conversation (20 shipped), counted in Valkey. */
   async function conversationLimit(userId: string, matchId: string): Promise<void> {
     const slot = Math.floor(Date.now() / PER_CONVERSATION.windowMs);
     const key = app.keys.raw('rl', 'msg', userId, matchId, slot);
@@ -50,7 +57,7 @@ export const chatRoutes: FastifyPluginAsyncZod = async (app) => {
       // Valkey is what the send itself needs; its own failure answers then.
       return;
     }
-    if (used > PER_CONVERSATION.max) {
+    if (used > rates(app).messages_per_conversation) {
       const retry = Math.max(1, Math.ceil(((slot + 1) * PER_CONVERSATION.windowMs - Date.now()) / 1_000));
       throw new HttpProblem('rate_limited', { retryAfterSeconds: retry, headers: { 'retry-after': String(retry) } });
     }
@@ -82,7 +89,7 @@ export const chatRoutes: FastifyPluginAsyncZod = async (app) => {
     '/v1/conversations/:id/messages',
     {
       preHandler: fullOnly,
-      config: { pgBudget: 0, rateLimit: { max: 60, timeWindow: 60_000 } },
+      config: { pgBudget: 0, rateLimit: { max: () => rates(app).messages_per_minute, timeWindow: 60_000 } },
       schema: {
         tags: ['conversations'],
         summary: 'Send a message',

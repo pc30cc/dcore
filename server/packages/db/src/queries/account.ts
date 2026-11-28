@@ -111,6 +111,8 @@ export const accountViewSchema = z.object({
   consents: z.record(z.string().regex(/^[0-9]+$/), z.number().int().positive()),
   /** Legal consent kind codes (1 terms, 2 privacy, 3 guidelines) due again. */
   consentsDue: z.array(z.number().int()),
+  /** While the account waits (status 2): its review (0038 profile_reviews; state codes profileReviewState). */
+  review: z.object({ state: z.number().int().min(1).max(3), message: z.string().optional(), decidedAtMs: epochMs.optional() }).optional(),
 });
 export type AccountView = z.infer<typeof accountViewSchema>;
 

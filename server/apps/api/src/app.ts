@@ -42,6 +42,7 @@ import { pgBudgetPlugin } from './plugins/pgBudget.js';
 import { rateLimitPlugin } from './plugins/rateLimit.js';
 import { securityPlugin } from './plugins/security.js';
 import { storePlugin, type StoreOptions } from './plugins/store.js';
+import { providersPlugin, type ProvidersOptions } from './services/providers.js';
 import { accountRoutes } from './routes/account.js';
 import { adminAccountRoutes } from './routes/adminAccounts.js';
 import { adminAppearanceRoutes } from './routes/adminAppearance.js';
@@ -156,6 +157,8 @@ export interface AppDependencies {
   adminChats?: AdminUserChatRoutesOptions | undefined;
   /** The clock and size of the "active today" marks (tests). */
   activity?: Omit<ActivityPluginOptions, 'userIdOf'> | undefined;
+  /** The provider runtime's SMS fetch, store factories and report interval (tests). */
+  providers?: ProvidersOptions | undefined;
 }
 
 /** Inbound ids are kept only when they look like ids: they end up in every log line. */
@@ -329,6 +332,7 @@ export async function buildApp(config: ApiConfig, deps: AppDependencies = {}) {
   await app.register(callsPlugin, deps.calls ?? {});
   await app.register(storePlugin, deps.store ?? {});
   // app
+  await app.register(providersPlugin, deps.providers ?? {});
 
   await app.register(healthRoutes, { readiness });
   await app.register(accountRoutes);

@@ -71,6 +71,15 @@ declare module 'fastify' {
     adminAuth: AdminAuthRuntime;
     /** preHandler: an admin access token whose roles grant `permission`. */
     requirePermission(permission: Permission): AuthGuard;
+    /**
+     * preHandler after the permission: while a second factor is required
+     * (ADMIN_TOTP_REQUIRED, every deployment by default), the session must
+     * have been opened with it (`amr` holds `otp`), else 403 `mfa_required`.
+     * The owner-only writes use it (providers, SMS routing, legal values).
+     */
+    requireMfa: AuthGuard;
+    /** The routes that carry {@link requireMfa} (`METHOD /path`), for their test. */
+    routesRequiringMfa(): string[];
   }
 }
 
@@ -108,6 +117,24 @@ export const adminAuthPlugin = fp<AdminAuthOptions>(
         }
       };
     });
+
+    const requireMfa: AuthGuard = async (request: FastifyRequest) => {
+      const principal = request.principal;
+      if (principal?.kind !== 'admin') {
+        throw unauthorized(principal ? new TokenError('invalid', 'not an admin token') : request.authFailure);
+      }
+      if (app.adminAuth.totpRequired && principal.mfa !== true) {
+        throw adminForbidden('mfa_required', 'This change needs a session opened with the second factor.');
+      }
+    };
+    app.decorate('requireMfa', requireMfa);
+    const mfaRoutes: string[] = [];
+    app.addHook('onRoute', (route) => {
+      const handlers = ([] as unknown[]).concat(route.preHandler ?? []);
+      if (!handlers.includes(requireMfa)) return;
+      for (const method of ([] as string[]).concat(route.method)) if (method !== 'HEAD') mfaRoutes.push(`${method} ${route.url}`);
+    });
+    app.decorate('routesRequiringMfa', () => [...mfaRoutes]);
 
     // After the token was verified (and the deny list read): a session without a second factor counts only while none is required.
     app.addHook('onRequest', async (request: FastifyRequest) => {

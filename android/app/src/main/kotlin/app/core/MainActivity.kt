@@ -19,6 +19,7 @@ import app.core.brand.AppBrand
 import app.core.feature.call.CallActivityHooks
 import app.core.feature.call.CallHost
 import app.core.feature.call.ProvideCallsToChat
+import app.core.feature.card.LocalDistanceUnit
 import app.core.i18n.AppLocales
 import app.core.i18n.LocalAppName
 import app.core.push.OpenTargets
@@ -78,9 +79,15 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(templateId) { rememberLaunchTemplate(templateId) }
             val config by graph.config.config.collectAsStateWithLifecycle()
             val appName = config?.appName?.takeIf { it.isNotBlank() } ?: AppBrand.appName
+            val distanceUnit by graph.distanceUnit.collectAsStateWithLifecycle()
 
             AppTheme(template = template) {
-                CompositionLocalProvider(LocalAppGraph provides graph, LocalAppName provides appName, LocalSystemBars provides bars) {
+                CompositionLocalProvider(
+                    LocalAppGraph provides graph,
+                    LocalAppName provides appName,
+                    LocalSystemBars provides bars,
+                    LocalDistanceUnit provides distanceUnit,
+                ) {
                     Box(Modifier.fillMaxSize()) {
                         Surface(Modifier.fillMaxSize()) {
                             // The conversations' call buttons and call-back lines.

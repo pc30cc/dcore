@@ -43,6 +43,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -446,6 +447,49 @@ class OnboardingViewModelTest {
         assertEquals(AccountStatus.PendingReview, stored(s.api).status)
         model.leave()
         assertEquals(Root.Review, s.gate.root.value)
+    }
+
+    @Test
+    fun `sign-up closed in the person's country says so at the location step and again at the finish`() = vmTest {
+        val s = newAccount()
+        val model = model(s)
+        reachLocation(model)
+        s.api.closeSignUp("TR")
+        model.cityPicked(SampleData.city(745044))
+        runCurrent()
+        assertEquals(OnboardingStep.Location, model.state.value.step)
+        assertEquals(StepError.CountryClosed, model.state.value.error)
+        assertTrue("nothing kept", model.state.value.location !is LocationPhase.Set)
+        assertNull(stored(s.api).location?.city)
+
+        // Open where the person is: the step passes. Closed there afterwards: the finish says so too.
+        model.cityPicked(SampleData.city(112931))
+        runCurrent()
+        assertNull(model.state.value.error)
+        s.api.closeSignUp("IR")
+        model.acceptGuidelines()
+        runCurrent()
+        assertEquals(StepError.CountryClosed, model.state.value.error)
+        assertEquals(AccountStatus.Onboarding, stored(s.api).status)
+        assertEquals(Root.Onboarding, s.gate.root.value)
+        assertNull(model.state.value.done)
+    }
+
+    @Test
+    fun `a phone fix in a closed country says so on the step and opens no city list`() = vmTest {
+        val s = newAccount()
+        val model = model(s)
+        reachLocation(model)
+        s.api.closeSignUp("TR")
+        val (lat, lng) = SampleData.cityCentres.getValue(745044)
+        model.locating()
+        model.located(lat, lng, accuracyM = 3_000, fromGps = true)
+        runCurrent()
+        assertEquals(OnboardingStep.Location, model.state.value.step)
+        assertEquals(StepError.CountryClosed, model.state.value.error)
+        // Not "we couldn't find you": the step is back to its button, with the country line on it.
+        assertEquals(LocationPhase.Idle, model.state.value.location)
+        assertNull(stored(s.api).location?.city)
     }
 
     @Test

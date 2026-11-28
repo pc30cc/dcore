@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { grantShownEnd } from '../src/lib/grants';
 import { resetToastsForTests } from '../src/lib/toast';
 import { adminWith, fakeApi, plan, planList, problem, renderPanel, resetPanel, signInAs, type Handler } from './panel';
 import { adjustmentOf, adminRole, financeAdmin, grantOf, OTHER, pageOf, PERSON, personRef } from './revenueFixtures';
@@ -62,6 +63,25 @@ describe('plan days given', () => {
     expect(screen.getAllByText('Wrong account').length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'End now' })).toHaveLength(2);
     expect(screen.getByText('Kaan Demir')).toBeTruthy();
+  });
+
+  it('shows a grant ended before it began with its planned period, and one ended early with its real end', async () => {
+    const before = grantOf('5', { state: 'revoked', startsAt: '2026-11-29T10:00:00.000Z', endsAt: '2026-12-29T10:00:00.000Z', revokedAt: '2026-11-28T10:00:00.000Z' });
+    const during = grantOf('6', { state: 'revoked', startsAt: '2026-11-20T10:00:00.000Z', endsAt: '2026-12-20T10:00:00.000Z', revokedAt: '2026-11-25T10:00:00.000Z' });
+    expect(grantShownEnd(before)).toBe(before.endsAt);
+    expect(grantShownEnd(during)).toBe(during.revokedAt);
+    expect(grantShownEnd(grantOf('7'))).toBe(grantOf('7').endsAt);
+    renderPanel('/revenue/grants', api({ 'GET /v1/admin/grants': () => pageOf([before, during]) }));
+    expect((await screen.findAllByText('Nov 29, 2026 – Dec 29, 2026')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Nov 20, 2026 – Nov 25, 2026').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Nov 29, 2026 – Nov 28, 2026')).toBeNull();
+  });
+
+  it('keeps the filter’s words on one line: the segments grow with them from sm', async () => {
+    renderPanel('/revenue/grants', api());
+    const filter = await screen.findByRole('radiogroup', { name: 'Show' });
+    expect(filter.className).toContain('sm:w-auto');
+    expect(filter.className).not.toContain('sm:w-72 ');
   });
 
   it('keeps the filter and the tab in the address', async () => {
@@ -127,6 +147,8 @@ describe('plan days given', () => {
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByRole('textbox', { name: 'Person ID' }), PERSON);
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Plan' }), 'premium');
+    // A narrower days field on a phone keeps the three quick buttons on its line.
+    expect(within(dialog).getByRole('textbox', { name: 'Days' }).className).toMatch(/\bw-20\b.*\bsm:w-28\b/);
     await user.click(within(dialog).getByRole('button', { name: '30 d' }));
     await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'Contest winner');
     await user.click(within(dialog).getByRole('button', { name: 'Give plan days' }));
@@ -295,6 +317,9 @@ describe('wallet gifts and corrections', () => {
     // The time under the item, until its column appears (sm).
     const when = within(item!).getByText(/Nov 25, 2026/);
     expect(when.className).toContain('sm:hidden');
+    // On a phone the day alone, on one line (the time has its own column from sm).
+    expect(when.className).toContain('whitespace-nowrap');
+    expect(when.textContent).toBe('Nov 25, 2026');
     // The note under the change, clamped, until its column appears (lg).
     const note = within(delta!).getByText('Double credit');
     expect(note.className).toContain('line-clamp-2');

@@ -88,7 +88,8 @@ export interface StoreConfig {
   bazaar: BazaarStoreConfig | undefined;
 }
 
-const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token';
+/** Google's OAuth token endpoint, where a service account exchanges its signed assertion for a token. */
+export const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 
 /** Service-account JSON (raw or base64); throws an Error that names no value. */
 export function parseGoogleServiceAccount(raw: string, variable: string): GoogleServiceAccount {

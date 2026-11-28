@@ -1,4 +1,4 @@
-import { AUDIT_EXPORTS_PER_HOUR, type AuditAction, type AuditEntry, type AuditTarget } from '@app/shared';
+import { AUDIT_EXPORTS_PER_HOUR, isAdminConfigKey, type AuditAction, type AuditEntry, type AuditTarget } from '@app/shared';
 import { ChevronDown, ChevronUp, Download, ScrollText } from 'lucide-react';
 import { Fragment, useId, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -21,7 +21,7 @@ import { asciiDigits, formatDateTime } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { useAudit, useAuditAdmins } from '@/lib/queries';
-import { can, sessionState } from '@/lib/session';
+import { can, isOwner, sessionState } from '@/lib/session';
 import { showToast } from '@/lib/toast';
 import { EmptyLine } from '../moderation/QueueParts';
 
@@ -268,11 +268,30 @@ const targetLinks: Partial<Record<AuditTarget, (entry: AuditEntry) => string | n
   // growth
 
   // app
+  config: (entry) => configLink(configKeyOf(entry)),
 
   // support
 
   // system
 };
+
+/** A settings row names its setting in `detail.key`. */
+function configKeyOf(entry: AuditEntry): string | null {
+  const key = entry.detail?.['key'];
+  return entry.targetType === 'config' && typeof key === 'string' ? key : null;
+}
+
+/** The page a setting is edited on, for the reader who may open it. */
+function configLink(key: string | null): string | null {
+  if (!key) return null;
+  const me = sessionState().me;
+  if (key.startsWith('providers.') || key === 'auth.sms_routing') return can(me, 'config.providers') ? '/app/providers' : null;
+  if (key.startsWith('origins')) return isOwner(me) ? '/hosts' : null;
+  if (!can(me, 'config.read')) return null;
+  if (key === 'brand') return '/app/brand';
+  if (key === 'ui.templates') return '/app/appearance';
+  return isAdminConfigKey(key) ? '/app/config' : null;
+}
 
 function TargetCell({ entry }: { entry: AuditEntry }) {
   const { t } = useI18n();
@@ -291,7 +310,7 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
       </span>
     );
   }
-  const id = entry.user ?? entry.targetRef;
+  const id = entry.user ?? entry.targetRef ?? configKeyOf(entry);
   const href = entry.user ? `/users/${entry.user}` : (targetLinks[entry.targetType]?.(entry) ?? null);
   return (
     <span className="grid min-w-0">
