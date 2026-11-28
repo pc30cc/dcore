@@ -42,6 +42,20 @@ export interface StreamHealth {
   watermarkLagMs: number | null;
 }
 
+/**
+ * Entries still to be written: delivered and not acknowledged (pending)
+ * plus not yet delivered (undelivered). `length` is not this: a stream keeps
+ * entries after they are written (MAXLEN or MINID trims follow later).
+ * Undelivered counts at most the entries the stream still holds: XINFO
+ * GROUPS `lag` is entries added less entries read, which a trim of
+ * undelivered entries does not lower (they are gone, not waiting).
+ * Null when the group is missing or Valkey cannot tell the undelivered count.
+ */
+export function streamWaiting(health: Pick<StreamHealth, 'group' | 'length' | 'pending' | 'undelivered'>): number | null {
+  if (!health.group || health.undelivered === null) return null;
+  return health.pending + Math.min(health.undelivered, health.length);
+}
+
 const STREAM_ID = /^([0-9]{1,15})-[0-9]{1,20}$/;
 const APP_ID = /^[1-9][0-9]{0,18}$/;
 

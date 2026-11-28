@@ -16,6 +16,11 @@ export const tr = {
   'auditAction.system.jobs_retry': 'Başarısız işler yeniden denendi',
   'auditAction.system.jobs_remove': 'Başarısız işler kaldırıldı',
   'auditAction.system.task_run': 'Görev elle başlatıldı',
+  'audit.subject.role': 'Rol',
+  'jobs.audit.jobs': '{count} iş',
+  'jobs.audit.entries': '{count} kayıt',
+  'jobs.audit.jobsOne': '1 iş',
+  'jobs.audit.entriesOne': '1 kayıt',
 
   // Refusals of the role editor and the jobs page
   'roles.error.changed': 'Bu rol bu arada değiştirildi. En son hâli gösteriliyor.',
@@ -94,14 +99,16 @@ export const tr = {
   'jobs.health.rolesFailing': 'Roller yüklenmedi',
   'jobs.health.self': 'Bu sunucu',
   'jobs.health.queues': 'Kuyruklar: {count}',
+  'jobs.health.under': '{value}’den az',
 
   // Saving queues and their failed entries
   'jobs.streams.title': 'Kayıt kuyrukları',
   'jobs.col.stream': 'Kuyruk',
-  'jobs.col.length': 'Kuyrukta',
+  'jobs.col.waiting': 'Kuyrukta',
   'jobs.col.pending': 'Kaydediliyor',
   'jobs.col.readers': 'Okuyucular',
   'jobs.col.dead': 'Başarısız kayıtlar',
+  'jobs.col.kept': 'Tutulan kayıtlar',
   'jobs.stream.noGroup': 'Henüz okuyucu yok',
   'jobs.dead.view': 'Göster',
   'jobs.dead.viewOf': '{stream}: başarısız kayıtları göster',

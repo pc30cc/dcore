@@ -15,7 +15,7 @@ import { Job, Queue } from 'bullmq';
 import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { migratedDatabase, seedUser, statements, type TestDatabase } from './accountSupport.js';
-import { admin, adminAs, lastAudit, startAdminHarness, type AdminHarness, type AdminSession } from './adminSupport.js';
+import { admin, adminAs, installAuditFailure, lastAudit, refuseAudit, startAdminHarness, type AdminHarness, type AdminSession } from './adminSupport.js';
 import { hasInfrastructure } from './support.js';
 import { deadLetter, failJobs, failedKey, waitUntil } from './systemSupport.js';
 
@@ -117,16 +117,39 @@ describe.skipIf(!hasInfrastructure)('admin: jobs and health', () => {
     await h.redis.xadd(like, '*', 'k', '1');
     await h.redis.xreadgroup('GROUP', 'pg', 'c1', 'COUNT', 1, 'STREAMS', like, '>');
     await h.redis.set(`${h.prefix}wb:like:wm`, appId(60_000));
+    // msg: three entries written and acknowledged, still kept by the stream (as a trim leaves them).
+    const msg = `${h.prefix}wb:msg`;
+    await h.redis.xgroup('CREATE', msg, 'pg', '0', 'MKSTREAM');
+    for (let i = 0; i < 3; i += 1) await h.redis.xadd(msg, '*', 'k', '1');
+    const read = (await h.redis.xreadgroup('GROUP', 'pg', 'c1', 'COUNT', 10, 'STREAMS', msg, '>')) as [string, [string, string[]][]][];
+    await h.redis.xack(msg, 'pg', ...read[0]![1].map(([id]) => id));
     await new Promise((resolve) => setTimeout(resolve, 5));
     const res = await get('/v1/admin/system/streams');
     expect(res.statusCode, res.body).toBe(200);
     expect(statements(res)).toBe(0);
     const streams = adminSystemStreamsSchema.parse(res.json()).streams;
     const likes = streams.find((s) => s.name === 'like')!;
-    expect(likes).toMatchObject({ length: 2, pending: 1, group: true, consumers: 1, undelivered: 1 });
+    // What waits is the delivered-unacknowledged one plus the undelivered one.
+    expect(likes).toMatchObject({ length: 2, waiting: 2, pending: 1, group: true, consumers: 1, undelivered: 1 });
     expect(likes.lagMs).toBeGreaterThan(0);
     expect(likes.watermarkLagMs).toBeGreaterThan(50_000);
-    expect(streams.find((s) => s.name === 'match')).toMatchObject({ group: false, lagMs: null, watermarkLagMs: null });
+    // Written entries the stream keeps are not waiting.
+    expect(streams.find((s) => s.name === 'msg')).toMatchObject({ length: 3, waiting: 0, pending: 0, undelivered: 0, lagMs: 0 });
+    expect(streams.find((s) => s.name === 'match')).toMatchObject({ group: false, waiting: null, lagMs: null, watermarkLagMs: null });
+    await h.redis.del(msg);
+  });
+
+  it('never counts as waiting the undelivered entries a trim removed', async () => {
+    // Ten written, six read and acknowledged, then a MAXLEN 2 trim: the group's lag stays 4, two remain to be read.
+    const msg = `${h.prefix}wb:msg`;
+    await h.redis.xgroup('CREATE', msg, 'pg', '0', 'MKSTREAM');
+    for (let i = 0; i < 10; i += 1) await h.redis.xadd(msg, '*', 'k', '1');
+    const read = (await h.redis.xreadgroup('GROUP', 'pg', 'c1', 'COUNT', 6, 'STREAMS', msg, '>')) as [string, [string, string[]][]][];
+    await h.redis.xack(msg, 'pg', ...read[0]![1].map(([id]) => id));
+    await h.redis.xtrim(msg, 'MAXLEN', 2);
+    const streams = adminSystemStreamsSchema.parse((await get('/v1/admin/system/streams')).json()).streams;
+    expect(streams.find((s) => s.name === 'msg')).toMatchObject({ length: 2, undelivered: 4, pending: 0, waiting: 2 });
+    await h.redis.del(msg);
   });
 
   it('pages failed entries without any person, conversation or public id', async () => {
@@ -189,7 +212,8 @@ describe.skipIf(!hasInfrastructure)('admin: jobs and health', () => {
     const upTo = await post('/v1/admin/system/dead-letters/delete', { stream: 'match', upTo: ids[2] });
     expect(upTo.json()).toEqual({ deleted: 1, sideEffects: 'done' });
     expect((await h.redis.xrange(dead, '-', '+')).map(([id]) => id)).toEqual([ids[3]]);
-    expect((await lastAudit(db, { action: 'system.dead_letters_delete' }))!.detail).toMatchObject({ stream: 'match', upTo: ids[2], lengthBefore: 2 });
+    // The row names how many entries the delete covers: the two left, less the one newer than upTo.
+    expect((await lastAudit(db, { action: 'system.dead_letters_delete' }))!.detail).toEqual({ stream: 'match', upTo: ids[2], lengthBefore: 2, count: 1 });
     expect((await post('/v1/admin/system/dead-letters/delete', { stream: 'match', ids: [] })).statusCode).toBe(400);
   });
 
@@ -210,8 +234,54 @@ describe.skipIf(!hasInfrastructure)('admin: jobs and health', () => {
     } finally {
       spy.mockRestore();
     }
+    // The audit row counted at the read: four up to ids[3] of the five then.
+    expect((await lastAudit(db, { action: 'system.dead_letters_delete' }))!.detail).toEqual({ stream: 'like', upTo: ids[3], lengthBefore: 5, count: 4 });
     expect(await h.redis.xlen(dead)).toBe(4);
     await h.redis.del(dead);
+  });
+
+  it('leaves the count of an "up to" delete open when more entries are newer than it reads', async () => {
+    const dead = `${h.prefix}wb:like:dead`;
+    await h.redis.del(dead);
+    const oldest = await deadLetter(h, 'like', { id: `${Date.now()}-0`, fields: { k: '1' } });
+    const pipeline = h.redis.pipeline();
+    for (let i = 0; i < 1_001; i += 1) pipeline.xadd(dead, '*', 'reason', 'rejected', 'deliveries', '1', 'fields', '{}');
+    await pipeline.exec();
+    const res = await post('/v1/admin/system/dead-letters/delete', { stream: 'like', upTo: oldest });
+    expect(res.json()).toEqual({ deleted: 1, sideEffects: 'done' });
+    expect((await lastAudit(db, { action: 'system.dead_letters_delete' }))!.detail).toEqual({ stream: 'like', upTo: oldest, lengthBefore: 1_002, count: null });
+    expect(await h.redis.xlen(dead)).toBe(1_001);
+    await h.redis.del(dead);
+  });
+
+  it('deletes nothing "up to" an id when its audit row is refused, and deletes once it is written', async () => {
+    // The guard's row for this route sends ids; the "up to" form reads before the transaction and trims after it.
+    const dead = `${h.prefix}wb:like:dead`;
+    await h.redis.del(dead);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) ids.push(await deadLetter(h, 'like', { id: `${Date.now()}-${i}`, fields: { k: '1' } }));
+    const audits = async () => (await db.sql.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'system.dead_letters_delete'`)).rows[0]!.n;
+    const limitKey = h.app.keys.signInIpLimit('system_write', String(owner.account.id));
+    const taken = async () => Number((await h.redis.get(limitKey)) ?? 0);
+    await installAuditFailure(db);
+    await refuseAudit(db, 'system.dead_letters_delete');
+    const before = await audits();
+    const spent = await taken();
+    try {
+      const refused = await post('/v1/admin/system/dead-letters/delete', { stream: 'like', upTo: ids[2] });
+      expect(refused.statusCode, refused.body).toBe(500);
+      expect(await h.redis.xlen(dead)).toBe(3);
+      expect(await audits()).toBe(before);
+      // The hour's count stays spent, as for any system write that fails after taking it.
+      expect(await taken()).toBe(spent + 1);
+    } finally {
+      await refuseAudit(db);
+    }
+    const done = await post('/v1/admin/system/dead-letters/delete', { stream: 'like', upTo: ids[2] });
+    expect(done.json()).toEqual({ deleted: 3, sideEffects: 'done' });
+    expect(await audits()).toBe(before + 1);
+    expect((await lastAudit(db, { action: 'system.dead_letters_delete' }))!.detail).toEqual({ stream: 'like', upTo: ids[2], lengthBefore: 3, count: 3 });
+    expect(await h.redis.xlen(dead)).toBe(0);
   });
 
   it('retries failed jobs whose late run is harmless, with their attempts reset, and removes others', async () => {

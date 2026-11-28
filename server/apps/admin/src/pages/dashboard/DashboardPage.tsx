@@ -275,7 +275,8 @@ function HealthCard({ data }: { data: AdminStatsLive }) {
               key: stream.name,
               name: t(`dashboard.stream.${stream.name}` as MessageKey),
               cells: [
-                { text: formatNumber(stream.pending, locale) },
+                // What waits to be saved (not delivered yet, or being saved), as /system/jobs shows it under In queue.
+                { text: stream.waiting === null ? '—' : formatNumber(stream.waiting, locale) },
                 { text: stream.lagMs === null ? '—' : formatSpan(stream.lagMs / 1000, locale), alert: stream.lagMs !== null && stream.lagMs > STREAM_ALERT_MS },
                 { text: formatNumber(stream.dead, locale), alert: stream.dead > 0 },
               ],

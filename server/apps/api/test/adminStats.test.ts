@@ -100,8 +100,9 @@ describe.skipIf(!hasInfrastructure)('admin: dashboard and statistics', () => {
         ],
       },
       streams: [
-        { name: 'like', length: 0, pending: 0, dead: 0, lagMs: 0 },
-        { name: 'match', length: 0, pending: 0, dead: 0, lagMs: null },
+        { name: 'like', length: 0, waiting: 0, pending: 0, dead: 0, lagMs: 0 },
+        { name: 'match', length: 0, waiting: null, pending: 0, dead: 0, lagMs: null },
+        // As a worker writes it from before `waiting` was recorded (a rolling deploy): read as unknown.
         { name: 'msg', length: 3, pending: 1, dead: 0, lagMs: 1200 },
       ],
       jobs: [{ queue: 'stats', waiting: 1, active: 0, delayed: 0, failed: 0 }],
@@ -152,7 +153,11 @@ describe.skipIf(!hasInfrastructure)('admin: dashboard and statistics', () => {
         { currency: 'USD', amountMicros: '5000000', estimated: false },
       ],
     });
-    expect(live.streams).toHaveLength(3);
+    expect(live.streams).toEqual([
+      { name: 'like', length: 0, waiting: 0, pending: 0, dead: 0, lagMs: 0 },
+      { name: 'match', length: 0, waiting: null, pending: 0, dead: 0, lagMs: null },
+      { name: 'msg', length: 3, waiting: null, pending: 1, dead: 0, lagMs: 1200 },
+    ]);
 
     const plain = adminStatsLiveSchema.parse((await get(moderator, '/v1/admin/stats/live')).json());
     expect(plain.revenueToday).toBeUndefined();

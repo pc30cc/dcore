@@ -47,6 +47,9 @@ export const statsCappedSchema = z.object({ count: int, more: z.boolean() });
 export const statsStreamSchema = z.object({
   name: z.enum(['like', 'match', 'msg']),
   length: int,
+  /** Entries still to be written (not delivered yet, or being saved); null: unknown (no reader group, or an older snapshot). */
+  waiting: int.nullable(),
+  /** Delivered to the writers and not acknowledged. */
   pending: int,
   dead: int,
   /** How far the writer is behind; null: the stream or its group is missing. */

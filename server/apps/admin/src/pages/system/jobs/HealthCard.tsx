@@ -3,8 +3,8 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Badge, StatusDot } from '@/components/ui/badge';
 import { useI18n } from '@/i18n/useI18n';
-import { formatDateTime, formatTime } from '@/lib/format';
-import { behind, formatBytes, formatMs, memoryTone, queueLabel } from '@/lib/system';
+import { formatDateTime, formatTime, joinFacts } from '@/lib/format';
+import { behind, formatBytes, formatLatency, formatShare, memoryTone, queueLabel } from '@/lib/system';
 import { cn } from '@/lib/utils';
 import { CardQuery, Code, SystemCard } from './parts';
 
@@ -41,7 +41,7 @@ function Up({ up, latencyMs }: { up: boolean; latencyMs?: number }) {
       <StatusDot tone={up ? 'green' : 'red'} className={cn(!up && 'font-medium text-destructive')}>
         {t(up ? 'jobs.health.up' : 'jobs.health.down')}
       </StatusDot>
-      {up && latencyMs !== undefined && <span className="text-xs text-muted-foreground tabular-nums">{formatMs(latencyMs, locale)}</span>}
+      {up && latencyMs !== undefined && <span className="text-xs text-muted-foreground tabular-nums">{formatLatency(latencyMs, locale, t)}</span>}
     </span>
   );
 }
@@ -54,13 +54,13 @@ function Memory({ valkey }: { valkey: Valkey }) {
   if (valkey.maxBytes === null) {
     return (
       <p className="text-xs text-muted-foreground">
-        {formatBytes(valkey.usedBytes, locale)} · {t('jobs.health.noLimit')}
+        {joinFacts([formatBytes(valkey.usedBytes, locale), t('jobs.health.noLimit')], locale)}
       </p>
     );
   }
   const share = Math.min(1, valkey.usedBytes / valkey.maxBytes);
   const tone = memoryTone(valkey.usedBytes, valkey.maxBytes);
-  const percent = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(share);
+  const percent = formatShare(share, locale, t);
   return (
     <div className="grid gap-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs">
@@ -125,7 +125,7 @@ function ProcessFacts({ at, startedAt, cfgVersion, current }: { at: string; star
   return (
     <>
       <span className="text-xs text-muted-foreground">
-        {t('jobs.health.seen', { time: formatTime(at, locale) })} · {t('jobs.health.since', { time: formatDateTime(startedAt, locale) })}
+        {joinFacts([t('jobs.health.seen', { time: formatTime(at, locale) }), t('jobs.health.since', { time: formatDateTime(startedAt, locale) })], locale)}
       </span>
       {cfgVersion !== null && (
         <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

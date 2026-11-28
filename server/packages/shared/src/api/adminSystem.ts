@@ -48,6 +48,7 @@ export const VALKEY_MEMORY_DANGER = 0.9;
 
 // ─── Health ─────────────────────────────────────────────────────────────────
 
+/** `latencyMs` in whole milliseconds (`latencyMsOf`): 0 means under 1 ms. */
 const up = z.object({ status: z.enum(['up', 'down']), latencyMs: int });
 
 export const adminSystemHealthSchema = z.object({
@@ -161,7 +162,11 @@ export type AdminSystemQueues = z.infer<typeof adminSystemQueuesSchema>;
 
 export const adminStreamHealthSchema = z.object({
   name: streamNameSchema,
+  /** Entries the stream keeps (XLEN), written ones included until a trim removes them. */
   length: int,
+  /** Entries still to be written: `pending` + `undelivered`; null when the group is missing or the undelivered count is unknown. */
+  waiting: int.nullable(),
+  /** Delivered to the writers and not acknowledged. */
   pending: int,
   dead: int,
   lagMs: int.nullable(),

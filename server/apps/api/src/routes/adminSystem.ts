@@ -17,6 +17,7 @@ import {
   decodeCursor,
   deadLetterReasons,
   encodeCursor,
+  latencyMsOf,
   likeKind,
   messageKind,
   wireTime,
@@ -37,6 +38,7 @@ import {
   runRecordSchema,
   runnableTasks,
   streamHealth,
+  streamWaiting,
   type ActiveQueueName,
   type JobName,
   type ProcessEntry,
@@ -106,11 +108,14 @@ async function probeValkey(client: Redis): Promise<{ status: 'up' | 'down'; late
   try {
     if (client.status !== 'ready') throw new Error(`redis is ${client.status}`);
     const [, info] = await Promise.all([client.ping(), client.info('memory')]);
-    return { status: 'up', latencyMs: Math.round(performance.now() - started), ...memoryOf(info) };
+    return { status: 'up', latencyMs: latencyMsOf(performance.now() - started), ...memoryOf(info) };
   } catch {
-    return { status: 'down', latencyMs: Math.round(performance.now() - started), usedBytes: null, maxBytes: null, policy: null };
+    return { status: 'down', latencyMs: latencyMsOf(performance.now() - started), usedBytes: null, maxBytes: null, policy: null };
   }
 }
+
+/** Entries newer than an "up to" id read to count the ones it deletes (more: the count is left null). */
+const UP_TO_NEWER_SCAN = 1_000;
 
 const heartbeatSchema = z.object({ at: z.string(), workerId: z.string().max(128) });
 const STREAM_ID = /^([0-9]{1,15})-([0-9]{1,20})$/;
@@ -358,6 +363,7 @@ export const adminSystemRoutes: FastifyPluginAsyncZod<AdminSystemRoutesOptions> 
         streams: streams.map((s) => ({
           name: s.name,
           length: s.length,
+          waiting: streamWaiting(s),
           pending: s.pending,
           dead: s.dead,
           lagMs: s.lagMs,
@@ -430,6 +436,7 @@ export const adminSystemRoutes: FastifyPluginAsyncZod<AdminSystemRoutesOptions> 
       const ticket = await limit(request);
       let ids: string[] = [];
       let lengthBefore = 0;
+      let count: number | null = null;
       if ('ids' in body) {
         const unique = [...new Set(body.ids)];
         const pipeline = app.redis.pipeline();
@@ -440,8 +447,20 @@ export const adminSystemRoutes: FastifyPluginAsyncZod<AdminSystemRoutesOptions> 
           return error === null && Array.isArray(found) && found.length > 0;
         });
       } else {
-        const [first, length] = await valkey(() => Promise.all([app.redis.xrange(dead, '-', body.upTo, 'COUNT', 1), app.redis.xlen(dead)]));
-        if (first.length > 0) lengthBefore = length;
+        // One MULTI, so the three answers describe the same moment: whether anything is at or before upTo, the
+        // length, and the entries after upTo (normally none: the panel sends the newest entry it shows).
+        const replies = await valkey(async () => {
+          const answers = (await app.redis.multi().xrange(dead, '-', body.upTo, 'COUNT', 1).xlen(dead).xrange(dead, nextStreamId(body.upTo), '+', 'COUNT', UP_TO_NEWER_SCAN + 1).exec()) ?? [];
+          const failed = answers.find(([error]) => error !== null);
+          if (answers.length !== 3 || failed) throw failed?.[0] ?? new Error('no answer');
+          return answers.map(([, value]) => value);
+        });
+        const [first, length, newer] = replies as [unknown[], number, unknown[]];
+        if (first.length > 0) {
+          lengthBefore = length;
+          // How many entries the delete names: exact unless more than the scan are newer than upTo.
+          count = newer.length <= UP_TO_NEWER_SCAN ? Math.max(0, length - newer.length) : null;
+        }
       }
       const nothing = 'ids' in body ? ids.length === 0 : lengthBefore === 0;
       await adminWrite(app, request, async (_tx, trail) => {
@@ -449,7 +468,7 @@ export const adminSystemRoutes: FastifyPluginAsyncZod<AdminSystemRoutesOptions> 
         trail.record({
           action: 'system.dead_letters_delete',
           target: 'none',
-          detail: 'ids' in body ? { stream: body.stream, ids } : { stream: body.stream, upTo: body.upTo, lengthBefore },
+          detail: 'ids' in body ? { stream: body.stream, ids } : { stream: body.stream, upTo: body.upTo, lengthBefore, count },
         });
       });
       if (nothing) {

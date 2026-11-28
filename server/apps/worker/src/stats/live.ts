@@ -6,6 +6,7 @@ import {
   STATS_TEST_IDS_TTL_SECONDS,
   centrifugoOnlineUsers,
   streamHealth,
+  streamWaiting,
   utcDay,
   type KeyBuilder,
   type StatsLiveSnapshot,
@@ -104,7 +105,7 @@ export async function statsLiveJob(context: JobContext, now: number = Date.now()
     testActive += flags.filter((flag) => flag === 1).length;
   }
 
-  const streams = (await streamHealth(redis, keys, now)).map(({ name, length, pending, dead, lagMs }) => ({ name, length, pending, dead, lagMs }));
+  const streams = (await streamHealth(redis, keys, now)).map((h) => ({ name: h.name, length: h.length, waiting: streamWaiting(h), pending: h.pending, dead: h.dead, lagMs: h.lagMs }));
   const jobs = await queueCounts(redis, config.queuePrefix);
   const { day, ...counts } = db;
   const snapshot: StatsLiveSnapshot = { at: new Date(now).toISOString(), day, online, testActive, db: counts, streams, jobs };

@@ -127,6 +127,29 @@ describe('the dashboard', () => {
     expect(within(card).getByRole('link', { name: 'Jobs and health' }).getAttribute('href')).toBe('/system/jobs');
   });
 
+  it('counts under Waiting what waits to be saved, delivered or not, as the jobs page counts In queue', async () => {
+    renderPanel(
+      '/',
+      liveApi(() =>
+        live({
+          streams: [
+            // The writer stopped reading: nothing being saved, five not delivered yet.
+            { name: 'like', length: 5, waiting: 5, pending: 0, dead: 0, lagMs: 4_000 },
+            { name: 'match', length: 10, waiting: 0, pending: 0, dead: 0, lagMs: 0 },
+            // Unknown: no reader group, or a snapshot written before the count was recorded.
+            { name: 'msg', length: 3, waiting: null, pending: 1, dead: 0, lagMs: null },
+          ],
+        }),
+      ),
+    );
+    const card = (await screen.findByRole('heading', { name: 'System health' })).closest('section')!;
+    const streams = within(card).getByRole('table', { name: 'Saving queues' });
+    const waiting = (name: RegExp) => within(within(streams).getByRole('row', { name })).getAllByRole('cell')[0]!.textContent;
+    expect(waiting(/Likes/)).toBe('5');
+    expect(waiting(/Matches/)).toBe('0');
+    expect(waiting(/Messages/)).toBe('—');
+  });
+
   it('links the health card to the jobs page only for an admin who may read it', async () => {
     signInAs(adminWith(['dashboard.read']));
     renderPanel('/', liveApi());

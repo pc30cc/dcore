@@ -15,15 +15,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import type { MessageKey } from '@/i18n/messages';
 import { isolate } from '@/i18n/translate';
 import { useI18n } from '@/i18n/useI18n';
+import { roleName } from '@/lib/admins';
 import { auditActionGroups, auditActionLabel, auditFiltered, auditTargetLabel, auditFiltersOf, auditParamsOf, auditQueryOf, auditRequestOf, auditTargetChoices, auditTargetValid, emptyAuditFilters, exportName, type AuditFilterState } from '@/lib/audit';
 import { apiDownload, saveBlob } from '@/lib/download';
-import { asciiDigits, formatDateTime } from '@/lib/format';
+import { asciiDigits, factSeparator, formatDateTime, joinFacts } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
-import { useAudit, useAuditAdmins } from '@/lib/queries';
+import { useAudit, useAuditAdmins, useRoles } from '@/lib/queries';
 import { can, isOwner, sessionState } from '@/lib/session';
+import { systemAuditSubject } from '@/lib/system';
 import { showToast } from '@/lib/toast';
+import { useSession } from '@/lib/useSession';
 import { EmptyLine } from '../moderation/QueueParts';
+import { Shown } from './jobs/parts';
 
 /**
  * `/system/audit`: the audit log, newest first, filtered by admin, target,
@@ -268,7 +272,7 @@ const targetLinks: Partial<Record<AuditTarget, (entry: AuditEntry) => string | n
   // growth
 
   // app
-  config: (entry) => (roleKeyOf(entry) ? roleLink() : configLink(configKeyOf(entry))),
+  config: (entry) => configLink(configKeyOf(entry)),
 
   // support
 
@@ -306,10 +310,67 @@ function roleLink(): string | null {
   return can(sessionState().me, 'admins.read') ? '/system/roles' : null;
 }
 
-function TargetCell({ entry }: { entry: AuditEntry }) {
+/**
+ * A role's name in the panel's language: a seeded role's words, a custom
+ * role's stored name (read with the roles list, for a reader of admins; the
+ * list is in memory on the server and cached here), else its key.
+ */
+function useRoleName(role: string): string {
+  const { t, locale } = useI18n();
+  const { me } = useSession();
+  const roles = useRoles(can(me, 'admins.read'));
+  return roleName(roles.data?.items.find((r) => r.key === role), role, locale, t);
+}
+
+/**
+ * A role change by the role's name (its key on hover), opening the roles
+ * page for the reader who may: the row's target kind is `config`, which says
+ * nothing of what changed.
+ */
+function RoleSubject({ role }: { role: string }) {
   const { t } = useI18n();
+  const name = useRoleName(role);
+  const href = roleLink();
+  return (
+    <span className="grid min-w-0">
+      <span className="text-sm">{t('audit.subject.role')}</span>
+      {href ? (
+        <Link to={href} title={role} className="w-fit text-xs break-words text-primary hover:underline">
+          {name}
+        </Link>
+      ) : (
+        <span title={role} className="w-fit text-xs break-words text-muted-foreground">
+          {name}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function TargetCell({ entry }: { entry: AuditEntry }) {
+  const { t, locale } = useI18n();
   const admins = useAuditAdmins(entry.targetType === 'admin');
   const type = auditTargetLabel(entry.targetType, t);
+  const role = roleKeyOf(entry);
+  if (role) return <RoleSubject role={role} />;
+  // A jobs page action (target `none`) by what it acted on: a task, a queue's job and count, a stream and count.
+  const subject = systemAuditSubject(entry, t);
+  if (subject) {
+    const separator = factSeparator(locale);
+    return (
+      <span className="grid min-w-0">
+        <span className="text-sm">{subject.kind}</span>
+        <span className="text-xs break-words text-muted-foreground">
+          {subject.parts.map((part, i) => (
+            <Fragment key={i}>
+              {i > 0 && separator}
+              <Shown value={part} />
+            </Fragment>
+          ))}
+        </span>
+      </span>
+    );
+  }
   if (entry.targetType === 'none') return <span className="text-muted-foreground">{t('common.none')}</span>;
   // An admin is named (the filter's list is loaded already); the id stays on hover.
   const adminName = entry.targetType === 'admin' ? admins.data?.items.find((a) => a.id === entry.targetRef)?.displayName : undefined;
@@ -323,7 +384,7 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
       </span>
     );
   }
-  const id = entry.user ?? entry.targetRef ?? configKeyOf(entry) ?? roleKeyOf(entry);
+  const id = entry.user ?? entry.targetRef ?? configKeyOf(entry);
   const href = entry.user ? `/users/${entry.user}` : (targetLinks[entry.targetType]?.(entry) ?? null);
   return (
     <span className="grid min-w-0">
@@ -340,6 +401,25 @@ function TargetCell({ entry }: { entry: AuditEntry }) {
         ))}
     </span>
   );
+}
+
+/** Below md, where the target column is hidden: what a role or jobs page row acted on, under its action. */
+function SubjectLine({ entry }: { entry: AuditEntry }) {
+  const role = roleKeyOf(entry);
+  if (role) return <RoleLine role={role} />;
+  return <SystemLine entry={entry} />;
+}
+
+function RoleLine({ role }: { role: string }) {
+  return <span className="text-xs break-words md:hidden">{useRoleName(role)}</span>;
+}
+
+function SystemLine({ entry }: { entry: AuditEntry }) {
+  const { t, locale } = useI18n();
+  const subject = systemAuditSubject(entry, t);
+  if (!subject) return null;
+  // The action names the kind (a task, a queue); the parts say which (a code isolated, so it keeps its own order in Persian).
+  return <span className="text-xs break-words md:hidden">{joinFacts(subject.parts.map((part) => (part.mono ? `\u2068${part.name}\u2069` : part.name)), locale)}</span>;
 }
 
 function AuditTable({ rows }: { rows: readonly AuditEntry[] }) {
@@ -373,6 +453,7 @@ function AuditTable({ rows }: { rows: readonly AuditEntry[] }) {
                 <TableCell>
                   <span className="grid">
                     <span className="text-sm">{auditActionLabel(entry.action, t)}</span>
+                    <SubjectLine entry={entry} />
                     <span dir="ltr" className="font-mono text-xs text-muted-foreground">
                       {entry.action}
                     </span>

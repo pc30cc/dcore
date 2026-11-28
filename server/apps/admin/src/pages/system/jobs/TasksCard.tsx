@@ -7,7 +7,7 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/i18n/useI18n';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatDateTime, formatNumber, joinFacts, unbreakable } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { queryClient } from '@/lib/queries';
@@ -56,7 +56,7 @@ export function TasksCard({ query, health, canWrite }: { query: UseQueryResult<A
         {(data) => {
           const actions = canWrite && data.tasks.some((task) => task.runnable);
           return (
-            <div className="-mx-4 sm:-mx-5">
+            <div className="-mx-4 min-w-0 sm:-mx-5">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -64,7 +64,7 @@ export function TasksCard({ query, health, canWrite }: { query: UseQueryResult<A
                     <TableHead className="hidden md:table-cell">{t('jobs.col.schedule')}</TableHead>
                     <TableHead className="hidden lg:table-cell">{t('jobs.col.next')}</TableHead>
                     <TableHead className="hidden sm:table-cell">{t('jobs.col.last')}</TableHead>
-                    <TableHead className="hidden lg:table-cell">{t('jobs.col.lastOk')}</TableHead>
+                    <TableHead className="hidden xl:table-cell">{t('jobs.col.lastOk')}</TableHead>
                     {actions && (
                       <TableHead className="w-12">
                         <span className="sr-only">{t('common.actions')}</span>
@@ -106,17 +106,18 @@ function Schedule({ task }: { task: AdminTask }) {
       </span>
     );
   }
-  return <span title={scheduleUtc(schedule, locale) ?? undefined}>{scheduleText(schedule, t, locale)}</span>;
+  return <span title={scheduleUtc(schedule, t, locale) ?? undefined}>{scheduleText(schedule, t, locale)}</span>;
 }
 
-function LastRun({ task }: { task: AdminTask }) {
+/** A task's last run; `compact` under the task's name on a phone, where "never" takes the size of the facts beside it. */
+function LastRun({ task, compact = false }: { task: AdminTask; compact?: boolean }) {
   const { t, locale } = useI18n();
   const run = task.last;
-  if (!run) return <span className="text-sm text-muted-foreground">{t('jobs.task.never')}</span>;
+  if (!run) return <span className={cn('text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>{t('jobs.task.never')}</span>;
   const state = runState(run);
   const facts = [
     formatDateTime(run.at, locale),
-    ...(run.durationMs !== null ? [t('jobs.task.took', { duration: formatShortSpan(run.durationMs, locale) })] : []),
+    ...(run.durationMs !== null ? [t('jobs.task.took', { duration: unbreakable(formatShortSpan(run.durationMs, locale)) })] : []),
     ...(state === 'failed' || state === 'retrying' ? [t('jobs.task.attempt', { attempt: run.attempt, attempts: run.attempts })] : []),
   ];
   return (
@@ -127,7 +128,7 @@ function LastRun({ task }: { task: AdminTask }) {
         </StatusDot>
         {run.manual && <Badge variant="muted">{t('jobs.task.manual')}</Badge>}
       </span>
-      <span className="text-xs text-muted-foreground">{facts.join(' · ')}</span>
+      <span className="text-xs text-muted-foreground">{joinFacts(facts, locale)}</span>
       {run.error && (
         <span dir="ltr" className="font-mono text-xs break-all text-destructive">
           {run.error}
@@ -160,31 +161,38 @@ function RunFigures({ run }: { run: NonNullable<AdminTask['last']> }) {
 function TaskRow({ task, actions, blocked, onRun }: { task: AdminTask; actions: boolean; blocked: boolean; onRun: () => void }) {
   const { t, locale } = useI18n();
   const label = taskLabel(task.queue, task.name, t);
+  const ran = task.last !== null || task.lastOkAt !== null;
   return (
     <TableRow>
       <TableCell className="max-w-72">
         <span className="grid justify-items-start gap-1">
           <Shown value={label} className="font-medium" />
-          {/* Below md the schedule sits here, below sm the last run, below lg the next run and the last success (their columns are hidden). */}
+          {/* Below md the schedule sits here, below sm the last run, below lg the next run, below xl the last success (their columns are hidden). */}
           <span className="text-xs text-muted-foreground md:hidden">
             <Schedule task={task} />
           </span>
           <span className="sm:hidden">
-            <LastRun task={task} />
+            <LastRun task={task} compact />
           </span>
-          <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground lg:hidden">
-            <span>
-              {t('jobs.col.lastOk')} <span className="text-foreground">{task.lastOkAt ? formatDateTime(task.lastOkAt, locale) : t('jobs.task.never')}</span>
+          {(ran || task.nextAt) && (
+            <span className={cn('flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground', ran ? 'xl:hidden' : 'lg:hidden')}>
+              {/* A task that never ran says so once (its last run above, or in its column). */}
+              {ran && (
+                <span>
+                  {t('jobs.col.lastOk')} <span className="text-foreground">{task.lastOkAt ? formatDateTime(task.lastOkAt, locale) : t('jobs.task.never')}</span>
+                </span>
+              )}
+              {task.nextAt && (
+                <span className="lg:hidden">
+                  {t('jobs.col.next')} <span className="text-foreground">{formatDateTime(task.nextAt, locale)}</span>
+                </span>
+              )}
             </span>
-            {task.nextAt && (
-              <span>
-                {t('jobs.col.next')} <span className="text-foreground">{formatDateTime(task.nextAt, locale)}</span>
-              </span>
-            )}
-          </span>
+          )}
           {task.runnable && blocked && <span className="text-xs text-muted-foreground sm:hidden">{t('jobs.task.noMaint')}</span>}
         </span>
       </TableCell>
+      {/* May wrap between words; its time never breaks (scheduleText). */}
       <TableCell className="hidden text-sm md:table-cell">
         <Schedule task={task} />
       </TableCell>
@@ -192,7 +200,7 @@ function TaskRow({ task, actions, blocked, onRun }: { task: AdminTask; actions: 
       <TableCell className="hidden sm:table-cell">
         <LastRun task={task} />
       </TableCell>
-      <TableCell className="hidden text-sm whitespace-nowrap text-muted-foreground lg:table-cell">{task.lastOkAt ? formatDateTime(task.lastOkAt, locale) : t('jobs.task.never')}</TableCell>
+      <TableCell className="hidden text-sm whitespace-nowrap text-muted-foreground xl:table-cell">{task.lastOkAt ? formatDateTime(task.lastOkAt, locale) : t('jobs.task.never')}</TableCell>
       {actions && (
         <TableCell className="text-end">
           {task.runnable && (

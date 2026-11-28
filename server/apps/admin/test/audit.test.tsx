@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REVOKE_AFTER_MS, saveBlob } from '../src/lib/download';
 import { page } from './moderationFixtures';
-import { adminWith, fakeApi, problem, renderPanel, resetPanel, signInAs } from './panel';
+import { adminWith, fakeApi, problem, renderPanel, resetPanel, signInAs, wholeText } from './panel';
 
 const auditor = adminWith(['audit.read', 'users.read'], ['admin']);
 
@@ -291,17 +291,145 @@ describe('the audit log page', () => {
     expect(screen.queryByRole('link', { name: 'auth.sms_routing' })).toBeNull();
   });
 
-  it('names a role change by its role and links it to the roles page for a reader of admins', async () => {
-    const rows = () => page([entry('16', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'support', before: [], after: [] } })]);
+  it('names a role change by the role’s name in the panel’s language and links it to the roles page for a reader of admins', async () => {
+    const rows = () =>
+      page([
+        entry('16', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'support', before: [], after: [] } }),
+        entry('17', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'marketing', before: [], after: [] } }),
+      ]);
     signInAs(adminWith(['audit.read', 'admins.read'], ['superadmin']));
-    const view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
-    expect((await screen.findByRole('link', { name: 'support' })).getAttribute('href')).toBe('/system/roles');
+    let view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    const support = await screen.findByRole('link', { name: 'Support' });
+    expect(support.getAttribute('href')).toBe('/system/roles');
+    // The key stays on hover; the row's kind is the role, never the settings its target code names.
+    expect(support.getAttribute('title')).toBe('support');
+    const row = within(support.closest('tr')!);
+    expect(row.getByText('Role')).toBeTruthy();
+    expect(row.queryByText('Settings')).toBeNull();
+    expect(row.queryByText('support')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Marketing' }).getAttribute('href')).toBe('/system/roles');
     view.unmount();
-    // Without admins.read: the role's key, no link.
+
+    // In Persian, by the glossary's words.
+    view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }), { locale: 'fa' });
+    const supportFa = await screen.findByRole('link', { name: 'کارشناس پشتیبانی' });
+    expect(supportFa.getAttribute('href')).toBe('/system/roles');
+    for (const link of [supportFa, screen.getByRole('link', { name: 'کارشناس بازاریابی' })]) {
+      const rowFa = within(link.closest('tr')!);
+      expect(rowFa.getByText('نقش')).toBeTruthy();
+      expect(rowFa.queryByText('تنظیمات')).toBeNull();
+    }
+    view.unmount();
+
+    // Without admins.read: the role's name, no link (and no read of the roles list).
     signInAs(adminWith(['audit.read'], ['auditor']));
-    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
-    expect(await screen.findByText('support')).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'support' })).toBeNull();
+    const api = auditApi({ 'GET /v1/admin/audit': rows });
+    renderPanel('/system/audit', api, { locale: 'en' });
+    const table = within(await screen.findByRole('table'));
+    expect((await table.findAllByText('Support')).length).toBeGreaterThan(0);
+    expect(table.queryByRole('link', { name: 'Support' })).toBeNull();
+    expect(api.of('GET /v1/admin/roles')).toHaveLength(0);
+  });
+
+  it('names a custom role by its stored name, read with the roles list', async () => {
+    const custom = { key: 'team_lead', names: { fa: 'سرپرست تیم پشتیبانی', en: 'Support team lead', tr: 'Destek ekip lideri' }, grants: ['users.read'], permissions: ['users.read'] };
+    const rows = () => page([entry('19', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'team_lead', before: [], after: [] } })]);
+    signInAs(adminWith(['audit.read', 'admins.read'], ['superadmin']));
+    let view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows, 'GET /v1/admin/roles': () => ({ items: [custom] }) }));
+    const link = await screen.findByRole('link', { name: 'Support team lead' });
+    expect(link.getAttribute('href')).toBe('/system/roles');
+    expect(link.getAttribute('title')).toBe('team_lead');
+    expect(screen.queryByRole('link', { name: 'team_lead' })).toBeNull();
+    view.unmount();
+    view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows, 'GET /v1/admin/roles': () => ({ items: [custom] }) }), { locale: 'fa' });
+    expect(await screen.findByRole('link', { name: 'سرپرست تیم پشتیبانی' })).toBeTruthy();
+    view.unmount();
+  });
+
+  it('shows on a phone, under the action, the role or what a jobs page action acted on (the target column is hidden there)', async () => {
+    const rows = () =>
+      page([
+        entry('31', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'support', before: [], after: [] } }),
+        entry('32', { action: 'system.task_run', targetType: 'none', targetRef: null, user: undefined, detail: { queue: 'maint', name: 'partitions', jobId: 'partitions.run.1' } }),
+        entry('33', { action: 'system.jobs_retry', targetType: 'none', targetRef: null, user: undefined, detail: { queue: 'photo', name: 'process', count: 7, more: false } }),
+        entry('34', { action: 'user.ban' }),
+      ]);
+    signInAs(adminWith(['audit.read', 'admins.read'], ['superadmin']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }), { locale: 'fa' });
+    const actionCell = async (code: string) => (await screen.findByText(code)).closest('td')!;
+    const role = await actionCell('role.update');
+    const roleLine = within(role).getByText('کارشناس پشتیبانی');
+    expect(roleLine.className.split(' ')).toContain('md:hidden');
+    expect(within(await actionCell('system.task_run')).getByText('ساخت و حذف پارتیشن‌ها').className.split(' ')).toContain('md:hidden');
+    expect(within(await actionCell('system.jobs_retry')).getByText(wholeText('عکس‌ها، پردازش عکس، ۷\u00a0کار'))).toBeTruthy();
+    // Other rows keep their action cell as it was.
+    expect((await actionCell('user.ban')).querySelectorAll('.md\\:hidden')).toHaveLength(0);
+  });
+
+  it('names a role this build has no words for by its key', async () => {
+    signInAs(adminWith(['audit.read', 'admins.read'], ['superadmin']));
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': () => page([entry('18', { action: 'role.update', targetType: 'config', targetRef: null, user: undefined, detail: { role: 'reviewer' } })]) }));
+    expect((await screen.findByRole('link', { name: 'reviewer' })).getAttribute('href')).toBe('/system/roles');
+  });
+
+  it('names what a jobs page action acted on: the task, the queue’s job and count, the stream and count', async () => {
+    const system = (id: string, action: AuditEntry['action'], detail: AuditEntry['detail']) => entry(id, { action, targetType: 'none', targetRef: null, user: undefined, detail });
+    const rows = () =>
+      page([
+        system('21', 'system.task_run', { queue: 'maint', name: 'partitions', jobId: 'partitions.run.29404800' }),
+        system('22', 'system.task_run', { queue: 'growth', name: 'tick', jobId: 'tick.run.29404800' }),
+        system('23', 'system.jobs_retry', { queue: 'photo', name: 'process', count: 7, more: false }),
+        system('24', 'system.jobs_remove', { queue: 'push', name: 'send', count: 200, more: true }),
+        system('25', 'system.dead_letters_delete', { stream: 'like', ids: ['1764322000000-1', '1764322000000-2'] }),
+        system('26', 'system.dead_letters_delete', { stream: 'msg', upTo: '1764323000000-0', lengthBefore: 9, count: 4 }),
+        // Written before the count was recorded: the stream alone.
+        system('27', 'system.dead_letters_delete', { stream: 'match', upTo: '1764323000000-0', lengthBefore: 3 }),
+      ]);
+    signInAs(adminWith(['audit.read'], ['admin']));
+    const view = renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }));
+    const subject = async (code: string, nth = 0) => {
+      const cells = (await screen.findAllByText(code)).map((label) => label.closest('tr')!);
+      return within(cells[nth]!.querySelectorAll('td')[3] as HTMLElement);
+    };
+    let cell = await subject('system.task_run');
+    expect(cell.getByText('Task')).toBeTruthy();
+    expect(cell.getByText('Partitions')).toBeTruthy();
+    // A task this build has no words for: its code, in mono.
+    cell = await subject('system.task_run', 1);
+    expect(cell.getByText('growth/tick').className).toContain('font-mono');
+    cell = await subject('system.jobs_retry');
+    expect(cell.getByText('Queue')).toBeTruthy();
+    expect(cell.getByText('Photos')).toBeTruthy();
+    expect(cell.getByText('Photo processing')).toBeTruthy();
+    expect(cell.getByText('7 jobs')).toBeTruthy();
+    // A count never breaks from its noun: its space is a no-break one.
+    expect(cell.getByText('Photos').parentElement!.textContent).toBe('Photos · Photo processing · 7\u00a0jobs');
+    cell = await subject('system.jobs_remove');
+    expect(cell.getByText('Push notifications')).toBeTruthy();
+    expect(cell.getByText('200 jobs')).toBeTruthy();
+    cell = await subject('system.dead_letters_delete');
+    expect(cell.getByText('Likes')).toBeTruthy();
+    expect(cell.getByText('2 entries')).toBeTruthy();
+    cell = await subject('system.dead_letters_delete', 1);
+    expect(cell.getByText('Messages')).toBeTruthy();
+    expect(cell.getByText('4 entries')).toBeTruthy();
+    cell = await subject('system.dead_letters_delete', 2);
+    expect(cell.getByText('Matches')).toBeTruthy();
+    expect(cell.queryByText(/entries/)).toBeNull();
+    view.unmount();
+
+    renderPanel('/system/audit', auditApi({ 'GET /v1/admin/audit': rows }), { locale: 'fa' });
+    cell = await subject('system.task_run');
+    expect(cell.getByText('کار')).toBeTruthy();
+    expect(cell.getByText('ساخت و حذف پارتیشن‌ها')).toBeTruthy();
+    cell = await subject('system.jobs_retry');
+    expect(cell.getByText('پردازش عکس')).toBeTruthy();
+    expect(cell.getByText('۷ کار')).toBeTruthy();
+    // Persian's own comma between the parts: a "·" beside Persian digits would read as a zero («۷ · » as «۷۰»).
+    expect(cell.getByText('پردازش عکس').parentElement!.textContent).toBe('عکس‌ها، پردازش عکس، ۷\u00a0کار');
+    cell = await subject('system.dead_letters_delete', 1);
+    expect(cell.getByText('پیام‌ها')).toBeTruthy();
+    expect(cell.getByText('۴ ورودی')).toBeTruthy();
   });
 
   it('links a provider row to the providers page for the owner', async () => {

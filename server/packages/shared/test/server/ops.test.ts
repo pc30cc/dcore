@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { adminDeadLetterSchema } from '../../src/index.js';
+import { adminDeadLetterSchema, latencyMsOf } from '../../src/index.js';
 import {
   createKeys,
   errorKindOf,
@@ -14,6 +14,7 @@ import {
   retryableJobs,
   runnableTasks,
   runRecordSchema,
+  streamWaiting,
   summarizeResult,
 } from '../../src/server/index.js';
 import { dropPrefix, hasRedis, testPrefix, testRedis } from './support.js';
@@ -89,6 +90,29 @@ describe('the dead-letter wire', () => {
     for (const extra of [{ people: ['abcdefghijklm'] }, { conversationId: '123' }, { sender: '1' }, { fields: '{}' }]) {
       expect(adminDeadLetterSchema.safeParse({ ...entry, ...extra }).success, Object.keys(extra)[0]).toBe(false);
     }
+  });
+});
+
+describe('a measured latency', () => {
+  it('reads 0 for anything under 1 ms and whole milliseconds above', () => {
+    for (const ms of [0, 0.02, 0.5, 0.99, -1, Number.NaN]) expect(latencyMsOf(ms), String(ms)).toBe(0);
+    expect(latencyMsOf(1)).toBe(1);
+    expect(latencyMsOf(1.49)).toBe(1);
+    expect(latencyMsOf(1.5)).toBe(2);
+    expect(latencyMsOf(42.4)).toBe(42);
+  });
+});
+
+describe('what waits in a write-behind stream', () => {
+  it('is pending plus undelivered, never the entries the stream keeps', () => {
+    expect(streamWaiting({ group: true, length: 0, pending: 0, undelivered: 0 })).toBe(0);
+    expect(streamWaiting({ group: true, length: 10, pending: 3, undelivered: 0 })).toBe(3);
+    expect(streamWaiting({ group: true, length: 10, pending: 2, undelivered: 5 })).toBe(7);
+    // A trim removed undelivered entries: the lag still counts them, the stream no longer holds them.
+    expect(streamWaiting({ group: true, length: 2, pending: 0, undelivered: 4 })).toBe(2);
+    // Valkey cannot tell the undelivered count, or no writer group exists yet.
+    expect(streamWaiting({ group: true, length: 3, pending: 2, undelivered: null })).toBeNull();
+    expect(streamWaiting({ group: false, length: 0, pending: 0, undelivered: null })).toBeNull();
   });
 });
 

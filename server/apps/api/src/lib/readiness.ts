@@ -1,5 +1,5 @@
 import type { Pool } from '@app/db';
-import type { DependencyCheck, Readiness } from '@app/shared';
+import { latencyMsOf, type DependencyCheck, type Readiness } from '@app/shared';
 import type { Redis } from 'ioredis';
 import type { FastifyBaseLogger } from 'fastify';
 import { TimeoutError, withTimeout } from './timeout.js';
@@ -24,11 +24,11 @@ async function timed(name: string, run: () => Promise<unknown>, timeoutMs: numbe
   const started = performance.now();
   try {
     await withTimeout(run(), timeoutMs);
-    return { status: 'up', latencyMs: Math.round(performance.now() - started) };
+    return { status: 'up', latencyMs: latencyMsOf(performance.now() - started) };
   } catch (error) {
     const reason = error instanceof TimeoutError ? 'timeout' : 'error';
     log.warn({ err: error, dependency: name }, 'readiness check failed');
-    return { status: 'down', latencyMs: Math.round(performance.now() - started), reason };
+    return { status: 'down', latencyMs: latencyMsOf(performance.now() - started), reason };
   }
 }
 

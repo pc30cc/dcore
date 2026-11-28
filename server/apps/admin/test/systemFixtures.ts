@@ -29,21 +29,26 @@ export function health(overrides: Partial<AdminSystemHealth> = {}): AdminSystemH
 }
 
 export function streams(overrides: Partial<Record<'like' | 'match' | 'msg', Partial<AdminSystemStreams['streams'][number]>>> = {}): AdminSystemStreams {
-  const stream = (name: 'like' | 'match' | 'msg', values: Partial<AdminSystemStreams['streams'][number]>) => ({
-    name,
-    length: 0,
-    pending: 0,
-    dead: 0,
-    lagMs: 0,
-    group: true,
-    consumers: 1,
-    undelivered: 0,
-    oldestPendingAt: null,
-    lastDeliveredAt: null,
-    watermarkLagMs: name === 'match' ? null : 0,
-    ...values,
-    ...overrides[name],
-  });
+  const stream = (name: 'like' | 'match' | 'msg', values: Partial<AdminSystemStreams['streams'][number]>): AdminSystemStreams['streams'][number] => {
+    const base = {
+      name,
+      length: 0,
+      pending: 0,
+      dead: 0,
+      lagMs: 0,
+      group: true,
+      consumers: 1,
+      undelivered: 0 as number | null,
+      oldestPendingAt: null,
+      lastDeliveredAt: null,
+      watermarkLagMs: name === 'match' ? null : 0,
+      ...values,
+      ...overrides[name],
+    };
+    // As the server counts it, unless a test sets its own.
+    const waiting = base.waiting !== undefined ? base.waiting : base.group && base.undelivered !== null ? base.pending + Math.min(base.undelivered, base.length) : null;
+    return { ...base, waiting };
+  };
   return {
     at: NOW,
     streams: [

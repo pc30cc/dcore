@@ -39,7 +39,7 @@ export function QueuesCard({ query, canWrite }: { query: UseQueryResult<AdminSys
       <CardQuery query={query} rows={6}>
         {(data) => (
           <>
-            <div className="-mx-4 sm:-mx-5">
+            <div className="-mx-4 min-w-0 sm:-mx-5">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">

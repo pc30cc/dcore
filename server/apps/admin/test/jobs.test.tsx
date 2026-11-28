@@ -3,8 +3,10 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { messages } from '../src/i18n/messages';
+import { formatDateTime, formatTime, unbreakable } from '../src/lib/format';
+import { localMinuteOf } from '../src/lib/system';
 import { adminWith, fakeApi, problem, renderPanel, resetPanel, signInAs, wholeText, type Call } from './panel';
-import { deadLetter, health, partitions, queues, streams } from './systemFixtures';
+import { deadLetter, health, partitions, queues, run, streams, task } from './systemFixtures';
 
 /**
  * `/system/jobs` (`system.read`): health, saving queues and their failed
@@ -32,6 +34,14 @@ function api(handlers: Record<string, (call: Call) => unknown> = {}) {
         : { items: [deadLetter('1764323000000-0'), deadLetter('1764322000000-1', { kind: 'superlike', deliveries: 3, reason: 'deliveries' })], nextCursor: 'next' },
     ...handlers,
   });
+}
+
+/** A row's cell under the column named `column` (the phone's copies of the figures sit in the first cell). */
+function cellOf(row: HTMLElement, column: string): HTMLElement {
+  const table = row.closest('table')!;
+  const index = [...table.querySelectorAll('thead th')].findIndex((th) => th.textContent === column);
+  expect(index, column).toBeGreaterThanOrEqual(0);
+  return row.querySelectorAll('td')[index] as HTMLElement;
 }
 
 /** A card of the page by its title, once its read has answered (or failed). */
@@ -106,6 +116,45 @@ describe('the jobs page', () => {
     expect(within(likes).getByRole<HTMLButtonElement>('button', { name: 'View failed entries of Likes' }).disabled).toBe(false);
     expect(within(msg).getByRole<HTMLButtonElement>('button', { name: 'View failed entries of Messages' }).disabled).toBe(true);
     expect(within(s.getByRole('row', { name: /Matches/ })).getByText('No reader yet')).toBeTruthy();
+  });
+
+  it('shows under In queue what waits to be saved, and the entries a stream keeps after saving them apart', async () => {
+    renderPanel(
+      '/system/jobs',
+      api({
+        'GET /v1/admin/system/streams': () =>
+          streams({
+            // The live case: ten matches saved and kept until a trim, nothing waiting.
+            match: { length: 10, pending: 0, undelivered: 0 },
+            // Two being saved and five not delivered yet.
+            like: { length: 120, pending: 2, undelivered: 5 },
+            // No reader group: what waits is unknown.
+            msg: { length: 900, pending: 0, undelivered: null, group: false },
+          }),
+      }),
+    );
+    const s = await card('Saving queues');
+    const matches = s.getByRole('row', { name: /Matches/ });
+    expect(cellOf(matches, 'In queue').textContent).toBe('0');
+    expect(cellOf(matches, 'Kept entries').textContent).toBe('10');
+    const likes = s.getByRole('row', { name: /Likes/ });
+    expect(cellOf(likes, 'In queue').textContent).toBe('7');
+    expect(cellOf(likes, 'Being saved').textContent).toBe('2');
+    expect(cellOf(likes, 'Kept entries').textContent).toBe('120');
+    const msg = s.getByRole('row', { name: /Messages/ });
+    expect(cellOf(msg, 'In queue').textContent).toBe('—');
+    expect(cellOf(msg, 'Kept entries').textContent).toBe('900');
+    // On a phone, under the stream's name: what waits, never the kept entries.
+    expect(within(cellOf(matches, 'Queue')).getByText(wholeText('In queue 0'))).toBeTruthy();
+    expect(within(cellOf(matches, 'Queue')).queryByText(/Kept entries/)).toBeNull();
+    // A secondary figure, shown only where the table fits it (from xl); a table wider than its card scrolls inside it.
+    const kept = s.getByRole('columnheader', { name: 'Kept entries' });
+    expect(kept.className).toContain('xl:table-cell');
+    expect(kept.className).not.toContain('md:table-cell');
+    expect(cellOf(matches, 'Kept entries').className).toContain('xl:table-cell');
+    const wrappers = [...document.querySelectorAll('[data-slot="table-container"]')].map((container) => container.parentElement!).filter((w) => w.className.includes('-mx-4'));
+    expect(wrappers.length).toBeGreaterThanOrEqual(3);
+    for (const wrapper of wrappers) expect(wrapper.className.split(' ')).toContain('min-w-0');
   });
 
   it('lists failed entries without people or conversations, pages them, and deletes the ticked ones', async () => {
@@ -235,21 +284,28 @@ describe('the jobs page', () => {
     expect(within(beat).getAllByText('Every 30 sec').length).toBeGreaterThan(0);
     expect(within(beat).getAllByText('Done').length).toBeGreaterThan(0);
     const partitionsRow = tasks.getByRole('row', { name: /Partitions/ });
-    // In the browser's time of day, as the next and last runs; the cron's UTC on hover.
-    const daily = within(partitionsRow).getAllByTitle('03:17 UTC');
+    // In the browser's time of day, written as the next run beside it; the cron's UTC on hover.
+    const daily = within(partitionsRow).getAllByTitle('3:17 AM UTC');
     expect(daily.length).toBeGreaterThan(0);
-    expect(daily[0]!.textContent).toMatch(/^Daily, \d\d:\d\d$/);
+    expect(daily[0]!.textContent).toBe(`Daily, ${unbreakable(formatTime('2026-11-29T03:17:00.000Z', 'en'))}`);
+    expect(cellOf(partitionsRow, 'Next').textContent).toBe(formatDateTime('2026-11-29T03:17:00.000Z', 'en'));
     expect(within(partitionsRow).getAllByText('Failed, will retry').length).toBeGreaterThan(0);
     expect(within(partitionsRow).getAllByText('DatabaseError:57014').length).toBeGreaterThan(0);
     const likes = tasks.getByRole('row', { name: /Like lists/ });
     expect(within(likes).getAllByText('Every 15 min').length).toBeGreaterThan(0);
     expect(within(likes).getAllByText('Skipped').length).toBeGreaterThan(0);
     const sessions = tasks.getByRole('row', { name: /Old sessions/ });
-    expect(within(sessions).getAllByTitle('Sunday 04:41 UTC')[0]!.textContent).toMatch(/^Weekly, \w+ \d\d:\d\d$/);
+    expect(within(sessions).getAllByTitle('Sunday 4:41 AM UTC')[0]!.textContent).toMatch(new RegExp(`^Weekly, \\w+ ${unbreakable(formatTime('2026-11-29T04:41:00.000Z', 'en'))}$`));
     // A runnable task whose scheduler is not registered yet says so (it is no task "by hand only").
     expect(within(tasks.getByRole('row', { name: /Publish the host list/ })).getAllByText('Not scheduled').length).toBeGreaterThan(0);
     expect(within(likes).getAllByText('By hand').length).toBeGreaterThan(0);
-    expect(within(tasks.getByRole('row', { name: /Purchase checks/ })).getAllByText('Hourly, minute 17').length).toBeGreaterThan(0);
+    // An hourly cron's minute in the browser's zone too (a half-hour zone moves it), the cron's on hover.
+    const checks = within(tasks.getByRole('row', { name: /Purchase checks/ }));
+    expect(checks.getAllByText(`Hourly, minute ${localMinuteOf(17)}`).length).toBeGreaterThan(0);
+    expect(checks.getAllByTitle('Hourly, minute 17 UTC').length).toBeGreaterThan(0);
+    // The schedule may wrap between words, never inside its time (a no-break space before AM).
+    expect(cellOf(partitionsRow, 'When').className).not.toContain('whitespace-nowrap');
+    expect(daily[0]!.textContent).toMatch(/\d\u00a0[AP]M$/);
     // Not runnable: no button.
     expect(tasks.queryByRole('button', { name: 'Run now: Purchase checks' })).toBeNull();
     await user.click(tasks.getByRole('button', { name: 'Run now: Daily figures' }));
@@ -288,6 +344,78 @@ describe('the jobs page', () => {
     const taskCell = within(row.getAllByRole('cell')[0]!);
     expect(taskCell.getByText('Last success')).toBeTruthy();
     expect(taskCell.getByText('Next')).toBeTruthy();
+    // The last success has its own column from xl only, so from 1024 px the table fits its card with Run now inside it.
+    expect(tasks.getByRole('columnheader', { name: 'Last success' }).className).toContain('xl:table-cell');
+    expect(taskCell.getByText('Last success').closest('.xl\\:hidden')).not.toBeNull();
+    expect(taskCell.getByText('Next').closest('.lg\\:hidden')).not.toBeNull();
+  });
+
+  it('writes a run under a second in milliseconds, 0 ms included', async () => {
+    const figures = queues({
+      tasks: [
+        task('system', 'heartbeat', { every: 30_000, last: run({ durationMs: 0 }) }),
+        task('chat', 'read-flush', { every: 60_000, last: run({ durationMs: 999 }) }),
+        task('stats', 'live', { every: 60_000, last: run({ durationMs: 1_500 }) }),
+      ],
+    });
+    const view = renderPanel('/system/jobs', api({ 'GET /v1/admin/system/queues': () => figures }));
+    let tasks = await card('Scheduled tasks');
+    expect(within(tasks.getByRole('row', { name: /Job runner beat/ })).getAllByText(/ · took 0 ms$/).length).toBeGreaterThan(0);
+    expect(within(tasks.getByRole('row', { name: /Read receipts/ })).getAllByText(/ · took 999 ms$/).length).toBeGreaterThan(0);
+    expect(within(tasks.getByRole('row', { name: /Live figures/ })).getAllByText(/ · took 2 sec$/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/took 0 sec/)).toBeNull();
+    view.unmount();
+
+    renderPanel('/system/jobs', api({ 'GET /v1/admin/system/queues': () => figures }), { locale: 'fa' });
+    tasks = await card('کارهای زمان‌بندی‌شده');
+    // Persian's own comma before the run's length: a "·" beside «۰» would read as a second zero.
+    const beat = within(tasks.getByRole('row', { name: /ضربان اجرای کارها/ })).getAllByText(/، در ۰ میلی‌ثانیه$/);
+    expect(beat.length).toBeGreaterThan(0);
+    for (const line of beat) expect(line.textContent).not.toContain('·');
+    expect(screen.queryByText(/در ۰ ثانیه/)).toBeNull();
+  });
+
+  it('writes “not run yet” under a task’s name on a phone at the size of the facts beside it', async () => {
+    renderPanel('/system/jobs', api());
+    const tasks = await card('Scheduled tasks');
+    const checks = tasks.getByRole('row', { name: /Purchase checks/ });
+    const nameCell = cellOf(checks, 'Task');
+    const under = within(nameCell).getAllByText('Not run yet');
+    // Under the name, once: the last run at the facts' size (no "Last success: not run yet" after it).
+    expect(under).toHaveLength(1);
+    expect(within(nameCell).queryByText('Last success')).toBeNull();
+    for (const text of under) {
+      expect(text.closest('.text-xs, [class*="text-xs"]'), text.outerHTML).not.toBeNull();
+      expect(text.className).not.toContain('text-sm');
+    }
+    // In its own column (wider screens) it keeps the column's size.
+    expect(within(cellOf(checks, 'Last run')).getByText('Not run yet').className).toContain('text-sm');
+  });
+
+  it('says under 1 ms and under 1 % for a round trip or a share too small to round, never 0', async () => {
+    const quick = health({
+      database: { status: 'up', latencyMs: 0 },
+      valkey: [
+        { name: 'core', status: 'up', latencyMs: 0, sharedWithCore: false, usedBytes: 3 * 1024 ** 2, maxBytes: 1024 ** 3, policy: 'noeviction' },
+        { name: 'cache', status: 'up', latencyMs: 2, sharedWithCore: false, usedBytes: 512 * 1024 ** 2, maxBytes: 1024 ** 3, policy: 'allkeys-lru' },
+      ],
+    });
+    const view = renderPanel('/system/jobs', api({ 'GET /v1/admin/system/health': () => quick }));
+    let h = await card('Health');
+    expect((await h.findAllByText('<1 ms')).length).toBe(2);
+    expect(h.getByText('2 ms')).toBeTruthy();
+    expect(h.getByText('<1%')).toBeTruthy();
+    expect(h.getByText('50%')).toBeTruthy();
+    expect(h.queryByText('0 ms')).toBeNull();
+    expect(h.queryByText('0%')).toBeNull();
+    view.unmount();
+
+    renderPanel('/system/jobs', api({ 'GET /v1/admin/system/health': () => quick }), { locale: 'fa' });
+    h = await card('سلامت');
+    expect((await h.findAllByText('کمتر از ۱ میلی‌ثانیه')).length).toBe(2);
+    expect(h.getByText('کمتر از ۱٪')).toBeTruthy();
+    expect(h.queryByText('۰ میلی‌ثانیه')).toBeNull();
+    expect(h.queryByText('۰٪')).toBeNull();
   });
 
   it('keeps Run now off for maintenance while no worker runs it', async () => {
@@ -324,6 +452,11 @@ describe('the jobs page', () => {
     expect(partition.getByText('Dec 1, 2026')).toBeTruthy();
     expect(partition.getByText('1,250,000')).toBeTruthy();
     expect(within(messagesBlock.getByTitle('messages_p20261201')).getByText('0')).toBeTruthy();
+    // Three blocks side by side are narrower than their tables from 1024 to 1279 px: each table scrolls inside its block.
+    for (const block of p.getAllByRole('heading', { level: 3 }).map((h) => h.closest('section')!)) {
+      expect(block.className.split(' ')).toEqual(expect.arrayContaining(['min-w-0', 'grid-cols-1']));
+      expect(block.querySelector('table')!.parentElement!.className.split(' ')).toContain('overflow-x-auto');
+    }
     const likes = within(p.getByRole('heading', { level: 3, name: 'Likes' }).closest('section')!);
     expect(likes.getByText('37 days')).toBeTruthy();
     expect(likes.getByText('Fewer than 4').className).toContain('text-amber');
@@ -371,7 +504,11 @@ describe('the jobs page', () => {
     expect(await h.findByText('پایگاه داده')).toBeTruthy();
     expect(h.getByText('۷۵٪')).toBeTruthy();
     const tasks = await card('کارهای زمان‌بندی‌شده');
-    expect(tasks.getAllByTitle('۰۳:۱۷ UTC')[0]!.textContent).toMatch(/^هر روز، ساعت [۰-۹]{2}:[۰-۹]{2}$/);
+    // One time format: the schedule's hour as the next run writes it (never «۰۳:۱۷» beside «۳:۱۷»).
+    const partitionsRow = tasks.getByRole('row', { name: /ساخت و حذف پارتیشن‌ها/ });
+    expect(tasks.getAllByTitle('۳:۱۷ UTC')[0]!.textContent).toBe(`هر روز، ساعت ${formatTime('2026-11-29T03:17:00.000Z', 'fa')}`);
+    expect(cellOf(partitionsRow, 'بعدی').textContent).toBe(formatDateTime('2026-11-29T03:17:00.000Z', 'fa'));
+    expect(formatTime('2026-11-29T03:17:00.000Z', 'fa')).not.toMatch(/^۰/);
     const p = await card('پارتیشن‌ها');
     expect(p.getByText('۱۲ ماه')).toBeTruthy();
     for (const english of ['Health', 'Saving queues', 'Job queues', 'Scheduled tasks', 'Partitions', 'Retry', 'Run now']) expect(screen.queryByText(english)).toBeNull();

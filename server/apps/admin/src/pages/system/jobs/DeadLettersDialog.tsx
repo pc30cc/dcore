@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useI18n } from '@/i18n/useI18n';
-import { formatDateTime, formatNumber } from '@/lib/format';
+import { formatDateTime, formatNumber, joinFacts } from '@/lib/format';
 import { asApiError } from '@/lib/http';
 import { problemText } from '@/lib/problemText';
 import { queryClient } from '@/lib/queries';
@@ -178,7 +178,7 @@ function EntryRow({ item, canWrite, checked, disabled, onToggle }: { item: Admin
           <span className="text-sm whitespace-nowrap">{at}</span>
           {/* On a phone the other facts sit here (their columns are hidden). */}
           <span className="text-xs text-muted-foreground sm:hidden">
-            {reason} · {kind} · {t('jobs.dead.col.tries')} {formatNumber(item.deliveries, locale)}
+            {joinFacts([reason, kind, `${t('jobs.dead.col.tries')} ${formatNumber(item.deliveries, locale)}`], locale)}
           </span>
         </span>
       </TableCell>

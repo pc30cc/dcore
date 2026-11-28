@@ -94,6 +94,21 @@ export function factsOf(items: readonly string[], locale: Locale, isolate = fals
   return (isolate ? items.map((item) => `\u2068${item}\u2069`) : items).join(locale === 'fa' ? '، ' : ', ');
 }
 
+/** Between facts read one after another on a line: Persian's own comma (a "·" beside Persian digits reads as a zero), else a middle dot. */
+export function factSeparator(locale: Locale): string {
+  return locale === 'fa' ? '، ' : ' · ';
+}
+
+/** Facts shown one after another on a line ("A · B"; «A، B»), with `factSeparator`. */
+export function joinFacts(items: readonly string[], locale: Locale): string {
+  return items.join(factSeparator(locale));
+}
+
+/** A short value kept on one line ("4:41 AM", "0 ms", "7 jobs"): its spaces made non-breaking, so a line never ends inside it. */
+export function unbreakable(text: string): string {
+  return text.replace(/ /g, '\u00a0');
+}
+
 /** Today as `YYYY-MM-DD` in the browser's time zone (the earliest end a date field offers). */
 export function todayDay(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

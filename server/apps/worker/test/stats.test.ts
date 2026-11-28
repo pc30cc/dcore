@@ -257,6 +257,12 @@ describe.skipIf(!hasDatabase || !hasRedis)('stats jobs (PostgreSQL, Valkey)', ()
 
   it('writes a live snapshot of the schema the API reads, with test accounts in today’s set and the online count', async () => {
     await redis.sadd(keys.activeDay(utcDay(Date.now())), testId, idOn(today, 21));
+    // likes: one being saved and one not delivered yet, both waiting (the dashboard's Waiting); matches: no reader group.
+    const like = keys.stream('like');
+    await redis.xgroup('CREATE', like, 'pg', '0', 'MKSTREAM');
+    await redis.xadd(like, '*', 'k', '1');
+    await redis.xadd(like, '*', 'k', '1');
+    await redis.xreadgroup('GROUP', 'pg', 'c1', 'COUNT', 1, 'STREAMS', like, '>');
     centrifugoAnswer = () => ({ status: 200, body: { result: { nodes: [{ num_users: 3 }, { num_users: 2 }] } } });
     const first = await statsLiveJob(context);
     expect(first).toEqual({ leased: true, online: 5, testActive: 1 });
@@ -266,6 +272,9 @@ describe.skipIf(!hasDatabase || !hasRedis)('stats jobs (PostgreSQL, Valkey)', ()
     const snapshot = statsLiveSnapshotSchema.parse(JSON.parse((await redis.get(keys.statsLive()))!));
     expect(snapshot.day).toBe(today);
     expect(snapshot.streams.map((s) => s.name)).toEqual(['like', 'match', 'msg']);
+    expect(snapshot.streams[0]).toMatchObject({ name: 'like', length: 2, pending: 1, waiting: 2 });
+    expect(snapshot.streams[1]).toMatchObject({ name: 'match', waiting: null });
+    await redis.del(like);
     expect(snapshot.jobs.map((j) => j.queue)).toContain('stats');
     expect(await redis.ttl(keys.statsLive())).toBeGreaterThan(500);
     expect((await statsLiveJob(context)).leased).toBe(false);

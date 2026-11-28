@@ -16,6 +16,11 @@ export const fa = {
   'auditAction.system.jobs_retry': 'اجرای دوباره‌ی کارهای ناموفق',
   'auditAction.system.jobs_remove': 'حذف کارهای ناموفق',
   'auditAction.system.task_run': 'شروع دستی یک کار',
+  'audit.subject.role': 'نقش',
+  'jobs.audit.jobs': '{count} کار',
+  'jobs.audit.entries': '{count} ورودی',
+  'jobs.audit.jobsOne': '۱ کار',
+  'jobs.audit.entriesOne': '۱ ورودی',
 
   // Refusals of the role editor and the jobs page
   'roles.error.changed': 'کسی در این فاصله این نقش را تغییر داده است. نسخه‌ی تازه نمایش داده شد.',
@@ -94,14 +99,16 @@ export const fa = {
   'jobs.health.rolesFailing': 'نقش‌ها بارگذاری نشده‌اند',
   'jobs.health.self': 'همین سرور',
   'jobs.health.queues': 'صف‌ها: {count}',
+  'jobs.health.under': 'کمتر از {value}',
 
   // Saving queues and their failed entries
   'jobs.streams.title': 'صف‌های ذخیره',
   'jobs.col.stream': 'صف',
-  'jobs.col.length': 'در صف',
+  'jobs.col.waiting': 'در صف',
   'jobs.col.pending': 'در حال ذخیره',
   'jobs.col.readers': 'خواننده‌ها',
   'jobs.col.dead': 'ورودی‌های ناموفق',
+  'jobs.col.kept': 'ورودی‌های نگه‌داشته‌شده',
   'jobs.stream.noGroup': 'هنوز خواننده‌ای ندارد',
   'jobs.dead.view': 'نمایش',
   'jobs.dead.viewOf': 'نمایش ورودی‌های ناموفق {stream}',

@@ -53,7 +53,7 @@ function ParentBlock({ parent }: { parent: Parent }) {
         ? formatPeriodLength(parent.retention.months, 'month', locale)
         : formatPeriodLength(parent.retention.days, 'day', locale);
   return (
-    <section className="grid min-w-0 content-start gap-3 rounded-lg border p-4">
+    <section className="grid min-w-0 grid-cols-1 content-start gap-3 rounded-lg border p-4">
       <h3 className="flex items-center justify-between gap-2 text-sm font-semibold">
         <span className="min-w-0 truncate">{name}</span>
         <span className={cn('size-2 shrink-0 rounded-full', DOT[tone])} aria-hidden="true" />
@@ -79,27 +79,30 @@ function ParentBlock({ parent }: { parent: Parent }) {
       </dl>
       <details className="text-sm">
         <summary className="cursor-pointer text-xs text-muted-foreground select-none">{t('jobs.partitions.list', { count: parent.partitions.length })}</summary>
-        {/* A partition is named by its period (its name, the parent's and the period's first day, on hover); its end is shown from sm up. */}
-        <table className="mt-2 w-full text-xs">
-          <thead>
-            <tr className="text-muted-foreground">
-              <th className="py-1 pe-2 text-start font-normal">{t('jobs.partitions.col.from')}</th>
-              <th className="hidden py-1 pe-2 text-start font-normal sm:table-cell">{t('jobs.partitions.col.to')}</th>
-              <th className="py-1 pe-2 text-end font-normal">{t('jobs.partitions.col.rows')}</th>
-              <th className="py-1 text-end font-normal">{t('jobs.partitions.col.size')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {parent.partitions.map((partition) => (
-              <tr key={partition.name} title={partition.name}>
-                <td className="py-1 pe-2 whitespace-nowrap">{formatDate(partition.from, locale)}</td>
-                <td className="hidden py-1 pe-2 whitespace-nowrap sm:table-cell">{formatDate(partition.to, locale)}</td>
-                <td className="py-1 pe-2 text-end whitespace-nowrap tabular-nums">{partition.rowsEstimate === null ? t('common.none') : formatNumber(partition.rowsEstimate, locale)}</td>
-                <td className="py-1 text-end whitespace-nowrap tabular-nums">{formatBytes(partition.bytesEstimate, locale)}</td>
+        {/* A partition is named by its period (its name, the parent's and the period's first day, on hover); its end is shown from sm up.
+            The table scrolls inside the block when the block is narrower than it (three blocks side by side). */}
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="py-1 pe-2 text-start font-normal">{t('jobs.partitions.col.from')}</th>
+                <th className="hidden py-1 pe-2 text-start font-normal sm:table-cell">{t('jobs.partitions.col.to')}</th>
+                <th className="py-1 pe-2 text-end font-normal">{t('jobs.partitions.col.rows')}</th>
+                <th className="py-1 text-end font-normal">{t('jobs.partitions.col.size')}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y">
+              {parent.partitions.map((partition) => (
+                <tr key={partition.name} title={partition.name}>
+                  <td className="py-1 pe-2 whitespace-nowrap">{formatDate(partition.from, locale)}</td>
+                  <td className="hidden py-1 pe-2 whitespace-nowrap sm:table-cell">{formatDate(partition.to, locale)}</td>
+                  <td className="py-1 pe-2 text-end whitespace-nowrap tabular-nums">{partition.rowsEstimate === null ? t('common.none') : formatNumber(partition.rowsEstimate, locale)}</td>
+                  <td className="py-1 text-end whitespace-nowrap tabular-nums">{formatBytes(partition.bytesEstimate, locale)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </details>
     </section>
   );

@@ -14,6 +14,11 @@ export const en = {
   'auditAction.system.jobs_retry': 'Failed jobs retried',
   'auditAction.system.jobs_remove': 'Failed jobs removed',
   'auditAction.system.task_run': 'Task started by hand',
+  'audit.subject.role': 'Role',
+  'jobs.audit.jobs': '{count} jobs',
+  'jobs.audit.entries': '{count} entries',
+  'jobs.audit.jobsOne': '1 job',
+  'jobs.audit.entriesOne': '1 entry',
 
   // Refusals of the role editor and the jobs page
   'roles.error.changed': 'Someone changed this role meanwhile. The latest version is shown.',
@@ -92,14 +97,16 @@ export const en = {
   'jobs.health.rolesFailing': 'Roles not loaded',
   'jobs.health.self': 'This one',
   'jobs.health.queues': 'Queues: {count}',
+  'jobs.health.under': '<{value}',
 
   // Saving queues and their failed entries
   'jobs.streams.title': 'Saving queues',
   'jobs.col.stream': 'Queue',
-  'jobs.col.length': 'In queue',
+  'jobs.col.waiting': 'In queue',
   'jobs.col.pending': 'Being saved',
   'jobs.col.readers': 'Readers',
   'jobs.col.dead': 'Failed entries',
+  'jobs.col.kept': 'Kept entries',
   'jobs.stream.noGroup': 'No reader yet',
   'jobs.dead.view': 'View',
   'jobs.dead.viewOf': 'View failed entries of {stream}',

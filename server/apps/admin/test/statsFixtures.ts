@@ -45,9 +45,9 @@ export function live(overrides: Partial<AdminStatsLive> = {}): AdminStatsLive {
       tickets: { count: 10000, more: true },
     },
     streams: [
-      { name: 'like', length: 18204, pending: 12, dead: 0, lagMs: 840 },
-      { name: 'match', length: 2410, pending: 0, dead: 0, lagMs: 0 },
-      { name: 'msg', length: 40118, pending: 64, dead: 1, lagMs: 92_000 },
+      { name: 'like', length: 18204, waiting: 15, pending: 12, dead: 0, lagMs: 840 },
+      { name: 'match', length: 2410, waiting: 0, pending: 0, dead: 0, lagMs: 0 },
+      { name: 'msg', length: 40118, waiting: 64, pending: 64, dead: 1, lagMs: 92_000 },
     ],
     jobs: [
       { queue: 'photo', waiting: 3, active: 1, delayed: 0, failed: 0 },

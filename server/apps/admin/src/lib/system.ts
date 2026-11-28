@@ -13,6 +13,7 @@ import {
   type AdminSystemQueues,
   type AdminSystemStreams,
   type AdminTask,
+  type AuditEntry,
   type Locale,
   type SideEffects,
   type StreamName,
@@ -21,6 +22,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-qu
 import type { MessageKey } from '@/i18n/messages';
 import { hasMessage, type Translate } from '@/i18n/translate';
 import { apiRequest } from './api';
+import { unbreakable } from './format';
 import { queryClient } from './queries';
 import { formatSpan } from './stats';
 
@@ -176,6 +178,59 @@ export function deadLetterKindText(entry: Pick<AdminDeadLetter, 'stream' | 'kind
   return hasMessage(key) ? t(key) : entry.kind;
 }
 
+// ─── Audit rows ─────────────────────────────────────────────────────────────
+
+/** What a jobs page action of the audit log acted on: its kind (a task, a queue) and its parts, read one after another. */
+export interface SystemAuditSubject {
+  kind: string;
+  parts: ShownName[];
+}
+
+/**
+ * The subject of a `system.*` audit row, from the detail its route writes:
+ * a started task by its words; a retry or remove by its queue, job and
+ * count; a delete of failed entries by its stream and count (a delete "up
+ * to" written before the count was recorded names the stream alone). A
+ * count never breaks from its noun. Null for any other row, or a detail
+ * this build cannot read.
+ */
+export function systemAuditSubject(entry: Pick<AuditEntry, 'action' | 'detail'>, t: Translate): SystemAuditSubject | null {
+  const detail = entry.detail ?? {};
+  const text = (key: string): string | null => {
+    const value = detail[key];
+    return typeof value === 'string' && value !== '' ? value : null;
+  };
+  const whole = (key: string): number | null => {
+    const value = detail[key];
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+  };
+  const words = (name: string): ShownName => ({ name, mono: false });
+  const counted = (count: number, one: MessageKey, many: MessageKey): ShownName => words(unbreakable(t(count === 1 ? one : many, { count })));
+  const queue = text('queue');
+  const name = text('name');
+  switch (entry.action) {
+    case 'system.task_run':
+      return queue && name ? { kind: t('jobs.col.task'), parts: [taskLabel(queue, name, t)] } : null;
+    case 'system.jobs_retry':
+    case 'system.jobs_remove': {
+      if (!queue || !name) return null;
+      const count = whole('count');
+      return { kind: t('jobs.col.queue'), parts: [queueLabel(queue, t), failedJobLabel(queue, name, t), ...(count !== null ? [counted(count, 'jobs.audit.jobsOne', 'jobs.audit.jobs')] : [])] };
+    }
+    case 'system.dead_letters_delete': {
+      const stream = text('stream');
+      if (!stream) return null;
+      const ids = detail['ids'];
+      const count = Array.isArray(ids) ? ids.length : whole('count');
+      const key = `dashboard.stream.${stream}`;
+      const label = hasMessage(key) ? words(t(key)) : { name: stream, mono: true };
+      return { kind: t('jobs.col.stream'), parts: [label, ...(count !== null ? [counted(count, 'jobs.audit.entriesOne', 'jobs.audit.entries')] : [])] };
+    }
+    default:
+      return null;
+  }
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────────
 
 export type Schedule =
@@ -213,14 +268,26 @@ export function scheduleOf(task: Pick<AdminTask, 'every' | 'pattern' | 'tz'>): S
   return { kind: 'cron', pattern: task.pattern, utc };
 }
 
-/** A time of day in the panel's digits ("03:17"), in the browser's zone (or `timeZone`). */
+/**
+ * A time of day as the panel writes every time (`formatTime`, the time of
+ * `formatDateTime`: «۳:۱۷», "3:17 AM", "03:17"), in the browser's zone (or
+ * `timeZone`), so a schedule reads like the next run beside it.
+ */
 export function clockOf(date: Date, locale: Locale, timeZone?: string): string {
-  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).format(date);
+  return new Intl.DateTimeFormat(locale, { timeStyle: 'short', ...(timeZone ? { timeZone } : {}) }).format(date);
 }
 
 /** A weekday's name in the panel's language, in the browser's zone (or `timeZone`). */
 export function weekdayOf(date: Date, locale: Locale, timeZone?: string): string {
   return new Intl.DateTimeFormat(locale, { weekday: 'long', ...(timeZone ? { timeZone } : {}) }).format(date);
+}
+
+/** An hourly cron's minute in the browser's time zone (or `timeZone`): a zone a half hour off UTC moves it («۱۷» is «۴۷» in Tehran). */
+export function localMinuteOf(utcMinute: number, now: Date = new Date(), timeZone?: string): number {
+  const hour = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), utcMinute);
+  const at = new Date(hour < now.getTime() ? hour + 3_600_000 : hour);
+  const minute = new Intl.DateTimeFormat('en', { hour: 'numeric', minute: 'numeric', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).formatToParts(at).find((part) => part.type === 'minute');
+  return minute ? Number(minute.value) : utcMinute;
 }
 
 /** A daily or weekly cron's next moment from `now` (UTC hour and minute, and weekday 0 Sunday). */
@@ -232,21 +299,22 @@ export function nextCronAt(schedule: { hour: number; minute: number; day?: numbe
 }
 
 /**
- * A schedule in words ("Every 30 sec", "Daily, 06:47"): a daily or weekly
- * cron in the browser's time of day (and weekday), as every other time on
- * the page; a cron no rule reads is shown as written.
+ * A schedule in words ("Every 30 sec", "Hourly, minute 47", "Daily, 6:47 AM"):
+ * an hourly, daily or weekly cron in the browser's time (minute, time of day
+ * and weekday), as every other time on the page, the time of day never
+ * broken across lines; a cron no rule reads is shown as written.
  */
 export function scheduleText(schedule: Schedule, t: Translate, locale: Locale, now: Date = new Date()): string {
   switch (schedule.kind) {
     case 'every':
       return t('jobs.task.every', { duration: formatSpan(schedule.ms / 1000, locale) });
     case 'hourly':
-      return t('jobs.task.hourly', { minute: schedule.minute });
+      return t('jobs.task.hourly', { minute: localMinuteOf(schedule.minute, now) });
     case 'daily':
-      return t('jobs.task.daily', { time: clockOf(nextCronAt(schedule, now), locale) });
+      return t('jobs.task.daily', { time: unbreakable(clockOf(nextCronAt(schedule, now), locale)) });
     case 'weekly': {
       const at = nextCronAt(schedule, now);
-      return t('jobs.task.weekly', { day: weekdayOf(at, locale), time: clockOf(at, locale) });
+      return t('jobs.task.weekly', { day: weekdayOf(at, locale), time: unbreakable(clockOf(at, locale)) });
     }
     case 'cron':
       return schedule.pattern;
@@ -255,8 +323,9 @@ export function scheduleText(schedule: Schedule, t: Translate, locale: Locale, n
   }
 }
 
-/** A daily or weekly cron as written, in UTC ("03:17 UTC", "Sunday 04:41 UTC"), for a hover title; null for the others. */
-export function scheduleUtc(schedule: Schedule, locale: Locale, now: Date = new Date()): string | null {
+/** An hourly, daily or weekly cron as written, in UTC ("Hourly, minute 17 UTC", "3:17 AM UTC", "Sunday 4:41 AM UTC"), for a hover title; null for the others. */
+export function scheduleUtc(schedule: Schedule, t: Translate, locale: Locale, now: Date = new Date()): string | null {
+  if (schedule.kind === 'hourly') return `${t('jobs.task.hourly', { minute: schedule.minute })} UTC`;
   if (schedule.kind !== 'daily' && schedule.kind !== 'weekly') return null;
   const at = nextCronAt(schedule, now);
   const clock = `${clockOf(at, locale, 'UTC')} UTC`;
@@ -333,15 +402,26 @@ export function formatBytes(bytes: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, { style: 'unit', unit: BYTE_UNITS[unit], unitDisplay: display, maximumFractionDigits: unit === 0 || value >= 100 ? 0 : 1 }).format(value);
 }
 
-/** A short length of time: milliseconds under a second ("240 ms"), else as the statistics write it ("0 sec", "12 sec", "3 min"). */
+/** A run's length: milliseconds under a second, 0 included ("0 ms", "240 ms"), else as the statistics write it ("12 sec", "3 min"). */
 export function formatShortSpan(ms: number, locale: Locale): string {
-  if (ms > 0 && ms < 1000) return new Intl.NumberFormat(locale, { style: 'unit', unit: 'millisecond', unitDisplay: 'short', maximumFractionDigits: 0 }).format(Math.max(0, Math.round(ms)));
+  if (ms < 1000) return formatMs(Math.min(ms, 999), locale);
   return formatSpan(ms / 1000, locale);
 }
 
 /** Milliseconds as such ("4 ms", «۴ میلی‌ثانیه»): a round trip. */
 export function formatMs(ms: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, { style: 'unit', unit: 'millisecond', unitDisplay: 'short', maximumFractionDigits: 0 }).format(Math.max(0, Math.round(ms)));
+}
+
+/** A probe's round trip in whole milliseconds; 0 is what the server answers for anything under 1 ms ("<1 ms", «کمتر از ۱ میلی‌ثانیه»). */
+export function formatLatency(ms: number, locale: Locale, t: Translate): string {
+  return ms < 1 ? t('jobs.health.under', { value: formatMs(1, locale) }) : formatMs(ms, locale);
+}
+
+/** A share in whole percents; anything under 1 % reads "<1%" («کمتر از ۱٪»), never a rounded 0 % or 1 %. */
+export function formatShare(share: number, locale: Locale, t: Translate): string {
+  const percent = (value: number) => new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(value);
+  return share < 0.01 ? t('jobs.health.under', { value: percent(0.01) }) : percent(share);
 }
 
 /** A length of months or days in words ("12 months", «۱۲ ماه»). */

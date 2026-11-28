@@ -30,7 +30,17 @@ export const statsLiveSnapshotSchema = z.object({
     tickets: int,
     revenue: z.array(z.object({ currency: z.string().regex(/^[A-Z]{3}$/), micros: z.string().regex(/^-?[0-9]{1,19}$/), estimated: z.boolean() })),
   }),
-  streams: z.array(z.object({ name: z.enum(['like', 'match', 'msg']), length: int, pending: int, dead: int, lagMs: int.nullable() })),
+  streams: z.array(
+    z.object({
+      name: z.enum(['like', 'match', 'msg']),
+      length: int,
+      /** `streamWaiting`: entries still to be written; null: unknown, and in a snapshot written before it was recorded. */
+      waiting: int.nullable().default(null),
+      pending: int,
+      dead: int,
+      lagMs: int.nullable(),
+    }),
+  ),
   jobs: z.array(z.object({ queue: z.string(), waiting: int, active: int, delayed: int, failed: int })),
 });
 export type StatsLiveSnapshot = z.infer<typeof statsLiveSnapshotSchema>;
